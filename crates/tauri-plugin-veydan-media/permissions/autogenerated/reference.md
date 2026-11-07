@@ -144,6 +144,32 @@ Denies the convert command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-media:allow-export`
+
+</td>
+<td>
+
+Enables the export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-media:deny-export`
+
+</td>
+<td>
+
+Denies the export command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-media:allow-forget-capture`
 
 </td>

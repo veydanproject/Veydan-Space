@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor 在使用中被停止。请重试。",
     "proxy_tor_err_in_use": "Tor 正被运行中的配置文件或连接使用。请将其关闭后重试。",
     "proxy_tor_err_no_builtin_bridges": "此 Tor 没有内置网桥。请在“设置 → Tor”中添加你自己的网桥。",
-    "proxy_tor_err_no_transports": "所选网桥需要此 Tor 不具备的传输方式。请在“设置 → Tor”中选择其他类型的网桥。"
+    "proxy_tor_err_no_transports": "所选网桥需要此 Tor 不具备的传输方式。请在“设置 → Tor”中选择其他类型的网桥。",
+    "profile_sync_files_elsewhere": "文件在 {device} 上",
+    "profile_sync_files_elsewhere_hint": "此配置文件的文件尚未到达：它在那台设备上打开着，或文件仍在传输中。请在那里关闭它并等待文件到达。",
+    "profile_sync_files_elsewhere_close": "此配置文件的文件仍在 {device} 上：请在那里关闭它并等待文件到达。",
+    "profile_sync_files_elsewhere_confirm": "此配置文件的文件仍在 {device} 上。请在那里关闭它并等待文件到达。仍要在这里以空白状态打开吗？",
+    "profile_sync_launch_empty": "仍以空白打开",
+    "profile_sync_files_sending": "正在发送文件：{done} / {total}",
+    "profile_sync_files_open": "文件未发送：配置文件已打开",
+    "profile_sync_files_open_hint": "配置文件打开期间，如果文件在读取时没有变化，每 30 分钟发送一次副本。关闭它即可立即发送。",
+    "profile_sync_files_failed": "文件未发送"
   },
   "mobile": {}
 }

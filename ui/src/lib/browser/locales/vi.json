@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor đã bị dừng khi đang được sử dụng. Hãy thử lại.",
     "proxy_tor_err_in_use": "Tor đang được một hồ sơ hoặc kết nối đang chạy sử dụng. Hãy đóng nó rồi thử lại.",
     "proxy_tor_err_no_builtin_bridges": "Bản Tor này không có cầu nối tích hợp sẵn. Hãy thêm cầu nối của bạn trong Cài đặt → Tor.",
-    "proxy_tor_err_no_transports": "Các cầu nối đã chọn cần một phương thức truyền tải mà bản Tor này không có. Hãy chọn loại cầu nối khác trong Cài đặt → Tor."
+    "proxy_tor_err_no_transports": "Các cầu nối đã chọn cần một phương thức truyền tải mà bản Tor này không có. Hãy chọn loại cầu nối khác trong Cài đặt → Tor.",
+    "profile_sync_files_elsewhere": "Tệp ở {device}",
+    "profile_sync_files_elsewhere_hint": "Tệp của hồ sơ này chưa đến đây: hồ sơ đang mở trên thiết bị đó, hoặc tệp vẫn đang trên đường. Hãy đóng nó ở đó và chờ tệp đến.",
+    "profile_sync_files_elsewhere_close": "Tệp của hồ sơ này vẫn ở {device}: hãy đóng nó ở đó và chờ tệp đến.",
+    "profile_sync_files_elsewhere_confirm": "Tệp của hồ sơ này vẫn ở {device}. Hãy đóng nó ở đó và chờ tệp đến. Vẫn mở trống ở đây?",
+    "profile_sync_launch_empty": "Vẫn mở trống",
+    "profile_sync_files_sending": "Đang gửi tệp: {done}/{total}",
+    "profile_sync_files_open": "Chưa gửi tệp: hồ sơ đang mở",
+    "profile_sync_files_open_hint": "Khi hồ sơ đang mở, một bản sao tệp được gửi mỗi 30 phút nếu chúng không thay đổi trong lúc đọc. Đóng hồ sơ để gửi ngay.",
+    "profile_sync_files_failed": "Chưa gửi tệp"
   },
   "mobile": {}
 }

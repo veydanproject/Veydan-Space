@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor kullanımdayken durduruldu. Tekrar deneyin.",
     "proxy_tor_err_in_use": "Tor, çalışan bir profil veya bağlantı tarafından kullanılıyor. Onu kapatıp tekrar deneyin.",
     "proxy_tor_err_no_builtin_bridges": "Bu Tor sürümünde yerleşik köprü yok. Ayarlar → Tor bölümünden kendi köprülerinizi ekleyin.",
-    "proxy_tor_err_no_transports": "Seçilen köprüler, bu Tor sürümünde olmayan bir taşıyıcı gerektiriyor. Ayarlar → Tor bölümünden başka türde köprüler seçin."
+    "proxy_tor_err_no_transports": "Seçilen köprüler, bu Tor sürümünde olmayan bir taşıyıcı gerektiriyor. Ayarlar → Tor bölümünden başka türde köprüler seçin.",
+    "profile_sync_files_elsewhere": "Dosyalar {device} üzerinde",
+    "profile_sync_files_elsewhere_hint": "Bu profilin dosyaları henüz buraya gelmedi: o cihazda açık ya da dosyaları hâlâ yolda. Orada kapatın ve dosyaları bekleyin.",
+    "profile_sync_files_elsewhere_close": "Bu profilin dosyaları hâlâ {device} üzerinde: orada kapatın ve dosyaları bekleyin.",
+    "profile_sync_files_elsewhere_confirm": "Bu profilin dosyaları hâlâ {device} üzerinde. Orada kapatın ve dosyaları bekleyin. Yine de burada boş olarak açılsın mı?",
+    "profile_sync_launch_empty": "Yine de boş aç",
+    "profile_sync_files_sending": "Dosyalar gönderiliyor: {done} / {total}",
+    "profile_sync_files_open": "Dosyalar gönderilmedi: profil açık",
+    "profile_sync_files_open_hint": "Profil açıkken, okuma sırasında değişmezlerse dosyalarının bir kopyası 30 dakikada bir gönderilir. Şimdi göndermek için profili kapatın.",
+    "profile_sync_files_failed": "Dosyalar gönderilmedi"
   },
   "mobile": {}
 }

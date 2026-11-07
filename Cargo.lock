@@ -5281,6 +5281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oslog"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "p256"
 version = "0.14.0-rc.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7993,6 +8002,7 @@ dependencies = [
 name = "tauri-plugin-veydan-media"
 version = "0.1.0"
 dependencies = [
+ "objc2-foundation",
  "serde",
  "serde_json",
  "tauri",
@@ -8006,6 +8016,7 @@ name = "tauri-plugin-veydan-push"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "plist",
  "serde",
  "serde_json",
  "tauri",
@@ -9168,6 +9179,9 @@ dependencies = [
  "getrandom 0.3.4",
  "jni 0.21.1",
  "ksni",
+ "objc2",
+ "objc2-foundation",
+ "oslog",
  "semver",
  "serde",
  "serde_json",
@@ -9231,6 +9245,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "gethostname",
+ "libc",
  "serde",
  "serde_json",
  "sqlx",

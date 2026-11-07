@@ -22,6 +22,7 @@
 #   PRODUCT_NAME                productName of tauri.conf.json
 #   PRODUCT_IDENTIFIER          the identifier on a computer
 #   PRODUCT_ANDROID_IDENTIFIER  the applicationId on Android
+#   PRODUCT_IOS_IDENTIFIER      the bundle id on iOS (the Android one when products.json names none)
 #   PRODUCT_DEV_PORT            the dev server on a computer (HMR: the next port)
 #   PRODUCT_ANDROID_DEV_PORT    the dev server for Android (HMR: the next port)
 #   PRODUCT_VERSION             apps/<product>/VERSION
@@ -71,6 +72,7 @@ const out = {
   PRODUCT_NAME: config.productName,
   PRODUCT_IDENTIFIER: t.identifier,
   PRODUCT_ANDROID_IDENTIFIER: t.androidIdentifier ?? t.identifier,
+  PRODUCT_IOS_IDENTIFIER: t.iosIdentifier ?? t.androidIdentifier ?? t.identifier,
   PRODUCT_DEV_PORT: t.devPort,
   PRODUCT_ANDROID_DEV_PORT: t.androidDevPort,
   PRODUCT_VERSION: version,
@@ -107,10 +109,16 @@ product_desktop_field() {
 # VEYDAN_WORKDIR as the absolute path, a relative one counted from where the
 # command was typed. Refuses a folder inside the repository unless it is
 # under tmp/: anywhere else the profile's files would show in git as untracked.
+# An absolute path whose last parts may not exist yet: realpath -m of GNU;
+# the realpath of macOS has no -m, so Python's (the same rules) there.
+abs_path() {
+  realpath -m "$1" 2>/dev/null || python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+
 dev_workdir() {
   local dir root
-  dir="$(realpath -m "$1")"
-  root="$(realpath -m "$ROOT_DIR")"
+  dir="$(abs_path "$1")"
+  root="$(abs_path "$ROOT_DIR")"
   case "$dir/" in
     "$root/tmp/"?*) ;;
     "$root/"*)

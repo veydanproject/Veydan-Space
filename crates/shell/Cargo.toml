@@ -70,6 +70,16 @@ tauri-plugin-fs = "2"
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
+# The lines of stdout and stderr into the unified log (src/phone_log.rs): an
+# iOS app writes them nowhere outside Xcode. Without its `log` logger: only
+# the wrapper of `os_log_with_type`.
+[target.'cfg(target_os = "ios")'.dependencies]
+oslog = { version = "0.2", default-features = false }
+# The directory of the app out of the backups of iCloud (src/app.rs): the
+# same Objective-C bindings tauri and wry use on iOS.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSError", "NSString", "NSURL", "NSValue"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # Native StatusNotifierItem impl: unlike Tauri's libappindicator backend it
 # exposes separate left-click (Activate) and right-click (ContextMenu) handlers,

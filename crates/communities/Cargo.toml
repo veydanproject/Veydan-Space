@@ -45,12 +45,16 @@ messenger-core = { path = "../messenger/core" }
 messenger-links = { path = "../messenger/links" }
 messenger-transport = { path = "../messenger/transport" }
 
-# ── Android: the keeper with the app off the screen (src/background.rs) ─────
-[target.'cfg(target_os = "android")'.dependencies]
-# The push plugin's keeper: its wake, its foreground service, its periodic
-# wake. The plugin is the messenger's, set up before this module.
+# ── A phone: the keeper with the app off the screen (src/background.rs) ─────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# The push plugin's keeper: its wake (both phones), its foreground service
+# and its periodic wake (Android). The plugin is the messenger's, set up
+# before this module.
 tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
-# The shot of the system camera is deleted from the cache once a channel holds its copy.
+# The gallery plugin's files.
+# The shot of the system camera is deleted from the cache once a channel
+# holds its copy; on iOS what the plugin hands over (a shot, a pick, an item
+# of the grid) is copied in as a `content://` is on Android.
 tauri-plugin-veydan-media = { path = "../tauri-plugin-veydan-media" }
 
 [dev-dependencies]

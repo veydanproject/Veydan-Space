@@ -10,7 +10,8 @@ authors = ["Veydan Project"]
 license-file = "../../LICENSE"
 publish = false
 build = "build.rs"
-# tauri-build finds the Android library of a plugin through this name.
+# tauri-build finds the Android library of a plugin through this name; on
+# iOS tauri-plugin links the Swift package (ios/) under the crate's name.
 links = "tauri-plugin-veydan-call"
 
 [dependencies]
@@ -19,12 +20,17 @@ serde_json = "1"
 tauri = { version = "2", default-features = false }
 thiserror = "2"
 
+# ── A phone: the frames of its camera are the engine's pushed frames ─────────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# The engine of calls: the camera's frames become its `PushedFrame` here
+# (camera::Frame::into_pushed). On Android its init must also run on a
+# thread that came from Java, before the first engine of the process
+# (crates/messenger/rtc/src/android.rs): the Kotlin side of this plugin
+# calls the JNI entry of lib.rs from its load. iOS needs no init.
+messenger-rtc = { path = "../messenger/rtc" }
+
 # ── Android: the media engine takes the JVM and the context from here ───────
 [target.'cfg(target_os = "android")'.dependencies]
-# The engine of calls: its Android init must run on a thread that came from
-# Java, before the first engine of the process (crates/messenger/rtc/src/android.rs).
-# The Kotlin side of this plugin calls the JNI entry of lib.rs from its load.
-messenger-rtc = { path = "../messenger/rtc" }
 # The same jni as the engine's, so the JavaVM handed over is the one it takes.
 jni = "0.21"
 

@@ -17,19 +17,19 @@
 //! sheet of a computer is the system's file dialog.
 
 use serde::Serialize;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use std::sync::Arc;
 use veydan_core::{AppError, CmdResult};
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use crate::media_server::MediaServer;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use tauri::Manager;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use tauri_plugin_veydan_media::VeydanMediaExt;
 
 /// What a command answers where there is no gallery (a computer).
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(mobile, allow(dead_code))]
 const NO_GALLERY: &str = "the gallery of the phone is not here";
 
 /// A photo or a video of the grid, as the page draws it.
@@ -39,7 +39,7 @@ pub struct GalleryItem {
     pub id: String,
     /// `image` or `video`.
     pub kind: String,
-    /// The `content://` address `importPicked` takes.
+    /// The address `importPicked` takes: `content://` on Android, `ph://` on iOS.
     pub path: String,
     pub width: u32,
     pub height: u32,
@@ -62,7 +62,7 @@ pub struct GalleryAlbum {
     pub count: u32,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn bridge(e: tauri_plugin_veydan_media::Error) -> AppError {
     AppError::Other(e.to_string())
 }
@@ -70,9 +70,9 @@ fn bridge(e: tauri_plugin_veydan_media::Error) -> AppError {
 /// `full`, `partial` or `denied`; asks nothing.
 #[tauri::command]
 pub async fn messenger_gallery_access(app: tauri::AppHandle) -> CmdResult<String> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     return app.veydan_media().access().await.map_err(bridge);
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = app;
         Ok("denied".into())
@@ -83,9 +83,9 @@ pub async fn messenger_gallery_access(app: tauri::AppHandle) -> CmdResult<String
 /// settings when it was refused for good. The access after it.
 #[tauri::command]
 pub async fn messenger_gallery_request(app: tauri::AppHandle) -> CmdResult<String> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     return app.veydan_media().request().await.map_err(bridge);
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = app;
         Ok("denied".into())
@@ -101,7 +101,7 @@ pub async fn messenger_gallery_recent(
     album: Option<String>,
     app: tauri::AppHandle,
 ) -> CmdResult<GalleryPage> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let kind = kind.filter(|k| k == "image" || k == "video");
         let page = app
@@ -125,7 +125,7 @@ pub async fn messenger_gallery_recent(
             cursor: page.cursor,
         })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (cursor, limit, kind, album, app);
         Ok(GalleryPage { items: vec![], cursor: None })
@@ -134,12 +134,12 @@ pub async fn messenger_gallery_recent(
 
 #[tauri::command]
 pub async fn messenger_gallery_albums(app: tauri::AppHandle) -> CmdResult<Vec<GalleryAlbum>> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let albums = app.veydan_media().albums().await.map_err(bridge)?;
         Ok(albums.into_iter().map(|a| GalleryAlbum { id: a.id, title: a.title, count: a.count }).collect())
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = app;
         Ok(vec![])
@@ -153,7 +153,7 @@ pub async fn messenger_gallery_albums(app: tauri::AppHandle) -> CmdResult<Vec<Ga
 /// plugin deleted what it kept of it, and its addresses answer 404.
 #[tauri::command]
 pub async fn messenger_gallery_thumb(uri: String, side: u32, app: tauri::AppHandle) -> CmdResult<String> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let server = app.state::<MediaServer>();
         match app.veydan_media().thumb(&uri, side).await.map_err(bridge)? {
@@ -166,7 +166,7 @@ pub async fn messenger_gallery_thumb(uri: String, side: u32, app: tauri::AppHand
             }
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (uri, side, app);
         Err(AppError::Other(NO_GALLERY.into()))
@@ -174,7 +174,7 @@ pub async fn messenger_gallery_thumb(uri: String, side: u32, app: tauri::AppHand
 }
 
 /// What `messenger_gallery_thumb` refuses an item out of the access with.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const NOT_ACCESSIBLE: &str = "not_accessible";
 
 /// The page reads the gallery anew (it opened, or the app came back to the
@@ -183,27 +183,27 @@ const NOT_ACCESSIBLE: &str = "not_accessible";
 /// again, and each is asked of MediaStore with the access of now.
 #[tauri::command]
 pub async fn messenger_gallery_forget_thumbs(app: tauri::AppHandle) -> CmdResult<()> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     app.state::<MediaServer>().forget_thumbs();
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     let _ = app;
     Ok(())
 }
 
-/// Which of the items chosen in the grid (`content://media/` addresses) the
+/// Which of the items chosen in the grid (`content://media/`, iOS `ph://`) the
 /// app may still read now, in their order: each asked of MediaStore by its
 /// own row, whatever album or page the grid shows, so an item merely out of
 /// the album in view stays chosen and one a changed partial access no longer
 /// lets in leaves. What was kept of the others is deleted, its addresses 404.
 #[tauri::command]
 pub async fn messenger_gallery_readable(uris: Vec<String>, app: tauri::AppHandle) -> CmdResult<Vec<String>> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let (readable, gone) = app.veydan_media().readable(&uris).await.map_err(bridge)?;
         app.state::<MediaServer>().forget_thumb(&gone);
         Ok(readable)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (uris, app);
         Err(AppError::Other(NO_GALLERY.into()))
@@ -215,9 +215,9 @@ pub async fn messenger_gallery_readable(uris: Vec<String>, app: tauri::AppHandle
 /// the camera, the system's question or the app's settings first.
 #[tauri::command]
 pub async fn messenger_gallery_camera(ask: bool, app: tauri::AppHandle) -> CmdResult<bool> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     return app.veydan_media().camera(ask).await.map_err(bridge);
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (ask, app);
         Ok(false)
@@ -229,22 +229,23 @@ pub async fn messenger_gallery_camera(ask: bool, app: tauri::AppHandle) -> CmdRe
 /// it was given up. `camera_denied`: the user refused the camera.
 #[tauri::command]
 pub async fn messenger_gallery_capture(kind: String, app: tauri::AppHandle) -> CmdResult<Option<String>> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let kind = if kind == "video" { "video" } else { "photo" };
         app.veydan_media().capture(kind).await.map_err(bridge)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (kind, app);
         Err(AppError::Other(NO_GALLERY.into()))
     }
 }
 
-/// The system's Photo Picker: what was picked (`content://`), none when given up.
+/// The system's Photo Picker: what was picked (`content://`; iOS: `file://` URLs of
+/// the plugin's copies), none when given up.
 #[tauri::command]
 pub async fn messenger_gallery_pick(multiple: bool, kind: String, app: tauri::AppHandle) -> CmdResult<Vec<String>> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let kind = match kind.as_str() {
             "image" | "video" => kind.as_str(),
@@ -252,7 +253,7 @@ pub async fn messenger_gallery_pick(multiple: bool, kind: String, app: tauri::Ap
         };
         app.veydan_media().pick_system(multiple, kind).await.map_err(bridge)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (multiple, kind, app);
         Err(AppError::Other(NO_GALLERY.into()))
@@ -290,28 +291,62 @@ fn picture_to_save(png: &str, name: &str) -> CmdResult<String> {
 #[tauri::command]
 pub async fn messenger_gallery_save_picture(png: String, name: String, app: tauri::AppHandle) -> CmdResult<()> {
     let name = picture_to_save(&png, &name)?;
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         app.veydan_media().save_picture(&png, &name).await.map_err(|e| {
             let e = e.to_string();
             AppError::Other(if e.contains("storage_denied") { "storage_denied".into() } else { e })
         })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (name, app);
         Err(AppError::Other(NO_GALLERY.into()))
     }
 }
 
+/// Whether the phone hands `picked` (a path, as `picked_path` leaves it,
+/// or an address) over to be copied in before anything reads it: Android's
+/// `content://`; on iOS an item of the grid (`ph://`) or a file the plugin
+/// wrote into the app's cache (a shot of the camera, a copy of the Photo
+/// Picker). Such a file is the app's to copy into `outgoing/`, and only
+/// that copy goes through the common step (a HEIC becomes a JPEG); the
+/// scope of fs does not name it.
+pub(crate) fn handed_over(app: &tauri::AppHandle, picked: &str) -> bool {
+    #[cfg(target_os = "ios")]
+    if app.veydan_media().handed_over(picked) {
+        return true;
+    }
+    let _ = app;
+    picked.starts_with("content://")
+}
+
+/// What a handed-over `picked` is read from: on iOS an item of the grid is
+/// written out as a file of the plugin first, which the caller forgets
+/// once it is copied; anything else as it is.
+pub(crate) async fn source_of(app: &tauri::AppHandle, picked: &str) -> CmdResult<String> {
+    #[cfg(target_os = "ios")]
+    return app.veydan_media().file_of(picked).await.map_err(bridge);
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        Ok(picked.to_string())
+    }
+}
+
 /// The shot of the camera behind `picked`, once it is imported: its file
-/// in the cache goes (the plugin deletes only a shot of `attach-capture`).
+/// in the cache goes (the plugin deletes only a shot of `attach-capture`;
+/// on iOS a copy of `attach-picked` too, the Photo Picker's or the grid's).
 pub(crate) async fn forget_capture(app: &tauri::AppHandle, picked: &str) {
     #[cfg(target_os = "android")]
     if picked.starts_with("content://") && picked.contains(".fileprovider/") {
         let _ = app.veydan_media().forget_capture(picked).await;
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    if !picked.starts_with(tauri_plugin_veydan_media::ASSET_SCHEME) && app.veydan_media().handed_over(picked) {
+        let _ = app.veydan_media().forget_capture(picked).await;
+    }
+    #[cfg(not(mobile))]
     let _ = (app, picked);
 }
 
@@ -319,21 +354,26 @@ pub(crate) async fn forget_capture(app: &tauri::AppHandle, picked: &str) {
 /// by the app for the chats and the channels alike
 /// (`messenger_media::common::PlatformDecoder`); none on a computer (a
 /// HEIC goes there as a file, as before).
+///
+/// On iOS (stage Э5b) it is ImageIO through the plugin, as `ImageDecoder`
+/// is on Android. It is given only the app's own copy in `outgoing/`: the
+/// shot, the pick and the item of the grid the plugin hands over are
+/// copied there first (`handed_over`), as Android's `content://` is.
 pub(crate) fn offer_decoder(app: &tauri::AppHandle) {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let decoder: Arc<dyn messenger_media::common::PictureConverter> = Arc::new(PhoneDecoder(app.clone()));
         app.manage(messenger_media::common::PlatformDecoder(decoder));
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     let _ = app;
 }
 
-/// `ImageDecoder` of the phone, through the plugin.
-#[cfg(target_os = "android")]
+/// The phone's decoder (`ImageDecoder` on Android, ImageIO on iOS), through the plugin.
+#[cfg(mobile)]
 struct PhoneDecoder(tauri::AppHandle);
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 #[async_trait::async_trait]
 impl messenger_media::common::PictureConverter for PhoneDecoder {
     async fn to_jpeg(&self, src: &std::path::Path, dst: &std::path::Path, max_pixels: u64, quality: u8) -> Result<(), String> {

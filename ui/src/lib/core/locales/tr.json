@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "Hızlı:",
     "settings_sync_interval_remote_warn": "Bir dakikadan kısa aralıklar test içindir: S3/WebDAV'da sık istek oluştururlar ve ücrete yol açabilirler.",
     "settings_sync_profile_files": "Tarayıcı profil dosyalarını eşitle",
-    "settings_sync_profile_files_hint": "Her profilin çerezleri, oturumları ve geçmişi. Kapalıyken ayarlar yine eşitlenir ve çalışan bir profil diğer cihazlarda işaretlenir.",
+    "settings_sync_profile_files_hint": "Her profilin çerezleri, oturumları ve geçmişi. Bu anahtar tüm bilgisayarlarınızda aynıdır. Kapalıyken ayarlar yine eşitlenir ve çalışan bir profil diğer cihazlarda işaretlenir.",
     "settings_sync_device_name": "Cihaz adı",
     "settings_sync_device_name_hint": "Diğer cihazlarınızda gösterilir.",
     "settings_sync_device_name_profiles_hint": "Bir profil burada çalışırken diğer cihazlarda gösterilir.",

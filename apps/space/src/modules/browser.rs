@@ -60,6 +60,7 @@ fn commands() -> Module {
             crate::fingerprint::fingerprint_presets,
             crate::commands::profiles::sync::sync_profile_files_take_remote,
             crate::commands::profiles::sync::sync_profile_files_push_mine,
+            crate::commands::profiles::sync::profiles_files_status,
             crate::commands::profiles::crud::profiles_list,
             crate::commands::profiles::crud::profile_get,
             crate::commands::profiles::crud::profile_create,
@@ -454,6 +455,10 @@ mod sync {
                 },
             );
             registry.handler("profile files", crate::sync::profile_files::ProfileFiles);
+            // The switch of the files of profiles is the same on every
+            // desktop: a computer that joins takes it with the other settings
+            // (platform-spec 9.5, the owner's decision of 2026-11-07).
+            registry.setting(veydan_sync_host::config::PROFILE_FILES_KEY);
         }
         registry.profile_conflicts(crate::sync::state::profile_conflicts);
         registry.profile_leases(crate::sync::state::profile_leases);

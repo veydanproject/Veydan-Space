@@ -21,14 +21,14 @@ use serde::Serialize;
 use veydan_core::{AppError, CmdResult};
 use veydan_lock::Lock;
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use messenger_runtime::push::PushChannel;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use tauri_plugin_veydan_push::{Event, Permission, VeydanPush};
 
 /// Emitted with nothing when a notification was tapped while the app was
-/// running (Android). The page answers by asking `messenger_push_take_tap`.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+/// running (a phone). The page answers by asking `messenger_push_take_tap`.
+#[cfg_attr(not(mobile), allow(dead_code))]
 pub const EVENT_TAP: &str = "messenger://push-tap";
 
 /// What the phone says about pushes.
@@ -49,7 +49,7 @@ pub struct PushDevice {
 }
 
 impl PushDevice {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     fn unsupported() -> Self {
         Self {
             supported: false,
@@ -79,24 +79,24 @@ pub struct PushTap {
     pub chat: Option<String>,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn bridge(app: &tauri::AppHandle) -> CmdResult<tauri::State<'_, VeydanPush<tauri::Wry>>> {
     use tauri::Manager;
     app.try_state::<VeydanPush<tauri::Wry>>()
         .ok_or_else(|| AppError::Other("push bridge is not loaded".into()))
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn failed(e: tauri_plugin_veydan_push::Error) -> AppError {
     AppError::Other(e.to_string())
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn permission_name(p: Permission) -> Option<String> {
     serde_json::to_value(p).ok()?.as_str().map(str::to_string)
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn device(app: &tauri::AppHandle) -> CmdResult<PushDevice> {
     let s = bridge(app)?.state().await.map_err(failed)?;
     Ok(PushDevice {
@@ -109,7 +109,7 @@ async fn device(app: &tauri::AppHandle) -> CmdResult<PushDevice> {
     })
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 async fn device(_app: &tauri::AppHandle) -> CmdResult<PushDevice> {
     Ok(PushDevice::unsupported())
 }
@@ -117,7 +117,7 @@ async fn device(_app: &tauri::AppHandle) -> CmdResult<PushDevice> {
 /// The plugin keeps a listener for as long as the app runs: they are
 /// registered at the first start of the messenger in the process, and a
 /// later start finds them in place.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 static LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Starts what runs for as long as the runtime does; the tasks are aborted
@@ -129,9 +129,11 @@ static LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// - The plugin is told whether the messenger is receiving messages by
 ///   itself, in which case a push about a message is not shown while the
 ///   app is on the screen.
-/// - The push handler is given the keys while the settings want it to.
+/// - The push handler is given the keys while the settings want it to
+///   (Android; iOS has no handler of its own before the Notification
+///   Service Extension).
 /// - The runtime's own loop, which keeps the push server told.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub fn spawn_bridge(
     app: tauri::AppHandle,
     rt: std::sync::Arc<messenger_runtime::MessengerRuntime>,
@@ -176,14 +178,20 @@ pub fn spawn_bridge(
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
         };
+        #[cfg(target_os = "android")]
         tokio::join!(keep_handler_keys(app.clone(), rt.clone()), context);
+        // Nothing on iOS reads the handler's keys before the Notification
+        // Service Extension (a later stage), so none are handed over: keys
+        // kept where nothing needs them are only a risk.
+        #[cfg(target_os = "ios")]
+        context.await;
     });
     vec![push_loop, bridge]
 }
 
 /// Taps go to the page; a new token goes to the runtime that runs. With the
 /// messenger off there is none: the next start asks for the token.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn listen(app: &tauri::AppHandle, push: &VeydanPush<tauri::Wry>) {
     use tauri::{Emitter, Manager};
 
@@ -236,12 +244,32 @@ fn channel(app: &tauri::AppHandle, token: String, app_id: Option<String>) -> Pus
         token,
         app_id: app_id.unwrap_or_else(|| app.config().identifier.clone()),
         app_version: Some(app.package_info().version.to_string()),
+        // The environment is APNs' word (production or sandbox); FCM has none.
+        environment: None,
+    }
+}
+
+/// The phone's address at APNs: the device token as hex, the bundle id as
+/// the app, and the environment of APNs the token belongs to, which the
+/// push server must send to (a token of one is dead at the other). A debug
+/// build is signed for development and gets its token from the sandbox; a
+/// release build, for TestFlight or the App Store, from production: the
+/// same split by which the plugin writes `aps-environment` into the
+/// entitlements (tauri-plugin-veydan-push/build.rs).
+#[cfg(target_os = "ios")]
+fn channel(app: &tauri::AppHandle, token: String, app_id: Option<String>) -> PushChannel {
+    PushChannel {
+        provider: "apns".into(),
+        token,
+        app_id: app_id.unwrap_or_else(|| app.config().identifier.clone()),
+        app_version: Some(app.package_info().version.to_string()),
+        environment: Some(if cfg!(debug_assertions) { "sandbox" } else { "production" }.into()),
     }
 }
 
 /// Asks the push service for the token again and gives it to the runtime,
 /// when the user agreed to pushes. The runtime's loop tells the server.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn renew_token(
     app: &tauri::AppHandle,
     push: &VeydanPush<tauri::Wry>,
@@ -273,7 +301,7 @@ async fn renew_token(
 /// not reached keeps pushing until the registration runs out, and the mute
 /// holds them; the next start lifts it and registers again. The address at
 /// the push service and the user's choices stay.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub async fn stop_bridge(app: &tauri::AppHandle, rt: &messenger_runtime::MessengerRuntime) {
     use tauri::Manager;
     let push = app.try_state::<VeydanPush<tauri::Wry>>();
@@ -317,7 +345,7 @@ pub async fn messenger_push_set_enabled(
     let rt = messenger.runtime()?;
     rt.push_mark_offered().await.map_err(map_err)?;
 
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let push = bridge(&app)?;
         if !enabled {
@@ -354,7 +382,7 @@ pub async fn messenger_push_set_enabled(
         let status = rt.push_set_enabled(true).await.map_err(map_err)?;
         Ok(PushView { device, status })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = enabled;
         Ok(PushView {
@@ -451,12 +479,12 @@ pub async fn messenger_push_ticket_revoke(prefix: String, messenger: tauri::Stat
 /// that opened the app, and after every `EVENT_TAP`.
 #[tauri::command]
 pub async fn messenger_push_take_tap(app: tauri::AppHandle) -> CmdResult<Option<PushTap>> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let tap = bridge(&app)?.take_tap().await.map_err(failed)?;
         Ok(tap.map(|t| PushTap { kind: t.kind, chat: t.chat }))
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = app;
         Ok(None)
@@ -466,11 +494,11 @@ pub async fn messenger_push_take_tap(app: tauri::AppHandle) -> CmdResult<Option<
 /// Opens the phone's settings where messages ring again (`PushDevice::quiet`).
 #[tauri::command]
 pub async fn messenger_push_open_settings(app: tauri::AppHandle) -> CmdResult<()> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         bridge(&app)?.open_settings().await.map_err(failed)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = app;
         Ok(())
@@ -481,11 +509,11 @@ pub async fn messenger_push_open_settings(app: tauri::AppHandle) -> CmdResult<()
 /// that are about messages.
 #[tauri::command]
 pub async fn messenger_push_clear(key: Option<String>, app: tauri::AppHandle) -> CmdResult<()> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         bridge(&app)?.cancel(key.as_deref()).await.map_err(failed)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         use tauri::Manager;
         if let Some(messenger) = app.try_state::<MessengerState>() {
@@ -495,8 +523,8 @@ pub async fn messenger_push_clear(key: Option<String>, app: tauri::AppHandle) ->
     }
 }
 
-// Used on Android only; named here so that a desktop build does not warn.
-#[cfg(not(target_os = "android"))]
+// Used on a phone only; named here so that a desktop build does not warn.
+#[cfg(not(mobile))]
 #[allow(dead_code)]
 fn _unused(_: AppError) {}
 

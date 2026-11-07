@@ -87,15 +87,21 @@ png = "0.18"
 # (WebKitGTK, WKWebView).
 arboard = { version = "3.6", default-features = false, features = ["image-data", "wayland-data-control"] }
 
-# ── Android: push, the push handler's way in without the app, calls ──────────
-[target.'cfg(target_os = "android")'.dependencies]
-# The product depends on the plugin too: tauri-build finds the plugin's
-# Android library through the direct dependencies of the product crate.
-tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
-# The phone's side of a call: the ringing notification, its service, the sound.
+# ── A phone, Android or iOS: the phone's side of a call, pushes, the gallery ─
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# The ringing (a notification and its service on Android, CallKit on iOS),
+# the shell of a call that goes on, the sound and its route, the camera.
 tauri-plugin-veydan-call = { path = "../tauri-plugin-veydan-call" }
-# The phone's gallery in the sheet of the paperclip, its camera and Photo Picker, its decoder of HEIC.
+# Pushes: FCM on Android, APNs on iOS. The product depends on the plugin
+# too: tauri-build finds the plugin's Android library through the direct
+# dependencies of the product crate.
+tauri-plugin-veydan-push = { path = "../tauri-plugin-veydan-push" }
+# The phone's gallery in the sheet of the paperclip, its camera and Photo
+# Picker, its decoder of HEIC (Kotlin on Android, Swift on iOS).
 tauri-plugin-veydan-media = { path = "../tauri-plugin-veydan-media" }
+
+# ── Android: the push handler's way in without the app (JNI) ────────────────
+[target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
 [dev-dependencies]

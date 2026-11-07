@@ -48,6 +48,11 @@ impl Engine {
     /// process instead of failing; so the engine is refused with an error
     /// before the factory is made. The init runs on the thread that came
     /// from Java (the plugin's entry), this may run anywhere.
+    ///
+    /// iOS needs no such step: the vendored bridge (adm_proxy.cpp) makes
+    /// the platform device with `CreateAudioDeviceModule`, which there is
+    /// libwebrtc's own iOS device over RTCAudioSession, and no Java or
+    /// context has to be handed over first.
     pub fn new(mode: AudioMode) -> Result<Engine> {
         platform_ready()?;
         let factory = PeerConnectionFactory::default();
@@ -111,7 +116,7 @@ impl Engine {
     /// devices) or takes pushed frames (the pushed path of the CLI and
     /// the tests; a phone, whose plugin holds the camera).
     pub fn captures_video(&self) -> bool {
-        self.inner.mode == AudioMode::Device && !cfg!(target_os = "android")
+        self.inner.mode == AudioMode::Device && !cfg!(any(target_os = "android", target_os = "ios"))
     }
 
     /// The cameras of this machine, the default first; empty on a phone
@@ -127,11 +132,11 @@ impl Engine {
     /// The screens and windows that can be shared (a computer; empty
     /// where there is no display).
     pub fn screens(&self) -> Vec<messenger_calls::engine::ScreenInfo> {
-        #[cfg(not(target_os = "android"))]
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
         {
             crate::screen::list()
         }
-        #[cfg(target_os = "android")]
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
         {
             vec![]
         }

@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "Rapidi:",
     "settings_sync_interval_remote_warn": "Gli intervalli inferiori a un minuto servono per i test: su S3/WebDAV generano richieste frequenti e possono avere un costo.",
     "settings_sync_profile_files": "Sincronizza i file dei profili del browser",
-    "settings_sync_profile_files_hint": "Cookie, sessioni e cronologia di ogni profilo. Se disattivato, le impostazioni vengono comunque sincronizzate e un profilo in esecuzione viene segnalato sugli altri dispositivi.",
+    "settings_sync_profile_files_hint": "Cookie, sessioni e cronologia di ogni profilo. L'interruttore è lo stesso su tutti i tuoi computer. Se disattivato, le impostazioni vengono comunque sincronizzate e un profilo in esecuzione viene segnalato sugli altri dispositivi.",
     "settings_sync_device_name": "Nome del dispositivo",
     "settings_sync_device_name_hint": "Mostrato sugli altri tuoi dispositivi.",
     "settings_sync_device_name_profiles_hint": "Mostrato sugli altri dispositivi mentre un profilo è in esecuzione qui.",

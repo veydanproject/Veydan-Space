@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-show-group-call"
+description = "Enables the show_group_call command without any pre-configured scope."
+commands.allow = ["show_group_call"]
+
+[[permission]]
+identifier = "deny-show-group-call"
+description = "Denies the show_group_call command without any pre-configured scope."
+commands.deny = ["show_group_call"]

@@ -471,6 +471,7 @@
     "msg_push_loading": "Kontrol ediliyor…",
     "msg_push_text": "Uygulama kapalıyken bile telefon yeni bir mesajı size bildirir.",
     "msg_push_privacy": "Bunun bedeli: bildirim sunucusu sizin için hangi röleleri ve grupları izleyeceğini öğrenir ve anlık bildirim Google üzerinden geçer. İkisi de mesajlarınızı okuyamaz; yalnızca size bir mesaj geldiğini ve ne zaman geldiğini görürler.",
+    "msg_push_privacy_ios": "Bunun bedeli: bildirim sunucusu sizin için hangi röleleri ve grupları izleyeceğini öğrenir ve anlık bildirim Apple üzerinden geçer. İkisi de mesajlarınızı okuyamaz; yalnızca size bir mesaj geldiğini ve ne zaman geldiğini görürler.",
     "msg_push_enable": "Bildirimleri aç",
     "msg_push_toggle": "Yeni mesajları bildir",
     "msg_push_refused": "Bu uygulama için bildirimler kapalı. Telefon ayarlarından açın, sonra buraya dönün.",

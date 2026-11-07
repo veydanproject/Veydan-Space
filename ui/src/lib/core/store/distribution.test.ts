@@ -32,6 +32,14 @@ describe('where the app came from', () => {
     expect(hostInfo).toHaveBeenCalledTimes(1);
   });
 
+  it('is from a store on an iPhone: Apple installs every copy there', async () => {
+    hostInfo.mockResolvedValue({ store: 'appstore' });
+    const { distribution, loadDistribution } = await fresh();
+    await loadDistribution();
+    expect(distribution.store).toBe('appstore');
+    expect(distribution.fromStore).toBe(true);
+  });
+
   it('is not from a store when the shell says null', async () => {
     hostInfo.mockResolvedValue({ store: null });
     const { distribution, loadDistribution } = await fresh();

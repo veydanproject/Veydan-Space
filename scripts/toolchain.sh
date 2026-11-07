@@ -10,6 +10,13 @@
 
 # The root of the repository, from where this file is (scripts/), whoever
 # sources it and from wherever.
+# Sourced from bash only: zsh has no BASH_SOURCE, the root would be the
+# working directory's parent and the toolchains would land outside the
+# repository.
+if [ -z "${BASH_SOURCE[0]:-}" ]; then
+  echo ">> ${0##*/}: source it from bash (bash -c 'source scripts/build-env.sh; …')" >&2
+  return 1 2>/dev/null || exit 1
+fi
 VEYDAN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export VEYDAN_ROOT
 
@@ -45,7 +52,17 @@ fi
 # --- Node (portable tarball) ---
 if [ ! -x "$NODE_DIR/bin/node" ] || [ "$("$NODE_DIR/bin/node" -v 2>/dev/null)" != "$NODE_VERSION" ]; then
   echo ">> Installing Node $NODE_VERSION into data/toolchains/ ..."
-  tarball="node-$NODE_VERSION-linux-x64"
+  # The portable build of this host: linux-x64 (WSL, CI), darwin-arm64 or
+  # darwin-x64 (a Mac), linux-arm64.
+  case "$(uname -s)" in
+    Darwin) node_os=darwin ;;
+    *) node_os=linux ;;
+  esac
+  case "$(uname -m)" in
+    arm64|aarch64) node_arch=arm64 ;;
+    *) node_arch=x64 ;;
+  esac
+  tarball="node-$NODE_VERSION-$node_os-$node_arch"
   curl -sSL "https://nodejs.org/dist/$NODE_VERSION/$tarball.tar.xz" -o /tmp/_rb_node.tar.xz
   mkdir -p "$NODE_DIR"
   tar -xJf /tmp/_rb_node.tar.xz -C "$NODE_DIR" --strip-components=1

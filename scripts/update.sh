@@ -18,6 +18,24 @@ product_env "${1:-space}"
 # One-time data/dev-prefix setup + build env vars + project-local toolchain.
 source "$ROOT_DIR/scripts/build-env.sh"
 
+# macOS: the release .app bundle, installed into ~/Applications for this user.
+# No updater artefacts: their signature needs the key of the releases, which
+# lives in CI alone; the bundle itself is the same.
+if [ "$(uname -s)" = Darwin ]; then
+  echo ">> Building $PRODUCT_NAME $PRODUCT_VERSION (release, .app)..."
+  tauri_cli_ready
+  cd "$ROOT_DIR"
+  "$TAURI_CLI" build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+  app="$(ls -d "$ROOT_DIR/data/target/release/bundle/macos/"*.app | head -n 1)"
+  dest="$HOME/Applications"
+  mkdir -p "$dest"
+  rm -rf "$dest/$(basename "$app")"
+  ditto "$app" "$dest/$(basename "$app")"
+  echo ""
+  echo ">> Done! Installed: $dest/$(basename "$app") ($PRODUCT_VERSION)"
+  exit 0
+fi
+
 APP_ID="$PRODUCT_BIN"
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/$APP_ID"
 APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"

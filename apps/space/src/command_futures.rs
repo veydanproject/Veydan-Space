@@ -126,6 +126,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("profile_raw_data", r2(crate::commands::profiles::crud::profile_raw_data)));
     v.push(("sync_profile_files_take_remote", r5(crate::commands::profiles::sync::sync_profile_files_take_remote)));
     v.push(("sync_profile_files_push_mine", r4(crate::commands::profiles::sync::sync_profile_files_push_mine)));
+    v.push(("profiles_files_status", r2(crate::commands::profiles::sync::profiles_files_status)));
     v.push(("profile_export_json", r3(crate::commands::profiles::import_export::profile_export_json)));
     v.push(("profile_export_zip", r4(crate::commands::profiles::import_export::profile_export_zip)));
     v.push(("profile_import_json", r3(crate::commands::profiles::import_export::profile_import_json)));

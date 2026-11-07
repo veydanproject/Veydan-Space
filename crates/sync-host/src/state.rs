@@ -335,6 +335,25 @@ where
     Ok(true)
 }
 
+/// The vault is read again for `items` (`entity:<type>`, `setting:<key>`)
+/// as for a new registry (spec 9.2, rule 3): a module that skipped their ops
+/// for a while — the files of profiles while that switch was off — takes
+/// what came meanwhile. A read again already pending keeps its list, less
+/// these; every log is read from its start again.
+pub async fn reread_items(db: &Pool<Sqlite>, registry: &Registry, items: &[&str]) -> CmdResult<()> {
+    let mut tx = db.begin().await.map_err(AppError::db)?;
+    let known: Vec<String> = settings::get_json::<Vec<String>>(&mut *tx, REREAD_KEY)
+        .await
+        .unwrap_or_else(|| registry.synced())
+        .into_iter()
+        .filter(|item| !items.contains(&item.as_str()))
+        .collect();
+    settings::set_json(&mut *tx, REREAD_KEY, &known).await?;
+    settings::delete(&mut *tx, REREAD_PEERS_KEY).await?;
+    settings::delete(&mut *tx, REREAD_STUCK_KEY).await?;
+    tx.commit().await.map_err(AppError::db)
+}
+
 /// What the registries since the last full read synced, while the vault is
 /// to be read again.
 pub async fn reread(db: &Pool<Sqlite>) -> Option<Vec<String>> {
@@ -439,6 +458,31 @@ mod tests {
         reread_done(&db).await.unwrap();
         assert!(!check_registry(&db, &registry(true)).await.unwrap());
         assert_eq!(reread(&db).await, None);
+    }
+
+    /// A module that skipped a type for a while has the vault read again for
+    /// it alone; a read again already pending loses the type and keeps the rest.
+    #[tokio::test]
+    async fn a_type_skipped_for_a_while_is_read_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db::open(
+            &dir.path().join(db::DB_FILE),
+            &[veydan_core::SCHEMA, crate::SCHEMA],
+        )
+        .await
+        .unwrap();
+        check_registry(&db, &registry(true)).await.unwrap();
+        settings::set(&db, REREAD_PEERS_KEY, "[\"a\"]").await.unwrap();
+        reread_items(&db, &registry(true), &["entity:thing"]).await.unwrap();
+        let known = reread(&db).await.unwrap();
+        assert!(!known.contains(&"entity:thing".to_string()));
+        assert_eq!(known.len(), registry(true).synced().len() - 1);
+        assert_eq!(settings::get(&db, REREAD_PEERS_KEY).await, None);
+
+        // Pending already: what it lists, less the type again.
+        settings::set_json(&db, REREAD_KEY, &vec!["entity:thing", "setting:x"]).await.unwrap();
+        reread_items(&db, &registry(true), &["entity:thing"]).await.unwrap();
+        assert_eq!(reread(&db).await, Some(vec!["setting:x".to_string()]));
     }
 
     /// Spec 10.2: the owners publish every label on the first start of a

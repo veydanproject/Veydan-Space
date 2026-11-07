@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor è stato fermato mentre era in uso. Riprova.",
     "proxy_tor_err_in_use": "Tor è in uso da un profilo o una connessione in esecuzione. Chiudi il profilo o la connessione e riprova.",
     "proxy_tor_err_no_builtin_bridges": "Questo Tor non ha bridge integrati. Aggiungi i tuoi bridge in Impostazioni → Tor.",
-    "proxy_tor_err_no_transports": "I bridge scelti richiedono un trasporto che questo Tor non ha. Scegli un altro tipo di bridge in Impostazioni → Tor."
+    "proxy_tor_err_no_transports": "I bridge scelti richiedono un trasporto che questo Tor non ha. Scegli un altro tipo di bridge in Impostazioni → Tor.",
+    "profile_sync_files_elsewhere": "File su {device}",
+    "profile_sync_files_elsewhere_hint": "I file di questo profilo non sono ancora arrivati: è aperto su quel dispositivo, oppure i suoi file sono ancora in viaggio. Chiudilo lì e attendi i file.",
+    "profile_sync_files_elsewhere_close": "I file di questo profilo sono ancora su {device}: chiudilo lì e attendi i file.",
+    "profile_sync_files_elsewhere_confirm": "I file di questo profilo sono ancora su {device}. Chiudilo lì e attendi i file. Aprirlo qui vuoto comunque?",
+    "profile_sync_launch_empty": "Apri vuoto comunque",
+    "profile_sync_files_sending": "Invio dei file: {done} di {total}",
+    "profile_sync_files_open": "File non inviati: il profilo è aperto",
+    "profile_sync_files_open_hint": "Finché il profilo è aperto, ogni 30 minuti parte una copia dei suoi file se non cambiano durante la lettura. Chiudilo per inviarli ora.",
+    "profile_sync_files_failed": "File non inviati"
   },
   "mobile": {}
 }

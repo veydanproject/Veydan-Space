@@ -471,6 +471,7 @@
     "msg_push_loading": "Controllo…",
     "msg_push_text": "Il telefono ti avvisa di un nuovo messaggio anche quando l’app è chiusa.",
     "msg_push_privacy": "Il prezzo da pagare: il server push sa quali relay e gruppi tenere d’occhio per te, e la notifica push passa da Google. Nessuno dei due può leggere i tuoi messaggi; vedono che ti è arrivato un messaggio, e quando.",
+    "msg_push_privacy_ios": "Il prezzo da pagare: il server push sa quali relay e gruppi tenere d’occhio per te, e la notifica push passa da Apple. Nessuno dei due può leggere i tuoi messaggi; vedono che ti è arrivato un messaggio, e quando.",
     "msg_push_enable": "Attiva le notifiche",
     "msg_push_toggle": "Avvisami dei nuovi messaggi",
     "msg_push_refused": "Le notifiche sono disattivate per questa app. Attivale nelle impostazioni del telefono, poi torna qui.",

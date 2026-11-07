@@ -285,7 +285,7 @@ fn yuyv_to_i420(src: &[u8], w: usize, h: usize) -> Vec<u8> {
 /// A screen is read at its own size, and a 4K one is 12 MB a frame as
 /// I420: more than the encoder would ever send and far too much for
 /// the small picture of oneself on the way to the page.
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
 pub(crate) fn argb_to_i420(src: &[u8], stride: u32, width: u32, height: u32, max: (u32, u32)) -> VideoFrame {
     let mut buffer = I420Buffer::new(width, height);
     let (sy, su, sv) = buffer.strides();

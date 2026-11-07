@@ -9,8 +9,38 @@
 
 # The root of the repository, from where this file is (scripts/), whoever
 # sources it and from wherever.
+# Sourced from bash only: zsh has no BASH_SOURCE, the root would be the
+# working directory's parent and the toolchains would land outside the
+# repository.
+if [ -z "${BASH_SOURCE[0]:-}" ]; then
+  echo ">> ${0##*/}: source it from bash (bash -c 'source scripts/build-env.sh; …')" >&2
+  return 1 2>/dev/null || exit 1
+fi
 VEYDAN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export VEYDAN_ROOT
+
+# macOS: the webview is the system's WKWebView and the compilers are those
+# of Xcode, so nothing of the Linux prefix below applies (no apt, no
+# WebKitGTK, no WSLg). What a Mac needs is the project-local Rust, Node and
+# pnpm, and the prebuilt libwebrtc of its architecture, which the C++ bridge
+# of the calls engine builds against with Apple's clang (as the macOS jobs of
+# .github/workflows/release.yml do).
+if [ "$(uname -s)" = Darwin ]; then
+  if ! xcrun --find clang >/dev/null 2>&1; then
+    echo ">> macOS: Xcode or its command line tools are missing (xcode-select --install)" >&2
+  fi
+  source "$VEYDAN_ROOT/scripts/toolchain.sh"
+  source "$VEYDAN_ROOT/scripts/webrtc-toolchain.sh"
+  case "$(uname -m)" in
+    arm64) veydan_webrtc_target=mac-arm64 ;;
+    *) veydan_webrtc_target=mac-x64 ;;
+  esac
+  webrtc_toolchain "$veydan_webrtc_target" || echo ">> webrtc: the engine of calls will not build without its archive" >&2
+  unset veydan_webrtc_target
+  cd "$VEYDAN_ROOT"
+  return 0 2>/dev/null || exit 0
+fi
+
 DEV_PREFIX="$VEYDAN_ROOT/data/dev-prefix"
 LIBDIR="$DEV_PREFIX/usr/lib/x86_64-linux-gnu"
 PKG_DIR="$LIBDIR/pkgconfig"

@@ -21,11 +21,15 @@ source "$ROOT/scripts/product.sh"
 product_env "$1"
 
 echo "$TO" > "$APP_DIR/VERSION"
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$TO\"/" "$APP_DIR/tauri.conf.json"
-sed -i "0,/^version = \"[^\"]*\"/{s/^version = \"[^\"]*\"/version = \"$TO\"/}" "$APP_DIR/Cargo.toml"
+# perl -pi, not sed -i: the same on Linux and on macOS (whose sed takes
+# -i with a suffix and has no 0,/re/ address).
+export TO PRODUCT_BIN
+perl -pi -e 's/"version": "[^"]*"/"version": "$ENV{TO}"/' "$APP_DIR/tauri.conf.json"
+perl -pi -e '$done ||= s/^version = "[^"]*"/version = "$ENV{TO}"/' "$APP_DIR/Cargo.toml"
 # The lock file carries the version of the product's package; CI builds with --locked.
-sed -i "/^name = \"$PRODUCT_BIN\"$/{n;s/^version = \"[^\"]*\"/version = \"$TO\"/}" "$ROOT/Cargo.lock"
+perl -pi -e 'if ($next) { s/^version = "[^"]*"/version = "$ENV{TO}"/; $next = 0 } $next = 1 if /^name = "\Q$ENV{PRODUCT_BIN}\E"$/' "$ROOT/Cargo.lock"
 
 IFS=. read -r NMAJOR NMINOR NPATCH <<<"$TO"
 CODE=$((2000000 + NMAJOR * 10000 + NMINOR * 100 + NPATCH))
-sed -i "s/\"versionCode\": [0-9]*/\"versionCode\": $CODE/" "$APP_DIR/tauri.android.conf.json"
+export CODE
+perl -pi -e 's/"versionCode": [0-9]*/"versionCode": $ENV{CODE}/' "$APP_DIR/tauri.android.conf.json"

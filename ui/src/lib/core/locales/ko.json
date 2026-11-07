@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "빠른 선택:",
     "settings_sync_interval_remote_warn": "1분 미만의 간격은 테스트용입니다. S3/WebDAV에서는 요청이 잦아지고 비용이 발생할 수 있습니다.",
     "settings_sync_profile_files": "브라우저 프로필 파일 동기화",
-    "settings_sync_profile_files_hint": "각 프로필의 쿠키, 세션, 기록입니다. 꺼도 설정은 계속 동기화되며, 실행 중인 프로필은 다른 기기에 표시됩니다.",
+    "settings_sync_profile_files_hint": "각 프로필의 쿠키, 세션, 기록입니다. 이 설정은 모든 컴퓨터에서 동일합니다. 꺼도 설정은 계속 동기화되며, 실행 중인 프로필은 다른 기기에 표시됩니다.",
     "settings_sync_device_name": "기기 이름",
     "settings_sync_device_name_hint": "다른 기기에 표시됩니다.",
     "settings_sync_device_name_profiles_hint": "이 기기에서 프로필이 실행되는 동안 다른 기기에 표시됩니다.",

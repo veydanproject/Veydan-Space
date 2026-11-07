@@ -525,6 +525,8 @@ pub async fn note_attachment_save(
     app: tauri::AppHandle,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<()> {
+    // The save dialog of iOS answers with a `file://` URL (`veydan_shell::picked_path`).
+    let dest = veydan_shell::picked_path(&dest).into_owned();
     let note_file = note_file_path(&note_id, &core).await?;
     let path = attachments_dir_for(&note_file, &note_id).join(safe_file_name(&name));
     if !path.is_file() {

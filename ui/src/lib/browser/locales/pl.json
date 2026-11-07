@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor został zatrzymany w trakcie używania. Spróbuj ponownie.",
     "proxy_tor_err_in_use": "Tor jest używany przez uruchomiony profil lub połączenie. Zamknij je i spróbuj ponownie.",
     "proxy_tor_err_no_builtin_bridges": "Ten Tor nie ma wbudowanych mostów. Dodaj własne mosty w Ustawieniach → Tor.",
-    "proxy_tor_err_no_transports": "Wybrane mosty wymagają transportu, którego ten Tor nie ma. Wybierz inny rodzaj mostów w Ustawieniach → Tor."
+    "proxy_tor_err_no_transports": "Wybrane mosty wymagają transportu, którego ten Tor nie ma. Wybierz inny rodzaj mostów w Ustawieniach → Tor.",
+    "profile_sync_files_elsewhere": "Pliki na {device}",
+    "profile_sync_files_elsewhere_hint": "Pliki tego profilu jeszcze tu nie dotarły: jest otwarty na tamtym urządzeniu albo jego pliki są jeszcze w drodze. Zamknij go tam i poczekaj na pliki.",
+    "profile_sync_files_elsewhere_close": "Pliki tego profilu są jeszcze na {device}: zamknij go tam i poczekaj na pliki.",
+    "profile_sync_files_elsewhere_confirm": "Pliki tego profilu są jeszcze na {device}. Zamknij go tam i poczekaj na pliki. Mimo to otworzyć go tu pusty?",
+    "profile_sync_launch_empty": "Mimo to otwórz pusty",
+    "profile_sync_files_sending": "Wysyłanie plików: {done} z {total}",
+    "profile_sync_files_open": "Pliki nie wysłane: profil jest otwarty",
+    "profile_sync_files_open_hint": "Dopóki profil jest otwarty, co 30 minut wychodzi kopia jego plików, jeśli nie zmieniają się podczas odczytu. Zamknij go, aby wysłać je teraz.",
+    "profile_sync_files_failed": "Pliki nie wysłane"
   },
   "mobile": {}
 }

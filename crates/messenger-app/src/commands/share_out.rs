@@ -12,7 +12,7 @@
 
 use veydan_core::{AppError, CmdResult};
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use tauri_plugin_veydan_media::VeydanMediaExt;
 
 /// A text longer than this is not the page's: a link and a sentence.
@@ -37,14 +37,14 @@ pub async fn messenger_share_out(
     if !matches!(via.as_str(), "send" | "sms" | "mail") {
         return Err(AppError::Other("share_unavailable".into()));
     }
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         app.veydan_media().share_text(&via, text, subject).await.map_err(|e| {
             let e = e.to_string();
             AppError::Other(if e.contains("no_app") { "share_no_app".into() } else { e })
         })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         if via != "mail" {
             return Err(AppError::Other("share_unavailable".into()));
@@ -74,12 +74,12 @@ fn has_mail_client() -> bool {
 
 /// A letter with no addressee (RFC 6068): its subject and body, every byte
 /// but the unreserved ones escaped, so the text can add no header.
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(mobile, allow(dead_code))]
 fn mailto(subject: &str, body: &str) -> String {
     format!("mailto:?subject={}&body={}", escape(subject), escape(body))
 }
 
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(mobile, allow(dead_code))]
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 3);
     for b in s.bytes() {

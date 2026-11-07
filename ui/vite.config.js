@@ -15,10 +15,10 @@ const product = productFromEnv();
 
 // Separate ports per product and platform, so products and platforms can run
 // at the same time (Space 1420/1430, Notes 1440/1450, Pass 1460/1470, Chat
-// 1480/1490); the HMR port of Android is the next one.
-const isAndroid = product.platform === "android";
+// 1480/1490; iOS takes the phone port of Android); the HMR port of a phone is the next one.
+const isMobile = product.platform !== "desktop";
 const port = product.port;
-const hmrPort = isAndroid || host ? product.hmrPort : port;
+const hmrPort = isMobile || host ? product.hmrPort : port;
 // Separate optimizer caches per product and platform (data/vite/<product>-<platform>).
 // One shared cache lets Android dev poison desktop CSS (raw .svelte files get
 // served as stylesheets).

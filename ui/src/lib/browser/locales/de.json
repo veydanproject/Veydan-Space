@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor wurde gestoppt, während es verwendet wurde. Versuche es erneut.",
     "proxy_tor_err_in_use": "Tor wird von einem laufenden Profil oder einer laufenden Verbindung verwendet. Schließe sie zuerst und versuche es dann erneut.",
     "proxy_tor_err_no_builtin_bridges": "Dieses Tor hat keine integrierten Brücken. Füge eigene Brücken unter Einstellungen → Tor hinzu.",
-    "proxy_tor_err_no_transports": "Die gewählten Brücken brauchen einen Transport, den dieses Tor nicht hat. Wähle unter Einstellungen → Tor eine andere Art von Brücken."
+    "proxy_tor_err_no_transports": "Die gewählten Brücken brauchen einen Transport, den dieses Tor nicht hat. Wähle unter Einstellungen → Tor eine andere Art von Brücken.",
+    "profile_sync_files_elsewhere": "Dateien auf {device}",
+    "profile_sync_files_elsewhere_hint": "Die Dateien dieses Profils sind noch nicht hier: Es ist auf jenem Gerät geöffnet, oder seine Dateien sind noch unterwegs. Schließe es dort und warte auf die Dateien.",
+    "profile_sync_files_elsewhere_close": "Die Dateien dieses Profils sind noch auf {device}: Schließe es dort und warte auf die Dateien.",
+    "profile_sync_files_elsewhere_confirm": "Die Dateien dieses Profils sind noch auf {device}. Schließe es dort und warte auf die Dateien. Trotzdem hier leer öffnen?",
+    "profile_sync_launch_empty": "Trotzdem leer öffnen",
+    "profile_sync_files_sending": "Dateien werden gesendet: {done} von {total}",
+    "profile_sync_files_open": "Dateien nicht gesendet: Profil ist geöffnet",
+    "profile_sync_files_open_hint": "Solange das Profil geöffnet ist, geht alle 30 Minuten eine Kopie seiner Dateien hinaus, wenn sie sich beim Lesen nicht ändern. Schließe es, um sie jetzt zu senden.",
+    "profile_sync_files_failed": "Dateien nicht gesendet"
   },
   "mobile": {}
 }

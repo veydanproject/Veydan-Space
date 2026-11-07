@@ -5,7 +5,7 @@
   import { ask } from '$lib/core/ui/confirm.svelte';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { t, locale } from '$lib/core/i18n';
-  import { api, launchUnderWay, leaseHolder } from '$lib/browser/api';
+  import { api, launchUnderWay, leaseHolder, startsEmpty } from '$lib/browser/api';
   import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -87,9 +87,10 @@
     catch (err) {
       // Launched from elsewhere already: the button shows it.
       if (launchUnderWay(err)) return;
-      // Leased by another device: let the user override.
+      // Leased by another device: let the user override, told when it would start empty.
       const holder = leaseHolder(err);
-      if (holder !== null && (await ask({ title: $t('profile_sync_in_use_confirm', { device: holder }), variant: 'primary' }))) {
+      const title = startsEmpty(err) ? 'profile_sync_files_elsewhere_confirm' : 'profile_sync_in_use_confirm';
+      if (holder !== null && (await ask({ title: $t(title, { device: holder }), variant: 'primary' }))) {
         try { await api.profiles.launch(profile.id, true); onRefresh(); } catch {}
       }
     }

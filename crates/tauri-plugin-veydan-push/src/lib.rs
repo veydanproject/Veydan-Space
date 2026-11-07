@@ -1,16 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! Bridge to the phone's push service (FCM on Android).
+//! Bridge to the phone's push service (FCM on Android, APNs on iOS).
 //!
-//! The Kotlin side owns everything that must work while the app is not
-//! running: it receives pushes and shows notifications. This side lets the
-//! app ask for the token and the permission, tell whether the user is
-//! looking at live data, and learn which notification was tapped.
+//! The phone's side owns everything that must work while the app is not
+//! running. On Android (Kotlin, `android/`) it receives pushes and shows
+//! notifications. On iOS (Swift, `ios/`) the system shows an alert push by
+//! itself, in the words of the app's string `push.new` until the app has a
+//! Notification Service Extension to write them; the Swift side gets the
+//! token, keeps the tap and wakes the keeper for a background push. This
+//! side lets the app ask for the token and the permission, tell whether the
+//! user is looking at live data, and learn which notification was tapped;
+//! both sides take the same commands with the same answers.
 //!
 //! The plugin knows nothing about the messenger; it carries strings.
 
-#![cfg(target_os = "android")]
+#![cfg(any(target_os = "android", target_os = "ios"))]
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::{
@@ -19,7 +24,13 @@ use tauri::{
     Manager, Runtime,
 };
 
+#[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "net.veydan.push";
+
+// The Swift side's entry (`@_cdecl("init_plugin_veydan_push")` in
+// ios/Sources/VeydanPush/VeydanPushPlugin.swift), which makes the plugin.
+#[cfg(target_os = "ios")]
+tauri::ios_plugin_binding!(init_plugin_veydan_push);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -35,11 +46,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct TokenAnswer {
     /// False when the phone cannot receive pushes; `reason` says why.
     pub available: bool,
-    /// `no_firebase_config`, `no_play_services`, `token_failed`.
+    /// `no_firebase_config`, `no_play_services`, `token_failed`; iOS says
+    /// only `token_failed` (APNs did not answer, or refused: `detail`).
     pub reason: Option<String>,
     pub detail: Option<String>,
+    /// FCM's token; on iOS the device token of APNs as hex.
     pub token: Option<String>,
-    /// The Android package, which is the app id the push server knows.
+    /// The Android package or the iOS bundle id, which is the app id the
+    /// push server knows.
     pub app_id: Option<String>,
 }
 
@@ -49,12 +63,15 @@ pub struct TokenAnswer {
 #[serde(rename_all = "camelCase")]
 pub struct State {
     pub available: bool,
-    /// `no_firebase_config`, `no_play_services`.
+    /// `no_firebase_config`, `no_play_services`; never on iOS, where APNs
+    /// is part of the system.
     pub reason: Option<String>,
     pub permission: Permission,
     pub app_id: String,
     /// What keeps messages from ringing: `off` (notifications off for the
     /// app), `dm` or `groups` (that channel below high); none when they ring.
+    /// iOS has no channels: `off` when notifications show nowhere, `dm`
+    /// when they come without a sound or quietly (provisional).
     #[serde(default)]
     pub quiet: Option<String>,
 }
@@ -95,15 +112,19 @@ struct RunningAnswer {
     running: bool,
 }
 
-/// What the Kotlin side reports without being asked.
+/// What the phone's side reports without being asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
-    /// The push service gave the app a new token: `{ "token": … }`.
+    /// The push service gave the app a new token: `{ "token": … }`. On iOS
+    /// also the token of a registration renewed at the start, when it
+    /// changed; it waits for the first listener.
     Token,
     /// A notification was tapped while the app was running.
     Tap,
     /// The keeper of a channel is to take a turn: a push marked `channel`
     /// came, or the periodic wake ran (`Keeper.kt`): `{ "why": "push" | "periodic" }`.
+    /// On iOS only a background push of a note to the keeper, while the
+    /// process lives: no periodic wake yet.
     KeeperWake,
 }
 
@@ -206,13 +227,15 @@ impl<R: Runtime> VeydanPush<R> {
     /// Starts (`on`) or stops the foreground service of the keeper of the
     /// channels, with its notification «Хранитель канала работает».
     /// Answers whether it runs: the system refuses a start from the
-    /// background outside a push and a few other cases.
+    /// background outside a push and a few other cases. iOS has no such
+    /// service: never running there.
     pub async fn keeper_foreground(&self, on: bool) -> Result<bool> {
         Ok(self.call::<RunningAnswer>("keeperForeground", serde_json::json!({ "on": on })).await?.running)
     }
 
     /// Registers (`on`) or cancels the keeper's periodic wake: every 15
     /// minutes, the least the system allows, as [`Event::KeeperWake`].
+    /// Nothing on iOS yet (a background task of the system, later).
     pub async fn keeper_periodic(&self, on: bool) -> Result<()> {
         self.call::<serde_json::Value>("keeperPeriodic", serde_json::json!({ "on": on }))
             .await
@@ -255,7 +278,10 @@ impl<R: Runtime, T: Manager<R>> VeydanPushExt<R> for T {
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("veydan-push")
         .setup(|app, api| {
+            #[cfg(target_os = "android")]
             let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "VeydanPushPlugin")?;
+            #[cfg(target_os = "ios")]
+            let handle = api.register_ios_plugin(init_plugin_veydan_push)?;
             app.manage(VeydanPush(handle));
             Ok(())
         })

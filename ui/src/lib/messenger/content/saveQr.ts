@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 // «Сохранить» of a QR code (ROO-297): the code the screen shows, as a PNG.
-// A phone puts it into its gallery, album Pictures/Veydan
-// (`messenger_gallery_save_picture`); a computer writes it where its save
-// dialog says. The picture is the one the screen shows, logo and all
-// ($lib/core/ui/qrPicture), so what is saved is what is seen; the link
+// A phone puts it into its gallery (Android: album Pictures/Veydan; iOS: the
+// photo library, add-only) through `messenger_gallery_save_picture`; a
+// computer writes it where its save dialog says. The picture is the one the
+// screen shows, logo and all ($lib/core/ui/qrPicture), so what is saved is
+// what is seen; the link
 // itself never leaves the code.
 
 import { get } from 'svelte/store';
@@ -13,9 +14,7 @@ import { t } from '$lib/core/i18n';
 import { qrPng } from '$lib/core/ui/qrPicture';
 import { toast } from '$lib/core/ui/toast.svelte';
 import { isTauriHost, messengerApi, messengerError } from '../api';
-
-// The messenger may not ask $lib/core/platform; attach/library.ts asks the same way.
-const android = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+import { onPhone } from '../phone';
 
 function base64(bytes: Uint8Array): string {
   let s = '';
@@ -36,7 +35,7 @@ export function saveQrError(e: unknown, fallback: (e: unknown) => string): strin
 export async function saveQr(svg: string, name: string): Promise<boolean> {
   const tr = get(t) as (k: string) => string;
   const png = await qrPng(svg);
-  if (android) {
+  if (onPhone) {
     await messengerApi.gallery.savePicture(base64(png), name);
     toast.success(tr('msg_qr_saved_gallery'));
     return true;

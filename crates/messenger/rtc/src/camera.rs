@@ -13,7 +13,7 @@
 //! - Windows (Media Foundation) and macOS (AVFoundation): `nokhwa`
 //!   without its decoders. Neither is built on this machine; the code
 //!   follows nokhwa's documented API and waits for a run on the platform.
-//! - Android: the plugin holds the camera and pushes its frames
+//! - Android and iOS: the plugin holds the camera and pushes its frames
 //!   ([`crate::Session::push_video_frame`]); nothing here.
 //!
 //! Frames are taken uncompressed, YUYV or NV12, and converted
@@ -121,7 +121,7 @@ pub fn list() -> Vec<CameraInfo> {
 /// `stop` is seen), or an error. `Ok(())` when stopped; `Err(why)` when
 /// the device failed [`MAX_FAILURES`] times in a row and the reading
 /// gave up.
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
 fn run<F>(stop: &AtomicBool, source: &VideoSource, mut next: F) -> std::result::Result<(), String>
 where
     F: FnMut() -> std::result::Result<Option<messenger_calls::engine::PushedFrame>, String>,
@@ -152,7 +152,7 @@ where
 
 /// The end of a capture thread: the reading gave up on its own (not
 /// stopped) is told to `on_lost`.
-#[cfg_attr(target_os = "android", allow(dead_code))]
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
 fn report(stop: &AtomicBool, outcome: std::result::Result<(), String>, on_lost: OnLost) {
     if let Err(why) = outcome {
         if !stop.load(Ordering::SeqCst) {
@@ -498,7 +498,7 @@ mod platform {
     };
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 mod platform {
     use super::*;
 

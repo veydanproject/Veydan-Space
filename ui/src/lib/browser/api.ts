@@ -40,6 +40,7 @@ mockCommand('proxies_list', []);
 mockCommand('workspace_list', []);
 mockCommand('profiles_list_by_workspace', []);
 mockCommand('workspace_column_list', []);
+mockCommand('profiles_files_status', []);
 
 export const api = {
   ...core,
@@ -56,6 +57,7 @@ export const api = {
     isRunning: (id: string) => call<boolean>('profile_is_running', { id }),
     runningIds: () => call<string[]>('profiles_running_ids'),
     launching: () => call<LaunchingProfiles>('profiles_launching'),
+    filesStatus: () => call<ProfileFilesStatus[]>('profiles_files_status'),
     listByWorkspace: (workspaceId: string) =>
       call<Profile[]>('profiles_list_by_workspace', { workspaceId }),
     setTags: (id: string, tags: string[]) =>
@@ -157,6 +159,19 @@ export interface LaunchingProfiles {
   syncing: string[];
 }
 
+/**
+ * Files of a profile not out from this device (`sending`, `open`: its browser
+ * runs and no copy went out yet, `failed`: `detail` says why), or not here
+ * (`elsewhere`: `detail` names the device that holds the profile).
+ */
+export interface ProfileFilesStatus {
+  profile_id: string;
+  state: 'sending' | 'open' | 'failed' | 'elsewhere';
+  done: number;
+  total: number;
+  detail: string;
+}
+
 /** A `profile_launch` refused because another launch of the profile is under way. */
 export function launchUnderWay(err: unknown): boolean {
   const msg = typeof err === 'string' ? err : (err as { message?: string })?.message ?? String(err);
@@ -166,6 +181,15 @@ export function launchUnderWay(err: unknown): boolean {
 /** Device name from a `profile_launch` lease error, or null for other errors. */
 export function leaseHolder(err: unknown): string | null {
   const msg = typeof err === 'string' ? err : (err as { message?: string })?.message ?? String(err);
-  const i = msg.indexOf('profile_in_use:');
-  return i >= 0 ? msg.slice(i + 'profile_in_use:'.length).trim() : null;
+  for (const code of ['profile_in_use:', 'profile_files_elsewhere:']) {
+    const i = msg.indexOf(code);
+    if (i >= 0) return msg.slice(i + code.length).trim();
+  }
+  return null;
+}
+
+/** A lease error of `profile_launch` for a profile none of whose files came here: it would start empty. */
+export function startsEmpty(err: unknown): boolean {
+  const msg = typeof err === 'string' ? err : (err as { message?: string })?.message ?? String(err);
+  return msg.includes('profile_files_elsewhere:');
 }

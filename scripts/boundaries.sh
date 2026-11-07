@@ -350,7 +350,7 @@ fi
 [ -n "$product_plugins" ] || say "products.json: no product with a crate; the plugin check reads nothing"
 while IFS=$'\t' read -r name app listed; do
   [ -n "$name" ] || continue
-  actual=$(awk -F'\t' -v dir="$app" '$2 == dir && $3 ~ /^tauri-plugin-/ && $4 == "normal" { sub(/^tauri-plugin-/, "", $3); print $3 }' <<<"$root_deps" | sort -u | paste -sd,)
+  actual=$(awk -F'\t' -v dir="$app" '$2 == dir && $3 ~ /^tauri-plugin-/ && $4 == "normal" { sub(/^tauri-plugin-/, "", $3); print $3 }' <<<"$root_deps" | sort -u | paste -sd, -)
   [ "$actual" = "$listed" ] ||
     say "products.json: the plugins of $name are [$listed], and $app/Cargo.toml depends directly on [$actual]"
 done <<<"$product_plugins"

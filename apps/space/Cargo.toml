@@ -14,6 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 # The demo data in a release build (the screenshots): veydan-shell's feature.
 demo = ["veydan-shell/demo"]
+# The web inspector in a release build (the iOS lab, mode device-inspect):
+# Safari or pymobiledevice3 reaches the webview of the phone.
+devtools = ["tauri/devtools"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -96,6 +99,20 @@ age = { version = "0.11", default-features = false }
 
 # ── Mobile only ──────────────────────────────────────────────────────────────
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# The phone's side of a call (a Kotlin library on Android, a Swift package
+# on iOS), which the module of the messenger registers; named here because
+# tauri-build finds the library of a plugin through the direct dependencies
+# of the product crate.
+tauri-plugin-veydan-call = { path = "../../crates/tauri-plugin-veydan-call" }
+# Push notifications of the messenger (FCM on Android, APNs on iOS): token,
+# permission, taps; on Android also showing a push while the app is not
+# running. The module of the messenger registers it; named here for the
+# same reason.
+tauri-plugin-veydan-push = { path = "../../crates/tauri-plugin-veydan-push" }
+# The phone's gallery in the sheet of the paperclip (Kotlin on Android,
+# Swift on iOS), which the module of the messenger registers; named here for
+# the same reason.
+tauri-plugin-veydan-media = { path = "../../crates/tauri-plugin-veydan-media" }
 # Open http(s) links in the system browser (a link of a message on a phone too).
 tauri-plugin-opener = "2"
 tauri-plugin-barcode-scanner = "2"
@@ -103,15 +120,3 @@ tauri-plugin-barcode-scanner = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
-[target.'cfg(target_os = "android")'.dependencies]
-# Push notifications of the messenger: token, permission, showing a push
-# while the app is not running. The module of the messenger registers it;
-# it is named here because tauri-build finds the Android library of a plugin
-# through the direct dependencies of the product crate.
-tauri-plugin-veydan-push = { path = "../../crates/tauri-plugin-veydan-push" }
-# The phone's side of a call, which the module of the messenger registers;
-# named here for the same reason.
-tauri-plugin-veydan-call = { path = "../../crates/tauri-plugin-veydan-call" }
-# The phone's gallery in the sheet of the paperclip, which the module of the
-# messenger registers; named here for the same reason.
-tauri-plugin-veydan-media = { path = "../../crates/tauri-plugin-veydan-media" }

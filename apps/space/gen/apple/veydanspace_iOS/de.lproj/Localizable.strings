@@ -1,0 +1,7 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* The text of an alert push the app could not write itself (loc-key of
+   services/push/spec/protocol.md, "Through APNs"); veydan_push_one of the
+   Kotlin side's strings.xml, which are the source. */
+"push.new" = "Neue Nachricht";

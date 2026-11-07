@@ -32,6 +32,10 @@ veydan-sync = { path = "../sync" }
 # The passphrase of the backend `cloud` is wiped when dropped.
 zeroize = "1"
 
+# The model of an iPhone for the name of the device (`sysctlbyname`).
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tempfile = "3"

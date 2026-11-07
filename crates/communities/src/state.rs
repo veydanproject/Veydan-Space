@@ -1387,7 +1387,7 @@ impl Driver {
     }
 
     /// A wake of the keeper (`Listener::woken`): the listening as it needs.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub(crate) async fn woken(&self) {
         self.listener.woken().await;
     }
@@ -1987,7 +1987,7 @@ pub struct CommunitiesState {
     /// The watcher of the messenger's session, while the module is on.
     watcher: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// The wake of the push plugin is listened to (once a run of the app).
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     woken: AtomicBool,
 }
 
@@ -1995,7 +1995,7 @@ impl CommunitiesState {
     pub(crate) fn new(app: AppHandle, app_data_dir: &Path) -> Self {
         // The push plugin is the messenger's, set up before this module.
         #[cfg(target_os = "android")]
-        let phone = crate::background::android::phone(&app);
+        let phone = crate::background::plugin::phone(&app);
         #[cfg(not(target_os = "android"))]
         let phone = None;
         let dir = app_data_dir.join(DATA_SUBDIR);
@@ -2036,10 +2036,11 @@ impl CommunitiesState {
             return Err(AppError::Other(format!("{STOPPED}: the messenger is not in the product")));
         }
         self.on.store(true, Ordering::SeqCst);
-        // A push for the keeper, or its periodic wake (Android).
-        #[cfg(target_os = "android")]
+        // A push for the keeper, or its periodic wake (Android); a
+        // background push for it on iOS.
+        #[cfg(mobile)]
         if !self.woken.swap(true, Ordering::SeqCst) {
-            crate::background::android::listen(&self.shared.app).await;
+            crate::background::plugin::listen(&self.shared.app).await;
         }
         self.shared.follow_held().await;
         let shared = self.shared.clone();

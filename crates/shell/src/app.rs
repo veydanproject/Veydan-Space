@@ -19,8 +19,35 @@ use veydan_sync_host::{Registry, SyncManager};
 const DATA_SUBDIR: &str = "data";
 
 /// The data directory: `<app_data_dir>/data`, the same on every platform.
+/// How long the exit waits for the modules to stop (what they still write
+/// leaves in that time); the process ends after it all the same.
+#[cfg(desktop)]
+const EXIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn data_dir(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(DATA_SUBDIR)
+}
+
+/// The directory of the app stays out of the backups of iCloud and of a
+/// computer (`NSURLIsExcludedFromBackupKey`), as Android's manifest says
+/// `allowBackup="false"`: the data file, the keys of the messenger and the
+/// vault go to another device by the app's own sync and backup, encrypted,
+/// and a phone restored from a copy would wake with the keys of another
+/// device. Set on every start: the mark is lost when the folder is made
+/// anew. A failure is told on the terminal, nothing more.
+#[cfg(target_os = "ios")]
+fn exclude_from_backup(dir: &Path) {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSNumber, NSString, NSURLIsExcludedFromBackupKey, NSURL};
+    let url = NSURL::fileURLWithPath_isDirectory(&NSString::from_str(&dir.to_string_lossy()), true);
+    let yes = NSNumber::numberWithBool(true);
+    let value: &AnyObject = &yes;
+    // SAFETY: the key takes an NSNumber of a bool, as Apple documents it;
+    // the key is a constant of Foundation, there for the life of the app.
+    let done = unsafe { url.setResourceValue_forKey_error(Some(value), NSURLIsExcludedFromBackupKey) };
+    if let Err(e) = done {
+        eprintln!("shell: {} stays in the backups: {}", dir.display(), e.localizedDescription());
+    }
 }
 
 /// The shell's own module: its commands, the keys of the tray it syncs.
@@ -202,9 +229,42 @@ fn open_windows<R: Runtime>(app: &tauri::AppHandle<R>, labels: &[String]) -> tau
         let builder = crate::guard_window(app, WebviewWindowBuilder::from_config(app, config)?);
         #[cfg(desktop)]
         let builder = crate::workdir::apply_to_window(builder);
-        builder.build()?;
+        let window = builder.build()?;
+        #[cfg(target_os = "ios")]
+        ios_webview(&window);
+        #[cfg(not(target_os = "ios"))]
+        let _ = window;
     }
     Ok(())
+}
+
+/// The web view of the iPhone as the page expects it (2026-11-04):
+/// - the swipe from the left edge goes back, as in every app of the iPhone.
+///   Android's system gesture reaches the page as the back button; on iOS the
+///   gesture is the web view's own, off unless asked for (wry's default), and
+///   Tauri has no setting of it: every swipe "back" did nothing;
+/// - the page does not bounce past its ends: the lists scroll inside the
+///   page, and a pull of the whole web view showed the bare background
+///   behind it.
+#[cfg(target_os = "ios")]
+fn ios_webview<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let done = window.with_webview(|webview| {
+        use objc2::{msg_send, runtime::AnyObject};
+        let wk = webview.inner().cast::<AnyObject>();
+        // SAFETY: inner() is the WKWebView of this window, alive while the
+        // closure runs on the main thread; the setters take a BOOL, and
+        // scrollView is the UIScrollView every WKWebView owns.
+        unsafe {
+            let _: () = msg_send![&*wk, setAllowsBackForwardNavigationGestures: true];
+            let scroll: *mut AnyObject = msg_send![&*wk, scrollView];
+            if !scroll.is_null() {
+                let _: () = msg_send![&*scroll, setBounces: false];
+            }
+        }
+    });
+    if let Err(e) = done {
+        eprintln!("shell: the web view keeps its defaults: {e}");
+    }
 }
 
 /// The tray and the main window as the user set them, once the window exists.
@@ -272,9 +332,9 @@ fn failed(path: &Path, error: &dyn std::fmt::Display) -> StartError {
 /// when the modules register for sync what the plan of the product does not
 /// hold.
 pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
-    // The lines of the modules reach logcat on a phone.
-    #[cfg(target_os = "android")]
-    crate::logcat::redirect();
+    // The lines of the modules reach the log of the system on a phone.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    crate::phone_log::redirect();
     let mut context = context;
     #[cfg(desktop)]
     let workdir = match crate::workdir::init(&context.config().identifier) {
@@ -342,6 +402,9 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
             #[cfg(mobile)]
             let app_data_dir = app.path().app_data_dir()?;
             let started = start.run(app, data_dir(&app_data_dir))?;
+            // Made by now, when it could be.
+            #[cfg(target_os = "ios")]
+            exclude_from_backup(&app_data_dir);
             // Also when nothing started: the page shows why.
             open_windows(app.handle(), &windows)?;
             #[cfg(desktop)]
@@ -361,11 +424,24 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Nothing was started when the data could not be opened.
-                let Some(shell) = app.try_state::<Shell>() else {
+                if app.try_state::<Shell>().is_none() {
                     return;
-                };
+                }
                 // Done already when a restore or `app_relaunch` restarts.
-                tauri::async_runtime::block_on(shell.shutdown());
+                // On a thread of its own: on macOS the Exit of a Quit (the
+                // menu, Cmd+Q, the Dock) can come while the main thread is
+                // inside the async runtime, where a `block_on` panics in an
+                // observer of AppKit that cannot unwind, and the app aborted
+                // on every quit (5.2.1).
+                let handle = app.clone();
+                let stop = async move {
+                    if let Some(shell) = handle.try_state::<Shell>() {
+                        shell.shutdown().await;
+                    }
+                };
+                if !crate::updater::wait_off_runtime(stop, EXIT_LIMIT) {
+                    eprintln!("shell: the modules did not stop within {} s", EXIT_LIMIT.as_secs());
+                }
             }
         });
     #[cfg(mobile)]

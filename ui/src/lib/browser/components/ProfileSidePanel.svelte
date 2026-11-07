@@ -4,7 +4,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { t, locale, type TranslationKey } from '$lib/core/i18n';
-  import { api, launchUnderWay, leaseHolder } from '$lib/browser/api';
+  import { api, launchUnderWay, leaseHolder, startsEmpty } from '$lib/browser/api';
   import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
@@ -103,6 +103,8 @@
 
   /** Set when another device holds the sync lease; offers "launch anyway". */
   let leaseBlockedBy = $state('');
+  /** None of its files came here: "launch anyway" starts it empty. */
+  let leaseEmpty = $state(false);
 
   async function launch(force = false) {
     actionLoading = true; error = ''; leaseBlockedBy = '';
@@ -111,7 +113,7 @@
       onsync({ ...profile, status: 'running' });
     } catch (e) {
       const holder = leaseHolder(e);
-      if (holder !== null) leaseBlockedBy = holder;
+      if (holder !== null) { leaseBlockedBy = holder; leaseEmpty = startsEmpty(e); }
       // Another window, button or the tray launches it: the button shows that.
       else if (!launchUnderWay(e)) error = explainError(e, $t);
     }
@@ -291,9 +293,9 @@
 
       {#if leaseBlockedBy}
         <Notice tone="danger">
-          {$t('profile_sync_in_use', { device: leaseBlockedBy })}
+          {$t(leaseEmpty ? 'profile_sync_files_elsewhere_close' : 'profile_sync_in_use', { device: leaseBlockedBy })}
           {#snippet action()}
-            <button class="btn btn-ghost btn-sm" disabled={actionLoading || launching} onclick={() => launch(true)}>{$t('profile_sync_launch_anyway')}</button>
+            <button class="btn btn-ghost btn-sm" disabled={actionLoading || launching} onclick={() => launch(true)}>{$t(leaseEmpty ? 'profile_sync_launch_empty' : 'profile_sync_launch_anyway')}</button>
           {/snippet}
         </Notice>
       {/if}

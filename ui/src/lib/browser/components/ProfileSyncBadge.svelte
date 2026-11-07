@@ -4,22 +4,34 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/browser/api';
+  import { profileFilesStore } from '$lib/browser/store/profileFiles.svelte';
   import { syncStore } from '$lib/core/store/sync.svelte';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
 
-  /** Lease badge and diverged-files actions for one profile. `compact` hides the buttons. */
+  /** Lease badge, files not sent or not here, and diverged-files actions for one profile. `compact` hides the buttons. */
   let { profileId, compact = false }: { profileId: string; compact?: boolean } = $props();
 
   onMount(() => {
-    let off: (() => void) | null = null;
-    void syncStore.listen().then((fn) => (off = fn));
-    return () => off?.();
+    const offs: (() => void)[] = [];
+    void syncStore.listen().then((fn) => offs.push(fn));
+    void profileFilesStore.listen().then((fn) => offs.push(fn));
+    return () => offs.forEach((fn) => fn());
   });
 
   const lease = $derived(syncStore.status?.profile_leases.find((l) => l.profile_id === profileId && !l.own) ?? null);
+  const files = $derived(profileFilesStore.byId[profileId] ?? null);
+  const unsentLabel = $derived(
+    !files ? '' :
+    files.state === 'sending' ? $t('profile_sync_files_sending', { done: String(files.done), total: String(files.total) }) :
+    files.state === 'open' ? $t('profile_sync_files_open') :
+    files.state === 'failed' ? $t('profile_sync_files_failed') : '',
+  );
+  const unsentHint = $derived(
+    files?.state === 'open' ? [$t('profile_sync_files_open_hint'), files.detail].filter(Boolean).join(' — ') : files?.detail ?? '',
+  );
   const diverged = $derived(syncStore.status?.profile_conflicts.some((c) => c.note_id === profileId) ?? false);
 
   let busy = $state(false);
@@ -52,9 +64,17 @@
       {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
   {/if}
+{:else if lease && files?.state === 'elsewhere'}
+  <span class="sync-badge lease" class:block={!compact} title={$t('profile_sync_files_elsewhere_hint')}>
+    <Icon name="monitor" size={11} /> {$t('profile_sync_files_elsewhere', { device: lease.device_name || lease.device_id })}
+  </span>
 {:else if lease}
   <span class="sync-badge lease" class:block={!compact} title={$t('profile_sync_in_use_hint')}>
     <Icon name="monitor" size={11} /> {$t('profile_sync_in_use', { device: lease.device_name || lease.device_id })}
+  </span>
+{:else if unsentLabel}
+  <span class="sync-badge unsent" class:failed={files?.state === 'failed'} class:block={!compact} title={unsentHint}>
+    <Icon name={files?.state === 'sending' ? 'upload' : 'alert-triangle'} size={11} /> {unsentLabel}
   </span>
 {/if}
 
@@ -67,6 +87,8 @@
   }
   .sync-badge.block { margin-bottom: 0.5rem; }
   .sync-badge.lease { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+  .sync-badge.unsent { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
+  .sync-badge.unsent.failed { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
   .sync-badge.diverged { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
   .sync-block { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; margin-bottom: 0.6rem; }
   .sync-actions { display: flex; gap: 0.4rem; }

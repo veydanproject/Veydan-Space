@@ -152,7 +152,7 @@ ui/src/lib/messenger/dm/AlbumBubble.svelte	{#if author}<span class=\"author\" st
 #   AlbumBubble       bubble, not a chip (Chat's own palette)
 data_vars=$( { grep -rhoE --include='*.svelte' 'style:--[a-z0-9-]+=' "$SRC" | sed -E 's/^style:(--[a-z0-9-]+)=$/\1/'
                grep -rhoE --include='*.svelte' 'style="[^"]*--[a-z0-9-]+:[[:space:]]*\{' "$SRC" | grep -oE -- '--[a-z0-9-]+:[[:space:]]*\{' | sed -E 's/:.*//'
-               printf '%s\n' $RUNTIME_VARS | grep -x -- '--chip'; } | sort -u | paste -sd'|')
+               printf '%s\n' $RUNTIME_VARS | grep -x -- '--chip'; } | sort -u | paste -sd'|' -)
 data_text=$(find "$SRC" -type f \( -name '*.svelte' -o -name '*.css' -o -name '*.ts' \) ! -name '*.test.ts' ! -path "$SRC/lib/core/styles/base.css" -print0 \
   | sort -z | DATA_VARS="$data_vars" DATA_COLOR_OK="$DATA_COLOR_OK" xargs -0 perl -e '
   use strict; use warnings;
@@ -194,7 +194,7 @@ echo ""
 echo "── Drift meter (WARN, non-failing) ──"
 hex=$(grep -rhoiE --include='*.svelte' '#[0-9a-f]{3,8}\b' "$SRC" | grep -vi '%23' | wc -l | tr -d ' ')
 fs=$(grep -rhoE --include='*.svelte' 'font-size:\s*[0-9.]+(rem|px)' "$SRC" | wc -l | tr -d ' ')
-mobile_only=$(comm -23 <(printf '%s\n' "$mobile_tokens") <(printf '%s\n' "$desk_tokens") | paste -sd'|')
+mobile_only=$(comm -23 <(printf '%s\n' "$mobile_tokens") <(printf '%s\n' "$desk_tokens") | paste -sd'|' -)
 bare=0
 if [ -n "$mobile_only" ]; then
   bare=$(grep -rHoE --include='*.svelte' --include='*.css' -- "var\(($mobile_only)\)" "$SRC" \

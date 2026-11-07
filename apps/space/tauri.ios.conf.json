@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Veydan",
+  "identifier": "net.veydan.mobile",
+  "build": {
+    "devUrl": "http://localhost:1430",
+    "frontendDist": "../../data/build/space-ios"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Veydan",
+        "width": 420,
+        "height": 860,
+        "allowLinkPreview": false,
+        "disableInputAccessoryView": true
+      }
+    ],
+    "security": {
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' asset: http://asset.localhost http://127.0.0.1:* data: blob: https:",
+        "media-src": "'self' asset: http://asset.localhost http://127.0.0.1:* blob:",
+        "font-src": "'self' data:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:1431 http://127.0.0.1:1430 ws://localhost:1431 http://localhost:1430",
+        "frame-src": "'none'",
+        "object-src": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "iOS": {
+      "minimumSystemVersion": "15.0",
+      "frameworks": [
+        "AVFoundation", "AudioToolbox", "CallKit", "CoreAudio", "CoreFoundation", "CoreMedia",
+        "CoreVideo", "CryptoKit", "Foundation", "GLKit", "ImageIO", "Network", "OpenGLES", "Photos",
+        "PhotosUI", "UniformTypeIdentifiers", "UserNotifications", "VideoToolbox"
+      ]
+    }
+  }
+}

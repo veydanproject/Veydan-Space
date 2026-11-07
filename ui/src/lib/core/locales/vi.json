@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "Nhanh:",
     "settings_sync_interval_remote_warn": "Chu kỳ dưới một phút chỉ dành cho thử nghiệm: trên S3/WebDAV chúng tạo ra nhiều yêu cầu và có thể tốn phí.",
     "settings_sync_profile_files": "Đồng bộ tệp hồ sơ trình duyệt",
-    "settings_sync_profile_files_hint": "Cookie, phiên và lịch sử của từng hồ sơ. Khi tắt: cài đặt vẫn được đồng bộ, và hồ sơ đang chạy được đánh dấu trên các thiết bị khác.",
+    "settings_sync_profile_files_hint": "Cookie, phiên và lịch sử của từng hồ sơ. Công tắc này giống nhau trên mọi máy tính của bạn. Khi tắt: cài đặt vẫn được đồng bộ, và hồ sơ đang chạy được đánh dấu trên các thiết bị khác.",
     "settings_sync_device_name": "Tên thiết bị",
     "settings_sync_device_name_hint": "Hiển thị trên các thiết bị khác của bạn.",
     "settings_sync_device_name_profiles_hint": "Hiển thị trên các thiết bị khác khi một hồ sơ đang chạy ở đây.",

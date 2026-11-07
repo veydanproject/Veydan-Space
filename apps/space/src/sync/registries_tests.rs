@@ -837,8 +837,11 @@ async fn notes_and_pass_share_a_vault_with_space_and_delete_nothing_of_it() {
         .all_latest_ops()
         .await
         .unwrap();
+    // The lease of the profile whose browser stopped went with its files:
+    // Space's own release.
     for op in latest.iter().filter(|op| op.entity_type != "note") {
-        assert!(!op.deleted, "{} {}", op.entity_type, op.entity_id);
+        let released = op.entity_type == "profile_lease" && op.hlc.device_id == space_id;
+        assert!(!op.deleted || released, "{} {}", op.entity_type, op.entity_id);
     }
     for op in latest.iter().filter(|op| {
         !notes_types.contains(&op.entity_type) && !pass_types.contains(&op.entity_type)
@@ -1082,7 +1085,10 @@ async fn pass_names_the_profile_a_password_of_space_is_linked_to() {
         .await
         .unwrap();
     for op in &latest {
-        assert!(!op.deleted, "{} {}", op.entity_type, op.entity_id);
+        // The lease of the profile whose browser stopped went with its
+        // files: Space's own release.
+        let released = op.entity_type == "profile_lease" && op.hlc.device_id == space_id;
+        assert!(!op.deleted || released, "{} {}", op.entity_type, op.entity_id);
         if op.entity_type == "label" || !pass_types.contains(&op.entity_type) {
             assert_eq!(op.hlc.device_id, space_id, "{}", op.entity_type);
         }
@@ -1579,6 +1585,78 @@ async fn a_blob_a_foreign_gc_took_under_a_snapshot_is_uploaded_again() {
     assert_eq!(
         std::fs::read(Path::new(&path).join("firefox-profile/prefs.js")).unwrap(),
         b"user_pref(\"a\", 1);"
+    );
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A computer that joined with the files of profiles off (the free plan asks
+/// first) read past the snapshots; switched on later, it reads them again
+/// and gets the files, not only what changes from then on.
+#[tokio::test]
+async fn the_snapshots_read_past_while_the_files_were_off_come_once_on() {
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    space_writes_everything(&a).await;
+    cycle(&a).await;
+
+    let b = device(sync_registry(), &vault).await;
+    join_vault(&b).await;
+    let db = &b.core.db;
+    veydan_core::settings::set(db, "sync_profile_files", "0").await.unwrap();
+    cycle(&b).await;
+    cycle(&b).await;
+    let path: String = sqlx::query_scalar("SELECT profile_path FROM profiles WHERE id = 'pr-1'")
+        .fetch_one(db)
+        .await
+        .unwrap();
+    let prefs = Path::new(&path).join("firefox-profile/prefs.js");
+    assert!(!prefs.exists(), "the files are off");
+
+    veydan_core::settings::set(db, "sync_profile_files", "1").await.unwrap();
+    // The first cycle on asks for the read again, the next one reads.
+    cycle(&b).await;
+    cycle(&b).await;
+    assert_eq!(std::fs::read(&prefs).unwrap(), b"user_pref(\"a\", 1);");
+    assert_eq!(veydan_sync_host::state::reread(db).await, None, "the read again is done");
+
+    for state in [a, b] {
+        close(state).await;
+    }
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// The switch of the files of profiles is one for the desktops: a computer
+/// that joins with it off (the free plan writes "0" before the join) takes
+/// the one of the vault, and a switch turned off later reaches the others.
+#[tokio::test]
+async fn a_computer_that_joins_takes_the_switch_of_the_files_of_profiles() {
+    use veydan_sync_host::config::PROFILE_FILES_KEY;
+    let vault = crate::db::test_dir();
+    let a = device(sync_registry(), &vault).await;
+    create_vault(&a).await;
+    veydan_core::settings::set(&a.core.db, PROFILE_FILES_KEY, "1").await.unwrap();
+    cycle(&a).await;
+
+    let b = device(sync_registry(), &vault).await;
+    veydan_core::settings::set(&b.core.db, PROFILE_FILES_KEY, "0").await.unwrap();
+    join_vault(&b).await;
+    cycle(&b).await;
+    assert_eq!(
+        veydan_core::settings::get(&b.core.db, PROFILE_FILES_KEY).await.as_deref(),
+        Some("1")
+    );
+
+    veydan_core::settings::set(&b.core.db, PROFILE_FILES_KEY, "0").await.unwrap();
+    cycle(&b).await;
+    cycle(&a).await;
+    assert_eq!(
+        veydan_core::settings::get(&a.core.db, PROFILE_FILES_KEY).await.as_deref(),
+        Some("0")
     );
 
     for state in [a, b] {

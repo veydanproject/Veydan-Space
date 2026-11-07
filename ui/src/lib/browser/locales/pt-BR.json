@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "O Tor foi parado enquanto estava em uso. Tente novamente.",
     "proxy_tor_err_in_use": "O Tor está em uso por um perfil ou uma conexão em execução. Feche-o e tente novamente.",
     "proxy_tor_err_no_builtin_bridges": "Este Tor não tem pontes integradas. Adicione suas próprias pontes em Configurações → Tor.",
-    "proxy_tor_err_no_transports": "As pontes escolhidas precisam de um transporte que este Tor não tem. Escolha outro tipo de ponte em Configurações → Tor."
+    "proxy_tor_err_no_transports": "As pontes escolhidas precisam de um transporte que este Tor não tem. Escolha outro tipo de ponte em Configurações → Tor.",
+    "profile_sync_files_elsewhere": "Arquivos em {device}",
+    "profile_sync_files_elsewhere_hint": "Os arquivos deste perfil ainda não chegaram: ele está aberto naquele dispositivo ou seus arquivos ainda estão a caminho. Feche-o lá e aguarde os arquivos.",
+    "profile_sync_files_elsewhere_close": "Os arquivos deste perfil ainda estão em {device}: feche-o lá e aguarde os arquivos.",
+    "profile_sync_files_elsewhere_confirm": "Os arquivos deste perfil ainda estão em {device}. Feche-o lá e aguarde os arquivos. Abrir aqui vazio mesmo assim?",
+    "profile_sync_launch_empty": "Abrir vazio mesmo assim",
+    "profile_sync_files_sending": "Enviando arquivos: {done} de {total}",
+    "profile_sync_files_open": "Arquivos não enviados: o perfil está aberto",
+    "profile_sync_files_open_hint": "Enquanto o perfil está aberto, uma cópia dos arquivos sai a cada 30 minutos se não mudarem durante a leitura. Feche-o para enviá-los agora.",
+    "profile_sync_files_failed": "Arquivos não enviados"
   },
   "mobile": {}
 }

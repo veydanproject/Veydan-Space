@@ -33,6 +33,16 @@
 //! one forgotten here. A thumbnail of an item the app may no longer read
 //! loses its name (`forget_thumb`), and all of them go when the page reads
 //! the gallery anew (`forget_thumbs`, the app came back to the screen).
+//!
+//! The listener outlives a phone that put the app aside: iOS may take the
+//! socket of a suspended app back, and its `accept` fails from then on.
+//! The server then listens anew on the same port, so the addresses the
+//! page holds stay good (`accept_loop`); only when that port is taken does
+//! the next address asked for come on another one. The addresses handed
+//! out before answer nothing then: a picture or a video of a chat whose
+//! file fails to load asks once more (`previewBroken` of
+//! MediaBubble.svelte); what is not asked again (a video of a channel shown
+//! already) plays from its copy in memory, or once it is shown anew.
 
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
@@ -46,12 +56,18 @@ use tokio::net::{TcpListener, TcpStream};
 const MAX_FILES: usize = 1024;
 /// Names kept at once for the thumbnails of the gallery: a few screens of
 /// a grid, scrolled back and forth. The page keeps fewer (`THUMB_URLS` = 384).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const MAX_THUMBS: usize = 512;
 /// A request head longer than this is refused.
 const MAX_HEAD: usize = 16 * 1024;
 /// The type whose files go with their false alpha put to 0.
 const WEBM: &str = "video/webm";
+/// Times the listener is made anew on its port after `accept` failed, with
+/// no connection taken in between; then the port is given up.
+const REBINDS: u32 = 3;
+/// The pause before the listener is made anew: a failure that does not
+/// pass (no descriptors left) is not tried in a busy loop.
+const REBIND_PAUSE: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Clone)]
 struct Served {
@@ -143,7 +159,7 @@ impl Names {
     }
 
     /// The name of `path` goes: its address answers 404 from now on.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     fn forget(&mut self, path: &Path) {
         if let Some(t) = self.by_path.remove(path) {
             self.by_token.remove(&t);
@@ -151,7 +167,7 @@ impl Names {
         }
     }
 
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     fn clear(&mut self) {
         *self = Names::default();
     }
@@ -174,7 +190,16 @@ impl Pools {
 #[derive(Clone, Default)]
 pub struct MediaServer {
     names: Arc<Mutex<Pools>>,
-    port: Arc<tokio::sync::OnceCell<u16>>,
+    port: Arc<tokio::sync::Mutex<Port>>,
+}
+
+/// The port listened on: `now`, none before the first address and once the
+/// listener was lost (`accept_loop`); `last`, tried first when listening
+/// anew, so that the addresses the page holds may answer still.
+#[derive(Default)]
+struct Port {
+    now: Option<u16>,
+    last: Option<u16>,
 }
 
 fn token() -> Option<String> {
@@ -195,7 +220,7 @@ impl MediaServer {
     /// The address the webview reads `path` at, served as `mime`; the
     /// server starts with the first one. `None` when it cannot listen.
     pub async fn url(&self, path: &Path, mime: &str) -> Option<String> {
-        let port = *self.port.get_or_try_init(|| self.listen()).await.ok()?;
+        let port = self.port().await?;
         let (token, marks) = {
             let mut names = self.names.lock().unwrap();
             let token = names.files.name(path, mime, MAX_FILES, false)?;
@@ -217,16 +242,16 @@ impl MediaServer {
 
     /// The address of a thumbnail of the gallery (a JPEG the plugin wrote
     /// into the app's cache), named from the pool of thumbnails.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub async fn thumb_url(&self, path: &Path) -> Option<String> {
-        let port = *self.port.get_or_try_init(|| self.listen()).await.ok()?;
+        let port = self.port().await?;
         let token = self.names.lock().unwrap().thumbs.name(path, "image/jpeg", MAX_THUMBS, true)?;
         Some(format!("http://127.0.0.1:{port}/{token}"))
     }
 
     /// The thumbnails at `paths` lose their names (the app may no longer
     /// read their items): what was handed out for them answers 404.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub fn forget_thumb(&self, paths: &[PathBuf]) {
         let mut names = self.names.lock().unwrap();
         for path in paths {
@@ -236,24 +261,65 @@ impl MediaServer {
 
     /// Every thumbnail handed out loses its name (the page reads the
     /// gallery anew: the access may have changed while the app was away).
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(mobile), allow(dead_code))]
     pub fn forget_thumbs(&self) {
         self.names.lock().unwrap().thumbs.clear();
     }
 
-    async fn listen(&self) -> std::io::Result<u16> {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-        let port = listener.local_addr()?.port();
-        let names = self.names.clone();
-        tauri::async_runtime::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
+    /// The port the server listens on, listening first when it does not
+    /// (on the port of the last listener when it is free); `None` when it
+    /// cannot.
+    async fn port(&self) -> Option<u16> {
+        let mut port = self.port.lock().await;
+        if port.now.is_none() {
+            let again = match port.last {
+                Some(last) => TcpListener::bind(("127.0.0.1", last)).await.ok(),
+                None => None,
+            };
+            let listener = match again {
+                Some(listener) => listener,
+                None => TcpListener::bind(("127.0.0.1", 0)).await.ok()?,
+            };
+            let now = listener.local_addr().ok()?.port();
+            *port = Port { now: Some(now), last: Some(now) };
+            tauri::async_runtime::spawn(accept_loop(listener, now, self.names.clone(), self.port.clone()));
+        }
+        port.now
+    }
+}
+
+/// Takes the connections of `listener` on `port`. A failed `accept` (iOS
+/// took back the socket of the suspended app; no descriptors left) makes
+/// the listener anew on the same port, `REBINDS` times at most with no
+/// connection taken between; past that, or when the port is taken, the
+/// server stops listening and the next address asked for listens anew.
+async fn accept_loop(mut listener: TcpListener, port: u16, names: Arc<Mutex<Pools>>, slot: Arc<tokio::sync::Mutex<Port>>) {
+    let mut failed = 0;
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                failed = 0;
                 let names = names.clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = serve(stream, names).await;
                 });
             }
-        });
-        Ok(port)
+            Err(_) if failed < REBINDS => {
+                failed += 1;
+                // The old socket goes first: its port is the one asked for.
+                drop(listener);
+                tokio::time::sleep(REBIND_PAUSE).await;
+                match TcpListener::bind(("127.0.0.1", port)).await {
+                    Ok(again) => listener = again,
+                    Err(_) => break,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let mut slot = slot.lock().await;
+    if slot.now == Some(port) {
+        slot.now = None;
     }
 }
 

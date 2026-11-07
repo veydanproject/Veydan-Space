@@ -70,6 +70,8 @@
 
 html {
   -webkit-tap-highlight-color: transparent;
+  /* No menu of iOS on a long press of a link or a picture: the app has its own. */
+  -webkit-touch-callout: none;
   overscroll-behavior: none;
   background: var(--bg);
 }

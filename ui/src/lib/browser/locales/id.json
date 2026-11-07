@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor dihentikan saat sedang digunakan. Coba lagi.",
     "proxy_tor_err_in_use": "Tor sedang dipakai oleh profil atau koneksi yang berjalan. Tutup profil atau koneksi tersebut, lalu coba lagi.",
     "proxy_tor_err_no_builtin_bridges": "Tor ini tidak memiliki jembatan bawaan. Tambahkan jembatan Anda sendiri di Setelan → Tor.",
-    "proxy_tor_err_no_transports": "Jembatan yang dipilih memerlukan transport yang tidak dimiliki Tor ini. Pilih jenis jembatan lain di Setelan → Tor."
+    "proxy_tor_err_no_transports": "Jembatan yang dipilih memerlukan transport yang tidak dimiliki Tor ini. Pilih jenis jembatan lain di Setelan → Tor.",
+    "profile_sync_files_elsewhere": "File di {device}",
+    "profile_sync_files_elsewhere_hint": "File profil ini belum sampai di sini: profil terbuka di perangkat itu, atau filenya masih dalam perjalanan. Tutup di sana dan tunggu filenya.",
+    "profile_sync_files_elsewhere_close": "File profil ini masih di {device}: tutup di sana dan tunggu filenya.",
+    "profile_sync_files_elsewhere_confirm": "File profil ini masih di {device}. Tutup di sana dan tunggu filenya. Tetap buka di sini dalam keadaan kosong?",
+    "profile_sync_launch_empty": "Tetap buka kosong",
+    "profile_sync_files_sending": "Mengirim file: {done} dari {total}",
+    "profile_sync_files_open": "File belum terkirim: profil sedang terbuka",
+    "profile_sync_files_open_hint": "Selama profil terbuka, salinan filenya dikirim setiap 30 menit jika tidak berubah saat dibaca. Tutup profil untuk mengirimnya sekarang.",
+    "profile_sync_files_failed": "File belum terkirim"
   },
   "mobile": {}
 }

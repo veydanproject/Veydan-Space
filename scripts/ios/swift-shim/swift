@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+#
+# `swift` for the builds of iOS, first on the PATH from scripts/ios/env.sh.
+# The Swift packages of Tauri and of the plugins are built by swift-rs with
+# `swift build --sdk <iPhone SDK> -Xswiftc -target …-ios…`. From Xcode 27 the
+# default build system of SwiftPM (swiftbuild) adds the SDK and the target of
+# the host after those, so the package is compiled for macOS against the
+# iPhone's headers ("unable to resolve module dependency: 'UIKit'"). The
+# native build system honours them; it is named here for `swift build` alone,
+# when this SwiftPM knows the option. Everything else goes to Xcode's swift
+# untouched. VEYDAN_SWIFT_BUILD_SYSTEM=swiftbuild (or any value) overrides.
+set -euo pipefail
+
+real="$(xcrun --find swift)"
+if [ "${1:-}" = build ]; then
+  system="${VEYDAN_SWIFT_BUILD_SYSTEM:-native}"
+  if "$real" build --help 2>/dev/null | grep -q -- '--build-system'; then
+    shift
+    exec "$real" build --build-system "$system" "$@" 2> >(grep -v "'--build-system native' has been deprecated" >&2)
+  fi
+fi
+exec "$real" "$@"

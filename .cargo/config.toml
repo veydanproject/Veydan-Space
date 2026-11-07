@@ -27,4 +27,10 @@ rustflags = ["-C", "target-feature=+crt-static"]
 # this into the class when it writes its Kotlin files; any other build of wry
 # reads nothing of it.
 [env]
+# The prebuilt libwebrtc of the engine of calls, as scripts/webrtc-toolchain.sh
+# unpacks it (the vendored webrtc-sys reads VEYDAN_WEBRTC_DIR): named here for
+# the build of iOS, whose cargo runs inside Xcode and gets from the Tauri CLI
+# the CARGO_*, RUST_* and TAURI_* variables alone. A variable already set (the
+# scripts, the workflows) wins over this line.
+VEYDAN_WEBRTC_DIR = { value = "data/toolchains/webrtc", relative = true }
 WRY_RUSTWEBVIEW_CLASS_EXTENSION = "override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? = net.veydan.shell.KeyboardContent.connect(this, outAttrs, super.onCreateInputConnection(outAttrs))"

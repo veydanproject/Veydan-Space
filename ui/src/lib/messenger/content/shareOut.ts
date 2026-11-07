@@ -9,9 +9,7 @@ import { get } from 'svelte/store';
 import { t } from '$lib/core/i18n';
 import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
 import { messengerApi } from '../api';
-
-// The messenger may not ask $lib/core/platform; attach/library.ts asks the same way.
-const android = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+import { PHONE_OS } from '../phone';
 
 /** What is shared: the words with the link in them, a letter's subject, the link alone. */
 export interface ShareOutItem {
@@ -27,9 +25,12 @@ export interface ShareOutItem {
  */
 export type ShareOutWay = 'send' | 'sms' | 'mail' | 'copy' | 'qr';
 
-/** The ways this platform has, in the order of the sheet. A computer has no list of apps and no SMS. */
-export function shareOutWays(on: string = android ? 'android' : 'other'): ShareOutWay[] {
-  return on === 'android' ? ['send', 'sms', 'mail', 'copy', 'qr'] : ['mail', 'copy', 'qr'];
+/**
+ * The ways this platform has, in the order of the sheet. A phone (Android,
+ * iOS) has its list of apps (the share sheet) and SMS; a computer has neither.
+ */
+export function shareOutWays(on: string = PHONE_OS): ShareOutWay[] {
+  return on === 'android' || on === 'ios' ? ['send', 'sms', 'mail', 'copy', 'qr'] : ['mail', 'copy', 'qr'];
 }
 
 /** The item through one way; `qr` is the sheet's to draw. Throws what the platform answered. */

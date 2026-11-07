@@ -471,6 +471,7 @@
     "msg_push_loading": "Sprawdzanie…",
     "msg_push_text": "Telefon powiadomi cię o nowej wiadomości, nawet gdy aplikacja jest zamknięta.",
     "msg_push_privacy": "Koszt dla prywatności: serwer push dowiaduje się, które przekaźniki i grupy ma dla ciebie obserwować, a samo powiadomienie push przechodzi przez Google. Żaden z nich nie może odczytać twoich wiadomości; widzą, że przyszła do ciebie wiadomość, i kiedy.",
+    "msg_push_privacy_ios": "Koszt dla prywatności: serwer push dowiaduje się, które przekaźniki i grupy ma dla ciebie obserwować, a samo powiadomienie push przechodzi przez Apple. Żaden z nich nie może odczytać twoich wiadomości; widzą, że przyszła do ciebie wiadomość, i kiedy.",
     "msg_push_enable": "Włącz powiadomienia",
     "msg_push_toggle": "Powiadamiaj o nowych wiadomościach",
     "msg_push_refused": "Powiadomienia dla tej aplikacji są wyłączone. Włącz je w ustawieniach telefonu i wróć tutaj.",

@@ -23,6 +23,8 @@ pub struct BrowserState {
     pub files: ProfileLocks,
     /// The launches under way, as the UI shows them.
     pub launches: Launches,
+    /// The profiles whose files are not out from here, for their badges.
+    pub unsent: crate::sync::profile_files::UnsentFiles,
 }
 
 /// One lock per profile over its `firefox-profile/` folder. Sync holds it

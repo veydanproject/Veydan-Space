@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "Tor a été arrêté pendant son utilisation. Réessayez.",
     "proxy_tor_err_in_use": "Tor est utilisé par un profil ou une connexion en cours. Fermez-le et réessayez.",
     "proxy_tor_err_no_builtin_bridges": "Ce Tor n'a pas de ponts intégrés. Ajoutez vos propres ponts dans Paramètres → Tor.",
-    "proxy_tor_err_no_transports": "Les ponts choisis nécessitent un transport que ce Tor n'a pas. Choisissez un autre type de ponts dans Paramètres → Tor."
+    "proxy_tor_err_no_transports": "Les ponts choisis nécessitent un transport que ce Tor n'a pas. Choisissez un autre type de ponts dans Paramètres → Tor.",
+    "profile_sync_files_elsewhere": "Fichiers sur {device}",
+    "profile_sync_files_elsewhere_hint": "Les fichiers de ce profil ne sont pas encore arrivés : il est ouvert sur cet appareil, ou ses fichiers sont encore en route. Fermez-le là-bas et attendez les fichiers.",
+    "profile_sync_files_elsewhere_close": "Les fichiers de ce profil sont encore sur {device} : fermez-le là-bas et attendez les fichiers.",
+    "profile_sync_files_elsewhere_confirm": "Les fichiers de ce profil sont encore sur {device}. Fermez-le là-bas et attendez les fichiers. L’ouvrir ici vide quand même ?",
+    "profile_sync_launch_empty": "Ouvrir vide quand même",
+    "profile_sync_files_sending": "Envoi des fichiers : {done} sur {total}",
+    "profile_sync_files_open": "Fichiers non envoyés : le profil est ouvert",
+    "profile_sync_files_open_hint": "Tant que le profil est ouvert, une copie de ses fichiers part toutes les 30 minutes s’ils ne changent pas pendant la lecture. Fermez-le pour les envoyer maintenant.",
+    "profile_sync_files_failed": "Fichiers non envoyés"
   },
   "mobile": {}
 }

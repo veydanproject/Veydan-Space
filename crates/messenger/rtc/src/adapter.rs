@@ -139,7 +139,7 @@ pub struct VideoTap {
 #[allow(dead_code)]
 enum Capture {
     Camera(CameraCapture),
-    #[cfg(not(target_os = "android"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     Screen(crate::screen::ScreenCapture),
 }
 
@@ -442,7 +442,7 @@ impl CoreSession for RtcSession {
                 }
             }
             VideoInput::Screen { id } => {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
                 {
                     if self.captures {
                         let source = self.inner.replace_video_source(settings.width, settings.height, true).map_err(engine_error)?;
@@ -456,7 +456,7 @@ impl CoreSession for RtcSession {
                         Err(MessengerError::Transport("the screen is shared on a computer with its devices only".into()))
                     }
                 }
-                #[cfg(target_os = "android")]
+                #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
                 {
                     let _ = id;
                     Err(MessengerError::Transport("a phone shares no screen".into()))

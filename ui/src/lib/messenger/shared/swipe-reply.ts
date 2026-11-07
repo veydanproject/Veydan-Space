@@ -5,7 +5,10 @@
 // the finger to the left, up to 64 px; past 48 px a reply arrow shows and
 // the phone ticks; letting go there answers the message. A gesture steeper
 // than 30° is the list scrolling; the mouse never swipes; a start at the
-// screen's edge is the system's back gesture.
+// screen's edge is the system's back gesture — on iOS the left edge alone,
+// and a thumb starts a swipe to the left at the right edge.
+
+import { PHONE_OS } from '../phone';
 
 export interface SwipeReplyOptions {
   /** Absent: the message cannot be answered, the bubble does not move. */
@@ -56,7 +59,7 @@ export function swipeReply(node: HTMLElement, options: SwipeReplyOptions) {
 
   const down = (e: PointerEvent) => {
     if (e.pointerType === 'mouse' || !opts.onreply) return;
-    if (e.clientX < EDGE || e.clientX > window.innerWidth - EDGE) return;
+    if (e.clientX < EDGE || (PHONE_OS !== 'ios' && e.clientX > window.innerWidth - EDGE)) return;
     start = { x: e.clientX, y: e.clientY };
     swiping = false;
   };

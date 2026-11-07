@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the convert command without any pre-configured scope."
         },
         {
+          "description": "Enables the export command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-export",
+          "markdownDescription": "Enables the export command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the export command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-export",
+          "markdownDescription": "Denies the export command without any pre-configured scope."
+        },
+        {
           "description": "Enables the forget_capture command without any pre-configured scope.",
           "type": "string",
           "const": "allow-forget-capture",

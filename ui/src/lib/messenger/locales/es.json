@@ -471,6 +471,7 @@
     "msg_push_loading": "Comprobando…",
     "msg_push_text": "El teléfono te avisa de un mensaje nuevo incluso cuando la app está cerrada.",
     "msg_push_privacy": "Lo que esto implica: el servidor de notificaciones push sabe qué relés y grupos vigilar por ti, y la notificación push pasa por Google. Ninguno de los dos puede leer tus mensajes; ven que te llegó un mensaje y cuándo.",
+    "msg_push_privacy_ios": "Lo que esto implica: el servidor de notificaciones push sabe qué relés y grupos vigilar por ti, y la notificación push pasa por Apple. Ninguno de los dos puede leer tus mensajes; ven que te llegó un mensaje y cuándo.",
     "msg_push_enable": "Activar notificaciones",
     "msg_push_toggle": "Avisarme de mensajes nuevos",
     "msg_push_refused": "Las notificaciones están desactivadas para esta app. Actívalas en la configuración del teléfono y vuelve aquí.",

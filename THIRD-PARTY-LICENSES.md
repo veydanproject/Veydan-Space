@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 897
+- **Rust / Cargo crates:** 898
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1053
+- **Total third-party components:** 1054
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -42,7 +42,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | MIT | 164 |
 | MIT OR Apache-2.0 (platform dep) | 115 |
 | Apache-2.0 OR MIT | 111 |
-| MIT (platform dep) | 29 |
+| MIT (platform dep) | 30 |
 | Unicode-3.0 | 18 |
 | Zlib OR Apache-2.0 OR MIT (platform dep) | 16 |
 | Apache-2.0 | 13 |
@@ -103,7 +103,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (897)
+## Full acknowledgements — Rust crates (898)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -572,6 +572,7 @@ Thank you to the authors of the following Cargo crates:
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 |
 | os_pipe | 1.2.3 | MIT |
 | osakit | 0.3.1 | MIT OR Apache-2.0 * |
+| oslog | 0.2.0 | MIT * |
 | p256 | 0.14.0-rc.15 | Apache-2.0 OR MIT |
 | p384 | 0.14.0-rc.15 | Apache-2.0 OR MIT |
 | p521 | 0.14.0-rc.15 | Apache-2.0 OR MIT |

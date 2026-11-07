@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "プリセット：",
     "settings_sync_interval_remote_warn": "1分未満の間隔はテスト用です。S3/WebDAVではリクエストが頻繁になり、費用がかかる場合があります。",
     "settings_sync_profile_files": "ブラウザプロファイルのファイルを同期",
-    "settings_sync_profile_files_hint": "各プロファイルのCookie、セッション、履歴です。オフの場合も設定は同期され、実行中のプロファイルは他のデバイスに表示されます。",
+    "settings_sync_profile_files_hint": "各プロファイルのCookie、セッション、履歴です。この設定はすべてのコンピューターで共通です。オフの場合も設定は同期され、実行中のプロファイルは他のデバイスに表示されます。",
     "settings_sync_device_name": "デバイス名",
     "settings_sync_device_name_hint": "他のデバイスに表示されます。",
     "settings_sync_device_name_profiles_hint": "このデバイスでプロファイルが実行中の間、他のデバイスに表示されます。",

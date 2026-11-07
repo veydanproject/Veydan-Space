@@ -69,6 +69,15 @@ webrtc_livekit_sha256() {
     win-arm64)     echo "f40cef8e24bbeba111fca4178739cba4edbcf8a2275e029d68348677cfe21c93" ;;
     mac-x64)       echo "838ec87de7dd35693970660bd2007ebb0fce31c27ac4929fd25ccfcd2f014f1f" ;;
     mac-arm64)     echo "97b206139d082da6bbf20417eec1c60c112474e05d0e6fcb5cb8db7d967dd008" ;;
+    # iOS, for the bring-up of the engine on iOS in the lab before
+    # Veydan-WebRTC v1.0.11 publishes archives of its own (measured
+    # 2026-10-31 from the same release; ios-simulator is webrtc_triple()
+    # for a Rust target ending in -sim). LiveKit builds iOS with
+    # rtc_use_h264=false, so no code of FFmpeg or OpenH264 is linked,
+    # though their headers are in include/; the objects are for iOS 14.0
+    # and VP9 is off. A product moves to ours.
+    ios-device-arm64)    echo "b93f1b1971e46b2f48ab9db04969ab0028ce0d6219e56cf8a5be01ab2c8b2d5b" ;;
+    ios-simulator-arm64) echo "7e27e3903d958c3c999786e88ffdaa1e3b72201909775d4d25cf66dd62188b33" ;;
     *) return 1 ;;
   esac
 }

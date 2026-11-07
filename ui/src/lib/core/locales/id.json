@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "Cepat:",
     "settings_sync_interval_remote_warn": "Interval di bawah satu menit ditujukan untuk pengujian: di S3/WebDAV interval ini menghasilkan permintaan yang sering dan dapat menimbulkan biaya.",
     "settings_sync_profile_files": "Sinkronkan file profil peramban",
-    "settings_sync_profile_files_hint": "Cookie, sesi, dan riwayat tiap profil. Nonaktif: setelan tetap tersinkron, dan profil yang sedang berjalan ditandai di perangkat lain.",
+    "settings_sync_profile_files_hint": "Cookie, sesi, dan riwayat tiap profil. Sakelar ini sama di semua komputer Anda. Nonaktif: setelan tetap tersinkron, dan profil yang sedang berjalan ditandai di perangkat lain.",
     "settings_sync_device_name": "Nama perangkat",
     "settings_sync_device_name_hint": "Ditampilkan di perangkat Anda yang lain.",
     "settings_sync_device_name_profiles_hint": "Ditampilkan di perangkat lain selama profil berjalan di sini.",

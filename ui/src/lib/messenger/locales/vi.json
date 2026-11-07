@@ -471,6 +471,7 @@
     "msg_push_loading": "Đang kiểm tra…",
     "msg_push_text": "Điện thoại báo cho bạn khi có tin nhắn mới, kể cả khi ứng dụng đã đóng.",
     "msg_push_privacy": "Cái giá phải trả: máy chủ thông báo đẩy biết cần theo dõi những relay và nhóm nào cho bạn, và thông báo đẩy đi qua Google. Cả hai đều không đọc được tin nhắn của bạn; chúng chỉ thấy rằng có tin nhắn đến cho bạn và vào lúc nào.",
+    "msg_push_privacy_ios": "Cái giá phải trả: máy chủ thông báo đẩy biết cần theo dõi những relay và nhóm nào cho bạn, và thông báo đẩy đi qua Apple. Cả hai đều không đọc được tin nhắn của bạn; chúng chỉ thấy rằng có tin nhắn đến cho bạn và vào lúc nào.",
     "msg_push_enable": "Bật thông báo",
     "msg_push_toggle": "Báo cho tôi khi có tin nhắn mới",
     "msg_push_refused": "Thông báo của ứng dụng này đang bị tắt. Hãy bật trong cài đặt điện thoại rồi quay lại đây.",

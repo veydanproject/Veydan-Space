@@ -808,6 +808,8 @@ pub async fn channel_media_send(
     state: tauri::State<'_, CommunitiesState>,
 ) -> CmdResult<UploadView> {
     let _timed = crate::log::Timed::start("channel_media_send");
+    // iOS names the picked file by a `file://` URL (`veydan_shell::picked_path`).
+    let src = veydan_shell::picked_path(&src).into_owned();
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         use tauri::Manager;
@@ -825,21 +827,31 @@ pub async fn channel_media_send(
                 (copy, name)
             }
             None => {
-                let source = app.state::<Shell>().open_source(&src)?;
-                if std::path::Path::new(&src).is_file() {
-                    (std::path::PathBuf::from(&src), crate::views::upload_name(&src))
-                } else {
+                // What the phone hands over (`handed_over`) is copied; an item of
+                // the grid of iOS is written out for it first (`read`).
+                let handed = handed_over(&app, &src);
+                let read = if handed { source_of(&app, &src).await? } else { src.clone() };
+                let taken = async {
+                    let source = app.state::<Shell>().open_source(&read)?;
+                    if !handed && std::path::Path::new(&src).is_file() {
+                        return CmdResult::Ok((std::path::PathBuf::from(&src), crate::views::upload_name(&src)));
+                    }
                     let open = source.open.clone();
                     let copy = copy_out(move || open(), &source.name, outgoing.clone()).await?;
                     if as_file {
-                        (copy, source.name.clone())
+                        Ok((copy, source.name.clone()))
                     } else {
                         // Added to the tray, a phone's file was imported already (`channel_media_import`);
                         // one sent straight from its URI takes the same step here.
                         let (copy, name, _) = common_copy(platform_decoder(&app).as_deref(), copy, &source.name).await;
-                        (copy, name)
+                        Ok((copy, name))
                     }
                 }
+                .await;
+                if read != src {
+                    forget_capture(&app, &read).await;
+                }
+                taken?
             }
         };
         let file = NewFile {
@@ -1086,16 +1098,28 @@ pub struct ImportedFile {
 #[tauri::command]
 pub async fn channel_media_import(src: String, as_file: Option<bool>, app: tauri::AppHandle, state: tauri::State<'_, CommunitiesState>) -> CmdResult<ImportedFile> {
     let _timed = crate::log::Timed::start("channel_media_import");
+    // iOS names the picked file by a `file://` URL (`veydan_shell::picked_path`).
+    let src = veydan_shell::picked_path(&src).into_owned();
     use tauri::Manager;
     let d = state.driver()?;
-    let source = app.state::<Shell>().open_source(&src)?;
-    let (path, name, note) = if std::path::Path::new(&src).is_file() {
-        (std::path::PathBuf::from(&src), crate::views::upload_name(&src), None)
-    } else {
+    // What the phone hands over (`handed_over`) is copied; an item of the
+    // grid of iOS is written out for it first (`read`).
+    let handed = handed_over(&app, &src);
+    let read = if handed { source_of(&app, &src).await? } else { src.clone() };
+    let taken = async {
+        let source = app.state::<Shell>().open_source(&read)?;
+        if !handed && std::path::Path::new(&src).is_file() {
+            return CmdResult::Ok((std::path::PathBuf::from(&src), crate::views::upload_name(&src), None));
+        }
         let open = source.open.clone();
         let copy = copy_out(move || open(), &source.name, d.files.join(OUTGOING_DIR)).await?;
-        if as_file == Some(true) { (copy, source.name.clone(), None) } else { common_copy(platform_decoder(&app).as_deref(), copy, &source.name).await }
-    };
+        Ok(if as_file == Some(true) { (copy, source.name.clone(), None) } else { common_copy(platform_decoder(&app).as_deref(), copy, &source.name).await })
+    }
+    .await;
+    if read != src {
+        forget_capture(&app, &read).await;
+    }
+    let (path, name, note) = taken?;
     forget_capture(&app, &src).await;
     let url = match communities_core::media::playable_by_name(&name).filter(|m| m.starts_with("video/")) {
         Some(mime) => match veydan_shell::seams::seam::<dyn MediaUrls, _, _>(&app) {
@@ -1207,16 +1231,57 @@ fn platform_decoder(app: &tauri::AppHandle) -> Option<std::sync::Arc<dyn messeng
     app.try_state::<messenger_media::common::PlatformDecoder>().map(|d| d.0.clone())
 }
 
+/// Whether the phone hands `src` over to be copied in before anything
+/// reads it: Android's `content://`; on iOS an item of the grid (`ph://`)
+/// or a file the gallery plugin wrote into the app's cache (a shot of the
+/// camera, a copy of the Photo Picker), as the messenger's
+/// `gallery::handed_over` tells it. Only such a copy is converted.
+fn handed_over(app: &tauri::AppHandle, src: &str) -> bool {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_veydan_media::VeydanMediaExt;
+        if app.veydan_media().handed_over(src) {
+            return true;
+        }
+    }
+    let _ = app;
+    src.starts_with("content://")
+}
+
+/// What a handed-over `src` is read from: on iOS an item of the grid is
+/// written out as a file of the plugin first, which the caller forgets once
+/// it is copied; anything else as it is.
+async fn source_of(app: &tauri::AppHandle, src: &str) -> CmdResult<String> {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_veydan_media::VeydanMediaExt;
+        app.veydan_media().file_of(src).await.map_err(|e| AppError::Other(e.to_string()))
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = app;
+        Ok(src.to_string())
+    }
+}
+
 /// The shot of the system camera behind `src` (a `content://` of the app's
 /// FileProvider in `attach-capture`), once this module holds a copy of it:
-/// its file in the cache goes. The gallery plugin deletes nothing else.
+/// its file in the cache goes. The gallery plugin deletes nothing else; on
+/// iOS a copy of `attach-picked` goes too (the Photo Picker's, the grid's).
 async fn forget_capture(app: &tauri::AppHandle, src: &str) {
     #[cfg(target_os = "android")]
     if src.starts_with("content://") && src.contains(".fileprovider/") {
         use tauri_plugin_veydan_media::VeydanMediaExt;
         let _ = app.veydan_media().forget_capture(src).await;
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "ios")]
+    {
+        use tauri_plugin_veydan_media::VeydanMediaExt;
+        if !src.starts_with(tauri_plugin_veydan_media::ASSET_SCHEME) && app.veydan_media().handed_over(src) {
+            let _ = app.veydan_media().forget_capture(src).await;
+        }
+    }
+    #[cfg(not(mobile))]
     let _ = (app, src);
 }
 

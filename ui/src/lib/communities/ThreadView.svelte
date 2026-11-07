@@ -321,7 +321,7 @@
   <PickedTray picked={tray} />
 {/snippet}
 
-<div class="panel on-glass">
+<div class="panel on-glass" class:phone>
   <!-- The bar of the page: «Пост» with its section and channel under it (the mockup c6.js); the menu of the post; the way back. -->
   <header class="phead" class:phone>
     {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>{/if}
@@ -403,7 +403,9 @@
   .phead.phone .ph-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
   .phead.phone .back { color: var(--text); }
   .phead.phone .icon { width: 44px; height: 44px; }
-  .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
+  /* On a phone the page of a post covers the feed and paints no fill: the shell's glow is behind it, up under
+     the status bar (a fill of its own started under it and left a band of the glow above). */
+  .panel.phone { background: transparent; }
   /* The page (the mockup c6.js): the post the whole width, a strip «Комментарии · N», the thread under it. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .post-box { padding: var(--sp-5) var(--sp-4) var(--sp-4); }

@@ -21,8 +21,9 @@ describe('shareOut', () => {
     locale.set('ru');
   });
 
-  it('offers the list of apps and SMS on Android alone', () => {
+  it('offers the list of apps and SMS on a phone alone', () => {
     expect(shareOutWays('android')).toEqual(['send', 'sms', 'mail', 'copy', 'qr']);
+    expect(shareOutWays('ios')).toEqual(['send', 'sms', 'mail', 'copy', 'qr']);
     expect(shareOutWays('linux')).toEqual(['mail', 'copy', 'qr']);
   });
 

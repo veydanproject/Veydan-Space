@@ -71,6 +71,11 @@
     /* No room for two columns: the panel lies over the conversation, as wide as on a wide window. */
     .side { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--side-w, 340px), 100%); z-index: 5; box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18); }
     .edge { position: absolute; top: 0; bottom: 0; right: min(var(--side-w, 340px), 100%); z-index: 6; }
-    .wrap.phone .side { left: 0; width: auto; border-left: none; box-shadow: none; }
+    /* On a phone the panel is a screen of its own and paints no fill (the design system: the panel about a
+       chat has none): the shell's glow is behind it, up under the status bar as on every screen. A fill of
+       its own started under the status bar and left a band of the glow above it. The conversation under it
+       is hidden, kept as it was. */
+    .wrap.phone .side { left: 0; width: auto; border-left: none; box-shadow: none; background: transparent; }
+    .wrap.with-info.phone .main { visibility: hidden; }
   }
 </style>

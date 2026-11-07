@@ -2039,6 +2039,16 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_calls_chat_gone: 'The chat was deleted',
       profile_launch_syncing: 'Syncing files…',
       profile_launch_syncing_hint: 'The profile starts as soon as its files are synced.',
+      // The files of a profile held elsewhere, and those not sent from here (ROO-888).
+      profile_sync_files_elsewhere: 'Files on {device}',
+      profile_sync_files_elsewhere_hint: 'The files of this profile have not come here yet: it is open on that device, or its files are still on their way from there. Close it there and wait for them.',
+      profile_sync_files_elsewhere_close: 'The files of this profile are still on {device}: close it there and wait for them.',
+      profile_sync_files_elsewhere_confirm: 'The files of this profile are still on {device}. Close it there and wait for them. Open it here empty anyway?',
+      profile_sync_launch_empty: 'Open empty anyway',
+      profile_sync_files_sending: 'Sending files: {done} of {total}',
+      profile_sync_files_open: 'Files not sent: the profile is open',
+      profile_sync_files_open_hint: 'While the profile is open, a copy of its files goes out every 30 minutes if they do not change while read. Close it to send them now.',
+      profile_sync_files_failed: 'Files not sent',
       // The web cabinet of Veydan Cloud (cloud-api.md §16): its link, cards and screens.
       msg_card_web_title: 'Veydan Cloud website sign-in link',
       msg_card_web_text: 'A website sign-in is approved only by scanning its QR code in the app. Never sign in with a link someone sent you.',
@@ -2149,6 +2159,9 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_bot_commands: 'Commands of the bot',
       // «Nothing found» says what was asked, one view everywhere (2026-11-05).
       common_nothing_found_hint: 'Nothing matches “{q}”.',
+      // The pushes of an iPhone pass through Apple (2026-11-04).
+      msg_push_privacy_ios:
+        'What this costs: the push server learns which relays and groups to watch for you, and the push passes through Apple. Neither can read your messages; they see that a message for you arrived, and when.',
     },
     ru: {
       msg_card_link_short: 'В браузере',
@@ -4069,6 +4082,16 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       msg_calls_chat_gone: 'Чат удалён',
       profile_launch_syncing: 'Синхронизация файлов…',
       profile_launch_syncing_hint: 'Профиль запустится, как только синхронизируются его файлы.',
+      // Файлы профиля, который держит другое устройство, и не отправленные отсюда (ROO-888).
+      profile_sync_files_elsewhere: 'Файлы на {device}',
+      profile_sync_files_elsewhere_hint: 'Файлы профиля сюда ещё не пришли: он открыт на том устройстве или его файлы ещё в пути оттуда. Закройте его там и дождитесь файлов.',
+      profile_sync_files_elsewhere_close: 'Файлы профиля ещё на {device}: закройте его там и дождитесь файлов.',
+      profile_sync_files_elsewhere_confirm: 'Файлы профиля ещё на {device}. Закройте его там и дождитесь файлов. Открыть здесь пустым всё равно?',
+      profile_sync_launch_empty: 'Открыть пустым всё равно',
+      profile_sync_files_sending: 'Отправка файлов: {done} из {total}',
+      profile_sync_files_open: 'Файлы не отправлены: профиль открыт',
+      profile_sync_files_open_hint: 'Пока профиль открыт, копия его файлов уходит раз в 30 минут, если они не меняются во время чтения. Закройте профиль, чтобы отправить их сейчас.',
+      profile_sync_files_failed: 'Файлы не отправлены',
       // The web cabinet of Veydan Cloud (cloud-api.md §16): its link, cards and screens.
       msg_card_web_title: 'Ссылка входа на сайт Veydan Cloud',
       msg_card_web_text: 'Вход на сайт подтверждают только сканером QR в приложении. Не входите по ссылке, которую вам прислали.',
@@ -4178,6 +4201,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       settings_sync_phase_archive_down: 'Загрузка архива переписки',
       msg_bot_commands: 'Команды бота',
       common_nothing_found_hint: 'По запросу «{q}» ничего нет.',
+      msg_push_privacy_ios:
+        'Чем за это платим: пуш-сервер узнаёт, за какими реле и группами следить для вас, а сам пуш идёт через Apple. Прочитать сообщения не может ни тот, ни другой; они видят, что вам пришло сообщение, и когда.',
     },
   },
   mobile: {
@@ -4543,6 +4568,9 @@ const REWORDED = new Set([
   'ssh_fingerprint_new_title',
   'ssh_fingerprint_new_hint',
   'ssh_hostkey_changed_hint',
+  // The switch of the files of profiles is one for every computer
+  // (2026-11-07, platform-spec 9.5): its hint says so.
+  'settings_sync_profile_files_hint',
 ]);
 const SPACE = { app: 'Veydan Space' };
 /** The string of stage 7 of a templated key, from the template. */

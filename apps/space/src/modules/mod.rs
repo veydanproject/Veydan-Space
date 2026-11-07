@@ -533,6 +533,7 @@ mod tests {
                     "notes_lock_timeout_min",
                     "quick_capture_shortcut",
                     "start_hidden",
+                    "sync_profile_files",
                     "ui_locale",
                 ]
             );

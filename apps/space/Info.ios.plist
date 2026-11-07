@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>Scan QR codes, take photos and videos for your notes and chats, and make video calls</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Record voice messages and audio notes, and make calls</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Attach photos and videos from your library</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Save received photos and videos to your library</string>
+  <!-- With «Выбрать фото…» iOS would ask on every start whether to choose
+       more; the sheet of the paperclip has «Выбрать ещё» for it
+       (presentLimitedLibraryPicker of tauri-plugin-veydan-media). -->
+  <key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+  <true/>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>net.veydan.mobile</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>veydan</string>
+      </array>
+    </dict>
+  </array>
+  <!-- A call goes on with the phone locked or the app away: CallKit keeps
+       the process while the audio session is active (audio), and a call
+       is reported to the system as one of VoIP (voip). -->
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+    <string>voip</string>
+  </array>
+  <!-- The scene lifecycle: an app built with the SDK of iOS 27 that does
+       not adopt it stops at its first scene (EXC_BREAKPOINT in
+       UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption). tao
+       takes the scene path only when the manifest says "multiple scenes"
+       (tao 0.35, platform_impl/ios/scene.rs); an iPhone still shows one. -->
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <true/>
+  </dict>
+  <key>UIFileSharingEnabled</key>
+  <true/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <true/>
+</dict>
+</plist>

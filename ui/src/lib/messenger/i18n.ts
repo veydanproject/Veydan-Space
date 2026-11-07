@@ -493,6 +493,8 @@ export const messengerTranslations = {
       'The phone tells you about a new message even when the app is closed.',
     msg_push_privacy:
       'What this costs: the push server learns which relays and groups to watch for you, and the push passes through Google. Neither can read your messages; they see that a message for you arrived, and when.',
+    msg_push_privacy_ios:
+      'What this costs: the push server learns which relays and groups to watch for you, and the push passes through Apple. Neither can read your messages; they see that a message for you arrived, and when.',
     msg_push_enable: 'Turn on notifications',
     msg_push_toggle: 'Notify me about new messages',
     msg_push_refused:
@@ -2200,6 +2202,8 @@ export const messengerTranslations = {
       'Телефон сообщит о новом сообщении, даже когда приложение закрыто.',
     msg_push_privacy:
       'Чем за это платим: пуш-сервер узнаёт, за какими реле и группами следить для вас, а сам пуш идёт через Google. Прочитать сообщения не может ни тот, ни другой; они видят, что вам пришло сообщение, и когда.',
+    msg_push_privacy_ios:
+      'Чем за это платим: пуш-сервер узнаёт, за какими реле и группами следить для вас, а сам пуш идёт через Apple. Прочитать сообщения не может ни тот, ни другой; они видят, что вам пришло сообщение, и когда.',
     msg_push_enable: 'Включить уведомления',
     msg_push_toggle: 'Сообщать о новых сообщениях',
     msg_push_refused:

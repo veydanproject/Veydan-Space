@@ -284,39 +284,53 @@ fn setup(app: &mut tauri::App) -> SetupResult {
     // TLS handshake; nothing that runs before the setup of the messenger
     // does. A second call (already installed) is not an error worth reporting.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    // Push notifications of the messenger; see commands/push.rs. The
-    // messenger's start already talks to the plugin.
-    #[cfg(target_os = "android")]
+    // Push notifications of the messenger (FCM on Android, APNs on iOS);
+    // see commands/push.rs. The messenger's start already talks to the plugin.
+    #[cfg(mobile)]
     app.handle().plugin(tauri_plugin_veydan_push::init())?;
     // The phone's side of a call; see commands/call_android.rs.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     app.handle().plugin(tauri_plugin_veydan_call::init())?;
     // The phone's gallery in the sheet of the paperclip; see commands/gallery.rs.
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     app.handle().plugin(tauri_plugin_veydan_media::init())?;
+    // The steps of the setup on a phone, in the system log: the lab reads
+    // where a start that shows nothing stopped (the simulator has no watchdog).
+    #[cfg(mobile)]
+    eprintln!("messenger setup: the plugins are registered");
     let core = app.state::<Core>();
     // The switch is the shell's now: the old setting goes.
     tauri::async_runtime::block_on(veydan_core::settings::delete(
         &core.db,
         commands::OLD_ENABLED_KEY,
     ))?;
+    #[cfg(mobile)]
+    eprintln!("messenger setup: the old setting is gone");
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
     // What the handler of the archive keeps between cycles (sync/mod.rs),
     // and its ear for the storage leaving.
     app.manage(sync::ArchiveSync::default());
     sync::watch_storage(app.handle());
+    #[cfg(mobile)]
+    eprintln!("messenger setup: the state is made");
     // The phone's decoder of HEIC, for the photos of chats and of channels (commands/gallery.rs).
     commands::gallery::offer_decoder(app.handle());
+    #[cfg(mobile)]
+    eprintln!("messenger setup: the decoder is offered");
     let media_server = media_server::MediaServer::default();
     app.manage(media_server.clone());
     // The same server for the files of the channels (media_server.rs).
     let urls: std::sync::Arc<dyn veydan_shell::seams::MediaUrls> = std::sync::Arc::new(media_server);
     veydan_shell::seams::provide(app.handle(), urls);
+    #[cfg(mobile)]
+    eprintln!("messenger setup: the media server is up");
     // Signing, service notes and the cards of the vcloud bot, for the module
     // cloud (cloud_seams.rs).
     cloud_seams::offer(app.handle());
     // The relays and the identity at work, for the channels (net_lend.rs).
     net_lend::offer(app.handle());
+    #[cfg(mobile)]
+    eprintln!("messenger setup: done");
     Ok(())
 }
 

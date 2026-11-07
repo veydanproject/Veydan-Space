@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "使用中にTorが停止されました。再試行してください。",
     "proxy_tor_err_in_use": "Torは実行中のプロファイルまたは接続で使用されています。それを閉じてから再試行してください。",
     "proxy_tor_err_no_builtin_bridges": "このTorには組み込みブリッジがありません。設定 → Torで独自のブリッジを追加してください。",
-    "proxy_tor_err_no_transports": "選択したブリッジには、このTorにないトランスポートが必要です。設定 → Torで別の種類のブリッジを選択してください。"
+    "proxy_tor_err_no_transports": "選択したブリッジには、このTorにないトランスポートが必要です。設定 → Torで別の種類のブリッジを選択してください。",
+    "profile_sync_files_elsewhere": "ファイルは {device} にあります",
+    "profile_sync_files_elsewhere_hint": "このプロファイルのファイルはまだ届いていません。その端末で開かれているか、ファイルがまだ転送中です。そちらで閉じて、ファイルの到着を待ってください。",
+    "profile_sync_files_elsewhere_close": "このプロファイルのファイルはまだ {device} にあります。そちらで閉じて、ファイルの到着を待ってください。",
+    "profile_sync_files_elsewhere_confirm": "このプロファイルのファイルはまだ {device} にあります。そちらで閉じて、ファイルの到着を待ってください。それでも空のままここで開きますか？",
+    "profile_sync_launch_empty": "空のまま開く",
+    "profile_sync_files_sending": "ファイルを送信中: {done} / {total}",
+    "profile_sync_files_open": "ファイル未送信: プロファイルが開いています",
+    "profile_sync_files_open_hint": "プロファイルが開いている間は、読み取り中に変更されなければ、30 分ごとにファイルのコピーが送信されます。今すぐ送信するには閉じてください。",
+    "profile_sync_files_failed": "ファイル未送信"
   },
   "mobile": {}
 }

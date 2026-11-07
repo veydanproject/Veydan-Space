@@ -7,6 +7,7 @@
 // card in the app here. The three say the same.
 
 import type { TranslationKey } from '$lib/core/i18n';
+import { PHONE_OS, type PhoneOs } from '../phone';
 
 /** `messenger_core::Body`: what is absent is left out. */
 export type NoticeBody =
@@ -183,4 +184,12 @@ export function replyLine(quote: QuoteOf, cardLabel: string | null, t: Tr): stri
   if (quote.text) return quote.text;
   if (cardLabel) return `👤 ${cardLabel}`;
   return '';
+}
+
+/**
+ * What turning the pushes on costs, by who carries them: Apple on an
+ * iPhone (APNs), Google everywhere else (FCM).
+ */
+export function pushPrivacyKey(os: PhoneOs = PHONE_OS): TranslationKey {
+  return os === 'ios' ? 'msg_push_privacy_ios' : 'msg_push_privacy';
 }

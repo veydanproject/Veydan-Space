@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { messengerTranslations } from '../i18n';
-import { albumLine, albumOf, bodyLine, duration, joinAlbum, mediaTitle, replyLine, replyThumb, transferKind, type NoticeBody } from './wording';
+import { albumLine, albumOf, bodyLine, duration, joinAlbum, mediaTitle, pushPrivacyKey, replyLine, replyThumb, transferKind, type NoticeBody } from './wording';
 
 const en = messengerTranslations.en as Record<string, string>;
 const t = (key: string, vars?: Record<string, string>) => {
@@ -117,5 +117,14 @@ describe('the title of an attachment shown alone', () => {
     expect(transferKind('IMG_1.jpg', 'image/jpeg')).toBe('image');
     expect(transferKind('clip.mov', 'video/quicktime')).toBe('video');
     expect(transferKind('voice notes.txt', 'text/plain')).toBe('file');
+  });
+});
+
+describe('what the pushes cost', () => {
+  it('names Apple on an iPhone and Google elsewhere', () => {
+    expect(en[pushPrivacyKey('ios')]).toContain('Apple');
+    expect(en[pushPrivacyKey('ios')]).not.toContain('Google');
+    expect(en[pushPrivacyKey('android')]).toContain('Google');
+    expect(pushPrivacyKey('other')).toBe('msg_push_privacy');
   });
 });

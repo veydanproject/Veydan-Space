@@ -41,6 +41,9 @@ use veydan_core::Core;
 
 #[cfg(desktop)]
 pub const ERR_PROFILE_IN_USE: &str = "profile_in_use";
+/// Another device holds the profile and none of its files came here.
+#[cfg(desktop)]
+pub const ERR_PROFILE_FILES_ELSEWHERE: &str = "profile_files_elsewhere";
 
 /// Sync is on, a vault is joined and profile files are included.
 #[cfg(desktop)]
@@ -48,7 +51,8 @@ async fn profile_files_active(core: &Core) -> bool {
     config::load_config(&core.db).await.profile_files && veydan_sync_host::vault_active(core).await
 }
 
-/// Before the browser starts: refuse a profile leased elsewhere (unless forced),
+/// Before the browser starts: refuse a profile leased elsewhere (unless
+/// forced; `ERR_PROFILE_FILES_ELSEWHERE` when it would start empty here),
 /// apply a snapshot that waited, take the lease. Called by the launch with the
 /// lock of the profile's files held (`BrowserState::files`), so the snapshot
 /// that waited is never applied beside a cycle that applies or collects the
@@ -67,7 +71,12 @@ pub async fn before_profile_launch(
     }
     if !force {
         if let Some((_, name)) = profile_files::foreign_lease(&core, profile_id).await? {
-            return Err(AppError::other(format!("{ERR_PROFILE_IN_USE}:{name}")));
+            let code = if profile_files::starts_empty(&core, profile_id).await? {
+                ERR_PROFILE_FILES_ELSEWHERE
+            } else {
+                ERR_PROFILE_IN_USE
+            };
+            return Err(AppError::other(format!("{code}:{name}")));
         }
         if profile_files_active(&core).await
             && profile_files::has_pending(&core, profile_id).await?

@@ -2,3 +2,6 @@
 /android/build/
 /android/.tauri/
 /android/.gradle/
+/.tauri/
+/ios/.build/
+/ios/Package.resolved

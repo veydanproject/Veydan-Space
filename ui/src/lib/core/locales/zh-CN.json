@@ -316,7 +316,7 @@
     "settings_sync_interval_presets": "快速选择：",
     "settings_sync_interval_remote_warn": "小于一分钟的间隔仅用于测试：在 S3/WebDAV 上会产生频繁的请求，并可能产生费用。",
     "settings_sync_profile_files": "同步浏览器配置文件数据",
-    "settings_sync_profile_files_hint": "每个配置文件的 Cookie、会话和历史记录。关闭时：设置仍会同步，正在运行的配置文件会在其他设备上显示为占用。",
+    "settings_sync_profile_files_hint": "每个配置文件的 Cookie、会话和历史记录。此开关在你的所有电脑上保持一致。关闭时：设置仍会同步，正在运行的配置文件会在其他设备上显示为占用。",
     "settings_sync_device_name": "设备名称",
     "settings_sync_device_name_hint": "显示在你的其他设备上。",
     "settings_sync_device_name_profiles_hint": "配置文件在此运行时，显示在其他设备上。",

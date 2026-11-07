@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dismiss-group-call"
+description = "Enables the dismiss_group_call command without any pre-configured scope."
+commands.allow = ["dismiss_group_call"]
+
+[[permission]]
+identifier = "deny-dismiss-group-call"
+description = "Denies the dismiss_group_call command without any pre-configured scope."
+commands.deny = ["dismiss_group_call"]

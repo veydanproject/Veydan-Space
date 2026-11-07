@@ -36,6 +36,10 @@ use veydan_sync_host::{Collected, Cycle, Handler, HashCache, EVENT_STATUS};
 
 pub const LEASE_ENTITY: &str = "profile_lease";
 pub const SNAPSHOT_ENTITY: &str = "profile_snapshot";
+/// Local: "1" while the snapshots of the vault were read with the switch of
+/// the files on, "0" once a cycle read past them with it off. A switch on
+/// after "0", or without the key (a build before it), has them read again.
+const READ_ON_KEY: &str = "sync_profile_files_read";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct LeasePayload {
@@ -90,6 +94,111 @@ impl Manifest {
             .map(|f| (f.hash.as_str(), f.blob.as_str()))
             .collect()
     }
+}
+
+/// Where the files of a profile stand that are not out from here, or not
+/// here: for its badge (`profiles_files_status`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FilesStatus {
+    pub profile_id: String,
+    /// `sending` (`done` of `total` files walked), `open` (its browser runs
+    /// and no copy went out since it started), `failed` (`detail` says
+    /// why), `elsewhere` (no files here, `detail` names the device that
+    /// holds the profile).
+    pub state: &'static str,
+    pub done: u32,
+    pub total: u32,
+    pub detail: String,
+}
+
+/// The profiles of this device whose files are not out, as the last
+/// collect left them. Kept while the app runs; one sent leaves it.
+#[derive(Default)]
+pub struct UnsentFiles(std::sync::Mutex<HashMap<String, FilesStatus>>);
+
+impl UnsentFiles {
+    fn set(&self, id: &str, state: &'static str, detail: String) {
+        if let Ok(mut all) = self.0.lock() {
+            all.insert(
+                id.to_string(),
+                FilesStatus {
+                    profile_id: id.to_string(),
+                    state,
+                    done: 0,
+                    total: 0,
+                    detail,
+                },
+            );
+        }
+    }
+
+    fn sending(&self, id: &str, done: u32, total: u32) {
+        if let Ok(mut all) = self.0.lock() {
+            all.insert(
+                id.to_string(),
+                FilesStatus {
+                    profile_id: id.to_string(),
+                    state: "sending",
+                    done,
+                    total,
+                    detail: String::new(),
+                },
+            );
+        }
+    }
+
+    fn sent(&self, id: &str) {
+        if let Ok(mut all) = self.0.lock() {
+            all.remove(id);
+        }
+    }
+
+    /// A profile that is not looked at any more (gone, another device's).
+    fn keep_only(&self, ids: &HashSet<String>) {
+        if let Ok(mut all) = self.0.lock() {
+            all.retain(|id, _| ids.contains(id));
+        }
+    }
+
+    fn list(&self) -> Vec<FilesStatus> {
+        self.0
+            .lock()
+            .map(|all| all.values().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// The files of the profiles not out from here, and those of profiles
+/// another device holds that have none here: what the badges show.
+pub async fn files_status(core: &Core, unsent: &UnsentFiles) -> CmdResult<Vec<FilesStatus>> {
+    let mut out = unsent.list();
+    let device = super::config::device_id(&core.db).await?;
+    for st in load_profile_files_states(&core.db).await?.into_values() {
+        if st.lease_device.is_empty() || st.lease_device == device {
+            continue;
+        }
+        if no_files_here(core, &st).await? {
+            out.push(FilesStatus {
+                profile_id: st.profile_id.clone(),
+                state: "elsewhere",
+                done: 0,
+                total: 0,
+                detail: st.lease_name.clone(),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.profile_id.cmp(&b.profile_id));
+    Ok(out)
+}
+
+/// Its folder holds no files: it would start empty. A snapshot known here
+/// (`head_hlc`, `pending_manifest`) is not one whose files came: its
+/// download may have failed before any was written.
+async fn no_files_here(core: &Core, st: &ProfileFilesState) -> CmdResult<bool> {
+    Ok(match profile_dir(core, &st.profile_id).await? {
+        Some(dir) => !has_files(&dir),
+        None => false,
+    })
 }
 
 // ── Local files ──────────────────────────────────────────────────────────────
@@ -276,6 +385,14 @@ pub async fn foreign_lease(core: &Core, profile_id: &str) -> CmdResult<Option<(S
         .map(|s| (s.lease_device, s.lease_name)))
 }
 
+/// No files of the profile came here: a launch would start it empty.
+pub async fn starts_empty(core: &Core, profile_id: &str) -> CmdResult<bool> {
+    let st = load_profile_files_state(&core.db, profile_id)
+        .await?
+        .unwrap_or_else(|| ProfileFilesState::new(profile_id));
+    no_files_here(core, &st).await
+}
+
 /// Take the lease locally; the next cycle publishes it.
 pub async fn acquire_lease(core: &Core, profile_id: &str) -> CmdResult<()> {
     let db = &core.db;
@@ -289,7 +406,10 @@ pub async fn acquire_lease(core: &Core, profile_id: &str) -> CmdResult<()> {
     save_profile_files_state(db, &st).await
 }
 
-/// The browser exited: files changed, our lease is released.
+/// The browser exited: files changed. Our lease stays until they are out
+/// (`collect_local_changes`), or till the next cycle when profile files
+/// are not synced (`collect_leases`): the other devices see the profile
+/// held here and do not start it on files that are still on their way.
 pub async fn on_profile_stopped(core: &Core, profile_id: &str) -> CmdResult<()> {
     let db = &core.db;
     let mut st = load_profile_files_state(db, profile_id)
@@ -300,13 +420,39 @@ pub async fn on_profile_stopped(core: &Core, profile_id: &str) -> CmdResult<()> 
     if !st.pending_manifest.is_empty() {
         st.diverged = true;
     }
-    if st.lease_device == super::config::device_id(db).await? {
-        st.lease_device.clear();
-        st.lease_name.clear();
-        st.lease_since.clear();
-        st.lease_synced = false;
-    }
     save_profile_files_state(db, &st).await
+}
+
+/// Takes the lease of a profile whose browser runs here and no device
+/// holds: one started before sync was on, or whose state went with a new
+/// binding of the vault. The op that publishes it.
+fn take_lease(st: &mut ProfileFilesState, device: &str, name: &str, clock: &mut HlcClock) -> Op {
+    st.lease_device = device.to_string();
+    st.lease_name = name.to_string();
+    st.lease_since = Utc::now().to_rfc3339();
+    let hlc = clock.now();
+    st.lease_hlc = Some(hlc.clone());
+    st.lease_synced = true;
+    lease_op(
+        &st.profile_id,
+        hlc,
+        Some(LeasePayload {
+            device_id: device.to_string(),
+            device_name: st.lease_name.clone(),
+            since: st.lease_since.clone(),
+        }),
+    )
+}
+
+/// Lets our lease go; the op that publishes the release.
+fn release_lease(st: &mut ProfileFilesState, clock: &mut HlcClock) -> Op {
+    st.lease_device.clear();
+    st.lease_name.clear();
+    st.lease_since.clear();
+    let hlc = clock.now();
+    st.lease_hlc = Some(hlc.clone());
+    st.lease_synced = true;
+    lease_op(&st.profile_id, hlc, None)
 }
 
 /// A remote snapshot waits for this profile and can be applied now.
@@ -366,6 +512,19 @@ impl<'a> BlobIndex<'a> {
         large_files::touch(&name);
         self.uploaded.insert(name.clone());
         Ok(name)
+    }
+
+    /// The blob of a file read for a snapshot. A large one is looked for
+    /// first: a collect cut short (a launch, the network, the app closed)
+    /// sent it already, and the next one does not send it again.
+    async fn upload(&mut self, data: &[u8]) -> CmdResult<String> {
+        if data.len() as u64 >= LOOK_FIRST {
+            let name = self.engine.blob_name(data);
+            if self.exists(&name).await? {
+                return Ok(name);
+            }
+        }
+        self.put(data).await
     }
 
     /// Just before the snapshot goes out: a blob found or written longer
@@ -442,7 +601,8 @@ impl Held<'_> {
 
 /// Gives up the snapshots waiting to go out of the profiles a launch waits
 /// for: their locks go, their files stay changed (the state is not saved)
-/// and go out with a later cycle. Their blobs are left to the GC.
+/// and go out with a later cycle, the release of our lease with them.
+/// Their blobs are left to the GC.
 fn give_up_wanted(out: &mut LocalChanges, waits: &LaunchWaits, app: Option<&AppHandle>) {
     let wanted: Vec<String> = out
         .held
@@ -451,8 +611,8 @@ fn give_up_wanted(out: &mut LocalChanges, waits: &LaunchWaits, app: Option<&AppH
         .map(|(id, _)| id.clone())
         .collect();
     for id in wanted {
-        out.ops
-            .retain(|op| !(op.entity_type == SNAPSHOT_ENTITY && op.entity_id == id));
+        // The release of our lease too: it goes with the files.
+        out.ops.retain(|op| op.entity_id != id);
         out.states.retain(|st| st.profile_id != id);
         out.held.retain(|(held, _)| *held != id);
         trace_profile(app, &id, "a launch waits, snapshot later");
@@ -462,6 +622,73 @@ fn give_up_wanted(out: &mut LocalChanges, waits: &LaunchWaits, app: Option<&AppH
 /// A blob found in the vault longer ago than this is looked at again before
 /// the snapshot that names it goes out.
 const RECHECK_AFTER: Duration = Duration::from_secs(60);
+
+/// A file this large is looked for in the vault before it is sent.
+const LOOK_FIRST: u64 = 64 * 1024;
+
+/// A profile whose browser runs sends a copy of its files at most this
+/// often: the files change all the time, and a whole profile goes up
+/// again for every database written since.
+const LIVE_EVERY: Duration = Duration::from_secs(30 * 60);
+
+/// Reads of the files of a database before the copy of a running profile
+/// gives up on them for this time.
+const STABLE_TRIES: usize = 3;
+
+/// The journals SQLite keeps beside a database. Read apart from it, the
+/// database and its write-ahead log may come from either side of a
+/// checkpoint. The `-shm` index is not one: SQLite builds it again, and a
+/// running browser writes it at every read.
+const JOURNALS: [&str; 2] = ["-wal", "-journal"];
+
+/// The database a file of a running profile is read with, if it is one
+/// of a database or the database itself.
+fn sqlite_base(rel: &str) -> Option<&str> {
+    JOURNALS
+        .iter()
+        .find_map(|j| rel.strip_suffix(j))
+        .or_else(|| (rel.ends_with(".sqlite") || rel.ends_with(".db")).then_some(rel))
+}
+
+/// Files as (relative path, content).
+type DbFiles = Vec<(String, Vec<u8>)>;
+
+/// The database `base` and its journals as (relative path, content), read
+/// twice alike: what a running browser wrote between the reads would show.
+/// `None` when every read differed from the one before. A file absent
+/// from a read is left out of it.
+fn read_stable(dir: &Path, base: &str) -> std::io::Result<Option<DbFiles>> {
+    let names: Vec<String> = std::iter::once(base.to_string())
+        .chain(JOURNALS.iter().map(|j| format!("{base}{j}")))
+        .collect();
+    let read = || -> std::io::Result<DbFiles> {
+        let mut out = Vec::new();
+        for name in &names {
+            match std::fs::read(dir.join(name)) {
+                Ok(data) => out.push((name.clone(), data)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(out)
+    };
+    let mut last = read()?;
+    for _ in 0..STABLE_TRIES {
+        let again = read()?;
+        if again == last {
+            return Ok(Some(again));
+        }
+        last = again;
+    }
+    Ok(None)
+}
+
+/// A copy of the files of a running profile is due: none was taken or
+/// applied since `LIVE_EVERY`, or ever.
+fn live_due(st: &ProfileFilesState) -> bool {
+    let every = chrono::Duration::from_std(LIVE_EVERY).unwrap_or_default();
+    st.head_hlc.is_none() || parse_time(&st.snapshot_at).is_none_or(|at| Utc::now() - at >= every)
+}
 
 /// The last GC pass found a blob of a snapshot this device holds gone (the
 /// GC of another device took it between its mark and the reference): the
@@ -496,15 +723,27 @@ async fn heal_missing(db: &sqlx::SqlitePool) -> CmdResult<()> {
 /// its blob without a request to the vault. Otherwise the blob is looked
 /// for first. The inner `Err` says why the files cannot be read: a file gone since the
 /// walk is left out, any other error of a folder or a file gives no manifest.
-/// `None` when a launch waits for a profile of `held`.
+/// A file is listed with the hash of what was read of it and sent.
+///
+/// `live`: the browser of the profile runs and writes its files meanwhile.
+/// A database is read with its journals until two reads agree
+/// (`read_stable`); one that keeps changing, or a file that cannot be
+/// read (Windows locks some), keeps what `prev` has of it, and is left out
+/// when `prev` has nothing: a copy of a running profile is what a browser
+/// that crashed leaves, which Firefox opens. Without a copy of a database
+/// the manifest is not made. `None` when a launch waits for a profile of
+/// `held`. `sending` is told how far the walk came.
+#[allow(clippy::too_many_arguments)]
 async fn build_manifest(
     cache: &HashCache,
     blobs: &mut BlobIndex<'_>,
     dir: &Path,
     prev: &Manifest,
     trusted: bool,
+    live: bool,
     app: Option<&AppHandle>,
     held: &Held<'_>,
+    sending: &(dyn Fn(u32, u32) + Sync),
 ) -> CmdResult<Option<Result<Manifest, String>>> {
     let known = prev.blob_by_hash();
     let entries = match scan(dir) {
@@ -514,6 +753,8 @@ async fn build_manifest(
     let total = entries.len() as u32;
     let mut files = Vec::new();
     let mut found = Vec::new();
+    // The databases of a live copy read so far.
+    let mut databases: HashSet<String> = HashSet::new();
     for (i, (rel, abs)) in entries.into_iter().enumerate() {
         if held.wanted() {
             return Ok(None);
@@ -527,12 +768,96 @@ async fn build_manifest(
             total,
             &rel,
         );
+        if current % 64 == 1 || current == total {
+            sending(current, total);
+        }
+        if live && rel.ends_with("-shm") {
+            continue;
+        }
+        if let Some(base) = sqlite_base(&rel).filter(|_| live) {
+            if !databases.insert(base.to_string()) {
+                continue;
+            }
+            let read = match read_stable(dir, base) {
+                Ok(Some(read)) => Ok(read),
+                Ok(None) => Err("changes while it is read".to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            let read = match read {
+                Ok(read) => read,
+                Err(why) => {
+                    let last: Vec<&ManifestFile> = prev
+                        .files
+                        .iter()
+                        .filter(|f| sqlite_base(&f.path) == Some(base) && !f.path.ends_with("-shm"))
+                        .collect();
+                    if last.is_empty() {
+                        return Ok(Some(Err(format!("{base}: {why}"))));
+                    }
+                    for f in last {
+                        match held.unless_wanted(keep_last(blobs, f, trusted)).await {
+                            Some(Ok(true)) => {}
+                            Some(Err(e)) => return Err(e),
+                            Some(Ok(false)) => {
+                                return Ok(Some(Err(format!(
+                                    "{base}: {why}, its last copy is gone"
+                                ))))
+                            }
+                            None => return Ok(None),
+                        }
+                        found.push(None);
+                        files.push(f.clone());
+                    }
+                    continue;
+                }
+            };
+            for (path, data) in read {
+                let hash = sha256_hex(&data);
+                let size = data.len() as u64;
+                let blob = match known.get(hash.as_str()).filter(|_| trusted) {
+                    Some(b) => {
+                        large_files::touch(b);
+                        found.push(None);
+                        (*b).to_string()
+                    }
+                    None => match held.unless_wanted(blobs.upload(&data)).await {
+                        Some(put) => {
+                            found.push(Some((dir.join(&path), Instant::now())));
+                            put?
+                        }
+                        None => return Ok(None),
+                    },
+                };
+                files.push(ManifestFile {
+                    path,
+                    blob,
+                    size,
+                    hash,
+                });
+            }
+            continue;
+        }
         let read = cache
             .try_file_hash(&abs)
             .and_then(|hash| std::fs::metadata(&abs).map(|m| (hash, m.len())));
         let (hash, size) = match read {
             Ok(found) => found,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if live => {
+                if let Some(f) = prev.files.iter().find(|f| f.path == rel) {
+                    match held.unless_wanted(keep_last(blobs, f, trusted)).await {
+                        Some(Ok(true)) => {
+                            found.push(None);
+                            files.push(f.clone());
+                        }
+                        Some(Ok(false)) => {}
+                        Some(Err(e)) => return Err(e),
+                        None => return Ok(None),
+                    }
+                }
+                trace(app, "info", &format!("{rel}: {e}, the last copy kept"));
+                continue;
+            }
             Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
         };
         if let Some(b) = known.get(hash.as_str()).filter(|_| trusted) {
@@ -555,25 +880,38 @@ async fn build_manifest(
             },
             None => None,
         };
-        let blob = match reusable {
-            Some(b) => b,
-            None => match std::fs::read(&abs) {
-                Ok(data) => match held.unless_wanted(blobs.put(&data)).await {
-                    Some(put) => put?,
-                    None => return Ok(None),
-                },
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
-            },
+        if let Some(blob) = reusable {
+            found.push(Some((abs, Instant::now())));
+            files.push(ManifestFile {
+                path: rel,
+                blob,
+                size,
+                hash,
+            });
+            continue;
+        }
+        let data = match std::fs::read(&abs) {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Ok(Some(Err(format!("{rel}: {e}")))),
+        };
+        let blob = match held.unless_wanted(blobs.upload(&data)).await {
+            Some(put) => put?,
+            None => return Ok(None),
         };
         found.push(Some((abs, Instant::now())));
         files.push(ManifestFile {
             path: rel,
             blob,
-            size,
-            hash,
+            size: data.len() as u64,
+            hash: sha256_hex(&data),
         });
     }
+    // The files of a database go in the order of the walk, as the others.
+    let mut listed: Vec<(ManifestFile, Option<(PathBuf, Instant)>)> =
+        files.into_iter().zip(found).collect();
+    listed.sort_by(|a, b| a.0.path.cmp(&b.0.path));
+    let (files, found): (Vec<_>, Vec<_>) = listed.into_iter().unzip();
     match blobs.recheck(&files, &found, held).await? {
         None => Ok(None),
         Some(Err(reason)) => Ok(Some(Err(reason))),
@@ -581,10 +919,32 @@ async fn build_manifest(
     }
 }
 
-/// Lease ops only: a tiny payload, never waits on profile files.
-pub async fn collect_leases(core: &Core, clock: &mut HlcClock) -> CmdResult<LocalChanges> {
+/// A file of the last manifest can be taken again as it was: its blob is
+/// there when the manifest is the head (`trusted`), else it is looked for.
+async fn keep_last(blobs: &BlobIndex<'_>, f: &ManifestFile, trusted: bool) -> CmdResult<bool> {
+    if trusted {
+        large_files::touch(&f.blob);
+        return Ok(true);
+    }
+    blobs.exists(&f.blob).await
+}
+
+/// Lease ops only: a tiny payload, never waits on profile files. A
+/// profile that runs here and no device holds is taken (`take_lease`);
+/// our lease of one that stopped (`dirty`) goes here only when profile
+/// files are not synced (`files`), else with its files
+/// (`collect_local_changes`). `running`: the browsers that run here,
+/// `launching` those that start.
+pub async fn collect_leases(
+    core: &Core,
+    clock: &mut HlcClock,
+    running: &HashSet<String>,
+    launching: &HashSet<String>,
+    files: bool,
+) -> CmdResult<LocalChanges> {
     let db = &core.db;
     let device = super::config::device_id(db).await?;
+    let name = super::config::device_name(db).await;
     let mut out = LocalChanges::default();
     let rows: Vec<(String,)> = sqlx::query_as("SELECT id FROM profiles")
         .fetch_all(db)
@@ -594,6 +954,17 @@ pub async fn collect_leases(core: &Core, clock: &mut HlcClock) -> CmdResult<Loca
         let mut st = load_profile_files_state(db, &id)
             .await?
             .unwrap_or_else(|| ProfileFilesState::new(&id));
+        let runs = running.contains(&id);
+        if runs && st.lease_device.is_empty() {
+            out.ops.push(take_lease(&mut st, &device, &name, clock));
+            out.states.push(st);
+            continue;
+        }
+        if !runs && !launching.contains(&id) && !files && st.dirty && st.lease_device == device {
+            out.ops.push(release_lease(&mut st, clock));
+            out.states.push(st);
+            continue;
+        }
         if st.lease_synced {
             continue;
         }
@@ -670,9 +1041,11 @@ pub async fn collect_local_changes(
     // A launch goes first: a profile it waits for is given up, read or
     // waiting to go out, and sent by a later cycle.
     let waits = browser.files.launch_waits();
+    let mut looked = HashSet::new();
 
     for (id, profile_path, last_launch_at) in rows {
         states.remove(&id);
+        looked.insert(id.clone());
         // Held until the snapshot is out and its state saved (or dropped
         // with `out` when the push fails): no launch, stop or apply of the
         // profile comes between the files read and the state written. The
@@ -694,16 +1067,25 @@ pub async fn collect_local_changes(
         let dir = PathBuf::from(&profile_path).join("firefox-profile");
         let candidate = locally_changed(&st, last_launch_at.as_deref(), &dir);
         let running = browser.running.is_running(&id).await;
-        let foreign_lease = !st.lease_device.is_empty() && st.lease_device != device;
-        if !candidate || running || st.diverged || foreign_lease {
+        let own = st.lease_device == device;
+        let foreign_lease = !st.lease_device.is_empty() && !own;
+        // A browser that runs sends a copy of its files now and then
+        // (`live_due`), not over a snapshot of another device that waits:
+        // that one makes the profile diverge when the browser stops.
+        let live = running && live_due(&st) && st.pending_manifest.is_empty();
+        if !(candidate || live) || (running && !live) || st.diverged || foreign_lease {
             // Someone else is running it: our local changes cannot win, let the user decide.
             let now_diverged = foreign_lease && candidate && !running && st.dirty && !st.diverged;
             if now_diverged {
                 st.diverged = true;
                 save_profile_files_state(db, &st).await?;
             }
-            let reason = if running {
-                "running"
+            let reason = if running && foreign_lease {
+                "running, foreign lease"
+            } else if running && !st.pending_manifest.is_empty() {
+                "running, a snapshot waits"
+            } else if running {
+                "running, copy later"
             } else if foreign_lease {
                 "foreign lease"
             } else if st.diverged {
@@ -712,6 +1094,25 @@ pub async fn collect_local_changes(
                 "unchanged"
             };
             trace_profile(app, &id, reason);
+            // The badge of a profile that diverged or that another device
+            // holds tells what there is to do.
+            if running
+                && !foreign_lease
+                && launched_after(last_launch_at.as_deref(), &st.snapshot_at)
+            {
+                browser.unsent.set(&id, "open", String::new());
+            } else {
+                browser.unsent.sent(&id);
+            }
+            // Our lease of a profile whose browser stopped and whose files
+            // diverged goes: the user picks a side. One whose files are out
+            // went with them; one taken without a browser since (a launch
+            // that failed stops it, and the files go) stays.
+            if own && !running && candidate && st.diverged {
+                out.ops.push(release_lease(&mut st, clock));
+                out.states.push(st);
+                out.held.push((id.clone(), files));
+            }
             continue;
         }
 
@@ -735,14 +1136,17 @@ pub async fn collect_local_changes(
             && st.pending_manifest.is_empty()
             && sha256_hex(st.manifest_json.as_bytes()) == st.synced_hash;
         progress(app, "profiles_up", 78, 0, 0, "");
+        let sending = |done, total| browser.unsent.sending(&id, done, total);
         let built = build_manifest(
             &sync.file_hashes,
             &mut blobs,
             &dir,
             &prev,
             trusted,
+            live,
             app,
             &held,
+            &sending,
         )
         .await?;
         let manifest = match built {
@@ -763,11 +1167,19 @@ pub async fn collect_local_changes(
         };
         let manifest = match manifest {
             Ok(m) => m,
+            // The copy of a running browser is tried again next cycle; the
+            // files go out whole when it stops.
+            Err(reason) if live => {
+                trace_profile(app, &id, &format!("running, no copy: {reason}"));
+                browser.unsent.set(&id, "open", reason);
+                continue;
+            }
             Err(reason) => {
                 let short: String = id.chars().take(8).collect();
                 let warning = format!("profile {short}: nothing sent, {reason}");
                 trace(app, "warn", &warning);
                 out.warnings.push(warning);
+                browser.unsent.set(&id, "failed", reason);
                 if !st.dirty {
                     st.dirty = true;
                     save_profile_files_state(db, &st).await?;
@@ -781,8 +1193,18 @@ pub async fn collect_local_changes(
         if hash == st.synced_hash {
             st.dirty = false;
             st.snapshot_at = now;
-            save_profile_files_state(db, &st).await?;
             trace_profile(app, &id, "hash unchanged");
+            // The release of our lease goes with the state: a push that
+            // fails, or a launch that wants the profile, leaves it dirty,
+            // and a later cycle sends the release again.
+            if own && !running {
+                out.ops.push(release_lease(&mut st, clock));
+                out.states.push(st);
+                out.held.push((id.clone(), files));
+            } else {
+                save_profile_files_state(db, &st).await?;
+                browser.unsent.sent(&id);
+            }
             continue;
         }
         let manifest_blob = blobs.put(json.as_bytes()).await?;
@@ -805,14 +1227,27 @@ pub async fn collect_local_changes(
         st.snapshot_at = now;
         st.dirty = false;
         st.pending_manifest.clear();
+        // The files are out with the release of our lease: no device sees
+        // the profile free before they can be applied there.
+        if own && !running {
+            out.ops.push(release_lease(&mut st, clock));
+        }
         out.states.push(st);
         out.held.push((id.clone(), files));
         trace_profile(
             app,
             &id,
-            &format!("snapshot {files_n} files, {bytes} bytes"),
+            &format!(
+                "{} {files_n} files, {bytes} bytes",
+                if live {
+                    "copy of the running browser,"
+                } else {
+                    "snapshot"
+                }
+            ),
         );
     }
+    browser.unsent.keep_only(&looked);
     give_up_wanted(&mut out, &waits, app);
     // A profile deleted here, or by a tombstone of its row, whose snapshot
     // or lease of this device is in the vault: the snapshot gets a
@@ -1302,6 +1737,26 @@ pub async fn blob_refs(engine: &Engine, op: &Op) -> CmdResult<Vec<String>> {
     Ok(refs)
 }
 
+/// Apply remote lease ops and tell the UI; a failure is a warning.
+async fn apply_leases_told(
+    core: &Core,
+    warnings: &mut Vec<String>,
+    app: Option<&AppHandle>,
+    ops: &[Op],
+) {
+    match apply_leases(core, ops).await {
+        Ok(_) => {
+            if let Some(app) = app {
+                let _ = app.emit(EVENT_STATUS, ());
+            }
+        }
+        Err(e) => {
+            trace(app, "error", &format!("leases: {e}"));
+            warnings.push(format!("leases: {e}"));
+        }
+    }
+}
+
 /// Leases and snapshots of the files of profiles, with a handler of their
 /// own. Leases go out with the other changes; the files after the apply,
 /// with a push of their own, so a stuck upload cannot block the rest.
@@ -1323,7 +1778,16 @@ impl Handler for ProfileFiles {
     }
 
     async fn collect(&self, cx: &mut Cycle<'_>) -> CmdResult<Collected> {
-        let leases = collect_leases(cx.core, cx.clock).await?;
+        let (running, launching): (HashSet<String>, HashSet<String>) =
+            match cx.host.state::<BrowserState>() {
+                Some(browser) => (
+                    browser.running.running_ids().await.into_iter().collect(),
+                    browser.launches.payload().launching.into_iter().collect(),
+                ),
+                None => Default::default(),
+            };
+        let files = cx.config.profile_files;
+        let leases = collect_leases(cx.core, cx.clock, &running, &launching, files).await?;
         let states = leases.states;
         Ok(Collected {
             ops: leases.ops,
@@ -1349,20 +1813,52 @@ impl Handler for ProfileFiles {
             .state::<BrowserState>()
             .ok_or_else(|| AppError::other("the browser is not set up"))?;
         let db = &cx.core.db;
-        match apply_leases(cx.core, pulled_ops).await {
-            Ok(_) => {
-                if let Some(app) = app {
-                    let _ = app.emit(EVENT_STATUS, ());
-                }
-            }
-            Err(e) => {
-                trace(app, "error", &format!("leases: {e}"));
-                cx.warnings.push(format!("leases: {e}"));
+        // The release of a lease that came with a snapshot of the profile
+        // goes in after the snapshot: till then the profile is held there,
+        // and a launch here does not start it on the files of before.
+        let files = cx.config.profile_files;
+        let mut newest: HashMap<&str, &Op> = HashMap::new();
+        for op in pulled_ops
+            .iter()
+            .filter(|op| op.entity_type == SNAPSHOT_ENTITY)
+        {
+            let slot = newest.entry(op.entity_id.as_str()).or_insert(op);
+            if op.hlc > slot.hlc {
+                *slot = op;
             }
         }
-        if !cx.config.profile_files {
+        let snapshots: HashSet<&str> = newest
+            .into_iter()
+            .filter(|(_, op)| files && !op.deleted)
+            .map(|(id, _)| id)
+            .collect();
+        let (released, leases): (Vec<Op>, Vec<Op>) = pulled_ops
+            .iter()
+            .filter(|op| op.entity_type == LEASE_ENTITY)
+            .cloned()
+            .partition(|op| op.deleted && snapshots.contains(op.entity_id.as_str()));
+        apply_leases_told(cx.core, cx.warnings, app, &leases).await;
+        let fresh = veydan_sync_host::join::fresh_binding(db).await.is_some();
+        if !files {
+            // What comes while the switch is off is read past for good: it
+            // is read again once the switch is on (`READ_ON_KEY`).
+            if veydan_core::settings::get(db, READ_ON_KEY).await.as_deref() != Some("0") {
+                veydan_core::settings::set(db, READ_ON_KEY, "0").await?;
+            }
             trace(app, "info", "off");
             return Ok(None);
+        }
+        if veydan_core::settings::get(db, READ_ON_KEY).await.as_deref() != Some("1") {
+            // The switch was off (or this build does not know since when it
+            // is on): the snapshots read past meanwhile are read again by the
+            // next cycle. The first read of a join takes them all anyway.
+            if !fresh {
+                let registry = cx.sync.registry();
+                let item = format!("entity:{SNAPSHOT_ENTITY}");
+                veydan_sync_host::state::reread_items(db, registry, &[item.as_str()]).await?;
+                trace(app, "info", "on again: the snapshots are read again");
+            }
+            veydan_core::settings::set(db, READ_ON_KEY, "1").await?;
         }
         // The vault first, then the files here: a snapshot of another device
         // over files changed here makes the profile diverge before the
@@ -1399,6 +1895,10 @@ impl Handler for ProfileFiles {
                 None
             }
         };
+        // A snapshot to try again brings the batch again, the release too.
+        if retry.is_none() && !released.is_empty() {
+            apply_leases_told(cx.core, cx.warnings, app, &released).await;
+        }
         // A device that has just joined uploads no snapshot before it has
         // read the vault in full: its states went with the old binding.
         let collected = if veydan_sync_host::join::fresh_binding(db).await.is_some() {
@@ -1427,10 +1927,14 @@ impl Handler for ProfileFiles {
                             let e = failed.error;
                             trace(app, "error", &format!("upload: {e}"));
                             cx.warnings.push(format!("profiles upload: {e}"));
+                            for (id, _) in &files.held {
+                                browser.unsent.set(id, "failed", e.to_string());
+                            }
                         }
                         Ok(()) => {
                             for st in &files.states {
                                 save_profile_files_state(db, st).await?;
+                                browser.unsent.sent(&st.profile_id);
                             }
                             for id in &files.gone {
                                 delete_profile_files_state(db, id).await?;
@@ -1451,10 +1955,11 @@ impl Handler for ProfileFiles {
         blob_refs(engine, op).await
     }
 
-    /// A lease of the old id whose profile runs here goes with the device to
+    /// A lease of the old id whose profile runs here, or whose files are not
+    /// out since it stopped (the lease waits for them), goes with the device to
     /// the new id and is published again: under the old one it was another
     /// device's, and no device would ever release it (audit A2-07, A2-19).
-    /// A lease of a profile that does not run here was taken by the copy
+    /// A lease of any other profile that does not run here was taken by the copy
     /// this data file came from (a cloned machine runs it there, a restored
     /// one runs it nowhere): it is let go here without a word to the vault,
     /// where the old id keeps it.
@@ -1467,7 +1972,7 @@ impl Handler for ProfileFiles {
         sqlx::query(
             "UPDATE sync_profile_files_state SET lease_device = ?, lease_synced = 0
              WHERE lease_device = ?
-               AND profile_id IN (SELECT id FROM profiles WHERE status = 'running')",
+               AND (dirty = 1 OR profile_id IN (SELECT id FROM profiles WHERE status = 'running'))",
         )
         .bind(new)
         .bind(old)
@@ -2426,7 +2931,7 @@ mod tests {
             .iter()
             .map(|op| (op.entity_type.as_str(), op.entity_id.as_str()))
             .collect();
-        assert_eq!(ops, [(SNAPSHOT_ENTITY, "pr-2"), (LEASE_ENTITY, "pr-1")]);
+        assert_eq!(ops, [(SNAPSHOT_ENTITY, "pr-2")]);
         assert_eq!(out.states.len(), 1);
         assert_eq!(out.states[0].profile_id, "pr-2");
         assert_eq!(out.held.len(), 1);
@@ -2512,11 +3017,21 @@ mod tests {
         write(&firefox.join("cache.bin"), b"cached");
         macro_rules! build {
             ($blobs:expr, $prev:expr, $trusted:expr) => {
-                build_manifest(&cache, $blobs, &firefox, $prev, $trusted, None, &held)
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .unwrap()
+                build_manifest(
+                    &cache,
+                    $blobs,
+                    &firefox,
+                    $prev,
+                    $trusted,
+                    false,
+                    None,
+                    &held,
+                    &|_, _| {},
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
             };
         }
         let first = build!(&mut blobs, &Manifest::default(), false);
@@ -2558,6 +3073,402 @@ mod tests {
         assert_eq!((n.looks.load(SeqCst), n.puts.load(SeqCst)), (3, 1));
         assert!(engine.blob_exists(gone).await.unwrap());
 
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The browser of profile `id` runs on `state`.
+    async fn runs(state: &crate::modules::TestStates, id: &str) {
+        use crate::browser::launch::BrowserProcess;
+        state
+            .browser
+            .running
+            .processes
+            .lock()
+            .await
+            .insert(id.into(), BrowserProcess::for_test(1));
+    }
+
+    /// The browser of profile `id` on `state` exits.
+    async fn stops(state: &crate::modules::TestStates, id: &str) {
+        state.browser.running.processes.lock().await.remove(id);
+        on_profile_stopped(&state.core, id).await.unwrap();
+    }
+
+    /// A browser that ran before sync was on holds no lease: the cycle
+    /// takes it, and the other device sees the profile held there, and
+    /// that it would start empty. A copy of its files goes out while it
+    /// runs: a database with its journal, without the index SQLite builds
+    /// again. The profile stays held there until the browser stopped and
+    /// its files are out, the release coming after them (ROO-888).
+    #[tokio::test]
+    async fn a_profile_open_elsewhere_is_held_and_sends_a_copy_of_its_files() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{
+            close, create_vault, cycle, device, device_id, join_vault, write,
+        };
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        let b = device(sync_registry(), &vault).await;
+        join_vault(&b).await;
+        cycle(&b).await;
+        let ours = add_profile(&a, "pr-1").await;
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 1);");
+        write(&ours.join("places.sqlite"), b"database");
+        write(&ours.join("places.sqlite-wal"), b"frames");
+        write(&ours.join("places.sqlite-shm"), b"index");
+        runs(&a, "pr-1").await;
+        cycle(&a).await;
+        cycle(&b).await;
+
+        let me = device_id(&a).await;
+        let held = foreign_lease(&b.core, "pr-1").await.unwrap();
+        assert_eq!(held.map(|(device, _)| device), Some(me.clone()));
+        let theirs = their_files(&b, "pr-1");
+        assert_eq!(
+            std::fs::read(theirs.join("places.sqlite")).unwrap(),
+            b"database"
+        );
+        assert_eq!(
+            std::fs::read(theirs.join("places.sqlite-wal")).unwrap(),
+            b"frames"
+        );
+        assert!(!theirs.join("places.sqlite-shm").exists());
+        assert!(!starts_empty(&b.core, "pr-1").await.unwrap());
+        assert!(a.browser.unsent.list().is_empty());
+
+        // The browser stops; until its files are out the lease stays.
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 2);");
+        stops(&a, "pr-1").await;
+        let launch = a.browser.files.launch_waiting("pr-1");
+        cycle(&a).await;
+        drop(launch);
+        cycle(&b).await;
+        assert!(foreign_lease(&b.core, "pr-1").await.unwrap().is_some());
+        cycle(&a).await;
+        cycle(&b).await;
+        assert!(foreign_lease(&b.core, "pr-1").await.unwrap().is_none());
+        assert_eq!(
+            std::fs::read(theirs.join("prefs.js")).unwrap(),
+            b"user_pref(\"a\", 2);"
+        );
+        assert!(files_state(&a, "pr-1").await.lease_device.is_empty());
+
+        close(a).await;
+        close(b).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// A profile held elsewhere whose files did not come is told as such:
+    /// a launch would start it empty, and its badge says where they are.
+    #[tokio::test]
+    async fn a_profile_held_elsewhere_without_its_files_starts_empty() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{close, create_vault, cycle, device, join_vault};
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        add_profile(&a, "pr-1").await;
+        acquire_lease(&a.core, "pr-1").await.unwrap();
+        cycle(&a).await;
+        let b = device(sync_registry(), &vault).await;
+        join_vault(&b).await;
+        cycle(&b).await;
+
+        assert!(starts_empty(&b.core, "pr-1").await.unwrap());
+        let status = files_status(&b.core, &b.browser.unsent).await.unwrap();
+        assert_eq!(status.len(), 1);
+        assert_eq!(status[0].state, "elsewhere");
+        assert!(!status[0].detail.is_empty());
+
+        close(a).await;
+        close(b).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// The files of a profile that stopped are those of the copy sent
+    /// while it ran: the release of the lease goes alone. A push of it
+    /// that fails, or that a launch gives up, leaves the profile dirty and
+    /// held here, and a later cycle releases it (ROO-888).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn the_release_of_unchanged_files_goes_again_after_a_failed_push() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{
+            close, create_vault, cycle, device, device_id, join_vault, write,
+        };
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        /// The vault read only, or writable again.
+        fn read_only(path: &Path, on: bool) {
+            let dir = path.is_dir();
+            if dir && !on {
+                std::fs::set_permissions(path, Permissions::from_mode(0o755)).unwrap();
+            }
+            if dir {
+                for e in std::fs::read_dir(path).unwrap() {
+                    read_only(&e.unwrap().path(), on);
+                }
+            }
+            let mode = match (dir, on) {
+                (true, true) => 0o555,
+                (true, false) => 0o755,
+                (false, true) => 0o444,
+                (false, false) => 0o644,
+            };
+            std::fs::set_permissions(path, Permissions::from_mode(mode)).unwrap();
+        }
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        let b = device(sync_registry(), &vault).await;
+        join_vault(&b).await;
+        cycle(&b).await;
+        let ours = add_profile(&a, "pr-1").await;
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 1);");
+        runs(&a, "pr-1").await;
+        cycle(&a).await;
+        stops(&a, "pr-1").await;
+        let me = device_id(&a).await;
+
+        read_only(&vault, true);
+        let written = std::fs::write(vault.join("probe"), b"").is_ok();
+        let _ = veydan_sync_host::cycle(a.host(), &a.core, &a.sync).await;
+        read_only(&vault, false);
+        if written {
+            eprintln!("permissions do not stop this user; skipped");
+            close(a).await;
+            close(b).await;
+            let _ = std::fs::remove_dir_all(&vault);
+            return;
+        }
+        assert_eq!(files_state(&a, "pr-1").await.lease_device, me);
+        assert!(files_state(&a, "pr-1").await.dirty);
+        cycle(&b).await;
+        assert!(foreign_lease(&b.core, "pr-1").await.unwrap().is_some());
+
+        let launch = a.browser.files.launch_waiting("pr-1");
+        cycle(&a).await;
+        drop(launch);
+        assert_eq!(files_state(&a, "pr-1").await.lease_device, me);
+        assert!(files_state(&a, "pr-1").await.dirty);
+
+        cycle(&a).await;
+        cycle(&b).await;
+        assert!(foreign_lease(&b.core, "pr-1").await.unwrap().is_none());
+        let st = files_state(&a, "pr-1").await;
+        assert!(st.lease_device.is_empty());
+        assert!(!st.dirty);
+
+        close(a).await;
+        close(b).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// A first download that failed before any file was written leaves
+    /// the profile empty here though its snapshot is known: held
+    /// elsewhere, it is told so, and the retry brings the files (ROO-888).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_first_download_that_failed_still_starts_empty() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{
+            close, create_vault, cycle, device, join_vault, write,
+        };
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        let ours = add_profile(&a, "pr-1").await;
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 1);");
+        runs(&a, "pr-1").await;
+        cycle(&a).await;
+        let b = device(sync_registry(), &vault).await;
+        join_vault(&b).await;
+
+        let shut = b.core.app_data_dir.join("profiles/pr-1");
+        std::fs::create_dir_all(&shut).unwrap();
+        std::fs::set_permissions(&shut, Permissions::from_mode(0o555)).unwrap();
+        let written = std::fs::write(shut.join("probe"), b"").is_ok();
+        let _ = veydan_sync_host::cycle(b.host(), &b.core, &b.sync).await;
+        std::fs::set_permissions(&shut, Permissions::from_mode(0o755)).unwrap();
+        if written {
+            eprintln!("permissions do not stop this user; skipped");
+            close(a).await;
+            close(b).await;
+            let _ = std::fs::remove_dir_all(&vault);
+            return;
+        }
+        let st = files_state(&b, "pr-1").await;
+        assert!(st.head_hlc.is_some());
+        assert!(!st.pending_manifest.is_empty());
+        assert!(starts_empty(&b.core, "pr-1").await.unwrap());
+        let status = files_status(&b.core, &b.browser.unsent).await.unwrap();
+        assert_eq!(status.len(), 1);
+        assert_eq!(status[0].state, "elsewhere");
+
+        cycle(&b).await;
+        assert!(their_files(&b, "pr-1").join("prefs.js").is_file());
+        assert!(!starts_empty(&b.core, "pr-1").await.unwrap());
+
+        close(a).await;
+        close(b).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    /// A file of a running profile that cannot be read keeps its last
+    /// copy, and the copy of the others goes out; a database of which no
+    /// copy is in a manifest yet keeps the whole copy back, and the badge
+    /// tells it. Files that cannot be read once it stopped send nothing.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_running_profile_keeps_the_last_copy_of_what_it_cannot_read() {
+        use crate::modules::sync_registry;
+        use crate::sync::registries_tests::{close, create_vault, cycle, device, write};
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        let vault = crate::db::test_dir();
+        let a = device(sync_registry(), &vault).await;
+        create_vault(&a).await;
+        let ours = add_profile(&a, "pr-1").await;
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 1);");
+        write(&ours.join("cookies.sqlite"), b"cookies");
+        ran(&a).await;
+        cycle(&a).await;
+        let first = Manifest::parse(&files_state(&a, "pr-1").await.manifest_json).unwrap();
+
+        runs(&a, "pr-1").await;
+        let mut st = files_state(&a, "pr-1").await;
+        st.snapshot_at = "2026-01-01T00:00:00+00:00".into();
+        save_profile_files_state(&a.core.db, &st).await.unwrap();
+        write(&ours.join("prefs.js"), b"user_pref(\"a\", 22);");
+        std::fs::set_permissions(ours.join("cookies.sqlite"), Permissions::from_mode(0o000))
+            .unwrap();
+        cycle(&a).await;
+        let live = Manifest::parse(&files_state(&a, "pr-1").await.manifest_json).unwrap();
+        let cookies = |m: &Manifest| m.files.iter().find(|f| f.path == "cookies.sqlite").cloned();
+        assert_eq!(cookies(&live).unwrap().blob, cookies(&first).unwrap().blob);
+        let prefs = live.files.iter().find(|f| f.path == "prefs.js").unwrap();
+        assert_eq!(prefs.hash, sha256_hex(b"user_pref(\"a\", 22);"));
+
+        // A database no manifest has a copy of.
+        write(&ours.join("places.sqlite"), b"places");
+        std::fs::set_permissions(ours.join("places.sqlite"), Permissions::from_mode(0o000))
+            .unwrap();
+        let mut st = files_state(&a, "pr-1").await;
+        st.snapshot_at = "2026-01-01T00:00:00+00:00".into();
+        save_profile_files_state(&a.core.db, &st).await.unwrap();
+        cycle(&a).await;
+        assert_eq!(files_state(&a, "pr-1").await.manifest_json, live.to_json());
+        let status = a.browser.unsent.list();
+        assert_eq!(status.len(), 1);
+        assert_eq!(status[0].state, "open");
+        assert!(
+            status[0].detail.contains("places.sqlite"),
+            "{:?}",
+            status[0]
+        );
+
+        stops(&a, "pr-1").await;
+        let warnings = cycle_warnings(&a).await;
+        assert!(
+            warnings.iter().any(|w| w.contains("nothing sent")),
+            "{warnings:?}"
+        );
+        assert_eq!(a.browser.unsent.list()[0].state, "failed");
+        assert!(!files_state(&a, "pr-1").await.lease_device.is_empty());
+
+        for f in ["cookies.sqlite", "places.sqlite"] {
+            std::fs::set_permissions(ours.join(f), Permissions::from_mode(0o644)).unwrap();
+        }
+        close(a).await;
+        let _ = std::fs::remove_dir_all(&vault);
+    }
+
+    #[test]
+    fn a_database_is_read_with_its_journals() {
+        assert_eq!(sqlite_base("places.sqlite"), Some("places.sqlite"));
+        assert_eq!(sqlite_base("places.sqlite-wal"), Some("places.sqlite"));
+        assert_eq!(
+            sqlite_base("storage/x/idb/1.sqlite-journal"),
+            Some("storage/x/idb/1.sqlite")
+        );
+        assert_eq!(sqlite_base("cert9.db"), Some("cert9.db"));
+        assert_eq!(sqlite_base("prefs.js"), None);
+
+        let dir = crate::db::test_dir();
+        crate::sync::registries_tests::write(&dir.join("a.sqlite"), b"db");
+        crate::sync::registries_tests::write(&dir.join("a.sqlite-wal"), b"wal");
+        let read = read_stable(&dir, "a.sqlite").unwrap().unwrap();
+        assert_eq!(
+            read,
+            [
+                ("a.sqlite".to_string(), b"db".to_vec()),
+                ("a.sqlite-wal".to_string(), b"wal".to_vec()),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A large file a collect cut short sent already is not sent again:
+    /// the next walk finds it in the vault. A small one goes up again.
+    #[tokio::test]
+    async fn a_large_file_sent_before_is_not_sent_again() {
+        use crate::sync::registries_tests::write;
+        use std::sync::atomic::Ordering::SeqCst;
+
+        let root = crate::db::test_dir();
+        let (vault, firefox) = (root.join("vault"), root.join("firefox-profile"));
+        let n = std::sync::Arc::new(Requests::default());
+        let storage = Counting {
+            inner: veydan_sync::LocalDir::new(&vault),
+            n: n.clone(),
+        };
+        let vmk = veydan_sync::Vmk::from_base64(&format!("{}=", "A".repeat(43))).unwrap();
+        let engine = Engine::with_key(Box::new(storage), &vmk, "vault", "device");
+        let cache = HashCache::default();
+        let locks = crate::browser::ProfileLocks::default();
+        let waits = locks.launch_waits();
+        let held = Held {
+            waits: &waits,
+            ids: vec!["pr-1".into()],
+        };
+        write(&firefox.join("prefs.js"), b"user_pref(\"a\", 1);");
+        write(
+            &firefox.join("places.sqlite"),
+            &vec![7u8; LOOK_FIRST as usize],
+        );
+        for puts in [2, 1] {
+            let mut blobs = BlobIndex {
+                engine: &engine,
+                uploaded: BTreeSet::new(),
+            };
+            n.puts.store(0, SeqCst);
+            let built = build_manifest(
+                &cache,
+                &mut blobs,
+                &firefox,
+                &Manifest::default(),
+                false,
+                false,
+                None,
+                &held,
+                &|_, _| {},
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+            assert_eq!(built.files.len(), 2);
+            assert_eq!(n.puts.load(SeqCst), puts);
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 }

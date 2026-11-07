@@ -53,11 +53,13 @@ export const isVideo = (name: string) => /\.(mp4|m4v|mov|webm|mkv|3gp)$/i.test(n
 
 /**
  * A file whose kind its name does not tell: what the photo picker of a
- * phone hands over (`content://media/picker/…/media/1000012345`). It may
- * be a video, so it goes the way a video goes (`VideoOf`): the copy of it
- * tells, the frame is taken when it is one.
+ * phone hands over (`content://media/picker/…/media/1000012345`, an item
+ * of the grid of iOS `ph://…/L0/001`). It may be a video, so it goes the
+ * way a video goes (`VideoOf`): the copy of it tells, the frame is taken
+ * when it is one.
  */
-export const kindUnknown = (path: string, name: string) => path.startsWith('content://') && !/\.[a-z0-9]{2,5}$/i.test(name);
+export const kindUnknown = (path: string, name: string) =>
+  (path.startsWith('content://') || path.startsWith('ph://')) && !/\.[a-z0-9]{2,5}$/i.test(name);
 
 /** The icon of a file the tray has no picture of. */
 export const pickedIcon = (name: string) => (isPicture(name) ? 'image' : isVideo(name) ? 'video' : 'file');
@@ -80,8 +82,15 @@ export type ImportOf = (path: string, asFile: boolean) => Promise<ImportedFile>;
 /** The frame of a video the webview reads at `url`. */
 export type PosterOf = (url: string) => Promise<ChannelPoster | null>;
 
-/** A file of a phone, by what the picker of a phone gives: it is copied as it is added. */
-export const isPhoneFile = (path: string) => path.startsWith('content://');
+/**
+ * A file of a phone, by what the phone hands over: it is copied as it is
+ * added. Android's `content://`; on iOS an item of the grid (`ph://`) or a
+ * file the gallery plugin wrote into the app's cache — a shot of the camera
+ * (`attach-capture/`) or a copy of the Photo Picker (`attach-picked/`) — as
+ * the module's `handed_over` tells them.
+ */
+export const isPhoneFile = (path: string) =>
+  path.startsWith('content://') || path.startsWith('ph://') || /^file:\/\/\/.*\/attach-(capture|picked)\/[^?#]+$/i.test(path);
 
 /** How a file of the tray goes. */
 export interface SendOpts {

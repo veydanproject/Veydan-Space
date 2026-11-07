@@ -23,9 +23,12 @@
 /*
  * Applied to the messenger's own screens. The emoji font sits before the
  * generic family so it is reached for the characters the text font lacks.
+ * Apple's own emoji come first where they exist (iOS, macOS): the WebKit of
+ * Apple draws no glyph of the colour tables of Noto Color Emoji, and every
+ * emoji but a few old symbols was blank on the iPhone (2026-11-04).
  */
 .messenger,
 .msg-m,
 .msg-font {
-  font-family: 'Manrope Variable', 'Veydan Emoji', var(--font-ui);
+  font-family: 'Manrope Variable', 'Apple Color Emoji', 'Veydan Emoji', var(--font-ui);
 }

@@ -18,6 +18,15 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "provider", rename_all = "snake_case")]
 pub enum Channel {
     Fcm { token: String },
+    /// An iPhone (`spec/protocol.md`, "Through APNs"): the device token as
+    /// hex, and the environment of APNs that gave it. A token of one
+    /// environment is no token at the other, so the server must know which
+    /// host to send to.
+    Apns {
+        token: String,
+        /// `production` or `sandbox`.
+        environment: String,
+    },
     /// Through the gateway, at a private push server (`spec/protocol.md`,
     /// "The gateway"): the ticket the gateway issued for the token of this
     /// device, and the push key of the device every push is sealed to.
@@ -34,15 +43,16 @@ impl Channel {
     pub fn provider(&self) -> &'static str {
         match self {
             Self::Fcm { .. } => "fcm",
+            Self::Apns { .. } => "apns",
             Self::Gateway { .. } => "gateway",
         }
     }
 
-    /// What the push service knows the device by: the token of FCM, the
-    /// ticket of a gateway.
+    /// What the push service knows the device by: the token of FCM or of
+    /// APNs, the ticket of a gateway.
     pub fn token(&self) -> &str {
         match self {
-            Self::Fcm { token } => token,
+            Self::Fcm { token } | Self::Apns { token, .. } => token,
             Self::Gateway { ticket, .. } => ticket,
         }
     }
@@ -266,5 +276,45 @@ impl Info {
         self.apps
             .iter()
             .any(|a| a.id == app_id && a.providers.iter().any(|p| p == provider))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    const TOKEN: &str = "apns-token-of-the-test";
+
+    /// The server keeps no example of an iPhone's registration in
+    /// `golden`: the shape is the one `spec/protocol.md` writes under
+    /// "Through APNs", on the body of the example that is there.
+    fn apns_example(environment: &str) -> Value {
+        let path = format!("{}/tests/golden/device_put.json", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let mut example: Value = serde_json::from_str(&text).unwrap();
+        example["channel"] = json!({ "provider": "apns", "token": TOKEN, "environment": environment });
+        example
+    }
+
+    #[test]
+    fn an_iphone_registers_as_the_protocol_writes() {
+        let path = format!("{}/tests/golden/device_put.json", env!("CARGO_MANIFEST_DIR"));
+        let mut put: DevicePut = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        for environment in ["production", "sandbox"] {
+            put.channel = Channel::Apns { token: TOKEN.into(), environment: environment.into() };
+            let sent = serde_json::to_value(&put).unwrap();
+            assert_eq!(sent, apns_example(environment));
+            let back: DevicePut = serde_json::from_value(sent).unwrap();
+            assert_eq!(back, put);
+            assert_eq!((back.channel.provider(), back.channel.token()), ("apns", TOKEN));
+        }
+    }
+
+    #[test]
+    fn an_apns_channel_without_its_environment_is_not_read() {
+        // The server would refuse it: a token is of one host or the other.
+        let channel = json!({ "provider": "apns", "token": TOKEN });
+        assert!(serde_json::from_value::<Channel>(channel).is_err());
     }
 }

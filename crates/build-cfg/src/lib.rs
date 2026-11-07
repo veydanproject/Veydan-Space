@@ -212,10 +212,14 @@ pub fn android_webrtc_jni_exports() {
     println!("cargo:rustc-link-arg=-Wl,--version-script={}", script.display());
 }
 
-/// Whether the linker of the target needs `-ObjC` for libwebrtc: the Apple
-/// targets, whose archive holds the Objective-C side of the engine.
+/// Whether the linker of the target needs `-ObjC` for libwebrtc: macOS,
+/// whose archive holds the Objective-C side of the engine. Not iOS: there
+/// `-ObjC` keeps every Objective-C object of every static library, the copy
+/// of Tauri's Swift module each plugin carries among them (429 duplicate
+/// symbols), so the Xcode project force-loads the Objective-C layer of
+/// libwebrtc alone (scripts/ios/env.sh, `webrtc_objc_layer`; scripts/ios/init.sh).
 fn takes_objc(target_os: &str) -> bool {
-    matches!(target_os, "macos" | "ios")
+    target_os == "macos"
 }
 
 /// Asks the linker of a product's binary on macOS and iOS for `-ObjC`.
@@ -247,10 +251,9 @@ mod tests {
     use super::{platform, takes_manifest, takes_objc, webrtc_android_dir, webrtc_jni_symbols, WINDOWS_TEST_MANIFEST};
 
     #[test]
-    fn only_the_apple_linkers_are_asked_for_objc() {
+    fn only_the_linker_of_macos_is_asked_for_objc() {
         assert!(takes_objc("macos"));
-        assert!(takes_objc("ios"));
-        for os in ["linux", "windows", "android", "freebsd"] {
+        for os in ["ios", "linux", "windows", "android", "freebsd"] {
             assert!(!takes_objc(os), "{os}");
         }
     }

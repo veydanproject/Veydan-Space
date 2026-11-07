@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the camera_stats command without any pre-configured scope."
         },
         {
+          "description": "Enables the dismiss_group_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dismiss-group-call",
+          "markdownDescription": "Enables the dismiss_group_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dismiss_group_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dismiss-group-call",
+          "markdownDescription": "Denies the dismiss_group_call command without any pre-configured scope."
+        },
+        {
           "description": "Enables the dismiss_incoming command without any pre-configured scope.",
           "type": "string",
           "const": "allow-dismiss-incoming",
@@ -389,6 +401,18 @@
           "type": "string",
           "const": "deny-set-audio-route",
           "markdownDescription": "Denies the set_audio_route command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the show_group_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-show-group-call",
+          "markdownDescription": "Enables the show_group_call command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the show_group_call command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-show-group-call",
+          "markdownDescription": "Denies the show_group_call command without any pre-configured scope."
         },
         {
           "description": "Enables the show_incoming command without any pre-configured scope.",

@@ -471,6 +471,7 @@
     "msg_push_loading": "Memeriksa…",
     "msg_push_text": "Ponsel memberi tahu Anda tentang pesan baru meskipun aplikasi ditutup.",
     "msg_push_privacy": "Konsekuensinya: server push mengetahui relai dan grup mana yang dipantau untuk Anda, dan push melewati Google. Keduanya tidak dapat membaca pesan Anda; mereka melihat bahwa ada pesan untuk Anda, dan kapan pesan itu tiba.",
+    "msg_push_privacy_ios": "Konsekuensinya: server push mengetahui relai dan grup mana yang dipantau untuk Anda, dan push melewati Apple. Keduanya tidak dapat membaca pesan Anda; mereka melihat bahwa ada pesan untuk Anda, dan kapan pesan itu tiba.",
     "msg_push_enable": "Aktifkan notifikasi",
     "msg_push_toggle": "Beri tahu saya tentang pesan baru",
     "msg_push_refused": "Notifikasi dinonaktifkan untuk aplikasi ini. Aktifkan di setelan ponsel, lalu kembali ke sini.",

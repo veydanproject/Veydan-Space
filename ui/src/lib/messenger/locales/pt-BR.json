@@ -471,6 +471,7 @@
     "msg_push_loading": "Verificando…",
     "msg_push_text": "O celular avisa sobre uma nova mensagem mesmo com o app fechado.",
     "msg_push_privacy": "O custo disso: o servidor de push fica sabendo quais relays e grupos monitorar para você, e o push passa pelo Google. Nenhum dos dois consegue ler suas mensagens; eles veem que chegou uma mensagem para você, e quando.",
+    "msg_push_privacy_ios": "O custo disso: o servidor de push fica sabendo quais relays e grupos monitorar para você, e o push passa pela Apple. Nenhum dos dois consegue ler suas mensagens; eles veem que chegou uma mensagem para você, e quando.",
     "msg_push_enable": "Ativar notificações",
     "msg_push_toggle": "Avisar sobre novas mensagens",
     "msg_push_refused": "As notificações estão desativadas para este app. Ative-as nas configurações do celular e depois volte aqui.",

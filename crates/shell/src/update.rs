@@ -288,7 +288,9 @@ pub async fn update_open(app: tauri::AppHandle, core: tauri::State<'_, Core>) ->
     open(&app, &page)
 }
 
-#[cfg(desktop)]
+/// The opener plugin: a computer, and a phone that is not Android (iOS opens
+/// the page in Safari through it).
+#[cfg(not(target_os = "android"))]
 fn open<R: tauri::Runtime>(app: &tauri::AppHandle<R>, url: &str) -> CmdResult<()> {
     use tauri_plugin_opener::OpenerExt;
     app.opener()
@@ -336,11 +338,6 @@ fn open<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, url: &str) -> CmdResult<(
     rx.recv_timeout(std::time::Duration::from_secs(5))
         .map_err(|_| AppError::other("the activity did not answer"))?
         .map_err(AppError::other)
-}
-
-#[cfg(all(mobile, not(target_os = "android")))]
-fn open<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, _url: &str) -> CmdResult<()> {
-    Err(AppError::other("not available on this platform"))
 }
 
 #[cfg(test)]

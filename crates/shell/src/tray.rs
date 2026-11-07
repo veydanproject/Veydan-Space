@@ -638,19 +638,21 @@ mod imp {
         }
     }
 
-    fn show_tray(app: &AppHandle) -> tauri::Result<()> {
+    /// Make the icon with the menu of `content`, or show the one made
+    /// before with it. On the main thread, which never waits for the async
+    /// runtime here: the content is gathered before (`with_content`).
+    fn show_tray(app: &AppHandle, content: Content) -> tauri::Result<()> {
         let shell = app.state::<Shell>();
         {
             let guard = shell.tray.icon.lock().unwrap();
             if let Some(tray) = guard.as_ref() {
                 let _ = tray.set_visible(true);
                 drop(guard);
-                refresh_sync(app);
+                show_content(app, &content);
                 return Ok(());
             }
         }
 
-        let content = tauri::async_runtime::block_on(load_content(app));
         let menu = build_menu(app, &content)?;
         let tooltip = content.tooltip(unread(app));
 
@@ -698,12 +700,12 @@ mod imp {
         }
     }
 
-    fn refresh_sync(app: &AppHandle) {
+    /// Put `content` into the icon made before. On the main thread.
+    fn show_content(app: &AppHandle, content: &Content) {
         let shell = app.state::<Shell>();
         let guard = shell.tray.icon.lock().unwrap();
         let Some(tray) = guard.as_ref() else { return };
-        let content = tauri::async_runtime::block_on(load_content(app));
-        if let Ok(menu) = build_menu(app, &content) {
+        if let Ok(menu) = build_menu(app, content) {
             let _ = tray.set_menu(Some(menu));
             let tooltip = content.tooltip(unread(app));
             let _ = tray.set_tooltip(Some(&tooltip));
@@ -711,22 +713,44 @@ mod imp {
         let _ = tray.set_icon(current_icon(app));
     }
 
-    pub fn apply(app: &AppHandle, want: bool) {
-        let a = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            if want {
-                if let Err(e) = show_tray(&a) {
-                    eprintln!("tray: failed to create icon: {e}");
+    /// The number of the last refresh asked: a content gathered for an
+    /// older one is not shown over a newer one.
+    static ASKED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    /// Gather the content on the async runtime, then hand it to `show` on
+    /// the main thread. The main thread never blocks on the runtime: a
+    /// `block_on` there (5.2.1) waited for the databases while the runtime's
+    /// threads answering the webview waited for the main thread, and every
+    /// start on a Mac stood ~30 s until the pool of the messenger gave up.
+    fn with_content(app: &AppHandle, show: impl FnOnce(&AppHandle, Content) + Send + 'static) {
+        let app = app.clone();
+        let asked = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+        tauri::async_runtime::spawn(async move {
+            let content = load_content(&app).await;
+            let a = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if ASKED.load(Ordering::SeqCst) == asked {
+                    show(&a, content);
                 }
-            } else {
-                hide_tray(&a);
+            });
+        });
+    }
+
+    pub fn apply(app: &AppHandle, want: bool) {
+        if !want {
+            let a = app.clone();
+            let _ = app.run_on_main_thread(move || hide_tray(&a));
+            return;
+        }
+        with_content(app, |app, content| {
+            if let Err(e) = show_tray(app, content) {
+                eprintln!("tray: failed to create icon: {e}");
             }
         });
     }
 
     pub fn refresh(app: &AppHandle) {
-        let a = app.clone();
-        let _ = app.run_on_main_thread(move || refresh_sync(&a));
+        with_content(app, |app, content| show_content(app, &content));
     }
 }
 

@@ -16,6 +16,11 @@ use veydan_sync::{
 use zeroize::Zeroizing;
 
 pub const DEFAULT_INTERVAL_SEC: u64 = 60;
+/// The switch of the files of browser profiles: "0" off, anything else or
+/// none on. Shared between the desktops (Space registers it as a setting,
+/// platform-spec 9.5): a computer that joins takes the choice the others
+/// made. A phone has no profiles and no settings table, and skips it.
+pub const PROFILE_FILES_KEY: &str = "sync_profile_files";
 const MIN_INTERVAL_SEC: u64 = 1;
 const MAX_INTERVAL_SEC: u64 = 86400;
 const MIB: u64 = 1024 * 1024;
@@ -129,6 +134,7 @@ impl Default for SyncConfig {
 /// The name the OS gives the device, or nothing usable (the caller falls
 /// back to the device id). A phone has no hostname of its own — Android
 /// answers `localhost` on every device —, so there the model is the name.
+#[cfg(not(target_os = "ios"))]
 fn default_device_name() -> String {
     let host = usable_hostname(&gethostname::gethostname().to_string_lossy());
     #[cfg(target_os = "android")]
@@ -140,7 +146,47 @@ fn default_device_name() -> String {
     host
 }
 
+/// The model of the iPhone. Its hostname is not even asked: iOS answers
+/// `localhost` or a name of the local network that changes (and the name
+/// the user gave the phone, `UIDevice.name`, is a bare `iPhone` to an app
+/// since iOS 16).
+#[cfg(target_os = "ios")]
+fn default_device_name() -> String {
+    ios_model(sysctl_string("hw.machine").as_deref())
+}
+
+/// The model of an iPhone or an iPad as `hw.machine` tells it
+/// (`iPhone15,2`); `iPhone` when it tells nothing of the kind: the
+/// simulator answers the processor of the computer (`arm64`).
+#[cfg(any(target_os = "ios", test))]
+fn ios_model(machine: Option<&str>) -> String {
+    match machine.map(str::trim) {
+        Some(m) if m.starts_with("iP") && m.contains(',') => m.to_string(),
+        _ => "iPhone".to_string(),
+    }
+}
+
+/// A string value of `sysctlbyname`, `None` when the system has none.
+#[cfg(target_os = "ios")]
+fn sysctl_string(name: &str) -> Option<String> {
+    let name = std::ffi::CString::new(name).ok()?;
+    let mut buf = [0u8; 256];
+    let mut len = buf.len();
+    // SAFETY: `buf` holds `len` bytes, `sysctlbyname` writes at most that
+    // many and says how many in `len`; no new value is set.
+    let rc = unsafe {
+        libc::sysctlbyname(name.as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0)
+    };
+    if rc != 0 {
+        return None;
+    }
+    let text = &buf[..len.min(buf.len())];
+    let text = text.split(|b| *b == 0).next().unwrap_or_default();
+    Some(String::from_utf8_lossy(text).into_owned())
+}
+
 /// A hostname that tells devices apart: `localhost` does not.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 fn usable_hostname(raw: &str) -> String {
     let name = raw.trim();
     if name.eq_ignore_ascii_case("localhost") || name.eq_ignore_ascii_case("localhost.localdomain")
@@ -202,7 +248,7 @@ pub async fn load_config(db: &Pool<Sqlite>) -> SyncConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(d.interval_sec),
         profile_files: cfg!(desktop)
-            && settings::get(db, "sync_profile_files").await.as_deref() != Some("0"),
+            && settings::get(db, PROFILE_FILES_KEY).await.as_deref() != Some("0"),
         device_name: device_name(db).await,
         large_files: LargeFileSettings {
             chunk_mib: settings::get(db, "sync_lf_chunk_mib")
@@ -262,7 +308,7 @@ pub async fn save_config(db: &Pool<Sqlite>, cfg: &SyncConfig) -> CmdResult<()> {
     settings::set(db, "sync_interval_sec", &interval.to_string()).await?;
     settings::set(
         db,
-        "sync_profile_files",
+        PROFILE_FILES_KEY,
         if cfg.profile_files { "1" } else { "0" },
     )
     .await?;
@@ -725,7 +771,7 @@ pub fn build_storage(cfg: &SyncConfig) -> CmdResult<Box<dyn Storage>> {
 
 #[cfg(test)]
 mod tests {
-    use super::usable_hostname;
+    use super::{ios_model, usable_hostname};
 
     #[test]
     fn localhost_is_not_a_device_name() {
@@ -733,6 +779,17 @@ mod tests {
         assert_eq!(usable_hostname("localhost"), "");
         assert_eq!(usable_hostname("Localhost.localdomain"), "");
         assert_eq!(usable_hostname(""), "");
+    }
+
+    /// An iPhone is named by its model; the simulator and a system that
+    /// tells nothing are an `iPhone`.
+    #[test]
+    fn an_iphone_is_named_by_its_model() {
+        assert_eq!(ios_model(Some("iPhone15,2")), "iPhone15,2");
+        assert_eq!(ios_model(Some("iPad13,1\n")), "iPad13,1");
+        assert_eq!(ios_model(Some("arm64")), "iPhone");
+        assert_eq!(ios_model(Some("")), "iPhone");
+        assert_eq!(ios_model(None), "iPhone");
     }
 }
 

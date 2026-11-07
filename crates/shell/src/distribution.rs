@@ -7,7 +7,9 @@
 //! an app it installed to update itself or to sell anything outside its own
 //! billing, so the app asks the system for the installer and, when it is
 //! Play, the UI stops checking for updates and shows the plans without
-//! prices and buttons. Nowhere else does the answer change anything.
+//! prices and buttons. An iPhone installs only what Apple hands it (TestFlight
+//! or the App Store, under the same rules), so there the store is always
+//! Apple's. Nowhere else does the answer change anything.
 
 use std::sync::OnceLock;
 
@@ -82,12 +84,24 @@ fn installer_package() -> Option<String> {
     None
 }
 
-/// The store that installed the app (`"play"`), `None` for every other
-/// source and every computer. Asked once: the installer does not change while
-/// the app runs.
+/// The store of an iPhone: every copy there comes from Apple.
+pub const APP_STORE: &str = "appstore";
+
+/// The store of the platform: Apple's on iOS, whatever the installer is (there
+/// is none to ask), the installer's elsewhere.
+fn store_on(ios: bool, installer: Option<&str>) -> Option<&'static str> {
+    if ios {
+        return Some(APP_STORE);
+    }
+    is_store_installer(installer)
+}
+
+/// The store that installed the app (`"play"`, `"appstore"` on iOS), `None`
+/// for every other source and every computer. Asked once: the installer does
+/// not change while the app runs.
 pub fn store() -> Option<&'static str> {
     static STORE: OnceLock<Option<&'static str>> = OnceLock::new();
-    *STORE.get_or_init(|| is_store_installer(installer_package().as_deref()))
+    *STORE.get_or_init(|| store_on(cfg!(target_os = "ios"), installer_package().as_deref()))
 }
 
 #[cfg(test)]
@@ -100,5 +114,13 @@ mod tests {
         assert_eq!(is_store_installer(Some("")), None);
         assert_eq!(is_store_installer(Some("com.android.shell")), None);
         assert_eq!(is_store_installer(Some("com.android.vending")), Some("play"));
+    }
+
+    #[test]
+    fn an_iphone_is_always_apples() {
+        assert_eq!(store_on(true, None), Some("appstore"));
+        assert_eq!(store_on(true, Some(PLAY_INSTALLER)), Some("appstore"));
+        assert_eq!(store_on(false, None), None);
+        assert_eq!(store_on(false, Some(PLAY_INSTALLER)), Some("play"));
     }
 }

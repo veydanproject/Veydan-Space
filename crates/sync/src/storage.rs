@@ -30,6 +30,10 @@ pub fn http_client() -> Result<reqwest::Client> {
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(90))
         .dns_resolver(CachedIpv4Resolver);
+    // Android alone takes bundled roots. iOS, like every computer, keeps the
+    // platform verifier of reqwest: on Apple systems it asks Security.framework,
+    // which needs no bridge, and it honours the roots and revocations the
+    // user's system holds.
     #[cfg(target_os = "android")]
     let builder = builder.use_preconfigured_tls(android_tls_config());
     builder

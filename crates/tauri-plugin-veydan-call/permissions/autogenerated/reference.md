@@ -40,6 +40,32 @@ Denies the camera_stats command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-call:allow-dismiss-group-call`
+
+</td>
+<td>
+
+Enables the dismiss_group_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-dismiss-group-call`
+
+</td>
+<td>
+
+Denies the dismiss_group_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-call:allow-dismiss-incoming`
 
 </td>
@@ -215,6 +241,32 @@ Enables the set_audio_route command without any pre-configured scope.
 <td>
 
 Denies the set_audio_route command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:allow-show-group-call`
+
+</td>
+<td>
+
+Enables the show_group_call command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-show-group-call`
+
+</td>
+<td>
+
+Denies the show_group_call command without any pre-configured scope.
 
 </td>
 </tr>

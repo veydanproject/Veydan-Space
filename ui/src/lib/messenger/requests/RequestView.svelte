@@ -113,6 +113,9 @@
 
 <style>
   .request { flex: 1; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--surface); }
+  /* On a phone the request is a screen of the shell and paints no fill: the glow is behind it, up under the
+     status bar (a fill of its own started under it and left a band of the glow above). */
+  :global(.msg-m) .request { background: transparent; }
   .scroll {
     flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-5) var(--sp-4);
     display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; max-width: 560px; margin-inline: auto;

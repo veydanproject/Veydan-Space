@@ -48,6 +48,8 @@ const SLOTS = ['i18n', 'desktop', 'mobile'];
 const SHELLS = /** @type {const} */ ({
   desktop: path.join(UI, 'src/lib/core/desktop/DesktopShell.svelte'),
   android: path.join(UI, 'src/lib/core/mobile/MobileShell.svelte'),
+  // The phone UI is one: iOS takes the shell of Android, built for itself (13.6).
+  ios: path.join(UI, 'src/lib/core/mobile/MobileShell.svelte'),
 });
 /** The languages written in the dictionaries themselves (src/lib/core/i18n.ts). */
 const LOCALES = /** @type {const} */ (['en', 'ru']);
@@ -74,7 +76,7 @@ const relUi = (/** @type {string} */ p) => posix(path.relative(UI, p));
 /**
  * @typedef {{ id: string, ui: string, routes: string[], entries: Record<string, string>, platforms: string[], requires: string[] }} ModuleEntry
  * @typedef {{
- *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, slogan: ({ en: string, ru: string } & Record<string, string>) | null, repo: string, platform: 'desktop' | 'android',
+ *   name: string, title: string, tagline: { en: string, ru: string } & Record<string, string>, slogan: ({ en: string, ru: string } & Record<string, string>) | null, repo: string, platform: 'desktop' | 'android' | 'ios',
  *   present: ModuleEntry[], absent: ModuleEntry[], brand: Record<string, string>,
  *   outDir: string, pages: string, cacheDir: string, port: number, hmrPort: number, typesFile: string,
  * }} Product
@@ -104,8 +106,8 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
     );
   }
   const target = manifest.targets[name];
-  /** @type {'desktop' | 'android'} */
-  const platform = env.TAURI_ENV_PLATFORM === 'android' ? 'android' : 'desktop';
+  /** @type {'desktop' | 'android' | 'ios'} */
+  const platform = env.TAURI_ENV_PLATFORM === 'android' || env.TAURI_ENV_PLATFORM === 'ios' ? env.TAURI_ENV_PLATFORM : 'desktop';
   /** @type {ModuleEntry[]} */
   const all = Object.entries(manifest.modules).map(([id, m]) => {
     const ui = path.resolve(ROOT, m.ui);
@@ -120,7 +122,7 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
       ui,
       routes: m.routes.map((/** @type {string} */ r) => path.resolve(ROOT, r)),
       entries,
-      platforms: m.platforms ?? ['desktop', 'android'],
+      platforms: m.platforms ?? ['desktop', 'android', 'ios'],
       requires: m.requires ?? [],
     };
   });
@@ -155,14 +157,15 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
     }
   }
   const inBuild = (/** @type {ModuleEntry} */ m) => listed.has(m.id);
-  const port = platform === 'android' ? target.androidDevPort : target.devPort;
+  const port = platform === 'desktop' ? target.devPort : target.androidDevPort;
   // The name the user reads: productName of the product's Tauri config (13.1),
-  // the Android config's where it has one (Space is "Veydan" on a phone).
+  // the phone config's (tauri.android.conf.json, tauri.ios.conf.json) where it
+  // has one (Space is "Veydan" on a phone).
   const productName = (/** @type {string} */ file) => {
     const conf = path.resolve(ROOT, target.app, file);
     return fs.existsSync(conf) ? JSON.parse(fs.readFileSync(conf, 'utf8')).productName : undefined;
   };
-  const title = (platform === 'android' && productName('tauri.android.conf.json')) || productName('tauri.conf.json');
+  const title = (platform !== 'desktop' && productName(`tauri.${platform}.conf.json`)) || productName('tauri.conf.json');
   if (typeof title !== 'string' || !title) {
     throw new Error(`product ${name}: no productName in ${target.app}/tauri.conf.json; the UI names the product by it (13.5)`);
   }
@@ -213,14 +216,14 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
     // (scripts/ui.mjs). What the build makes goes to data/ of the
     // repository root: the pages of the desktop UI to data/build/<product>,
     // where frontendDist of the product's tauri.conf.json points, those of
-    // the phone UI to data/build/<product>-android (frontendDist of its
-    // tauri.android.conf.json) — a desktop binary never finds the phone's
+    // the phone UI to data/build/<product>-android or -ios (frontendDist of
+    // its tauri.android.conf.json or tauri.ios.conf.json) — a desktop binary never finds the phone's
     // pages in its folder —, and Vite's caches to
     // data/vite/<product>-<platform>. SvelteKit's own folder stays in the
     // project: its server output imports @sveltejs/kit, which Node finds only
     // in a node_modules/ above it (internal/platform-spec.md 11.4).
     outDir: `${KIT_DIR}/${name}-${platform}`,
-    pages: platform === 'android' ? `../data/build/${name}-android` : `../data/build/${name}`,
+    pages: platform === 'desktop' ? `../data/build/${name}` : `../data/build/${name}-${platform}`,
     cacheDir: `../data/vite/${name}-${platform}`,
     port,
     hmrPort: port + 1,
@@ -300,7 +303,7 @@ const STUB_COMPONENT = [
 export function virtualCode(product, id) {
   const slot = id.slice(VIRTUAL.length + 1);
   if (slot === 'shell') return `export { default } from ${JSON.stringify(posix(SHELLS[product.platform]))};\n`;
-  if (slot === 'platform') return virtualCode(product, `${VIRTUAL}/${product.platform === 'android' ? 'mobile' : 'desktop'}`);
+  if (slot === 'platform') return virtualCode(product, `${VIRTUAL}/${product.platform === 'desktop' ? 'desktop' : 'mobile'}`);
   if (!SLOTS.includes(slot)) return null;
   const mods = product.present.filter((m) => m.entries[slot]);
   const imports = mods.map((m) => `import * as ${m.id} from ${JSON.stringify(posix(m.entries[slot]))};`);

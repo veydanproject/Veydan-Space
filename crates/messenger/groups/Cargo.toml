@@ -29,7 +29,9 @@ tokio = { workspace = true, features = ["sync"] }
 getrandom.workspace = true
 # The clock of a posting schedule: a time zone by name, its rules bundled
 # with the app, so that every device reads "09:00 in Europe/Berlin" the same
-# way, whatever its system holds.
+# way, whatever its system holds. iOS and every computer read the bundled
+# copy alone (no `tzdb-zoneinfo`): /usr/share/zoneinfo of an iPhone is not
+# looked at.
 jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
 
 # Android keeps the rules of its zones in one concatenated file; the app

@@ -62,7 +62,9 @@ pub mod video;
 
 #[cfg(target_os = "android")]
 pub mod android;
-#[cfg(not(target_os = "android"))]
+// The desktop capturer of libwebrtc is built for a computer only: a phone
+// (Android, iOS) shares no screen.
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub mod screen;
 
 pub use adapter::{AudioTap, LazyRtcEngine, RtcEngine, VideoTap};
@@ -70,7 +72,7 @@ pub use audio::{mix, AudioDevice, AudioDevices, AudioInput, AudioOutput, AudioPr
 pub use camera::CameraCapture;
 pub use crypto::{Encryption, EncryptionState, FrameKeys};
 pub use engine::{AudioMode, Engine};
-#[cfg(not(target_os = "android"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 pub use screen::{ScreenCapture, SCREEN_FPS};
 pub use session::{
     Candidate, CandidateKind, ConnectionState, IcePolicy, IceServer, IceState, Path, RoomConfig, Session, SessionConfig,

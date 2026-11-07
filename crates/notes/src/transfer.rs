@@ -188,7 +188,8 @@ pub async fn note_export(
     password: Option<String>,
     core: tauri::State<'_, Core>,
 ) -> CmdResult<ExportResult> {
-    let dest_path = PathBuf::from(&dest);
+    // The save dialog of iOS answers with a `file://` URL (`veydan_shell::picked_path`).
+    let dest_path = PathBuf::from(veydan_shell::picked_path(&dest).as_ref());
     let password = password.filter(|p| !p.is_empty());
     let into_dir = password.is_none() && !as_zip;
     let entries =
@@ -423,7 +424,9 @@ pub async fn note_import(
         let unpack_root = notes_dir(&core.app_data_dir).join(format!(".import-{}", Uuid::new_v4()));
         let mut files: Vec<(PathBuf, PathBuf)> = Vec::new();
         for p in &paths {
-            let path = Path::new(p);
+            // iOS names a picked file by a `file://` URL (`veydan_shell::picked_path`).
+            let p = veydan_shell::picked_path(p);
+            let path = Path::new(p.as_ref());
             if path.is_file() && is_archive(path) {
                 let dir = unpack_root.join(files.len().to_string());
                 std::fs::create_dir_all(&dir).map_err(AppError::io)?;

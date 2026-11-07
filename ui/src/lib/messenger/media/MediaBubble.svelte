@@ -52,6 +52,10 @@
   let fromFile = false;
   /** The file could not be read that way: a copy in memory instead, when it is small enough. */
   let fileFailed = false;
+  /** The address of the file was asked once more after it failed: the app's
+   *  server may listen on another port since (an iPhone took its socket while
+   *  the app was away, media_server.rs). */
+  let fileAskedAgain = false;
   /** The preview the message carries, until the picture or the video itself is shown. */
   const thumbSrc = $derived(media?.thumb ? `data:image/jpeg;base64,${media.thumb}` : null);
   /** A blob url made here, to give back when the bubble goes. */
@@ -167,7 +171,19 @@
   }
 
   function previewBroken() {
-    if (fromFile) { fromFile = false; fileFailed = true; src = null; loadPreview(); return; }
+    if (fromFile) {
+      const failedUrl = src;
+      fromFile = false; src = null;
+      if (!fileAskedAgain) {
+        fileAskedAgain = true;
+        void messengerApi.media.url(m.id).catch(() => null).then((url) => {
+          if (url && url !== failedUrl) { fromFile = true; src = url; return; }
+          fileFailed = true; loadPreview();
+        });
+        return;
+      }
+      fileFailed = true; loadPreview(); return;
+    }
     previewFailed = true; src = null;
   }
 

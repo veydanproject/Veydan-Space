@@ -49,6 +49,20 @@ id_rsa*
 google-services.json
 *.apk
 *.aab
+# Apple: the keys and profiles of signing, and what Xcode writes beside a project
+*.mobileprovision
+*.p8
+*.cer
+*.ipa
+*.xcarchive
+xcuserdata/
+DerivedData/
+Pods/
+apps/*/gen/apple/build/
+apps/*/gen/apple/.tauri/
+apps/*/gen/apple/Externals/
+# What scripts/ios/build.sh makes (the .app of the simulator, the .ipa)
+release-assets/
 # Data of a run: the messenger's CLI writes messenger-cli-data/ where it starts
 messenger-cli-data/
 *.db

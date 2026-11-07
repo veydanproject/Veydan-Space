@@ -474,6 +474,7 @@ profile_raw_data browser desktop
 profile_set_tags browser desktop
 profile_stop browser desktop
 profile_update browser desktop
+profiles_files_status browser desktop
 profiles_launching browser desktop
 profiles_list browser desktop
 profiles_list_by_workspace browser desktop

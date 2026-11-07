@@ -12,6 +12,7 @@
   import { hostOf } from '../servers/serverAccept.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
   import { pushErrorKey, pushStore } from './pushStore.svelte';
+  import { pushPrivacyKey } from './wording';
 
   let editingServer = $state(false);
   let serverDraft = $state('');
@@ -158,7 +159,7 @@
     {#if pushStore.error}<p class="warn">{errorText(pushStore.error)}</p>{/if}
   {:else}
     <p class="muted">{$t('msg_push_text')}</p>
-    <p class="muted small">{$t('msg_push_privacy')}</p>
+    <p class="muted small">{$t(pushPrivacyKey())}</p>
 
     <!-- Notifications switched off, or a channel of messages turned quiet in
          the phone's settings: told whether pushes are on or not, since the

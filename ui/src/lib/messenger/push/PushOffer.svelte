@@ -9,6 +9,7 @@
   import { t } from '$lib/core/i18n';
   import OfferCard from '../shared/OfferCard.svelte';
   import { pushStore } from './pushStore.svelte';
+  import { pushPrivacyKey } from './wording';
 </script>
 
 {#if pushStore.toOffer}
@@ -22,6 +23,6 @@
         {$t('common_later')}
       </button>
     {/snippet}
-    {#snippet note()}{$t('msg_push_privacy')}{/snippet}
+    {#snippet note()}{$t(pushPrivacyKey())}{/snippet}
   </OfferCard>
 {/if}

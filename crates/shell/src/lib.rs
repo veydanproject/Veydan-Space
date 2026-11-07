@@ -21,8 +21,8 @@ pub mod demo;
 pub mod links;
 mod distribution;
 mod lock;
-#[cfg(target_os = "android")]
-mod logcat;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod phone_log;
 mod module;
 mod navigation;
 mod plan;
@@ -58,7 +58,7 @@ pub use router::{
 };
 pub use seams::{provide, seam, CloudError, Seam};
 pub use services::{Product, Shell};
-pub use source::{FileSource, Opener};
+pub use source::{picked_path, FileSource, Opener};
 pub use start::{StartError, StartState};
 pub use switches::{ModuleState, ModulesView, EVENT_MODULES_CHANGED};
 pub use update::{Skipped as UpdateSkipped, UpdateCheck};

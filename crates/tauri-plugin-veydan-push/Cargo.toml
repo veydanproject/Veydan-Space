@@ -3,14 +3,15 @@
 
 [package]
 name = "tauri-plugin-veydan-push"
-description = "Bridge between the app and the phone's push service: token, permission, notifications"
+description = "Bridge between the app and the phone's push service (FCM, APNs): token, permission, notifications"
 version = "0.1.0"
 edition = "2021"
 authors = ["Veydan Project"]
 license-file = "../../LICENSE"
 publish = false
 build = "build.rs"
-# tauri-build finds the Android library of a plugin through this name.
+# tauri-build finds the Android library of a plugin through this name; on
+# iOS tauri-plugin links the Swift package (ios/) under the crate's name.
 links = "tauri-plugin-veydan-push"
 
 [dependencies]
@@ -24,3 +25,9 @@ base64 = "0.22"
 tauri-plugin = { version = "2", features = ["build"] }
 # The manifest of the test executables on Windows.
 veydan-build-cfg = { path = "../build-cfg" }
+
+# The entitlement and the background mode of pushes are written into the
+# Xcode project by build.rs (tauri_plugin::mobile), which takes a plist
+# dictionary; that API exists only where the build runs on a Mac.
+[target.'cfg(target_os = "macos")'.build-dependencies]
+plist = "1"

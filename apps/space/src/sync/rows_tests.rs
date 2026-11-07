@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
 use veydan_lock::{synced_lock, SyncedLock};
+use veydan_sync_host::config::PROFILE_FILES_KEY;
 use veydan_sync_host::rows::{delete_plain, put_row, read_row, read_rows, Put};
 use veydan_sync_host::{Delete, Host, Registry, States, Table, SETTING_ENTITY};
 #[cfg(desktop)]
@@ -521,7 +522,7 @@ async fn rows_published_here_carry_every_key_of_4_0_7() {
 }
 
 #[tokio::test]
-async fn the_shared_settings_are_those_of_4_0_7() {
+async fn the_shared_settings_are_those_of_4_0_7_and_the_switch_of_profile_files() {
     let (db, dir) = test_pool().await;
     let local = [
         "sync_device_id",
@@ -529,7 +530,14 @@ async fn the_shared_settings_are_those_of_4_0_7() {
         "lock_kind",
         "notes_custom_dir",
     ];
-    for key in SETTINGS_OF_4_0_7.iter().chain(local.iter()) {
+    // The switch of the files of profiles is shared by Space since
+    // 2026-11-07 (platform-spec 9.5); 4.0.7 kept it on each device and never
+    // wrote it to a vault.
+    for key in SETTINGS_OF_4_0_7
+        .iter()
+        .chain(local.iter())
+        .chain([&PROFILE_FILES_KEY])
+    {
         sqlx::query("INSERT INTO app_settings (key, value) VALUES (?, '1')")
             .bind(key)
             .execute(&db)
@@ -546,7 +554,10 @@ async fn the_shared_settings_are_those_of_4_0_7() {
     shared.sort();
     let mut expected: Vec<String> = SETTINGS_OF_4_0_7.iter().map(|k| k.to_string()).collect();
     expected.sort();
-    assert_eq!(shared, expected);
+    let mut shared_of_space = expected.clone();
+    shared_of_space.push(PROFILE_FILES_KEY.to_string());
+    shared_of_space.sort();
+    assert_eq!(shared, shared_of_space);
     let mut written: Vec<String> = golden::ops(SETTING_ENTITY)
         .into_iter()
         .map(|op| op.entity_id)
@@ -560,7 +571,7 @@ async fn the_shared_settings_are_those_of_4_0_7() {
         .map(|(key, _)| key.to_string())
         .collect();
     registered.sort();
-    assert_eq!(registered, expected);
+    assert_eq!(registered, shared_of_space);
 
     db.close().await;
     let _ = std::fs::remove_dir_all(&dir);

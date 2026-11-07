@@ -283,7 +283,7 @@ impl MessengerState {
     }
 
     /// Stop what `start` started and shut the runtime down: no relay
-    /// connection, no watcher, no push registration (Android: the push server
+    /// connection, no watcher, no push registration (a phone: the push server
     /// forgets the device and the push handler loses its keys), no
     /// notification and no count on a computer. Nothing happens when it does
     /// not run.
@@ -301,12 +301,12 @@ impl MessengerState {
                 let arch = app.state::<crate::sync::ArchiveSync>();
                 arch.provide_runtime(None, None);
                 arch.provide_store(None);
-                #[cfg(target_os = "android")]
+                #[cfg(mobile)]
                 push::stop_bridge(&app, &rt).await;
                 // A call under way ends with the runtime: the shell of the phone (service, audio mode, camera) is let go.
-                #[cfg(target_os = "android")]
+                #[cfg(mobile)]
                 call_android::stop_bridge(&app).await;
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(mobile))]
                 let _ = (app, rt);
             })
             .await;
@@ -381,9 +381,9 @@ fn serve(
     ];
     tasks.extend(spawn_net_watcher(rt.clone()));
     tasks.extend(spawn_lock_watcher(app, rt.clone()));
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     tasks.extend(push::spawn_bridge(app.clone(), rt.clone()));
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     tasks.push(call_android::spawn_bridge(app.clone()));
     #[cfg(desktop)]
     tasks.push(desktop_notify::spawn_unread(app.clone(), rt.clone()));
@@ -887,15 +887,17 @@ pub async fn messenger_avatar_prepare(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<messenger_runtime::AvatarPreview> {
     use tauri_plugin_fs::FsExt;
+    // iOS names the picked file by a `file://` URL (`veydan_shell::picked_path`).
+    let source = veydan_shell::picked_path(&source).into_owned();
     let rt = messenger.runtime()?;
-    if source.starts_with("content://") {
+    let path = std::path::PathBuf::from(&source);
+    // A `content://` of Android, or a file the picker did not let into the
+    // scope of fs — the gallery of the phone hands its copy over in the
+    // app's cache (iOS): the shell reads it from there, or refuses it.
+    if source.starts_with("content://") || !app.try_fs_scope().is_some_and(|s| s.is_allowed(&path)) {
         let picked = app.state::<veydan_shell::Shell>().open_source(&source)?;
         let bytes = read_picked(picked, messenger_runtime::avatars::MAX_PICK_BYTES).await?;
         return rt.avatar_prepare_bytes(bytes).await.map_err(map_err);
-    }
-    let path = std::path::PathBuf::from(&source);
-    if !app.try_fs_scope().is_some_and(|s| s.is_allowed(&path)) {
-        return Err(AppError::Other("the file was not picked".into()));
     }
     rt.avatar_prepare(&path).await.map_err(map_err)
 }
@@ -1650,11 +1652,14 @@ pub async fn messenger_dm_send_file(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<MessageView> {
+    // iOS names the picked file by a `file://` URL (`veydan_shell::picked_path`).
+    let path = veydan_shell::picked_path(&path).into_owned();
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         let rt = messenger.runtime_unlocked().await?;
+        let handed = gallery::handed_over(&app, &path);
         let local = import_picked(&app, &path, rt.config().data_dir()).await?;
-        if !path.starts_with("content://") && !was_picked(&app, &local, rt.config().data_dir()) {
+        if !handed && !was_picked(&app, &local, rt.config().data_dir()) {
             return Err(AppError::Other(NOT_PICKED.into()));
         }
         rt.dm_send_file_with(
@@ -1694,11 +1699,13 @@ pub async fn messenger_media_import(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<Picked> {
+    // iOS names the picked file by a `file://` URL (`veydan_shell::picked_path`).
+    let path = veydan_shell::picked_path(&path).into_owned();
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         let imported = async {
             let rt = messenger.runtime_unlocked().await?;
-            let copied = path.starts_with("content://");
+            let copied = gallery::handed_over(&app, &path);
             let local = import_picked(&app, &path, rt.config().data_dir()).await?;
             if !copied && !was_picked(&app, &local, rt.config().data_dir()) {
                 return Err(AppError::Other(NOT_PICKED.into()));
@@ -1867,16 +1874,25 @@ pub async fn messenger_clipboard_paste(messenger: tauri::State<'_, MessengerStat
 }
 
 /// A picked file as a local path. Desktop pickers give paths. Android gives
-/// `content://` URIs that only the system can read: those are copied into
-/// the messenger's own folder first (the copy is also what the chat shows
-/// for a sent file).
+/// `content://` URIs that only the system can read, and the media plugin of
+/// iOS files of its own in the app's cache or an item of the grid
+/// (`gallery::handed_over`): those are copied into the messenger's own
+/// folder first (the copy is also what the chat shows for a sent file).
 async fn import_picked(app: &tauri::AppHandle, picked: &str, data_dir: &Path) -> CmdResult<std::path::PathBuf> {
-    if !picked.starts_with("content://") {
+    if !gallery::handed_over(app, picked) {
         let _ = (app, data_dir);
         return Ok(std::path::PathBuf::from(picked));
     }
-    let source = app.state::<veydan_shell::Shell>().open_source(picked)?;
-    copy_picked(source, data_dir, messenger_runtime::media::MAX_SEND_BYTES).await
+    let src = gallery::source_of(app, picked).await?;
+    let copied = match app.state::<veydan_shell::Shell>().open_source(&src) {
+        Ok(source) => copy_picked(source, data_dir, messenger_runtime::media::MAX_SEND_BYTES).await,
+        Err(e) => Err(e),
+    };
+    // An item of the grid written out for this copy goes at once, copied or not.
+    if src != picked {
+        gallery::forget_capture(app, &src).await;
+    }
+    copied
 }
 
 /// What a command answers for a path the user did not pick.
@@ -2034,6 +2050,8 @@ pub async fn messenger_media_save_as(
     app: tauri::AppHandle,
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<()> {
+    // The save dialog of iOS answers with a `file://` URL (`veydan_shell::picked_path`).
+    let dest = veydan_shell::picked_path(&dest).into_owned();
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         use tauri_plugin_fs::FsExt;

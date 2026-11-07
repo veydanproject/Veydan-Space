@@ -43,6 +43,7 @@ fn channel() -> PushChannel {
         token: "token-of-the-phone".into(),
         app_id: "net.veydan.mobile".into(),
         app_version: Some("4.1.0".into()),
+        environment: None,
     }
 }
 
@@ -556,4 +557,76 @@ fn the_tickets_to_take_back_are_trimmed() {
     assert!(!worth_asking_again(&PushError::Refused { status: 404, code: "not_found".into(), message: String::new(), request_id: String::new() }));
     assert!(worth_asking_again(&PushError::Unreachable("timeout".into())));
     assert!(worth_asking_again(&PushError::Refused { status: 503, code: "unavailable".into(), message: String::new(), request_id: String::new() }));
+}
+
+/// The gateway wakes an iPhone through APNs as it wakes a phone through
+/// FCM: the device registers there with its token and environment, and the
+/// private push server gets the ticket alone.
+#[tokio::test]
+async fn an_iphone_is_told_to_a_private_server_through_the_gateway() {
+    let s = setup().await;
+    gateway_accepts(&s.gateway).await;
+    Mock::given(method("POST")).and(path("/v1/tickets")).respond_with(issued(T1, 30)).mount(&s.gateway).await;
+    private_accepts(&s.private, &s.gateway.uri(), &s.seal).await;
+    Mock::given(method("PUT")).and(path_regex("^/v1/devices/[0-9a-f]{32}$")).respond_with(answer(PRIVATE_RELAY)).mount(&s.private).await;
+
+    let token = "apns-token-of-the-test";
+    s.rt.server_set_push(&s.server_id, Some(s.private.uri())).await.unwrap();
+    s.rt.push_set_channel(Some(PushChannel {
+        provider: "apns".into(),
+        token: token.into(),
+        app_id: "net.veydan.mobile".into(),
+        app_version: Some("5.2.0".into()),
+        environment: Some("production".into()),
+    }))
+    .await
+    .unwrap();
+    s.rt.push_set_server(Some(s.gateway.uri())).await.unwrap();
+    let status = s.rt.push_set_enabled(true).await.unwrap();
+    assert_eq!(status.state, "registered", "{status:?}");
+    assert_eq!(status.targets.len(), 1, "{status:?}");
+    assert_eq!(status.targets[0].state, "registered", "{:?}", status.targets[0]);
+
+    let home = asked(&s.gateway, "PUT", "/v1/devices/").await;
+    assert_eq!(home.len(), 1);
+    assert_eq!(
+        body(&home[0])["channel"],
+        json!({ "provider": "apns", "token": token, "environment": "production" })
+    );
+    assert_eq!(asked(&s.gateway, "POST", "/v1/tickets").await.len(), 1);
+
+    let puts = asked(&s.private, "PUT", "/v1/devices/").await;
+    assert_eq!(puts.len(), 1);
+    let put = body(&puts[0]);
+    assert_eq!(put["channel"]["provider"], "gateway");
+    assert_eq!(put["channel"]["ticket"], T1);
+    let text = String::from_utf8_lossy(&puts[0].body).to_string();
+    assert!(!text.contains(token), "the token never reaches a private server");
+    assert!(!text.contains("production"), "nor the environment it is of");
+    s.rt.shutdown().await;
+}
+
+/// A push service the gateway does not hand wakes to is not offered to a
+/// private server: nothing is asked of the gateway or of the server.
+#[tokio::test]
+async fn a_phone_of_another_push_service_is_not_told_to_a_private_server() {
+    let s = setup().await;
+    gateway_accepts(&s.gateway).await;
+    Mock::given(method("POST")).and(path("/v1/tickets")).respond_with(issued(T1, 30)).mount(&s.gateway).await;
+    private_accepts(&s.private, &s.gateway.uri(), &s.seal).await;
+    s.rt.server_set_push(&s.server_id, Some(s.private.uri())).await.unwrap();
+
+    let keys = s.rt.session_keys().await.unwrap();
+    let mut other = channel();
+    other.provider = "unifiedpush".into();
+    s.rt.push_reconcile_private(true, &keys, &other, Some(&s.gateway.uri())).await.unwrap();
+    assert!(s.gateway.received_requests().await.unwrap().is_empty());
+    assert!(s.private.received_requests().await.unwrap().is_empty());
+
+    // The same server with a phone of FCM: told.
+    Mock::given(method("PUT")).and(path_regex("^/v1/devices/[0-9a-f]{32}$")).respond_with(answer(PRIVATE_RELAY)).mount(&s.private).await;
+    let status = turned_on(&s).await;
+    assert_eq!(status.targets[0].state, "registered", "{:?}", status.targets[0]);
+    assert_eq!(asked(&s.private, "PUT", "/v1/devices/").await.len(), 1);
+    s.rt.shutdown().await;
 }

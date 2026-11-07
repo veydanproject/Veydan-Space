@@ -13,6 +13,14 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT_DIR/scripts/product.sh"
 product_env "${1:-space}"
 
+# On a Mac the dev build runs as a profile of its own, tmp/dev, unless
+# WORKDIR is given: the data folder of the OS is the one of the installed app
+# (the owner's real data), and its single-instance lock would turn the dev
+# build away while that app runs. WORKDIR= (empty) runs on the data of the OS.
+if [ "$(uname -s)" = Darwin ] && [ -z "${WORKDIR+set}" ]; then
+  WORKDIR="$ROOT_DIR/tmp/dev"
+fi
+
 # Resolved here because `tauri dev` starts the app from the product's crate.
 if [ -n "${WORKDIR:-}" ]; then
   dev_workdir "$WORKDIR" || exit 1
@@ -31,7 +39,12 @@ source "$ROOT_DIR/scripts/build-env.sh"
 # `fuser` is not on every machine (psmisc); without it the holder is found
 # through `ss`. Other products keep theirs.
 for port in "$PRODUCT_DEV_PORT" "$((PRODUCT_DEV_PORT + 1))"; do
-  if command -v fuser >/dev/null 2>&1; then
+  if [ "$(uname -s)" = Darwin ]; then
+    # The fuser of macOS knows no port/tcp; lsof names the listener.
+    for pid in $(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u); do
+      kill "$pid" 2>/dev/null || true
+    done
+  elif command -v fuser >/dev/null 2>&1; then
     fuser -k "$port/tcp" 2>/dev/null || true
   else
     for pid in $(ss -Hltnp "sport = :$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u); do
@@ -96,7 +109,8 @@ EOF
   command -v gtk-update-icon-cache >/dev/null 2>&1 && \
     gtk-update-icon-cache -q -t -f "$icons_base" >/dev/null 2>&1 || true
 }
-install_dev_icon || true
+# A desktop entry is a thing of Linux; macOS shows the icon of the bundle.
+[ "$(uname -s)" = Darwin ] || install_dev_icon || true
 
 # The CLI of the UI project runs from the root and finds the product through
 # TAURI_APP_PATH, the UI project through TAURI_FRONTEND_PATH (product.sh).

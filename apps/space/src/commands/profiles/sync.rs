@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! The two answers to profile files that diverged between devices. Logic of
-//! the browser under the `sync_` prefix (spec, section 22).
+//! The two answers to profile files that diverged between devices, logic
+//! of the browser under the `sync_` prefix (spec, section 22), and where
+//! the files of the profiles stand.
 
 use crate::browser::BrowserState;
 use crate::error::CmdResult;
@@ -37,4 +38,14 @@ pub async fn sync_profile_files_push_mine(
     profile_files::push_mine(&core, &profile_id).await?;
     trigger_cycle(&app, "profile-push");
     status(&core, &sync).await
+}
+
+/// The profiles whose files are not out from here (sending, open, failed)
+/// or not here (another device holds them): for their badges.
+#[tauri::command]
+pub async fn profiles_files_status(
+    core: tauri::State<'_, Core>,
+    browser: tauri::State<'_, BrowserState>,
+) -> CmdResult<Vec<profile_files::FilesStatus>> {
+    profile_files::files_status(&core, &browser.unsent).await
 }

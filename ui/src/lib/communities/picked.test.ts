@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ImportedFile } from './api';
-import { Picked, pickedIcon } from './picked.svelte';
+import { isPhoneFile, kindUnknown, Picked, pickedIcon } from './picked.svelte';
 
 /** A preview that answers when told to. */
 function deferred() {
@@ -186,5 +186,22 @@ describe('the icon of a file without a picture', () => {
     expect(pickedIcon('clip.mp4')).toBe('video');
     expect(pickedIcon('notes.pdf')).toBe('file');
     expect(pickedIcon('1234')).toBe('file');
+  });
+});
+
+describe('the files a phone hands over', () => {
+  it('are told by their address on Android and on iOS', () => {
+    expect(isPhoneFile('content://media/picker/0/com.android.providers.media.photopicker/media/1000012345')).toBe(true);
+    // iOS: an item of the grid, a shot of the camera, a copy of the Photo Picker.
+    expect(isPhoneFile('ph://ED7AC36B-A150-4C38-BB8C-B6D696F4F2ED/L0/001')).toBe(true);
+    const caches = 'file:///private/var/mobile/Containers/Data/Application/1F2E/Library/Caches/net.veydan.mobile';
+    expect(isPhoneFile(`${caches}/attach-capture/9C1D.jpg`)).toBe(true);
+    expect(isPhoneFile(`${caches}/attach-picked/77AB/IMG_0001.HEIC`)).toBe(true);
+    // A file the document picker copied, a thumbnail, a path of a computer: not the phone's.
+    expect(isPhoneFile(`${caches}/IMG_0001.HEIC`)).toBe(false);
+    expect(isPhoneFile(`${caches}/attach-thumbs/ab12.jpg`)).toBe(false);
+    expect(isPhoneFile('/home/u/attach-picked/a.jpg')).toBe(false);
+    // An item of the grid names no kind: it goes the way a video may.
+    expect(kindUnknown('ph://ED7AC36B/L0/001', '001')).toBe(true);
   });
 });

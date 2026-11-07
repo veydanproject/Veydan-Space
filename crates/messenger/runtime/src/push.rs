@@ -65,12 +65,42 @@ const LOOP_EVERY: Duration = Duration::from_secs(20);
 /// The device's address at the push service, as the host brings it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PushChannel {
-    /// `fcm`.
+    /// `fcm` on Android, `apns` on an iPhone.
     pub provider: String,
+    /// The token of FCM; of APNs, as hex.
     pub token: String,
-    /// The app as the push server knows it: the Android package.
+    /// The app as the push server knows it: the Android package, the
+    /// bundle id on iOS.
     pub app_id: String,
     pub app_version: Option<String>,
+    /// With `apns`: the environment of APNs that gave the token,
+    /// `production` or `sandbox`. The app says which from its own build
+    /// (a development build gets its tokens from the sandbox); a token of
+    /// one is no token at the other. Absent with `fcm`, and in a channel
+    /// kept before there were iPhones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+}
+
+impl PushChannel {
+    /// The channel as the push server reads it.
+    pub(crate) fn dto(&self) -> Result<Channel> {
+        match self.provider.as_str() {
+            "fcm" => Ok(Channel::Fcm { token: self.token.clone() }),
+            "apns" => match self.environment.as_deref() {
+                Some(environment @ ("production" | "sandbox")) => {
+                    Ok(Channel::Apns { token: self.token.clone(), environment: environment.to_string() })
+                }
+                // Not guessed: a token sent to the other host is a dead
+                // token there, and the device would be dropped.
+                other => Err(MessengerError::Invalid(format!(
+                    "push_environment_unknown: {}",
+                    other.unwrap_or("none")
+                ))),
+            },
+            other => Err(MessengerError::Invalid(format!("push_provider_unknown: {other}"))),
+        }
+    }
 }
 
 /// What was told to a server, to tell a change from no change, and to know
@@ -221,17 +251,9 @@ impl MessengerRuntime {
         }
         groups.sort_by(|a, b| a.id.cmp(&b.id));
 
-        let channel_dto = match channel.provider.as_str() {
-            "fcm" => Channel::Fcm { token: channel.token.clone() },
-            other => {
-                return Err(MessengerError::Invalid(format!(
-                    "push_provider_unknown: {other}"
-                )))
-            }
-        };
         Ok(DevicePut {
             app_id: channel.app_id.clone(),
-            channel: channel_dto,
+            channel: channel.dto()?,
             app_version: channel.app_version.clone(),
             prefs: self.push_prefs().await?,
             author_key: Some(messenger_dm::pushtags::author_key(keys)),
@@ -569,6 +591,7 @@ mod tests {
             token: "token-of-the-phone".into(),
             app_id: "net.veydan.mobile".into(),
             app_version: Some("4.0.1".into()),
+            environment: None,
         }
     }
 
@@ -671,6 +694,81 @@ mod tests {
         assert!(!status.relays[0].status.watched());
         assert!(status.last_ok_at.is_some());
         assert!(status.offered);
+    }
+
+    fn iphone(environment: Option<&str>) -> PushChannel {
+        PushChannel {
+            provider: "apns".into(),
+            token: "apns-token-of-the-test".into(),
+            app_id: "net.veydan.mobile".into(),
+            app_version: Some("5.2.0".into()),
+            environment: environment.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn an_iphone_is_an_apns_channel_of_its_environment() {
+        for environment in ["production", "sandbox"] {
+            let channel = iphone(Some(environment));
+            assert_eq!(
+                channel.dto().unwrap(),
+                Channel::Apns { token: channel.token.clone(), environment: environment.into() }
+            );
+        }
+        for wrong in [None, Some("development"), Some("")] {
+            let e = iphone(wrong).dto();
+            assert!(
+                matches!(e, Err(MessengerError::Invalid(ref c)) if c.starts_with("push_environment_unknown")),
+                "{wrong:?}: {e:?}"
+            );
+        }
+        // FCM has no environment, and one given is not sent.
+        let mut android = channel();
+        assert_eq!(android.dto().unwrap(), Channel::Fcm { token: "token-of-the-phone".into() });
+        android.environment = Some("sandbox".into());
+        assert_eq!(android.dto().unwrap(), Channel::Fcm { token: "token-of-the-phone".into() });
+        android.provider = "unifiedpush".into();
+        assert!(matches!(android.dto(), Err(MessengerError::Invalid(ref c)) if c == "push_provider_unknown: unifiedpush"));
+    }
+
+    #[test]
+    fn a_channel_kept_before_iphones_is_still_read() {
+        let kept = r#"{"provider":"fcm","token":"t","app_id":"net.veydan.mobile","app_version":"4.0.1"}"#;
+        let channel: PushChannel = serde_json::from_str(kept).unwrap();
+        assert_eq!(channel.environment, None);
+        assert_eq!(serde_json::to_string(&channel).unwrap(), kept, "and kept as it was");
+    }
+
+    #[tokio::test]
+    async fn an_iphone_is_registered_with_its_token_and_environment() {
+        let s = setup().await;
+        server_accepts(&s.server).await;
+        s.rt.push_set_channel(Some(iphone(Some("sandbox")))).await.unwrap();
+        s.rt.push_set_server(Some(s.server.uri())).await.unwrap();
+        let status = s.rt.push_set_enabled(true).await.unwrap();
+        assert_eq!(status.state, "registered", "{status:?}");
+
+        let puts = asked(&s.server, "PUT").await;
+        assert_eq!(puts.len(), 1);
+        let body: Value = serde_json::from_slice(&puts[0].body).unwrap();
+        assert_eq!(
+            body["channel"],
+            json!({
+                "provider": "apns",
+                "token": "apns-token-of-the-test",
+                "environment": "sandbox",
+            })
+        );
+        assert_eq!(body["app_version"], "5.2.0");
+
+        // A build of the store gets its token from the other host: another
+        // registration, not the same one.
+        s.rt.push_set_channel(Some(iphone(Some("production")))).await.unwrap();
+        s.rt.push_reconcile(true).await.unwrap();
+        let puts = asked(&s.server, "PUT").await;
+        assert_eq!(puts.len(), 2);
+        let body: Value = serde_json::from_slice(&puts[1].body).unwrap();
+        assert_eq!(body["channel"]["environment"], "production");
     }
 
     #[tokio::test]

@@ -77,7 +77,8 @@ pub(crate) fn next(fg: Fg, load: Load, now: u64) -> Fg {
 }
 
 /// The phone's side, a plugin's commands (`tauri-plugin-veydan-push` on
-/// Android); a fake in the tests.
+/// Android; iOS has neither a service nor a periodic wake yet, so it has
+/// none and the switch is not shown); a fake in the tests.
 #[async_trait]
 pub(crate) trait Phone: Send + Sync {
     /// Starts or stops the foreground service; whether it runs after.
@@ -217,17 +218,21 @@ impl Background {
     }
 }
 
-/// The push plugin on Android: its keeper's commands, and its wake told
-/// to the loop.
-#[cfg(target_os = "android")]
-pub(crate) mod android {
+/// The push plugin on a phone: its keeper's commands (Android), and its
+/// wake told to the loop (Android, and iOS for a background push).
+#[cfg(mobile)]
+pub(crate) mod plugin {
+    #[cfg(target_os = "android")]
     use super::Phone;
+    #[cfg(target_os = "android")]
     use async_trait::async_trait;
     use tauri::{AppHandle, Manager};
     use tauri_plugin_veydan_push::{Event, VeydanPush};
 
+    #[cfg(target_os = "android")]
     pub(crate) struct PushPlugin(pub(crate) AppHandle);
 
+    #[cfg(target_os = "android")]
     #[async_trait]
     impl Phone for PushPlugin {
         async fn foreground(&self, on: bool) -> bool {
@@ -250,6 +255,7 @@ pub(crate) mod android {
     }
 
     /// The phone, when the product has the push plugin.
+    #[cfg(target_os = "android")]
     pub(crate) fn phone(app: &AppHandle) -> Option<std::sync::Arc<dyn Phone>> {
         app.try_state::<VeydanPush<tauri::Wry>>()?;
         Some(std::sync::Arc::new(PushPlugin(app.clone())))
@@ -263,7 +269,8 @@ pub(crate) mod android {
         let handle = app.clone();
         let heard = push
             .listen(Event::KeeperWake, move |why| {
-                // The plugin calls on a thread of Java, outside the runtime:
+                // The plugin calls on a thread of Java (the main thread on
+                // iOS), outside the runtime:
                 // the listener's round spawned from there aborted the app at
                 // every periodic wake (живой запуск 2026-10-23, «there is no
                 // reactor running» in sendChannelData), and the keeper on the

@@ -14,9 +14,20 @@
 //! app (a QR code of «Сохранить», ROO-297) into the gallery. The app's
 //! Rust code calls it; nothing is open to the page.
 //!
+//! On iOS the Swift side (`ios/`, stage Э5b) takes the same commands and
+//! answers the same JSON with PhotoKit, `UIImagePickerController`,
+//! `PHPickerViewController`, ImageIO and `UIActivityViewController`. What
+//! differs is what an address is: an item of the grid is `ph://<the
+//! asset's local identifier>`, which no file names, and the camera's shot
+//! and the Photo Picker's copies are `file://` URLs of files the plugin
+//! wrote into the app's cache ([`HANDED_DIRS`]). Both are the phone's to
+//! hand over, as a `content://` is on Android: the app copies them in
+//! ([`VeydanMedia::handed_over`], [`VeydanMedia::file_of`]) and lets the
+//! plugin delete its file after ([`VeydanMedia::forget_capture`]).
+//!
 //! The plugin knows nothing about the messenger; it carries strings.
 
-#![cfg(target_os = "android")]
+#![cfg(any(target_os = "android", target_os = "ios"))]
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -25,12 +36,35 @@ use tauri::{
     Manager, Runtime,
 };
 
+#[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "net.veydan.media";
+
+// The Swift side's entry (`@_cdecl("init_plugin_veydan_media")` in
+// ios/Sources/VeydanMedia/VeydanMediaPlugin.swift), which makes the plugin.
+#[cfg(target_os = "ios")]
+tauri::ios_plugin_binding!(init_plugin_veydan_media);
+
+/// The folders of the app's cache (Tauri's `app_cache_dir`, which on iOS
+/// is `Library/Caches/<bundle id>`) the Swift side writes what it hands
+/// over into: the camera's shots, the copies of the Photo Picker and of the
+/// items of the grid. A file there is read once, copied in by the app, and
+/// deleted by the plugin; the folders are emptied when the app starts.
+#[cfg(target_os = "ios")]
+pub const HANDED_DIRS: &[&str] = &["attach-capture", "attach-picked"];
+
+/// The scheme of an item of the grid on iOS: a PhotoKit asset by its local
+/// identifier, written out as a file only when it is imported.
+#[cfg(target_os = "ios")]
+pub const ASSET_SCHEME: &str = "ph://";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("media bridge: {0}")]
     Invoke(#[from] tauri::plugin::mobile::PluginInvokeError),
+    /// An item of the grid that gave no file (iOS): the app may no longer
+    /// read it, or the phone could not write it out.
+    #[error("not_accessible")]
+    NotAccessible,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -49,7 +83,7 @@ pub struct Item {
     pub id: String,
     /// `image` or `video`.
     pub kind: String,
-    /// The `content://` address the import reads.
+    /// The address the import reads: `content://` on Android, `ph://` on iOS.
     pub path: String,
     pub width: u32,
     pub height: u32,
@@ -122,11 +156,45 @@ struct PathsAnswer {
 }
 
 /// Access to the gallery bridge.
-pub struct VeydanMedia<R: Runtime>(PluginHandle<R>);
+pub struct VeydanMedia<R: Runtime> {
+    handle: PluginHandle<R>,
+    /// The app's cache, where the Swift side writes what it hands over.
+    #[cfg(target_os = "ios")]
+    cache: Option<PathBuf>,
+}
 
 impl<R: Runtime> VeydanMedia<R> {
     async fn call<T: DeserializeOwned>(&self, command: &str, payload: impl Serialize) -> Result<T> {
-        Ok(self.0.run_mobile_plugin_async(command, payload).await?)
+        Ok(self.handle.run_mobile_plugin_async(command, payload).await?)
+    }
+
+    /// Whether `src` (a path, as `veydan_shell::picked_path` leaves it, or
+    /// an address) is what the phone hands over to be copied in, as a
+    /// `content://` is on Android: an item of the grid (`ph://`), or a file
+    /// right in one of [`HANDED_DIRS`] (one folder deeper for a copy of the
+    /// Photo Picker, which keeps the name the user's photo had), once links
+    /// and `..` are resolved.
+    #[cfg(target_os = "ios")]
+    pub fn handed_over(&self, src: &str) -> bool {
+        if src.starts_with(ASSET_SCHEME) {
+            return true;
+        }
+        let Some(cache) = self.cache.as_deref() else { return false };
+        handed_file(cache, Path::new(src))
+    }
+
+    /// The file to read `src` from: an item of the grid written out into
+    /// `attach-picked/` first (the original of the photo or the video, as
+    /// the phone keeps it: a HEIC stays a HEIC), anything else as it is.
+    /// Refused with `not_accessible` when the app may no longer read it.
+    #[cfg(target_os = "ios")]
+    pub async fn file_of(&self, src: &str) -> Result<String> {
+        if !src.starts_with(ASSET_SCHEME) {
+            return Ok(src.to_string());
+        }
+        let a: PathAnswer = self.call("export", serde_json::json!({ "uri": src })).await?;
+        let url = a.path.filter(|p| !p.is_empty()).ok_or(Error::NotAccessible)?;
+        Ok(file_url_path(&url).unwrap_or(url))
     }
 
     /// The access now; asks nothing.
@@ -179,19 +247,23 @@ impl<R: Runtime> VeydanMedia<R> {
     }
 
     /// The system camera (`photo` or `video`): the `content://` address of
-    /// the shot, `None` when it was given up. Refused with `camera_denied`
-    /// or `no_camera_app`.
+    /// the shot (iOS: the `file://` URL of its file in `attach-capture/`),
+    /// `None` when it was given up. Refused with `camera_denied` or
+    /// `no_camera_app`.
     pub async fn capture(&self, kind: &str) -> Result<Option<String>> {
         Ok(self.call::<PathAnswer>("capture", serde_json::json!({ "kind": kind })).await?.path)
     }
 
     /// The shot at `uri` was imported: its file in the cache goes. Anything
-    /// that is not a shot of `attach-capture` is left alone.
+    /// that is not a shot of `attach-capture` is left alone. On iOS a copy
+    /// of `attach-picked` goes too (the Photo Picker's and the grid's: the
+    /// app holds its own copy then), given as a path or a `file://` URL.
     pub async fn forget_capture(&self, uri: &str) -> Result<()> {
         self.call::<serde_json::Value>("forgetCapture", serde_json::json!({ "uri": uri })).await.map(|_| ())
     }
 
-    /// The system's Photo Picker; the addresses picked, none when given up.
+    /// The system's Photo Picker; the addresses picked, none when given up
+    /// (iOS: `file://` URLs of the copies in `attach-picked/`).
     pub async fn pick_system(&self, multiple: bool, kind: &str) -> Result<Vec<String>> {
         Ok(self.call::<PathsAnswer>("pickSystem", serde_json::json!({ "multiple": multiple, "kind": kind })).await?.paths)
     }
@@ -236,11 +308,59 @@ impl<R: Runtime, T: Manager<R>> VeydanMediaExt<R> for T {
     }
 }
 
+/// The path a `file://` URL names (the Swift side answers URLs), `None`
+/// for anything else.
+#[cfg(target_os = "ios")]
+fn file_url_path(src: &str) -> Option<String> {
+    if !src.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("file://")) {
+        return None;
+    }
+    let path = tauri::Url::parse(src).ok()?.to_file_path().ok()?;
+    Some(path.to_string_lossy().into_owned())
+}
+
+/// Whether `path` is a file the Swift side handed over: right in one of
+/// [`HANDED_DIRS`] of `cache`, or in a folder of its own there (a copy of
+/// the Photo Picker under the user's name for it), once resolved.
+#[cfg(target_os = "ios")]
+fn handed_file(cache: &Path, path: &Path) -> bool {
+    let (Ok(real), Ok(cache)) = (std::fs::canonicalize(path), std::fs::canonicalize(cache)) else {
+        return false;
+    };
+    if !real.is_file() {
+        return false;
+    }
+    let parent = real.parent();
+    let grand = parent.and_then(Path::parent);
+    HANDED_DIRS.iter().any(|dir| {
+        let dir = cache.join(dir);
+        parent == Some(dir.as_path()) || grand == Some(dir.as_path())
+    })
+}
+
+/// The app's cache on iOS under the bundle's own identifier, where the Swift
+/// side writes (`Cache.root`). Tauri's `app_cache_dir` takes the identifier
+/// of the config instead; an app signed under another name — a sideloaded
+/// build carries the team in its name, `net.veydan.mobile.<team>` — keeps
+/// its cache under that name, and every photo of the grid was refused as
+/// "not picked" (2026-11-04).
+#[cfg(target_os = "ios")]
+fn ios_cache_dir<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<PathBuf> {
+    let id = objc2_foundation::NSBundle::mainBundle().bundleIdentifier()?.to_string();
+    Some(app.path().cache_dir().ok()?.join(id))
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("veydan-media")
         .setup(|app, api| {
-            let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "VeydanMediaPlugin")?;
-            app.manage(VeydanMedia(handle));
+            #[cfg(target_os = "android")]
+            let media = VeydanMedia { handle: api.register_android_plugin(PLUGIN_IDENTIFIER, "VeydanMediaPlugin")? };
+            #[cfg(target_os = "ios")]
+            let media = VeydanMedia {
+                handle: api.register_ios_plugin(init_plugin_veydan_media)?,
+                cache: ios_cache_dir(app).or_else(|| app.path().app_cache_dir().ok()),
+            };
+            app.manage(media);
             Ok(())
         })
         .build()

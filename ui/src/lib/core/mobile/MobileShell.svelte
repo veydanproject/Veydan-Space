@@ -16,6 +16,7 @@
   import BottomNav from '$lib/core/mobile/BottomNav.svelte';
   import { hub } from '$lib/core/mobile/hub.svelte';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
+  import { startIosKeyboard } from '$lib/core/mobile/ios-keyboard';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import LinkInbox from '$lib/core/links/LinkInbox.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
@@ -76,6 +77,7 @@
     syncAndroidChrome($theme);
     void appLock.listen();
     void registry.startAll();
+    const stopIosKeyboard = startIosKeyboard();
     // A phone has no updater: the product's latest.json, once a day (14.3).
     // An app installed by a store is updated by the store and never checks.
     let stopUpdateCheck = () => {};
@@ -85,6 +87,7 @@
     });
     return () => {
       gone = true;
+      stopIosKeyboard();
       stopUpdateCheck();
       registry.stopAll();
     };

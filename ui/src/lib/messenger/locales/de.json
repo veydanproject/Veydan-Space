@@ -471,6 +471,7 @@
     "msg_push_loading": "Wird geprüft…",
     "msg_push_text": "Das Smartphone informiert dich über neue Nachrichten, auch wenn die App geschlossen ist.",
     "msg_push_privacy": "Der Preis dafür: Der Push-Server erfährt, welche Relays und Gruppen er für dich beobachten soll, und die Push-Benachrichtigung läuft über Google. Keiner von beiden kann deine Nachrichten lesen; sie sehen, dass eine Nachricht für dich angekommen ist, und wann.",
+    "msg_push_privacy_ios": "Der Preis dafür: Der Push-Server erfährt, welche Relays und Gruppen er für dich beobachten soll, und die Push-Benachrichtigung läuft über Apple. Keiner von beiden kann deine Nachrichten lesen; sie sehen, dass eine Nachricht für dich angekommen ist, und wann.",
     "msg_push_enable": "Benachrichtigungen einschalten",
     "msg_push_toggle": "Über neue Nachrichten benachrichtigen",
     "msg_push_refused": "Benachrichtigungen sind für diese App ausgeschaltet. Schalte sie in den Einstellungen des Smartphones ein und kehre dann zurück.",

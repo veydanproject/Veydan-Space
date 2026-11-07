@@ -78,10 +78,13 @@ fn the_goldens_hold_every_type_and_form_of_4_0_7() {
         .into_iter()
         .map(|op| op.entity_id)
         .collect();
+    // Space shares one key more than 4.0.7 did: the switch of the files of
+    // profiles (platform-spec 9.5, 2026-11-07).
     let registered_keys: BTreeSet<String> = registry
         .setting_keys()
         .into_iter()
         .map(|(key, _)| key.to_string())
+        .filter(|key| key != veydan_sync_host::config::PROFILE_FILES_KEY)
         .collect();
     assert_eq!(keys, registered_keys);
     assert_eq!(keys.len(), 7);

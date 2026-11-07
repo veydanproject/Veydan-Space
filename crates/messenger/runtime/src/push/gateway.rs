@@ -365,8 +365,10 @@ impl MessengerRuntime {
         if wanted.is_empty() && state.servers.is_empty() && state.gateways.is_empty() {
             return Ok(());
         }
-        // The provider of the phone carries the gateway's wakes: FCM alone.
-        if channel.provider != "fcm" {
+        // The gateway hands its wakes to the push service the phone
+        // registered with there (spec/protocol.md, "The gateway"): FCM or
+        // APNs. Another service has no gateway to wake it.
+        if !matches!(channel.provider.as_str(), "fcm" | "apns") {
             return Ok(());
         }
 
@@ -617,7 +619,7 @@ impl MessengerRuntime {
         let pubkey = keys.public_key().to_hex();
         let wanted = DevicePut {
             app_id: channel.app_id.clone(),
-            channel: Channel::Fcm { token: channel.token.clone() },
+            channel: channel.dto()?,
             app_version: channel.app_version.clone(),
             prefs: self.push_prefs().await?,
             author_key: None,

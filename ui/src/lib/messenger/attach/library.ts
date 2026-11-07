@@ -4,6 +4,7 @@
 // The one place that says which source of media the app uses.
 
 import { isTauriHost } from '../api';
+import { onPhone } from '../phone';
 import { androidMediaLibrary } from './AndroidMediaLibrary';
 import { dialogLibrary } from './DialogLibrary';
 import { mockLibrary } from './MockLibrary';
@@ -18,10 +19,13 @@ import { systemPickerLibrary } from './SystemPickerLibrary';
  */
 export const PHONE_GRID = true;
 
-const android = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
-
+/**
+ * Android and iOS alike take the gallery plugin's library: its commands
+ * and answers are the same on both (on iOS PhotoKit, an item of the grid
+ * `ph://`, a shot or a pick a file of the app's cache).
+ */
 export function mediaLibrary(): MediaLibrary {
   if (!isTauriHost) return mockLibrary;
-  if (android) return PHONE_GRID ? androidMediaLibrary : systemPickerLibrary;
+  if (onPhone) return PHONE_GRID ? androidMediaLibrary : systemPickerLibrary;
   return dialogLibrary;
 }

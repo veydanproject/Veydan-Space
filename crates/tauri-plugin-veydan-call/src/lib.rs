@@ -1,30 +1,38 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! The phone's side of a call (Android).
+//! The phone's side of a call (Android and iOS).
 //!
-//! The Kotlin side owns what the system must see for a call to behave as
-//! one: the ringing notification with its full-screen screen, the foreground
-//! service that keeps the process alive while a call goes on, the ringtone
-//! and the vibration, the route of the sound and the proximity sensor. This
-//! side lets the app's Rust code drive it and learn what the user pressed.
+//! The phone's side owns what the system must see for a call to behave as
+//! one. On Android (Kotlin, `android/`): the ringing notification with its
+//! full-screen screen, the foreground service that keeps the process alive
+//! while a call goes on, the ringtone and the vibration, the route of the
+//! sound and the proximity sensor. On iOS (Swift, `ios/`): CallKit, which
+//! rings over the lock screen and keeps the process and the sound while a
+//! call goes on, the audio session and its route, the proximity sensor.
+//! This side lets the app's Rust code drive it and learn what the user
+//! pressed; both sides take the same commands and send the same events.
 //!
 //! No media flows here: the call's engine lives in the messenger's crates
 //! and only asks the phone for the shell around it. One thing of the engine
-//! is this plugin's to do: its Android init needs the JVM and the context
-//! on a thread that came from Java, before the first engine of the process
-//! (`messenger_rtc::android`), and the Kotlin side has such a thread at its
-//! load. It calls [`Java_net_veydan_call_Engine_init`] there.
+//! is this plugin's to do on Android: its init needs the JVM and the
+//! context on a thread that came from Java, before the first engine of the
+//! process (`messenger_rtc::android`), and the Kotlin side has such a
+//! thread at its load. It calls [`Java_net_veydan_call_Engine_init`] there.
+//! iOS needs no such step (`messenger_rtc::Engine::new`).
 //!
 //! A button pressed while nobody listens (the process was started by the
-//! press itself) is kept by the Kotlin side until `take_actions` asks for it.
+//! press itself) is kept by the phone's side until `take_actions` asks for it.
 //!
 //! The plugin knows nothing about the messenger; it carries strings.
 
-#![cfg(target_os = "android")]
+#![cfg(any(target_os = "android", target_os = "ios"))]
 
+#[cfg(target_os = "android")]
 use jni::objects::{JClass, JObject};
+#[cfg(target_os = "android")]
 use jni::sys::jboolean;
+#[cfg(target_os = "android")]
 use jni::JNIEnv;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::{
@@ -33,7 +41,13 @@ use tauri::{
     Manager, Runtime,
 };
 
+#[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "net.veydan.call";
+
+// The Swift side's entry (`@_cdecl("init_plugin_veydan_call")` in
+// ios/Sources/VeydanCall/VeydanCallPlugin.swift), which makes the plugin.
+#[cfg(target_os = "ios")]
+tauri::ios_plugin_binding!(init_plugin_veydan_call);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -51,7 +65,7 @@ pub struct Incoming {
     pub call_id: String,
     /// Who calls, as the app shows them.
     pub name: String,
-    /// A picture of the caller as a file on this phone. The Kotlin side
+    /// A picture of the caller as a file on this phone. The phone's side
     /// fetches nothing: the app hands what it already has.
     pub avatar: Option<String>,
     pub video: bool,
@@ -98,6 +112,13 @@ pub struct Ongoing {
 }
 
 /// How the phone could show a ringing call.
+///
+/// The words are Android's. iOS rings through CallKit, which needs neither
+/// a service nor the permission of notifications and always takes the
+/// screen of a locked phone: `foreground`, `full_screen` and
+/// `notifications` are true there, and `ringing` says whether CallKit took
+/// the call (it refuses one while Do Not Disturb or a blocked caller says
+/// so, or the device cannot ring).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Shown {
@@ -163,7 +184,7 @@ pub enum Action {
 }
 
 /// The phone's default network changed: Wi-Fi gone and the mobile data
-/// taking over, or the other way round, or another Wi-Fi (the Kotlin side's
+/// taking over, or the other way round, or another Wi-Fi (the phone side's
 /// `NetworkWatch`). The first network after the start is no change.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NetworkChange {
@@ -195,7 +216,7 @@ struct PermissionAnswer {
     granted: bool,
 }
 
-/// What the Kotlin side reports without being asked.
+/// What the phone's side reports without being asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     /// A button was pressed: [`CallAction`].
@@ -303,7 +324,7 @@ impl<R: Runtime> VeydanCall<R> {
     }
 
     /// What the camera did so far: `{ running, facing, frames, dropped,
-    /// width, height, rotation, packUs }` from the Kotlin side.
+    /// width, height, rotation, packUs }` from the phone's side.
     pub async fn camera_stats(&self) -> Result<serde_json::Value> {
         self.call("cameraStats", ()).await
     }
@@ -400,7 +421,10 @@ impl<R: Runtime, T: Manager<R>> VeydanCallExt<R> for T {
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("veydan-call")
         .setup(|app, api| {
+            #[cfg(target_os = "android")]
             let handle = api.register_android_plugin(PLUGIN_IDENTIFIER, "VeydanCallPlugin")?;
+            #[cfg(target_os = "ios")]
+            let handle = api.register_ios_plugin(init_plugin_veydan_call)?;
             app.manage(VeydanCall(handle));
             Ok(())
         })
@@ -410,20 +434,27 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 /// The frames of the phone's camera, on their way to the engine.
 ///
 /// The Kotlin side (`Camera.kt`) packs every image into NV21 and calls
-/// [`Java_net_veydan_call_Camera_push`] on the camera's thread; the frame
-/// goes to the sink the app set ([`camera::set_sink`]), which hands it to
-/// the engine of calls as a pushed frame (the core's `PushedFrame`: the
-/// same fields). Without a sink the frames are counted and dropped, which
-/// is how the capture alone is measured on a phone ([`camera::stats`]).
+/// [`Java_net_veydan_call_Camera_push`] on the camera's thread; the Swift
+/// side (`Camera.swift`) copies every buffer of the capture into NV12 and
+/// calls [`veydan_call_camera_push`] on its queue. The frame goes to the
+/// sink the app set ([`camera::set_sink`]), which hands it to the engine
+/// of calls as a pushed frame (the core's `PushedFrame`: the same fields).
+/// Without a sink the frames are counted and dropped, which is how the
+/// capture alone is measured on a phone ([`camera::stats`]).
 pub mod camera {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Mutex, OnceLock};
 
-    /// One frame as the camera gave it: NV21 (Y, then V and U interleaved),
-    /// tightly packed, `rotation` the degrees clockwise it is to be turned
-    /// to stand upright, `timestamp_us` of the camera's monotonic clock.
+    pub use messenger_rtc::PixelFormat;
+
+    /// One frame as the camera gave it, tightly packed (a row is `width`
+    /// pixels, no padding): NV21 from Android (Y, then V and U
+    /// interleaved), NV12 from iOS (Y, then U and V interleaved).
+    /// `rotation` the degrees clockwise it is to be turned to stand
+    /// upright, `timestamp_us` of the camera's monotonic clock.
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Frame {
+        pub format: PixelFormat,
         pub width: u32,
         pub height: u32,
         pub rotation: u16,
@@ -432,17 +463,18 @@ pub mod camera {
     }
 
     impl Frame {
-        /// How many bytes NV21 of this size holds.
+        /// How many bytes NV21 or NV12 of this size holds (the two differ
+        /// only in the order of U and V).
         pub fn len_for(width: u32, height: u32) -> usize {
             let (cw, ch) = (width.div_ceil(2) as usize, height.div_ceil(2) as usize);
             width as usize * height as usize + 2 * cw * ch
         }
 
-        /// The frame as the engine of calls takes it: NV21 as it is, the
-        /// same size, rotation and time; the engine turns and converts it.
+        /// The frame as the engine of calls takes it: the layout as it is,
+        /// the same size, rotation and time; the engine turns and converts it.
         pub fn into_pushed(self) -> messenger_rtc::PushedFrame {
             messenger_rtc::PushedFrame {
-                format: messenger_rtc::PixelFormat::Nv21,
+                format: self.format,
                 width: self.width,
                 height: self.height,
                 rotation: self.rotation,
@@ -457,8 +489,9 @@ pub mod camera {
     static SINK: OnceLock<Mutex<Option<Sink>>> = OnceLock::new();
     static TAKEN: AtomicU64 = AtomicU64::new(0);
     static DROPPED: AtomicU64 = AtomicU64::new(0);
-    /// Microseconds the last frame spent between the JNI entry and the
-    /// sink's return: the copy out of the JVM and whatever the sink does.
+    /// Microseconds the last frame spent between the entry from the phone's
+    /// side and the sink's return: the copy of its bytes and whatever the
+    /// sink does.
     static LAST_US: AtomicU64 = AtomicU64::new(0);
 
     fn slot() -> &'static Mutex<Option<Sink>> {
@@ -476,7 +509,15 @@ pub mod camera {
         (TAKEN.load(Ordering::Relaxed), DROPPED.load(Ordering::Relaxed), LAST_US.load(Ordering::Relaxed))
     }
 
-    /// A frame from the JNI entry. `true` when a sink took it.
+    /// A rotation from the phone's side, if it is one of the four.
+    pub(crate) fn rotation(degrees: i32) -> Option<u16> {
+        match degrees.rem_euclid(360) {
+            r @ (0 | 90 | 180 | 270) => Some(r as u16),
+            _ => None,
+        }
+    }
+
+    /// A frame from an entry of the phone's side. `true` when a sink took it.
     pub(crate) fn push(frame: Frame, since: std::time::Instant) -> bool {
         let guard = slot().lock().unwrap_or_else(|e| e.into_inner());
         let taken = match guard.as_ref() {
@@ -499,6 +540,7 @@ pub mod camera {
 /// timestampUs)`: one frame of the camera, on the camera's thread. The
 /// bytes are copied out of the JVM once, into the frame the sink gets. A
 /// frame whose size does not match its bytes is dropped.
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_net_veydan_call_Camera_push<'l>(
     env: JNIEnv<'l>,
@@ -511,10 +553,7 @@ pub extern "system" fn Java_net_veydan_call_Camera_push<'l>(
 ) -> jboolean {
     let since = std::time::Instant::now();
     let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else { return 0 };
-    let rotation = match rotation.rem_euclid(360) {
-        r @ (0 | 90 | 180 | 270) => r as u16,
-        _ => return 0,
-    };
+    let Some(rotation) = camera::rotation(rotation) else { return 0 };
     let len = camera::Frame::len_for(width, height);
     let Ok(have) = env.get_array_length(&nv21) else { return 0 };
     if width == 0 || height == 0 || (have as usize) < len {
@@ -526,7 +565,60 @@ pub extern "system" fn Java_net_veydan_call_Camera_push<'l>(
     if env.get_byte_array_region(&nv21, 0, view).is_err() {
         return 0;
     }
-    u8::from(camera::push(camera::Frame { width, height, rotation, timestamp_us, data }, since))
+    let frame = camera::Frame { format: camera::PixelFormat::Nv21, width, height, rotation, timestamp_us, data };
+    u8::from(camera::push(frame, since))
+}
+
+/// The layouts [`veydan_call_camera_push`] takes, by number.
+#[cfg(target_os = "ios")]
+pub const CAMERA_FORMAT_NV12: u32 = 0;
+#[cfg(target_os = "ios")]
+pub const CAMERA_FORMAT_NV21: u32 = 1;
+
+/// One frame of the camera from the Swift side (`Camera.swift`, declared
+/// there with `@_silgen_name`; the plugin's static library and this crate
+/// end up in the one binary of the app), on the queue of the capture.
+///
+/// `data` holds `len` bytes of `format` ([`CAMERA_FORMAT_NV12`], the
+/// camera's own `420YpCbCr8BiPlanar`, or [`CAMERA_FORMAT_NV21`]) tightly
+/// packed: the Swift side strips the padding of the rows of both planes.
+/// `rotation` the degrees clockwise it is to be turned to stand upright,
+/// `timestamp_us` of the capture's monotonic clock. The bytes are copied
+/// once, into the frame the sink gets: the buffer is the camera's again
+/// when this returns. `false` when nothing took the frame, or when its
+/// size, rotation or layout does not add up (dropped).
+///
+/// # Safety
+///
+/// `data` points to `len` readable bytes for the length of the call, or is
+/// null (then `len` is not read and the frame is dropped).
+#[cfg(target_os = "ios")]
+#[no_mangle]
+pub unsafe extern "C" fn veydan_call_camera_push(
+    data: *const u8,
+    len: usize,
+    width: i32,
+    height: i32,
+    rotation: i32,
+    format: u32,
+    timestamp_us: i64,
+) -> bool {
+    let since = std::time::Instant::now();
+    let format = match format {
+        CAMERA_FORMAT_NV12 => camera::PixelFormat::Nv12,
+        CAMERA_FORMAT_NV21 => camera::PixelFormat::Nv21,
+        _ => return false,
+    };
+    let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else { return false };
+    let Some(rotation) = camera::rotation(rotation) else { return false };
+    let need = camera::Frame::len_for(width, height);
+    if data.is_null() || width == 0 || height == 0 || len < need {
+        return false;
+    }
+    // SAFETY: the caller hands `len` readable bytes, and `need <= len`.
+    let bytes = unsafe { std::slice::from_raw_parts(data, need) };
+    let frame = camera::Frame { format, width, height, rotation, timestamp_us, data: bytes.to_vec() };
+    camera::push(frame, since)
 }
 
 /// `net.veydan.call.Engine.init(context)`: hands the JVM and the
@@ -539,6 +631,7 @@ pub extern "system" fn Java_net_veydan_call_Camera_push<'l>(
 ///
 /// A product without the engine has no such symbol: the Kotlin side takes
 /// the `UnsatisfiedLinkError` for "no engine".
+#[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_net_veydan_call_Engine_init<'l>(env: JNIEnv<'l>, _class: JClass<'l>, context: JObject<'l>) -> jboolean {
     let Ok(vm) = env.get_java_vm() else { return 0 };

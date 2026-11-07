@@ -3,21 +3,22 @@
 
 //! The terminal of the module: every `communities: …` line goes through
 //! `clog!`, which puts the local time before it (on a desktop the terminal
-//! stamps nothing, and a measurement needs times; Android's logcat stamps
-//! its lines itself), and the commands that took long say how long.
+//! stamps nothing, and a measurement needs times; the logs of a phone, where
+//! the shell sends the lines — logcat, the unified log of iOS —, stamp them
+//! themselves), and the commands that took long say how long.
 
 use std::time::{Duration, Instant};
 
 /// A command slower than this says so on the terminal.
 const SLOW: Duration = Duration::from_millis(300);
 
-/// `HH:MM:SS.mmm ` of the local time; empty on Android, whose log stamps.
+/// `HH:MM:SS.mmm ` of the local time; empty on a phone, whose log stamps.
 pub(crate) fn stamp() -> String {
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         String::new()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         format!("{} ", chrono::Local::now().format("%H:%M:%S%.3f"))
     }

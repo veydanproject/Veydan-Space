@@ -311,7 +311,16 @@
     "proxy_tor_err_stopped": "사용 중에 Tor가 중지되었습니다. 다시 시도하세요.",
     "proxy_tor_err_in_use": "실행 중인 프로필이나 연결이 Tor를 사용하고 있습니다. 해당 항목을 닫고 다시 시도하세요.",
     "proxy_tor_err_no_builtin_bridges": "이 Tor에는 내장 브리지가 없습니다. 설정 → Tor에서 직접 브리지를 추가하세요.",
-    "proxy_tor_err_no_transports": "선택한 브리지에 필요한 전송 방식이 이 Tor에 없습니다. 설정 → Tor에서 다른 종류의 브리지를 선택하세요."
+    "proxy_tor_err_no_transports": "선택한 브리지에 필요한 전송 방식이 이 Tor에 없습니다. 설정 → Tor에서 다른 종류의 브리지를 선택하세요.",
+    "profile_sync_files_elsewhere": "파일이 {device}에 있음",
+    "profile_sync_files_elsewhere_hint": "이 프로필의 파일이 아직 도착하지 않았습니다. 해당 기기에서 열려 있거나 파일이 아직 전송 중입니다. 그곳에서 닫고 파일을 기다리세요.",
+    "profile_sync_files_elsewhere_close": "이 프로필의 파일이 아직 {device}에 있습니다. 그곳에서 닫고 파일을 기다리세요.",
+    "profile_sync_files_elsewhere_confirm": "이 프로필의 파일이 아직 {device}에 있습니다. 그곳에서 닫고 파일을 기다리세요. 그래도 여기서 빈 상태로 여시겠습니까?",
+    "profile_sync_launch_empty": "그래도 빈 상태로 열기",
+    "profile_sync_files_sending": "파일 보내는 중: {done}/{total}",
+    "profile_sync_files_open": "파일 미전송: 프로필이 열려 있음",
+    "profile_sync_files_open_hint": "프로필이 열려 있는 동안, 읽는 중에 바뀌지 않으면 30분마다 파일 사본이 전송됩니다. 지금 보내려면 프로필을 닫으세요.",
+    "profile_sync_files_failed": "파일 미전송"
   },
   "mobile": {}
 }

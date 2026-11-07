@@ -18,6 +18,12 @@
 //! call.ended    ──▶ stop
 //! ```
 //!
+//! The same bridge serves Android and iOS: the plugin takes the same
+//! commands and sends the same events on both (Kotlin on Android, CallKit
+//! and the audio session through Swift on iOS), so nothing here asks which
+//! phone it runs on. Only the engine's own init is Android's, and that is
+//! the plugin's business.
+//!
 //! A press can come before the runtime knows the call: Answer on a call a
 //! push rang while the app was dead starts the app, whose runtime then
 //! catches up with the relays and hears the invitation a moment later. Such
@@ -68,40 +74,40 @@
 use serde::Deserialize;
 use veydan_core::{AppError, CmdResult};
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use super::{MessengerState, EVENT_RUNTIME};
 use messenger_notify::Content;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use messenger_runtime::calls::VideoInput;
 use messenger_runtime::{CallMedia, CallPhase};
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use messenger_runtime::{CallView, GroupCallAnnounced, GroupCallView, MessengerRuntime};
 use messenger_runtime::GroupCallPhase;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 use tauri_plugin_veydan_call::{Action, AudioRoute, CallAction, GroupCallNotice, Incoming, NetworkChange, Ongoing, Routes, VeydanCall};
 
 /// The event of the developer's command and of what the plugin reports.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const EVENT_DEBUG: &str = "call.debug";
 /// The event of a change of the route of the sound: the payload is
 /// `{ current, available }` as the plugin reports it.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const EVENT_AUDIO_ROUTE: &str = "call.audio_route";
 /// The event of a camera that would not open for my video: the payload is
 /// `{ callId, error, denied }`, `denied` when the phone's permission for
 /// the camera is what is missing. My video is off in the core by then
 /// (the peer is told so); the page may ask for the permission and turn
 /// it on again.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const EVENT_CAMERA_FAILED: &str = "call.camera_failed";
 
 /// How long an Answer pressed before the runtime knew the call waits for
 /// the call to ring in: the time of a cold start and a catch-up with the
 /// relays, within the life of an invitation (45 s from its making).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const EXPECTED_FOR: Duration = Duration::from_secs(20);
 
 /// What the debug command is asked to do.
@@ -141,7 +147,7 @@ pub struct AudioRouteInput {
 }
 
 /// The call the debug command rang, for the answer to it.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 #[derive(Debug, Clone)]
 struct Rung {
     call_id: String,
@@ -150,7 +156,7 @@ struct Rung {
     hidden: bool,
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 impl Rung {
     fn ongoing(&self) -> Ongoing {
         Ongoing {
@@ -162,26 +168,26 @@ impl Rung {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 static RUNG: std::sync::Mutex<Option<Rung>> = std::sync::Mutex::new(None);
 
 /// The plugin keeps a listener for as long as the app runs.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 static LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The call the plugin shows as going on, and whether with the camera, so
 /// that the service is started once for each.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 static ONGOING: std::sync::Mutex<Option<(String, bool)>> = std::sync::Mutex::new(None);
 
 /// An Answer pressed on a call the runtime did not know yet, and when.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 static EXPECTED: std::sync::Mutex<Option<(String, Instant)>> = std::sync::Mutex::new(None);
 
 /// What a `group_call.state` does to the phone's shell: the room is going
 /// on (the shell started once per room and per `video`, the wording of
 /// the notification), or over for me.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RoomStep {
     /// The room goes on: the shell for it, unless it is shown already.
@@ -190,7 +196,7 @@ enum RoomStep {
     Over,
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn room_step(phase: GroupCallPhase) -> RoomStep {
     match phase {
         GroupCallPhase::Starting | GroupCallPhase::Joining | GroupCallPhase::InRoom | GroupCallPhase::Reconnecting => RoomStep::Ongoing,
@@ -205,11 +211,11 @@ fn room_step(phase: GroupCallPhase) -> RoomStep {
 /// calls of a long life never pile up. For the life of the process: the
 /// plugin remembers across processes (see the module's doc), and answers
 /// `show_group_call` with `false` for a call it knows.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 static NOTICED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// How many announced calls [`NOTICED`] remembers.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const NOTICED_MAX: usize = 16;
 
 /// Whether a `group_call.started` is news for the phone's shade: a call
@@ -217,13 +223,13 @@ const NOTICED_MAX: usize = 16;
 /// has it), not shown yet. A call I started or joined is on my screen;
 /// one shown already stays as it is while the group tells of every seat
 /// taken.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn group_call_is_news(joined: bool, started_by: &str, me: &str, shown: bool) -> bool {
     !joined && !shown && started_by != me
 }
 
 /// Remembers `call_id` as shown (see [`NOTICED`]).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn noticed(call_id: &str) {
     let mut list = lock(&NOTICED);
     if list.iter().any(|c| c == call_id) {
@@ -237,13 +243,13 @@ fn noticed(call_id: &str) {
 }
 
 /// Whether `call_id` was shown (see [`NOTICED`]).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn was_noticed(call_id: &str) -> bool {
     lock(&NOTICED).iter().any(|c| c == call_id)
 }
 
 /// The call `call_id` ended: not shown any more, and forgotten.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn forget_noticed(call_id: &str) -> bool {
     let mut list = lock(&NOTICED);
     let before = list.len();
@@ -251,7 +257,7 @@ fn forget_noticed(call_id: &str) -> bool {
     list.len() != before
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -266,7 +272,7 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// the notification and the wake lock of whatever goes on), so only the
 /// call shown as going on stops everything; any other end is a dismissal
 /// by id, which the plugin answers only for the call that rings.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShellEnd {
     /// The call that goes on ended: everything of the phone ends.
@@ -276,7 +282,7 @@ enum ShellEnd {
     DismissOnly,
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn shell_end(ongoing: Option<&str>, ended: &str) -> ShellEnd {
     match ongoing {
         Some(id) if id == ended => ShellEnd::Stop,
@@ -301,7 +307,7 @@ fn shell_end(ongoing: Option<&str>, ended: &str) -> ShellEnd {
 /// the plugin's `stop`, which takes the room's service, notification,
 /// sound mode and wake lock down with it while the core keeps me in the
 /// room, with nothing to bring them back.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IncomingStep {
     /// Answered on the notification before the runtime heard it: taken.
@@ -316,7 +322,7 @@ enum IncomingStep {
     InRoom,
 }
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn incoming_step(expected: bool, phase: Option<CallPhase>, in_room: bool) -> IncomingStep {
     match (expected, phase, in_room) {
         (_, Some(phase), _) if phase != CallPhase::Incoming => IncomingStep::Skip,
@@ -336,7 +342,7 @@ fn incoming_step(expected: bool, phase: Option<CallPhase>, in_room: bool) -> Inc
 /// have left the room for this very call; without a ringing it would go
 /// missed in silence (the push for it was dismissed as over with the
 /// room, and rings nothing).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn rings_after_room(in_room: bool, phase: Option<CallPhase>) -> bool {
     !in_room && phase == Some(CallPhase::Incoming)
 }
@@ -345,7 +351,7 @@ fn rings_after_room(in_room: bool, phase: Option<CallPhase>) -> bool {
 /// setting "no content" and a PIN on the app leave no name (the plugin
 /// shows the app's), as the notifications of a computer do
 /// (`desktop_notify::caller`).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn shown_name(name: String, content: Content, locked: bool) -> String {
     if content == Content::None || locked {
         String::new()
@@ -356,27 +362,27 @@ fn shown_name(name: String, content: Content, locked: bool) -> String {
 
 /// Whether the camera failed for want of the phone's permission, from
 /// the plugin's word for it (`Camera.start`).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn camera_denied(error: &str) -> bool {
     error.contains("not allowed")
 }
 
 /// The call shown as going on, and whether its service holds the camera.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 type Shell = (String, bool);
 /// The call whose camera is open, and which camera (`front` or `back`).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 type OpenCamera = (String, String);
 
 /// Everything the bridge remembers of the phone, taken: the call shown as
 /// going on and the camera open (answered), the answer expected (dropped).
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn forget() -> (Option<Shell>, Option<OpenCamera>) {
     *lock(&EXPECTED) = None;
     (lock(&ONGOING).take(), lock(&CAMERA).take())
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn bridge(app: &tauri::AppHandle) -> CmdResult<tauri::State<'_, VeydanCall<tauri::Wry>>> {
     use tauri::Manager;
     app.try_state::<VeydanCall<tauri::Wry>>()
@@ -384,19 +390,19 @@ fn bridge(app: &tauri::AppHandle) -> CmdResult<tauri::State<'_, VeydanCall<tauri
 }
 
 /// The runtime, while the messenger runs.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn runtime(app: &tauri::AppHandle) -> Option<Arc<MessengerRuntime>> {
     use tauri::Manager;
     app.try_state::<MessengerState>().and_then(|s| s.runtime().ok())
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn failed(e: tauri_plugin_veydan_call::Error) -> AppError {
     AppError::Other(e.to_string())
 }
 
 /// Tells the page and the log.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn report(app: &tauri::AppHandle, name: &str, payload: serde_json::Value) {
     use tauri::Emitter;
     eprintln!("messenger call: {name} {payload}");
@@ -410,7 +416,7 @@ fn report(app: &tauri::AppHandle, name: &str, payload: serde_json::Value) {
 /// no call goes without a microphone: the engine records silence without
 /// the permission, and the service may not hold the microphone. A
 /// computer has no such question.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub async fn permissions_for_call(app: &tauri::AppHandle, media: CallMedia) -> CmdResult<()> {
     use tauri_plugin_veydan_call::{PERMISSION_CAMERA, PERMISSION_MICROPHONE};
     let call = bridge(app)?;
@@ -428,7 +434,7 @@ pub async fn permissions_for_call(app: &tauri::AppHandle, media: CallMedia) -> C
     Ok(())
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(mobile))]
 #[allow(dead_code)]
 pub async fn permissions_for_call(_app: &tauri::AppHandle, _media: CallMedia) -> CmdResult<()> {
     Ok(())
@@ -444,7 +450,7 @@ fn permission_refused(permission: &str) -> String {
 }
 
 /// The expected answer, if it is for `call_id` and not too old; taken.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 fn take_expected(call_id: &str) -> bool {
     let mut slot = lock(&EXPECTED);
     match slot.as_ref() {
@@ -458,7 +464,7 @@ fn take_expected(call_id: &str) -> bool {
 
 /// A press: told, and given to the runtime. Decline and Hang up the plugin
 /// has ended on the phone by itself; the runtime tells the peer.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn pressed(app: &tauri::AppHandle, press: CallAction) {
     report(app, EVENT_DEBUG, serde_json::json!({ "action": press.action, "callId": press.call_id }));
     // The developer's call from nobody: answered as the engine would.
@@ -525,20 +531,20 @@ async fn pressed(app: &tauri::AppHandle, press: CallAction) {
 /// after the connections were made anew: `nostr-sdk` tries a dropped relay
 /// again after 3 s, and the handshake on the new network follows. Past
 /// this, the restart goes without: its signal waits in the outbox.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const RELAYS_BACK_WITHIN: Duration = Duration::from_secs(10);
 /// How long the drop of the connections is given to show in the state of
 /// the relays (the stream of a closed socket ends at once, and `nostr-sdk`
 /// marks the relay within milliseconds). A state that stays `Connected`
 /// this long had nothing to close.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const RELAYS_DROP_SEEN_WITHIN: Duration = Duration::from_secs(1);
 /// How often the state of the relays is looked at meanwhile.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 const RELAYS_BACK_EVERY: Duration = Duration::from_millis(100);
 
 /// What the wait for the relays came to.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RelaysBack {
     /// A relay dropped and is connected again: the sockets are live.
@@ -556,7 +562,7 @@ enum RelaysBack {
 /// seen by `nostr-sdk` when the stream ends), so a relay counts as back
 /// only after it was seen down: a signal queued on the stale reading would
 /// hit a dead socket and wait out the outbox's backoff.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 async fn relays_back<F, Fut>(mut connected: F, within: Duration, drop_seen_within: Duration, every: Duration) -> RelaysBack
 where
     F: FnMut() -> Fut,
@@ -594,7 +600,7 @@ where
 /// connected again, they leave with the outbox's kick, at once. Without a
 /// call, or with the relays silenced, the core is told at once: it does
 /// nothing without a call, and nothing leaves in silence.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn network_changed(app: &tauri::AppHandle, how: &str) {
     use messenger_core::traits::RelayState;
     let Some(rt) = runtime(app) else { return };
@@ -630,7 +636,7 @@ async fn network_changed(app: &tauri::AppHandle, how: &str) {
 
 /// Registers the listeners once in the process and takes the presses made
 /// before: the press that started the app came before any listener.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn listen(app: &tauri::AppHandle) {
     use std::sync::atomic::Ordering;
     let Ok(call) = bridge(app) else { return };
@@ -684,7 +690,7 @@ async fn listen(app: &tauri::AppHandle) {
 
 /// Whether the app has a PIN (`veydan_lock`): the notifications then
 /// name nobody, as on a computer. Without the lock's state, locked.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn locked(app: &tauri::AppHandle) -> bool {
     use tauri::Manager;
     match app.try_state::<veydan_lock::Lock>() {
@@ -697,7 +703,7 @@ async fn locked(app: &tauri::AppHandle) -> bool {
 /// settings allow (see [`shown_name`]), and whether who calls stays off
 /// the lock screen. Settings that cannot be read hide everything: a
 /// notification says less rather than more when in doubt.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn face_of(app: &tauri::AppHandle, rt: &MessengerRuntime, call: &CallView) -> (String, bool) {
     let name = match rt.dm().chat(&call.chat_id).await {
         Ok(Some(chat)) => chat.title,
@@ -710,7 +716,7 @@ async fn face_of(app: &tauri::AppHandle, rt: &MessengerRuntime, call: &CallView)
 }
 
 /// The group of a room, as its chat shows it, under the same settings.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn face_of_room(app: &tauri::AppHandle, rt: &MessengerRuntime, group_id: &str, chat_id: &str) -> (String, bool) {
     let name = match rt.group_get(group_id).await {
         Ok(group) if !group.name.is_empty() => group.name,
@@ -724,7 +730,7 @@ async fn face_of_room(app: &tauri::AppHandle, rt: &MessengerRuntime, group_id: &
 
 /// `name` as the notifications' settings allow it (see [`shown_name`]),
 /// and whether it stays off the lock screen.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn named(app: &tauri::AppHandle, rt: &MessengerRuntime, name: String) -> (String, bool) {
     let (content, hidden) = match messenger_notify::Settings::load(rt.store()).await {
         Ok(s) => (s.content, s.lockscreen_hidden),
@@ -737,7 +743,7 @@ async fn named(app: &tauri::AppHandle, rt: &MessengerRuntime, name: String) -> (
 }
 
 /// One event of the runtime, to the plugin.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
     use messenger_runtime::{UI_EVENT_CALL_ENDED, UI_EVENT_CALL_INCOMING, UI_EVENT_CALL_STATE};
     if name.starts_with("group_call.") {
@@ -852,7 +858,7 @@ async fn on_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str
 /// the app in front the plugin opens no screen of its own: the page of
 /// the messenger shows the call. A call that rings already goes on
 /// ringing as it is.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn ring(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, view: &CallView) {
     let Ok(call) = bridge(app) else { return };
     let (name, hidden) = face_of(app, rt, view).await;
@@ -876,7 +882,7 @@ async fn ring(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, view: &CallVie
 /// group (`group_call.started`) that is not mine is a quiet notification
 /// while the app is away (the plugin shows nothing over the app: the
 /// chat's banner says it there), once per call.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn on_room_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name: &str, payload: &serde_json::Value) {
     use messenger_runtime::{UI_EVENT_GROUP_CALL_ENDED, UI_EVENT_GROUP_CALL_STARTED, UI_EVENT_GROUP_CALL_STATE};
     let Ok(call) = bridge(app) else { return };
@@ -958,7 +964,7 @@ async fn on_room_event(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, name:
 /// else is left alone. Then the call of two that rang in during the
 /// room, if it still rings in the core, rings on the phone at last (see
 /// [`rings_after_room`]).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn stop_room(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: &str) {
     let end = {
         let mut ongoing = lock(&ONGOING);
@@ -985,18 +991,18 @@ async fn stop_room(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: 
 }
 
 /// What the camera is asked for: the size the plan measures the phone at.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const CAMERA_WIDTH: u32 = 640;
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const CAMERA_HEIGHT: u32 = 360;
 /// The camera of a phone the core names when none was chosen yet.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const CAMERA_FRONT: &str = "front";
 
 /// Frames the camera's thread may leave for the task that hands them to
 /// the engine before it drops new ones: the engine is asked for a frame
 /// at a time, and a page that stalls must not pile the camera up.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 const CAMERA_QUEUE: usize = 2;
 
 /// Where the frames of the camera go: into the call of two
@@ -1004,7 +1010,7 @@ const CAMERA_QUEUE: usize = 2;
 /// (`group_call_push_video_frame`). The two are the runtime's separate
 /// services, one of them with a session at a time; the bridge opens the
 /// camera for the one whose word asked for it.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Feed {
     Dm,
@@ -1015,14 +1021,14 @@ enum Feed {
 /// the camera follows `video_local` and `camera` of the call's state (the
 /// core turns it on for a video call at the answer and at the start, the
 /// user turns it on and off and flips it), and is opened once.
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg_attr(not(mobile), allow(dead_code))]
 static CAMERA: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
 
 /// The camera as the state of the call wants it: open and facing
 /// `wanted` while my video is on, closed (`None`) otherwise. The frames
 /// go through the plugin's sink to the engine of the runtime, as pushed
 /// frames (NV21, turned by the engine).
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id: &str, wanted: Option<&str>, feed: Feed) {
     let Ok(call) = bridge(app) else { return };
     let open = lock(&CAMERA).clone();
@@ -1084,7 +1090,7 @@ async fn sync_camera(app: &tauri::AppHandle, rt: &Arc<MessengerRuntime>, call_id
 }
 
 /// The camera of `call_id` closed, if it is open; its frames go nowhere.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 async fn close_camera(app: &tauri::AppHandle, call_id: &str) {
     {
         let mut open = lock(&CAMERA);
@@ -1103,7 +1109,7 @@ async fn close_camera(app: &tauri::AppHandle, call_id: &str) {
 /// sink is dropped (the camera closed). A frame the engine refuses (no
 /// session yet, the call ending) is dropped; the first refusal and every
 /// hundredth after it go to the log.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn spawn_camera_feed(rt: Arc<MessengerRuntime>, mut rx: tokio::sync::mpsc::Receiver<tauri_plugin_veydan_call::camera::Frame>, call_id: String, feed: Feed) {
     tauri::async_runtime::spawn(async move {
         let mut refused = 0u64;
@@ -1127,7 +1133,7 @@ fn spawn_camera_feed(rt: Arc<MessengerRuntime>, mut rx: tokio::sync::mpsc::Recei
 /// `call_id`: the frames the Kotlin side packed and the Rust side took or
 /// dropped, and what the last one cost. For the log of a phone, nothing
 /// else.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn spawn_camera_log(app: tauri::AppHandle, call_id: String) {
     tauri::async_runtime::spawn(async move {
         let mut last = (0u64, 0u64);
@@ -1150,7 +1156,7 @@ fn spawn_camera_log(app: tauri::AppHandle, call_id: String) {
 /// app, and carries the runtime's events to the plugin for as long as the
 /// runtime runs. Waits for the plugin and for the runtime, which take their
 /// places after the tasks are spawned.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub fn spawn_bridge(app: tauri::AppHandle) -> tauri::async_runtime::JoinHandle<()> {
     use tauri::Manager;
     tauri::async_runtime::spawn(async move {
@@ -1184,7 +1190,7 @@ pub fn spawn_bridge(app: tauri::AppHandle) -> tauri::async_runtime::JoinHandle<(
 /// (its service, notification, sound mode, wake lock) or a ringing — and
 /// the bridge forgets them, so that the next start begins clean. Called
 /// from `MessengerState::stop`, while the plugin is still there.
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 pub async fn stop_bridge(app: &tauri::AppHandle) {
     let (ongoing, camera) = forget();
     tauri_plugin_veydan_call::camera::set_sink(None);
@@ -1202,7 +1208,7 @@ pub async fn stop_bridge(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(mobile)]
 fn route_of(name: Option<&str>) -> CmdResult<AudioRoute> {
     serde_json::from_value(serde_json::json!(name.unwrap_or_default()))
         .map_err(|_| AppError::Other(format!("not a route: {}", name.unwrap_or_default())))
@@ -1214,7 +1220,7 @@ fn route_of(name: Option<&str>) -> CmdResult<AudioRoute> {
 #[cfg_attr(not(mobile), allow(dead_code))]
 #[tauri::command]
 pub async fn messenger_call_audio_route(app: tauri::AppHandle, input: AudioRouteInput) -> CmdResult<serde_json::Value> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let call = bridge(&app)?;
         let routes = match input.op.as_str() {
@@ -1224,7 +1230,7 @@ pub async fn messenger_call_audio_route(app: tauri::AppHandle, input: AudioRoute
         };
         Ok(serde_json::to_value(routes).unwrap_or_default())
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (app, input);
         Err(AppError::Other("the route of the sound is the phone's".into()))
@@ -1252,7 +1258,7 @@ pub struct CameraInput {
 #[cfg_attr(not(mobile), allow(dead_code))]
 #[tauri::command]
 pub async fn messenger_call_camera(app: tauri::AppHandle, input: CameraInput) -> CmdResult<serde_json::Value> {
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         let call = bridge(&app)?;
         match input.op.as_str() {
@@ -1277,7 +1283,7 @@ pub async fn messenger_call_camera(app: tauri::AppHandle, input: CameraInput) ->
             other => Err(AppError::Other(format!("not an op: {other}"))),
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (app, input);
         Err(AppError::Other("the camera is the phone's".into()))
@@ -1293,7 +1299,7 @@ pub async fn messenger_call_debug_ring(
     input: Option<DebugRing>,
 ) -> CmdResult<serde_json::Value> {
     let input = input.unwrap_or_default();
-    #[cfg(target_os = "android")]
+    #[cfg(mobile)]
     {
         listen(&app).await;
         let call = bridge(&app)?;
@@ -1364,7 +1370,7 @@ pub async fn messenger_call_debug_ring(
             other => Err(AppError::Other(format!("not an op: {other}"))),
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(mobile))]
     {
         let _ = (app, input);
         Err(AppError::Other("calls on this phone are not supported".into()))
