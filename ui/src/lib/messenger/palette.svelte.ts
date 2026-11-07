@@ -37,7 +37,7 @@ export function messengerPalette(): PaletteCommand[] {
     { id: 'messenger.groups', title: tr('msg_nav_groups'), keywords: 'groups', icon: 'users', group, run: () => request('groups') },
     { id: 'messenger.calls', title: tr('msg_nav_calls'), keywords: 'calls journal history missed', icon: 'phone', group, run: () => request('calls') },
     { id: 'messenger.contacts', title: tr('msg_contacts_title'), keywords: 'contacts people', icon: 'book-user', group, run: () => request('contacts') },
-    { id: 'messenger.settings', title: tr('msg_settings_title_full'), keywords: 'chat messenger settings relays', icon: 'user-cog', group, run: () => request('settings') },
+    { id: 'messenger.settings', title: tr('msg_settings_title_full'), keywords: 'chat messenger settings relays', icon: 'settings', group, run: () => request('settings') },
     // The requests of strangers are reached through their own row only: a
     // request chat is not a chat yet, and the ordinary window would show
     // the stranger's text as a message of a chat.

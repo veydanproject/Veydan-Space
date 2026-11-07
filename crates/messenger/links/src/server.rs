@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 //! The card of a server (internal/messenger-wire.md, «Ссылка»):
-//! `veydan://server/<id>?u=<relay>&k=<app key>[&m=<media>][&c=<call node>][&pu=<push server>]&p=veydan|off&n=<name>`.
+//! `veydan://server/<id>?u=<relay>&k=<app key>[&m=<media>][&c=<call node>][&pu=<push server>]&p=veydan|off&n=<name>[&a=team|channel][&inv=<invite>]`.
 //!
 //! What the kit of a server prints (`veydan-server card`) and what the app
 //! takes to add it as a private server. A server is one relay with what
@@ -16,6 +16,14 @@
 //! (`messenger_store::servers::id_of`): a link whose id is not that of its
 //! relay names no server and is refused, so a card can never put one
 //! server's name on another's relay.
+//!
+//! The access mode of the server (`a`): `open` (anyone, the default, never
+//! written), `team` (its members alone; one gets in by an invite) or
+//! `channel` (anyone reads, its authors write). A card of a team server
+//! may carry an invite (`inv`, `vi1.…`): the app joins with it once it
+//! adds the server. The invite is the card's alone: never stored with the
+//! server, never in the snapshot of my relations, never in a log, and a
+//! line that shows the link hides it as it hides the key.
 //!
 //! A link of a person or of a group may carry the card of the server it
 //! lives on as `srv=`: the server link as base64url without padding
@@ -42,6 +50,60 @@ const MAX_URL_LEN: usize = 512;
 pub const PUSH_OFF: &str = "off";
 pub const PUSH_VEYDAN: &str = "veydan";
 
+/// The words of the access mode (`a=`).
+pub const ACCESS_OPEN: &str = "open";
+pub const ACCESS_TEAM: &str = "team";
+pub const ACCESS_CHANNEL: &str = "channel";
+/// What every invite of a server starts with, and how long one may be.
+pub const INVITE_PREFIX: &str = "vi1.";
+pub const MAX_INVITE_LEN: usize = 128;
+
+/// Who may use a server (internal/messenger-wire.md, «Режимы доступа
+/// сервера»).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Access {
+    /// Anyone: what every server was before the modes.
+    #[default]
+    Open,
+    /// Its members alone; one gets in by an invite.
+    Team,
+    /// Anyone reads what is public and may join and comment; its authors
+    /// alone write.
+    Channel,
+}
+
+impl Access {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Access::Open => ACCESS_OPEN,
+            Access::Team => ACCESS_TEAM,
+            Access::Channel => ACCESS_CHANNEL,
+        }
+    }
+
+    /// The mode of a word; `None` for one this build does not know.
+    pub fn parse(word: &str) -> Option<Self> {
+        match word {
+            ACCESS_OPEN => Some(Access::Open),
+            ACCESS_TEAM => Some(Access::Team),
+            ACCESS_CHANNEL => Some(Access::Channel),
+            _ => None,
+        }
+    }
+}
+
+/// An invite as a card (or the command line) gives it: `vi1.` and more,
+/// at most `MAX_INVITE_LEN` bytes, no spaces or controls; empty is none.
+pub fn invite_code(value: Option<String>) -> Result<Option<String>, LinkError> {
+    let Some(code) = word(value, MAX_INVITE_LEN)? else {
+        return Ok(None);
+    };
+    if !code.starts_with(INVITE_PREFIX) || code.len() == INVITE_PREFIX.len() {
+        return Err(LinkError::Param);
+    }
+    Ok(Some(code))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServerLink {
     /// 16 hex, lower case: `server_id(relay)`.
@@ -60,6 +122,11 @@ pub struct ServerLink {
     pub push: String,
     /// Empty when the card gives none.
     pub name: String,
+    /// Who may use it; `a=` is written only when it is not `Open`.
+    pub access: Access,
+    /// The invite the card carries (`inv=`, `vi1.…`): joined with once the
+    /// server is added. Never stored, never in the snapshot, never logged.
+    pub invite: Option<String>,
 }
 
 /// The form a relay url is compared and hashed in: trimmed, lowercase,
@@ -176,13 +243,18 @@ impl ServerLink {
             push_url: None,
             push: PUSH_OFF.into(),
             name: String::new(),
+            access: Access::Open,
+            invite: None,
         }
     }
 
     /// The card of a server this device holds, made of its parts as a
     /// store keeps them; `None` when they do not make a card the parser
     /// would take (a relay that is no `ws(s)://` address, a blob server
-    /// that is not `https`, a call node not written `address:port#id`).
+    /// that is not `https`, a call node not written `address:port#id`, an
+    /// access mode this build does not know). A store keeps no invite, and
+    /// this card carries none.
+    #[allow(clippy::too_many_arguments)]
     pub fn of_parts(
         relay_url: &str,
         key: Option<&str>,
@@ -191,8 +263,10 @@ impl ServerLink {
         push_url: Option<&str>,
         push: &str,
         name: Option<&str>,
+        access: &str,
     ) -> Option<Self> {
         let card = Self {
+            access: Access::parse(access)?,
             key: key.map(String::from),
             media: media.map(String::from),
             call_node: call_node.map(String::from),
@@ -205,7 +279,8 @@ impl ServerLink {
     }
 
     /// As the kit writes it: `u`, `k` (empty when there is no key), `m`
-    /// `c` and `pu` when there are, `p`, `n`.
+    /// `c` and `pu` when there are, `p`, `n`; then `a` when the mode is not
+    /// open, and `inv` when there is an invite.
     pub fn encode(&self) -> String {
         let relay = normalize_relay(self.relay.as_str());
         let mut b = UriBuilder::new(&LinkType::Server, &server_id(&relay))
@@ -220,9 +295,14 @@ impl ServerLink {
         if let Some(pu) = &self.push_url {
             b = b.param("pu", pu);
         }
-        b.param("p", &self.push)
-            .param("n", &clean_name(&self.name))
-            .build()
+        b = b.param("p", &self.push).param("n", &clean_name(&self.name));
+        if self.access != Access::Open {
+            b = b.param("a", self.access.as_str());
+        }
+        if let Some(inv) = &self.invite {
+            b = b.param("inv", inv);
+        }
+        b.build()
     }
 
     pub fn parse(link: &str) -> Result<Self, LinkError> {
@@ -251,6 +331,10 @@ impl ServerLink {
             Some(PUSH_VEYDAN) => PUSH_VEYDAN.to_string(),
             Some(_) => return Err(LinkError::Param),
         };
+        let access = match uri.text("a")?.as_deref() {
+            None | Some("") => Access::Open,
+            Some(word) => Access::parse(word).ok_or(LinkError::Param)?,
+        };
         Ok(Self {
             id,
             relay,
@@ -260,6 +344,8 @@ impl ServerLink {
             push_url: push_server_url(uri.text("pu")?)?,
             push,
             name: clean_name(&uri.text("n")?.unwrap_or_default()),
+            access,
+            invite: invite_code(uri.text("inv")?)?,
         })
     }
 
@@ -295,6 +381,23 @@ mod tests {
     /// through jq's `@uri`, which leaves `A-Z a-z 0-9 - _ . ~` and writes
     /// the rest as `%XX`, as `uri::encode` does.
     fn kit_card(id: &str, key: &str, media: &str, call: &str, push: &str, network: &str) -> String {
+        kit_card_with(id, key, media, call, push, network, "open", "")
+    }
+
+    /// The same with the access mode of the server (`a=`, which the kit
+    /// writes only when it is not `open`) and an invite (`inv=`, after it,
+    /// only when one is made: `veydan-server card --invite`).
+    #[allow(clippy::too_many_arguments)]
+    fn kit_card_with(
+        id: &str,
+        key: &str,
+        media: &str,
+        call: &str,
+        push: &str,
+        network: &str,
+        access: &str,
+        invite: &str,
+    ) -> String {
         let uri = crate::uri::encode;
         let mut q = format!("u={}&k={}", uri(RELAY), uri(key));
         if !media.is_empty() {
@@ -304,7 +407,81 @@ mod tests {
             q += &format!("&c={}", uri(call));
         }
         q += &format!("&p={}&n={}", uri(push), uri(network));
+        if !access.is_empty() && access != "open" {
+            q += &format!("&a={}", uri(access));
+        }
+        if !invite.is_empty() {
+            q += &format!("&inv={}", uri(invite));
+        }
         format!("veydan://server/{id}?{q}")
+    }
+
+    const INVITE: &str = "vi1.AbCd-ef_0123456789.xyz";
+
+    #[test]
+    fn the_access_mode_and_the_invite_of_the_kit_card_are_read() {
+        let id = server_id(RELAY);
+        for (word, access) in [("team", Access::Team), ("channel", Access::Channel)] {
+            let text = kit_card_with(&id, "k", "https://media.s1.example", NODE, "veydan", "S1", word, "");
+            let card = ServerLink::parse(&text).unwrap();
+            assert_eq!((card.access, card.invite.as_deref()), (access, None));
+            assert_eq!(card.encode(), text, "written back as the kit writes it");
+            assert_eq!(access.as_str(), word);
+            assert_eq!(Access::parse(word), Some(access));
+            let with = kit_card_with(&id, "k", "", "", "off", "S1", word, INVITE);
+            let card = ServerLink::parse(&with).unwrap();
+            assert_eq!((card.access, card.invite.as_deref()), (access, Some(INVITE)));
+            assert_eq!(card.encode(), with, "the invite after the mode");
+        }
+        // Open is the default and never written; an `a=open` someone wrote
+        // is read as open and written back without it.
+        let open = kit_card(&id, "k", "", "", "off", "S1");
+        let card = ServerLink::parse(&open).unwrap();
+        assert_eq!((card.access, card.invite.as_deref()), (Access::Open, None));
+        assert!(!card.encode().contains("&a="));
+        let spelled = format!("{open}&a=open");
+        assert_eq!(ServerLink::parse(&spelled).unwrap().encode(), open);
+        // An open server's card with an invite keeps it: the app ignores it.
+        let with = kit_card_with(&id, "k", "", "", "off", "S1", "open", INVITE);
+        assert_eq!(ServerLink::parse(&with).unwrap().invite.as_deref(), Some(INVITE));
+        assert_eq!(ServerLink::parse(&with).unwrap().encode(), with);
+    }
+
+    #[test]
+    fn an_unknown_mode_or_a_bad_invite_is_refused() {
+        let id = server_id(RELAY);
+        let ok = kit_card(&id, "k", "", "", "off", "S1");
+        for bad in ["x", "Team", "closed", "team%20"] {
+            assert_eq!(ServerLink::parse(&format!("{ok}&a={bad}")), Err(LinkError::Param), "a={bad}");
+        }
+        let long = format!("vi1.{}", "a".repeat(MAX_INVITE_LEN - 3));
+        let longest = format!("vi1.{}", "a".repeat(MAX_INVITE_LEN - 4));
+        assert_eq!(longest.len(), MAX_INVITE_LEN);
+        assert!(ServerLink::parse(&format!("{ok}&inv={longest}")).is_ok());
+        for bad in [long.as_str(), "vi2.abc", "abc", "vi1.", "vi1.a%20b", "VI1.abc"] {
+            assert_eq!(ServerLink::parse(&format!("{ok}&inv={bad}")), Err(LinkError::Param), "inv={bad}");
+        }
+        assert_eq!(ServerLink::parse(&format!("{ok}&inv=")).unwrap().invite, None, "empty is none");
+        assert_eq!(invite_code(Some(INVITE.into())), Ok(Some(INVITE.to_string())));
+        assert_eq!(invite_code(Some("nope".into())), Err(LinkError::Param));
+    }
+
+    #[test]
+    fn a_card_of_parts_carries_the_mode_and_never_an_invite() {
+        let card = ServerLink::of_parts(RELAY, Some("k"), None, None, None, "off", Some("S1"), "team").unwrap();
+        assert_eq!((card.access, card.invite.as_deref()), (Access::Team, None));
+        assert!(card.encode().ends_with("&p=off&n=S1&a=team"), "{}", card.encode());
+        let open = ServerLink::of_parts(RELAY, Some("k"), None, None, None, "off", Some("S1"), "open").unwrap();
+        assert_eq!(open.encode(), kit_card(&server_id(RELAY), "k", "", "", "off", "S1"));
+        assert!(ServerLink::of_parts(RELAY, Some("k"), None, None, None, "off", None, "x").is_none());
+    }
+
+    #[test]
+    fn the_mode_and_the_invite_ride_on_srv() {
+        let card = ServerLink::parse(&kit_card_with(&server_id(RELAY), "k", "", "", "off", "S1", "channel", INVITE)).unwrap();
+        let back = ServerLink::from_srv(&card.srv_param()).unwrap();
+        assert_eq!((back.access, back.invite.as_deref()), (Access::Channel, Some(INVITE)));
+        assert_eq!(back, card);
     }
 
     #[test]
@@ -481,7 +658,7 @@ mod tests {
             assert_eq!(ServerLink::from_srv(&srv), Err(LinkError::Param), "{clear} as srv=");
         }
         // A server this device holds with such a relay makes no card either.
-        assert!(ServerLink::of_parts("ws://relay.s1.example", Some("k"), None, None, None, "off", None).is_none());
+        assert!(ServerLink::of_parts("ws://relay.s1.example", Some("k"), None, None, None, "off", None, "open").is_none());
     }
 
     #[test]

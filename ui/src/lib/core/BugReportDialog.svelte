@@ -5,6 +5,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { get } from 'svelte/store';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
   import { locale, t } from '$lib/core/i18n';
@@ -22,7 +23,6 @@
   let { open = $bindable(false) }: Props = $props();
 
   let text = $state('');
-  let copied = $state(false);
   let mailError = $state('');
   let wasOpen = false;
 
@@ -68,7 +68,6 @@
   }
 
   function fill() {
-    copied = false;
     mailError = '';
     const draft = buildReport(null, []);
     text = draft;
@@ -87,7 +86,6 @@
     try {
       await navigator.clipboard.writeText(text);
       copiedToast();
-      copied = true;
       mailError = '';
     } catch (e) {
       mailError = formatError(e);
@@ -123,19 +121,19 @@
   <p class="hint">{$t('settings_bug_hint')}</p>
   <p class="email">{BUG_EMAIL}</p>
   <textarea rows="14" bind:value={text} spellcheck="false"></textarea>
-  {#if mailError}<p class="err">{mailError}</p>{/if}
+  {#if mailError}<Notice tone="danger">{mailError}</Notice>{/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-primary btn-sm" onclick={copy}>
-      {copied ? $t('settings_bug_copied') : $t('settings_bug_copy')}
-    </button>
-    <button type="button" class="btn btn-ghost btn-sm" onclick={openMail}>
+    <button type="button" class="btn btn-ghost" onclick={openMail}>
       {$t('settings_bug_mail')}
+    </button>
+    <button type="button" class="btn btn-primary" onclick={copy}>
+      {$t('settings_bug_copy')}
     </button>
   {/snippet}
 </Dialog>
 
 <style>
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .email {
     margin: 0;
     font-family: var(--font-mono);
@@ -148,8 +146,7 @@
     resize: vertical;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    line-height: 1.45;
+    line-height: var(--lh-snug);
     white-space: pre;
   }
-  .err { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
 </style>

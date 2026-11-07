@@ -37,7 +37,7 @@
     margin: 0; font-size: var(--fs-sm); color: var(--text-body);
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
-    border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3);
   }
   .confirm { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-body); cursor: pointer; }
   .confirm input { margin-top: 3px; }

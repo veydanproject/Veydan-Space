@@ -82,6 +82,18 @@ impl SecretBox<'_> {
         Ok(())
     }
 
+    /// The keys the box holds, sorted. A key is a name, not a secret: it is
+    /// stored in the clear beside its value, so this needs no vault key and
+    /// works while the vault is closed (the archive of the messenger lists
+    /// the keys of groups by it, `internal/platform-spec.md` 9.6).
+    pub async fn names(&self) -> Result<Vec<String>> {
+        sqlx::query_scalar("SELECT key FROM lock_secrets WHERE box = ? ORDER BY key")
+            .bind(self.name)
+            .fetch_all(&self.lock.db)
+            .await
+            .map_err(Error::db)
+    }
+
     /// Whether `get` and `put` would find the vault key: the vault is open,
     /// or no lock guards it and the key is made on first use.
     pub fn is_unlocked(&self) -> bool {
@@ -120,6 +132,13 @@ mod tests {
 
         other.delete("nsec").await.unwrap();
         assert_eq!(other.get("nsec").await.unwrap(), None);
+
+        // The names of a box are its own, and readable behind a closed vault.
+        messenger.put("group.g.key.k", b"k").await.unwrap();
+        messenger.put("b", b"b").await.unwrap();
+        lock.lock();
+        assert_eq!(messenger.names().await.unwrap(), ["b", "group.g.key.k"]);
+        assert!(other.names().await.unwrap().is_empty());
         db.close().await;
     }
 

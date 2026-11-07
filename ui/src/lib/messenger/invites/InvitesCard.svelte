@@ -13,6 +13,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { messengerError, type InviteView } from '../api';
   import { nameStore } from '../groups/names.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
@@ -24,7 +25,6 @@
   let now = $state(nowSec());
   let busy = $state(false);
   let error = $state('');
-  let copied = $state<string | null>(null);
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const items = $derived(listed(inviteStore.list ?? [], now));
@@ -79,15 +79,13 @@
     try {
       await navigator.clipboard.writeText(v.kind === 'code' ? v.secret : (v.link ?? ''));
       copiedToast();
-      copied = v.id;
-      setTimeout(() => { if (copied === v.id) copied = null; }, 1600);
     } catch (e) {
       error = messengerError(e);
     }
   }
 
   async function revoke(v: InviteView) {
-    if (!(await confirmStore.ask($t('msg_inv_revoke_confirm'), $t('msg_inv_revoke'), true))) return;
+    if (!(await confirmStore.ask($t('msg_inv_revoke_confirm'), $t('msg_inv_revoke'), true, 'x'))) return;
     await inviteStore.revoke(v.id);
   }
 </script>
@@ -97,10 +95,9 @@
   <p class="muted">{$t('msg_inv_intro')}</p>
 
   {#if paused}
-    <div class="strip" role="status">
-      <Icon name="alert-triangle" size={14} />
-      <span><strong>{$t('msg_inv_paused', { time: clock(paused) })}</strong><br />{$t('msg_inv_paused_hint')}</span>
-    </div>
+    <Notice tone="warn" role="status">
+      <strong>{$t('msg_inv_paused', { time: clock(paused) })}</strong><br />{$t('msg_inv_paused_hint')}
+    </Notice>
   {/if}
 
   {#if !inviteStore.list}
@@ -120,11 +117,11 @@
           {#if live}
             <span class="buttons">
               {#if v.kind !== 'qr'}
-                <button class="btn btn-ghost" onclick={() => copy(v)} aria-label={$t('msg_copy')} title={$t('msg_copy')}>
-                  <Icon name={copied === v.id ? 'check' : 'copy'} size={18} />
+                <button class="btn btn-ghost" onclick={() => copy(v)} aria-label={$t('common_copy')} title={$t('common_copy')}>
+                  <Icon name="copy" size={18} />
                 </button>
               {/if}
-              <button class="btn btn-ghost danger" disabled={inviteStore.revoking === v.id} onclick={() => revoke(v)}>{$t('msg_inv_revoke')}</button>
+              <button class="btn btn-danger-soft" disabled={inviteStore.revoking === v.id} onclick={() => revoke(v)}>{$t('msg_inv_revoke')}</button>
             </span>
           {/if}
         </li>
@@ -136,18 +133,12 @@
     <button class="btn btn-ghost" disabled={busy} onclick={() => create('link')}><Icon name="link" size={18} />{$t('msg_inv_create_link')}</button>
     <button class="btn btn-ghost" disabled={busy} onclick={() => create('code')}><Icon name="key" size={18} />{$t('msg_inv_create_code')}</button>
   </div>
-  {#if error || (inviteStore.list && inviteStore.error)}<p class="warn">{error || inviteStore.error}</p>{/if}
+  {#if error || (inviteStore.list && inviteStore.error)}<Notice tone="danger">{error || inviteStore.error}</Notice>{/if}
 </div>
 
 <style>
   .invites { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: 1.45; }
-  .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
-  .strip {
-    display: flex; align-items: flex-start; gap: 8px; padding: 8px var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.45;
-    color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border);
-  }
-  .strip :global(svg) { flex-shrink: 0; margin-top: 2px; }
+  .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: var(--lh-snug); }
   /* Rows of 48 with a tile of 36 and a line between them (as the facts of «Профиль и ключ»). */
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
@@ -161,7 +152,6 @@
   .name { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .meta { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .buttons { display: flex; gap: var(--sp-2); flex-shrink: 0; }
-  .danger { color: var(--danger-text); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   @media (pointer: coarse) {
     .actions .btn { flex: 1 1 auto; min-height: 40px; justify-content: center; }

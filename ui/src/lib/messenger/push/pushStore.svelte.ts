@@ -18,6 +18,8 @@ import {
 /** Key of the text for a failure: `msg_push_error_<code>`, or the general one. */
 export function pushErrorKey(error: string, known: (key: string) => boolean): string {
   const code = pushErrorCode(error);
+  // A token the service refused is what the test calls a dead one: one message, one key.
+  if (code === 'push_refused_token_invalid') return 'msg_push_test_dead_token';
   const key = code ? `msg_push_error_${code}` : '';
   return key && known(key) ? key : 'msg_push_error_other';
 }

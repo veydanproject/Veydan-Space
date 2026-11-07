@@ -119,12 +119,13 @@
   <div class="card-title">{desktop ? $t('msg_dnotify_title') : $t('msg_push_title')}</div>
 
   {#if !view || !status || !device}
-    <p class="muted">{pushStore.error || $t('msg_push_loading')}</p>
+    <!-- An error is said once, by the red line; the grey one is only the waiting. -->
+    {#if pushStore.error}<p class="warn">{errorText(pushStore.error)}</p>{:else}<p class="muted">{$t('msg_push_loading')}</p>{/if}
   {:else if !device.supported}
     {@const d = pushStore.desk}
     <p class="muted">{$t('msg_dnotify_text')}</p>
     {#if !d}
-      <p class="muted">{pushStore.error || $t('msg_push_loading')}</p>
+      {#if !pushStore.error}<p class="muted">{$t('msg_push_loading')}</p>{/if}
     {:else}
       <ToggleRow surface="row" title={$t('msg_dnotify_toggle')} label={$t('msg_dnotify_toggle')} on={d.enabled} disabled={pushStore.busy}
         onclick={() => pushStore.setDesk(!d.enabled, d.sound)} />
@@ -287,7 +288,7 @@
                         {$t('msg_push_ticket_meta', { until: day(ticket.expires_at), woke: ticket.last_wake_at ? day(ticket.last_wake_at) : $t('msg_push_ticket_never') })}
                       </span>
                     </div>
-                    <button class="btn btn-ghost danger" disabled={pushStore.busy} onclick={() => revoke(ticket)}>
+                    <button class="btn btn-danger-soft" disabled={pushStore.busy} onclick={() => revoke(ticket)}>
                       {$t('msg_push_ticket_revoke')}
                     </button>
                   </li>
@@ -318,14 +319,14 @@
             disabled={pushStore.busy || !serverDraft.trim()}
             onclick={() => saveServer(serverDraft.trim())}
           >
-            {$t('msg_push_server_save')}
+            {$t('common_save')}
           </button>
           {#if status.server_custom}
             <button class="btn btn-ghost" disabled={pushStore.busy} onclick={() => saveServer(null)}>
               {$t('msg_push_server_reset')}
             </button>
           {/if}
-          <button class="btn btn-ghost" onclick={() => (editingServer = false)}>{$t('msg_back')}</button>
+          <button class="btn btn-ghost" onclick={() => (editingServer = false)}>{$t('common_back')}</button>
         </div>
       {:else}
         <div class="line">
@@ -364,7 +365,7 @@
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .meta.bad { color: var(--danger-text); }
   .name { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .btn.danger { color: var(--danger-text); flex-shrink: 0; }
+  .btn-danger-soft { flex-shrink: 0; }
   .dot.failed { background: var(--danger-text); }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
   .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--danger-text); }

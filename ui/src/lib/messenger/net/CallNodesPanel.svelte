@@ -19,6 +19,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
@@ -155,7 +156,7 @@
           <span>{v.registry_checked_at ? $t('msg_call_nodes_registry', { time: stamp(v.registry_checked_at) }) : $t('msg_call_nodes_registry_never')}</span>
           {#if !v.registry_paused}
             <button class="btn btn-ghost" disabled={callNodesStore.busy} onclick={() => callNodesStore.refreshRegistry()}>
-              {$t('msg_call_nodes_registry_refresh')}
+              {$t('common_update')}
             </button>
           {/if}
         </div>
@@ -173,17 +174,18 @@
         <input class="key" type="password" bind:value={key} placeholder={$t('msg_calls_node_key_placeholder')} autocomplete="off" disabled={callNodesStore.busy} />
       {/if}
       <button class="btn btn-ghost" type="submit" disabled={callNodesStore.busy || !text.trim()}>
-        <Icon name="plus" size={18} />{$t('msg_calls_node_add')}
+        <Icon name="plus" size={18} />{$t('common_add')}
       </button>
     </form>
     <p class="hint">{$t('msg_call_nodes_add_hint')}</p>
   </div>
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </div>
 
 <style>
   .nodes { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .muted, .hint { margin: 0; line-height: var(--lh-snug); }
+  .muted { font-size: var(--fs-sm); color: var(--text-2); }
   /* The parts of the card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
@@ -201,7 +203,7 @@
   .top { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
   .top code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); white-space: nowrap; }
   .name { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-2xs); color: var(--text-3); }
+  .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-xs); color: var(--text-3); }
   .meta .id { font-family: var(--font-mono); }
   .meta .key { display: inline-flex; }
   .tag {

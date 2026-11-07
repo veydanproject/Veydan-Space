@@ -10,6 +10,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { formatError, hasErrorCode } from '$lib/core/utils';
   import { appLock } from '$lib/core/lock/store.svelte';
@@ -30,18 +31,9 @@
   const totpPeriod = (tid: string) => totpStore.list.find((e) => e.id === tid)?.period ?? 30;
 
   let busy = $state(false);
-  let copied = $state('');
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
   let error = $state<string | null>(null);
   let unlockOpen = $state(false);
   let pendingCopy = $state(false);
-
-  function markCopied(key: string) {
-    copied = '';
-    requestAnimationFrame(() => (copied = key));
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = ''), 1600);
-  }
 
   async function run(actionId: string) {
     const action = def.actions.find((a) => a.id === actionId);
@@ -55,7 +47,6 @@
     error = null;
     try {
       await action.run(id);
-      markCopied(actionId);
     } catch (e) {
       if (actionId === 'copy-password' && (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed'))) {
         pendingCopy = true;
@@ -86,37 +77,33 @@
     </button>
   {/if}
   <div class="pw-actions">
-    <button type="button" class="icon-btn" title={$t('ctx_action_open')} onclick={() => def.open?.(id)}>
+    <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(id)}>
       <Icon name="external-link" size={13} />
     </button>
     {#if entry?.username}
       <button
         type="button"
         class="icon-btn"
-        class:success={copied === 'copy-username'}
-        class:pop={copied === 'copy-username'}
         title={$t('ctx_action_copy_username')}
         disabled={busy}
         onclick={() => run('copy-username')}
       >
-        <Icon name={copied === 'copy-username' ? 'check' : 'id'} size={13} />
+        <Icon name="id" size={13} />
       </button>
     {/if}
     <button
       type="button"
       class="icon-btn"
-      class:success={copied === 'copy-password'}
-      class:pop={copied === 'copy-password'}
       title={appLock.locked ? $t('lock_title') : $t('ctx_action_copy_password')}
       disabled={busy}
       onclick={() => run('copy-password')}
     >
-      <Icon name={copied === 'copy-password' ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
+      <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
     </button>
   </div>
 </div>
 {#if error}
-  <div class="error">{error}</div>
+  <Notice tone="danger">{error}</Notice>
 {/if}
 <VaultUnlock
   bind:open={unlockOpen}
@@ -135,14 +122,7 @@
     width: 100%;
     margin-top: auto;
   }
-  .error { font-size: var(--fs-xs); color: var(--danger-text); }
   .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
-  .icon-btn.pop { animation: icon-pop 0.35s ease; }
-  @keyframes icon-pop {
-    0% { transform: scale(1); }
-    40% { transform: scale(1.12); }
-    100% { transform: scale(1); }
-  }
   .pw-code {
     display: flex;
     align-items: center;
@@ -156,7 +136,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-2);
   }
   .pw-code :global(.live.compact) { min-height: 0; }
@@ -165,7 +145,7 @@
     border: 0;
     padding: 0;
     color: var(--text-3);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     cursor: pointer;
   }
   .more:hover { color: var(--text); }

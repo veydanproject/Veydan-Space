@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
-  import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import OfferCard from '../shared/OfferCard.svelte';
   import { netErrorText } from './errors';
   import { netStore } from './netStore.svelte';
 
@@ -15,31 +16,17 @@
 </script>
 
 {#if netStore.toOffer}
-  <div class="offer">
-    <div class="head"><Icon name="shield" size={18} /> <strong>{$t('msg_bridge_offer_title')}</strong></div>
+  <OfferCard icon="building-bridge" title={$t('msg_bridge_offer_title')}>
     <p>{$t('msg_bridge_offer_text')}</p>
-    <p class="small">{$t('msg_bridge_privacy')}</p>
-    {#if error}<p class="small error">{error}</p>{/if}
-    <div class="actions">
-      <button class="btn btn-primary btn-sm" disabled={netStore.busy} onclick={() => netStore.setMode('on')}>
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
+    {#snippet actions()}
+      <button class="btn btn-primary" disabled={netStore.busy} onclick={() => netStore.setMode('on')}>
         {$t('msg_bridge_enable')}
       </button>
-      <button class="btn btn-ghost btn-sm" disabled={netStore.busy} onclick={() => netStore.decline()}>
-        {$t('msg_bridge_offer_later')}
+      <button class="btn btn-ghost" disabled={netStore.busy} onclick={() => netStore.decline()}>
+        {$t('common_later')}
       </button>
-    </div>
-  </div>
+    {/snippet}
+    {#snippet note()}{$t('msg_bridge_privacy')}{/snippet}
+  </OfferCard>
 {/if}
-
-<style>
-  .offer {
-    margin: var(--sp-2) var(--sp-3); padding: var(--sp-3); flex-shrink: 0;
-    display: flex; flex-direction: column; gap: var(--sp-2);
-    border: 1px solid var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-tint);
-  }
-  .head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
-  p { margin: 0; font-size: var(--fs-sm); color: var(--text-body); line-height: 1.45; }
-  .small { font-size: var(--fs-xs); color: var(--text-2); }
-  .small.error { color: var(--danger-text); }
-  .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-</style>

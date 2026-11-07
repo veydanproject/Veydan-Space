@@ -62,7 +62,7 @@
     // The request leaves the list while the answer goes: what is needed after it is kept now.
     const { peer, chat_id: chatId } = request;
     const who = name;
-    if (action === 'block' && !(await confirmStore.ask($t('msg_rel_confirm_block', { name: who }), $t('msg_rel_cta_block'), true))) return;
+    if (action === 'block' && !(await confirmStore.ask($t('msg_rel_confirm_block', { name: who }), $t('msg_rel_cta_block'), true, 'user-cancel'))) return;
     error = '';
     try {
       await requestStore.act(peer, action, chatId);
@@ -105,8 +105,8 @@
     <div class="actions">
       <button class="btn btn-primary" disabled={busy} onclick={() => act('accept')}><Icon name="check" size={14} />{$t('msg_rel_cta_accept')}</button>
       <button class="btn btn-ghost" disabled={busy} onclick={() => act('decline')}>{$t('msg_rel_cta_decline')}</button>
-      <button class="btn btn-ghost danger" disabled={busy} onclick={() => act('block')}><Icon name="user-cancel" size={14} />{$t('msg_rel_cta_block')}</button>
-      <button class="btn btn-ghost danger" disabled={busy} onclick={report}><Icon name="alert-triangle" size={14} />{$t('msg_report')}</button>
+      <button class="btn btn-danger-soft" disabled={busy} onclick={() => act('block')}><Icon name="user-cancel" size={14} />{$t('msg_rel_cta_block')}</button>
+      <button class="btn btn-danger-soft" disabled={busy} onclick={report}><Icon name="alert-triangle" size={14} />{$t('msg_report')}</button>
     </div>
   </div>
 </div>
@@ -118,7 +118,7 @@
     display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; max-width: 560px; margin-inline: auto;
   }
   .who { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); letter-spacing: -0.2px; overflow-wrap: anywhere; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow-wrap: anywhere; }
   .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .nip05 { color: var(--text-2); }
   .tag {
@@ -132,8 +132,8 @@
   }
   /* The text is read and maybe copied (a name, an address): selectable on touch too. */
   .request .bubble :global(.text) { user-select: text; -webkit-user-select: text; }
-  .time { font-size: var(--fs-2xs); color: var(--text-3); padding-left: var(--sp-1); }
-  .note { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--text-3); }
+  .time { font-size: var(--fs-xs); color: var(--text-3); padding-left: var(--sp-1); }
+  .note { margin: 0; font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-3); }
   .bottom {
     flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface);
     padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--sab, 0px));
@@ -141,5 +141,4 @@
   .error-line { margin: 0 auto var(--sp-2); max-width: 560px; font-size: var(--fs-sm); color: var(--danger-text); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); max-width: 560px; margin-inline: auto; }
   .actions .btn { flex: 1 1 auto; justify-content: center; }
-  .danger { color: var(--danger-text); }
 </style>

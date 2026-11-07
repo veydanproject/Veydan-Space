@@ -14,7 +14,9 @@
 
 pub mod client;
 pub mod dto;
-pub mod nip98;
+/// NIP-98 lives in `messenger-http`: the access API of a private server signs
+/// the same way.
+pub use messenger_http::nip98;
 
 pub use client::{PushError, VpushClient};
 pub use dto::*;

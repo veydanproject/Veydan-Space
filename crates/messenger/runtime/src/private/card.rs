@@ -54,7 +54,10 @@ impl MessengerRuntime {
     /// devices (`server_put_private`); a card of the Veydan network's own
     /// relay (on a device in the mode of its own servers, or one whose home
     /// set lacks that relay) adds the one relay it names, as a private
-    /// server called «Veydan», as the dialog said. The server's id.
+    /// server called «Veydan», as the dialog said. A card of a team or a
+    /// channel server with an invite (`inv=`) joins it with that invite
+    /// (`server_join`): a failed join leaves the server added and is the
+    /// error. The server's id.
     pub async fn server_accept(&self, link: &str) -> Result<String> {
         let card = card_of_text(link)?;
         let preview = self.server_preview_of(&card).await?;
@@ -76,6 +79,7 @@ impl MessengerRuntime {
                 call_node: card.call_node.clone(),
                 name,
                 push_mode: Some(card.push.clone()),
+                access: Some(card.access.as_str().to_string()),
             })
             .await?;
         // The card names the push server of the server: a phone registers
@@ -84,6 +88,15 @@ impl MessengerRuntime {
         if card.push == servers::PUSH_VEYDAN {
             if let Some(url) = card.push_url.clone() {
                 self.server_set_push(&id, Some(url)).await?;
+            }
+        }
+        // A card of a server of its members with an invite: joined with it
+        // at once. A failed join leaves the server added and is the
+        // answer (the dialog shows it; `server_join` tries again). An
+        // invite on the card of an open server is no word: ignored.
+        if let Some(code) = card.invite.as_deref() {
+            if card.access != messenger_links::Access::Open {
+                self.server_join(&id, code).await?;
             }
         }
         Ok(id)
@@ -148,12 +161,14 @@ impl MessengerRuntime {
 
     /// My private servers as the settings list them, without their keys,
     /// each with the count of its private chats and of its groups (what the
-    /// question before its removal names).
+    /// question before its removal names), its access mode and what its
+    /// relay said when it last refused this device («Нет доступа»).
     pub async fn servers_private_view(&self) -> Result<Vec<PrivateServerView>> {
         let mut out = Vec::new();
         for row in self.servers_private().await? {
             let (chats, groups) = servers::counts(self.store(), &row.id).await?;
-            out.push(PrivateServerView { chats, groups, ..PrivateServerView::from(&row) });
+            let denied = servers::denied(self.store(), &row.id).await?;
+            out.push(PrivateServerView { chats, groups, denied, ..PrivateServerView::from(&row) });
         }
         Ok(out)
     }

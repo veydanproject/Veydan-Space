@@ -20,7 +20,7 @@ export const module: ModuleDef = {
   }),
   nav: [
     { id: 'passwords', title: 'app_passwords', icon: 'lock-password', href: '/passwords' },
-    { id: 'totp', title: 'app_totp', icon: 'shield', href: '/totp' },
+    { id: 'totp', title: 'app_totp', icon: 'shield-lock', href: '/totp' },
     { id: 'tools', title: 'app_tools', icon: 'dices', href: '/tools' },
   ],
   settings: [],

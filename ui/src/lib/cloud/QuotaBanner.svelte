@@ -110,12 +110,13 @@
     <div class="body">
       <div class="head">
         <p class="text">{text}</p>
-        <button class="close" type="button" aria-label={$t('cloud_quota_close')} onclick={() => (closedAt = usage?.level ?? 0)}><Icon name="x" size={14} /></button>
+        <button class="close" type="button" aria-label={$t('common_close')} onclick={() => (closedAt = usage?.level ?? 0)}><Icon name="x" size={14} /></button>
       </div>
       <div class="buttons">
-        <button class="btn btn-primary btn-sm" type="button" onclick={() => goto('/cloud?section=plans')}>{$t('cloud_quota_more')}</button>
+        <!-- Secondary buttons, the main one («More room») last. -->
         <button class="btn btn-ghost btn-sm" type="button" aria-expanded={listOpen} onclick={() => (listOpen = !listOpen)}>{$t('cloud_quota_delete')}</button>
         <button class="btn btn-ghost btn-sm" type="button" onclick={ownStorage}>{$t('cloud_quota_own')}</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick={() => goto('/cloud?section=plans')}>{$t('cloud_quota_more')}</button>
       </div>
       {#if listOpen}
         <div class="list">
@@ -148,7 +149,7 @@
   .full .mark { background: var(--danger-bg); color: var(--danger-text); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .head { display: flex; align-items: flex-start; gap: var(--sp-2); }
-  .text { flex: 1; margin: 0; line-height: 1.45; }
+  .text { flex: 1; margin: 0; line-height: var(--lh-snug); }
   .close {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-3); cursor: pointer;
@@ -159,5 +160,5 @@
   ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
   li { display: flex; justify-content: space-between; gap: var(--sp-3); color: var(--text-body); }
   .size { color: var(--text-2); white-space: nowrap; }
-  .hint { margin: 0; color: var(--text-3); line-height: 1.4; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
 </style>

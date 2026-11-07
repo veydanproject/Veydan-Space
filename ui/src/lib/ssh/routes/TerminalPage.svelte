@@ -4,16 +4,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t, locale } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import { formatDate, formatTime } from '$lib/core/utils';
   import type { SshConnection } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import SSHConnectionForm from '$lib/ssh/components/SSHConnectionForm.svelte';
   import SshKeysTab from '$lib/ssh/components/keys/SshKeysTab.svelte';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import { directory } from '$lib/core/directory';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { api } from '$lib/ssh/api';
   import { explainError } from '$lib/ssh/tor-error';
 
@@ -28,7 +30,11 @@
   let page = $state(0);
 
   let panelConn = $state<SshConnection | null | undefined>(undefined);
-  let deleteModal = $state({ open: false, id: '', name: '' });
+  // The form in the drawer: its buttons are the drawer's footer.
+  let connForm = $state<ReturnType<typeof SSHConnectionForm>>();
+  let connSaving = $state(false);
+  // The «Keys» tab's windows (import / generate): opened by the buttons of the page's head.
+  let keyFormMode = $state<'import' | 'generate' | undefined>(undefined);
   let connectingId = $state<string | null>(null);
 
   onMount(async () => {
@@ -87,14 +93,14 @@
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(conn: SshConnection) {
+    const label = $t('common_delete');
+    if (!(await ask({ title: confirmTitle(label), message: $t('terminal_confirm_delete', { name: conn.name }), confirmLabel: label, variant: 'danger', icon: 'trash-2' }))) return;
     try {
-      await api.ssh.connectionDelete(deleteModal.id);
-      sshStore.connections = sshStore.connections.filter((c) => c.id !== deleteModal.id);
+      await api.ssh.connectionDelete(conn.id);
+      sshStore.connections = sshStore.connections.filter((c) => c.id !== conn.id);
     } catch (e) {
       error = explainError(e, $t);
-    } finally {
-      deleteModal = { open: false, id: '', name: '' };
     }
   }
 
@@ -131,11 +137,18 @@
   <div class="page-header">
     <div class="page-title-group">
       <h1>{$t('terminal_title')}</h1>
-      <p class="page-sub">{$t('terminal_sub', { count: String(sshStore.connections.length) })}</p>
+      <p class="page-sub">{$t('terminal_sub')}</p>
     </div>
     {#if activeTab === 'connections'}
-      <button class="btn btn-primary spacer" onclick={() => (panelConn = null)}>
-        <Icon name="plus" size={15} />{$t('terminal_add')}
+      <button class="icon-btn create spacer" onclick={() => (panelConn = null)} title={$t('common_add')} aria-label={$t('common_add')}>
+        <Icon name="plus" size={18} />
+      </button>
+    {:else}
+      <button class="btn btn-ghost spacer" onclick={() => (keyFormMode = 'import')}>
+        <Icon name="file-import" size={18} />{$t('ssh_keys_add')}
+      </button>
+      <button class="btn btn-primary" onclick={() => (keyFormMode = 'generate')}>
+        <Icon name="plus" size={18} />{$t('ssh_keys_generate')}
       </button>
     {/if}
   </div>
@@ -146,65 +159,68 @@
       class:active={activeTab === 'connections'}
       onclick={() => (activeTab = 'connections')}
     >
-      <Icon name="terminal" size={12} /> {$t('ssh_keys_tab_connections')}
-      {#if sshStore.connections.length > 0}
-        <span class="tab-count">{sshStore.connections.length}</span>
-      {/if}
+      <Icon name="terminal" size={18} /> {$t('ssh_keys_tab_connections')}
     </button>
     <button
       class="tab"
       class:active={activeTab === 'keys'}
       onclick={() => (activeTab = 'keys')}
     >
-      <Icon name="key" size={12} /> {$t('ssh_keys_tab_keys')}
+      <Icon name="key" size={18} /> {$t('ssh_keys_tab_keys')}
     </button>
   </div>
 
   {#if activeTab === 'keys'}
-    <SshKeysTab />
+    <SshKeysTab bind:formMode={keyFormMode} />
   {:else}
 
-  {#if error}<div class="error-msg" style="margin-bottom:1rem">{error}</div>{/if}
+  {#if error}<div style="margin-bottom:1rem"><Notice tone="danger">{error}</Notice></div>{/if}
 
   <!-- Toolbar -->
   <div class="filter-bar">
     <div class="search-field">
-      <Icon name="search" size={13} />
+      <Icon name="search" size={18} />
       <input type="text" bind:value={search} placeholder={$t('terminal_search_placeholder')} />
       {#if search}
-        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
+        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={18} /></button>
       {/if}
     </div>
 
-    <select bind:value={filterAuth} class="filter-select">
-      <option value="all">{$t('terminal_filter_all_auth')}</option>
-      <option value="password">{$t('ssh_auth_password')}</option>
-      <option value="key">{$t('ssh_auth_key')}</option>
-      <option value="key_password">{$t('ssh_auth_key_password')}</option>
-    </select>
+    <div class="filter-select">
+      <CustomSelect
+        options={[
+          { value: 'all', label: $t('terminal_filter_all_auth') },
+          { value: 'password', label: $t('ssh_auth_password') },
+          { value: 'key', label: $t('ssh_auth_key') },
+          { value: 'key_password', label: $t('ssh_auth_key_password') },
+        ]}
+        bind:value={filterAuth}
+      />
+    </div>
 
     <span class="count-badge">{$t('terminal_count', { n: String(filtered.length) })}</span>
   </div>
 
   {#if loading}
-    <div class="table-wrap"><Skeleton rows={5} height={48} size={24} avatar="square" trailing /></div>
+    <div class="data-table table-scroll"><Skeleton rows={5} height={48} size={24} avatar="square" trailing /></div>
   {:else if sshStore.connections.length === 0}
     <div class="empty-state">
-      <div class="empty-icon"><Icon name="terminal" size={40} strokeWidth={1.5} /></div>
+      <span class="empty-icon"><Icon name="terminal" size={22} /></span>
       <p>{$t('terminal_empty')}</p>
       <button class="btn btn-primary" onclick={() => (panelConn = null)}>
-        <Icon name="plus" size={14} />{$t('terminal_empty_add')}
+        <Icon name="plus" size={18} />{$t('terminal_empty_add')}
       </button>
     </div>
   {:else if filtered.length === 0}
     <div class="empty-state">
-      <Icon name="search" size={32} strokeWidth={1.5} />
-      <p>{$t('terminal_not_found')}</p>
+      <span class="empty-icon"><Icon name="search" size={22} /></span>
+      <p>{$t('common_nothing_found')}</p>
+      <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
-    <div class="table-wrap">
+    <div class="data-table table-scroll">
       <table class="ssh-table">
-        <thead>
+        <thead class="data-table-head">
           <tr>
             <th class="col-num">#</th>
             <th class="col-status"></th>
@@ -221,7 +237,7 @@
           {#each pageItems as conn, i (conn.id)}
             {@const status = connStatus(conn.id)}
             {@const dp = formatDateParts(conn.last_connected_at)}
-            <tr class="ssh-row" onclick={() => (panelConn = conn)}>
+            <tr class="data-table-row ssh-row" onclick={() => (panelConn = conn)}>
               <td class="col-num text-muted">{currentPage * PAGE_SIZE + i + 1}</td>
               <td class="col-status">
                 <span class="status-dot status-dot-{status}" title={$t(`terminal_status_${status}`)}></span>
@@ -237,19 +253,19 @@
               </td>
               <td class="col-auth">
                 <div class="auth-tags">
-                  <span class="auth-badge auth-{conn.auth_type}">{authLabel(conn.auth_type)}</span>
+                  <span class="badge tag {conn.auth_type === 'key_password' ? 'badge-warn' : 'badge-accent'}">{authLabel(conn.auth_type)}</span>
                   {#if conn.has_password && conn.auth_type !== 'password'}
-                    <span class="auth-badge">{$t('ssh_auth_badge_password')}</span>
+                    <span class="badge tag badge-accent">{$t('ssh_auth_badge_password')}</span>
                   {/if}
                   {#if conn.requires_2fa}
-                    <span class="tag-2fa">2FA</span>
+                    <span class="badge tag badge-ok">2FA</span>
                   {/if}
                 </div>
               </td>
               <td class="col-proxy">
                 {#if conn.proxy_id}
                   <button
-                    class="proxy-chip"
+                    class="badge tag proxy-chip"
                     title={proxyName(conn.proxy_id)}
                     onclick={(e) => { e.stopPropagation(); editProxy(conn.proxy_id!); }}
                   >{proxyName(conn.proxy_id)}</button>
@@ -271,7 +287,7 @@
                       title={$t('terminal_btn_disconnect')}
                       onclick={(e) => { e.stopPropagation(); handleDisconnect(conn); }}
                     >
-                      <Icon name="plug-connected-x" size={13} />
+                      <Icon name="plug-connected-x" size={18} />
                     </button>
                   {:else}
                     <button
@@ -280,22 +296,22 @@
                       disabled={connectingId === conn.id}
                       onclick={(e) => { e.stopPropagation(); handleConnect(conn); }}
                     >
-                      <Icon name="terminal" size={13} />
+                      <Icon name="play" size={18} />
                     </button>
                   {/if}
                   <button
                     class="icon-btn"
-                    title={$t('terminal_btn_edit')}
+                    title={$t('common_edit')}
                     onclick={(e) => { e.stopPropagation(); panelConn = conn; }}
                   >
-                    <Icon name="pencil" size={13} />
+                    <Icon name="pencil" size={18} />
                   </button>
                   <button
                     class="icon-btn danger-soft"
-                    title={$t('terminal_btn_delete')}
-                    onclick={(e) => { e.stopPropagation(); deleteModal = { open: true, id: conn.id, name: conn.name }; }}
+                    title={$t('common_delete')}
+                    onclick={(e) => { e.stopPropagation(); void confirmDelete(conn); }}
                   >
-                    <Icon name="trash-2" size={13} />
+                    <Icon name="trash-2" size={18} />
                   </button>
                 </div>
               </td>
@@ -308,7 +324,7 @@
     {#if totalPages > 1}
       <div class="pagination">
         <button class="page-btn" disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}>
-          <Icon name="chevron-left" size={14} />
+          <Icon name="chevron-left" size={18} />
         </button>
         {#each Array.from({ length: totalPages }, (_, i) => i) as p_}
           <button
@@ -318,7 +334,7 @@
           >{p_ + 1}</button>
         {/each}
         <button class="page-btn" disabled={currentPage === totalPages - 1} onclick={() => (page = currentPage + 1)}>
-          <Icon name="chevron-right" size={14} />
+          <Icon name="chevron-right" size={18} />
         </button>
       </div>
     {/if}
@@ -334,22 +350,19 @@
   onclose={() => (panelConn = undefined)}
 >
   <SSHConnectionForm
+    bind:this={connForm}
+    bind:saving={connSaving}
     connection={panelConn}
     onSave={onFormSaved}
-    onCancel={() => (panelConn = undefined)}
   />
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={() => (panelConn = undefined)}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={() => connForm?.submit()} disabled={connSaving}>
+      {#if connSaving}<Icon name="loader" size={18} />{/if}
+      {panelConn ? $t('common_save') : $t('common_create')}
+    </button>
+  {/snippet}
 </Drawer>
-
-<Modal
-  open={deleteModal.open}
-  title={$t('terminal_btn_delete')}
-  message={$t('terminal_confirm_delete', { name: deleteModal.name })}
-  confirmLabel={$t('terminal_btn_delete')}
-  cancelLabel={$t('ssh_btn_cancel')}
-  variant="danger"
-  onconfirm={confirmDelete}
-  oncancel={() => (deleteModal = { open: false, id: '', name: '' })}
-/>
 
 <style>
   /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.count-badge из base.css */
@@ -359,71 +372,38 @@
   /* Page-level tabs: connections | keys (base .tab-bar/.tab primitives) */
   .page-tabs { margin-bottom: var(--sp-4); padding: 0; }
 
-  .table-wrap {
-    flex: 1; min-height: 0; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    background: var(--surface);
-  }
+  /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
+  .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 
-  .ssh-table {
-    width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
-    table-layout: fixed;
-  }
-
-  .ssh-table thead {
-    position: sticky; top: 0; z-index: 1;
-    background: var(--surface); border-bottom: 1px solid var(--border);
-  }
+  .ssh-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 
   .ssh-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: inherit; white-space: nowrap;
   }
 
-  .ssh-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--surface-2); vertical-align: middle; }
-  .ssh-row:last-child td { border-bottom: none; }
-  .ssh-row:hover td { background: var(--surface-row-hover); }
+  .ssh-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
   .ssh-row { cursor: pointer; }
 
-  /* The fixed layout takes the widths from the header row: the host (a mono
-     host:port, the longest value) takes what the other columns leave, and
-     every cell clips its text to its column (the full value is the cell's
-     tooltip). */
   .col-num { width: 44px; color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-xs); }
   .col-status { width: 40px; text-align: center; }
-  .col-name { width: 180px; }
-  .col-user { width: 132px; }
-  .col-auth { width: 130px; }
-  .col-proxy { width: 120px; }
-  .col-last { width: 128px; }
-  /* three 32px buttons, two gaps and the cell's padding */
-  .col-actions { width: calc(3 * 32px + 2 * var(--sp-1) + 2 * var(--sp-4)); }
+  /* the buttons stay on one line */
+  .col-actions { width: 1%; }
 
   .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .conn-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conn-name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); display: block; overflow-wrap: anywhere; }
 
   .auth-tags { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
 
   code {
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
     background: var(--surface-2); padding: 5px 10px; border-radius: var(--radius-sm);
-    display: inline-block; max-width: 100%; vertical-align: middle;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: inline-block; max-width: 100%; vertical-align: middle; overflow-wrap: anywhere;
   }
 
-  .auth-badge {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: 4px 12px; border-radius: var(--radius-sm);
-    border: none; background: var(--accent-tint); color: var(--accent-text-2);
-  }
-  .auth-key { background: var(--accent-tint); color: var(--accent-text-2); }
-  .auth-key_password { background: var(--warn-bg); color: var(--warn-text); }
-
-  .tag-2fa { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success-text); }
-  .tag-proxy { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-3); }
+  /* A word in a chip (the common .badge): 24 high, the interface's font. */
+  .tag { height: 24px; padding-block: 0; box-sizing: border-box; }
 
   .status-dot {
     display: inline-block;
@@ -443,21 +423,38 @@
 
   .date-cell { display: flex; flex-direction: column; gap: 0.05rem; }
   .date-cell span { color: var(--text-3); font-size: var(--fs-xs); }
-  .time-part { color: var(--text-4, var(--text-3)); font-size: var(--fs-2xs); opacity: 0.75; }
+  .time-part { color: var(--text-4, var(--text-3)); font-size: var(--fs-xs); opacity: 0.75; }
 
-  .proxy-chip {
-    display: inline-block; max-width: 100%;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    background: var(--accent-bg); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-    color: var(--accent-text); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.03em;
-    padding: 0.15rem var(--sp-2); cursor: pointer;
-    transition: all 0.15s;
-  }
-  .proxy-chip:hover { background: color-mix(in srgb, var(--accent) 15%, var(--accent-bg)); }
+  /* The proxy: a neutral chip of an entity that opens its editor. */
+  .proxy-chip { display: inline-block; max-width: 100%; line-height: 22px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; font-family: inherit; }
+  .proxy-chip:hover { border-color: var(--border-2); color: var(--text); }
 
   .text-muted { color: var(--text-3); font-size: var(--fs-xs); }
   .row-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
+
+  /* A narrow window: a row folds — the name on top, the host under it, the state and the buttons at the right; the
+     user, the authentication, the proxy and the date a line below. No column is lost. */
+  @media (max-width: 900px) {
+    .ssh-table thead { display: none; }
+    .ssh-table tbody { display: block; }
+    .ssh-row {
+      display: grid; align-items: center; column-gap: var(--sp-3); row-gap: var(--sp-1); padding: var(--sp-3) var(--sp-4);
+      /* The first column is the number's (fixed, up to four digits): the name spans it, the user starts after it. */
+      grid-template-columns: 2.5rem auto auto auto minmax(0, 1fr) auto auto;
+      grid-template-areas: 'name name name name name st act' 'host host host host host st act' 'num user auth proxy last last last';
+    }
+    .ssh-table td { display: block; width: auto; padding: 0; min-width: 0; }
+    .ssh-row .col-num { grid-area: num; }
+    .ssh-row .col-status { grid-area: st; }
+    .ssh-row .col-name { grid-area: name; }
+    .ssh-row .col-host { grid-area: host; }
+    .ssh-row .col-user { grid-area: user; }
+    .ssh-row .col-auth { grid-area: auth; }
+    .ssh-row .col-proxy { grid-area: proxy; }
+    .ssh-row .col-last { grid-area: last; }
+    .ssh-row .col-actions { grid-area: act; }
+    .date-cell { flex-direction: row; gap: var(--sp-1); }
+  }
 
   .pagination {
     display: flex; align-items: center; gap: var(--sp-1); justify-content: center;
@@ -473,9 +470,7 @@
   }
   .page-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border-2); color: var(--text); }
   .page-btn.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-  /* uses global .empty-state */
-  .empty-icon { opacity: 0.4; }
 
 </style>

@@ -16,7 +16,6 @@
   import { chatMatches, contactHaystacks } from '../shared/search';
   import { onPhone } from '../shared/phone';
   import type { CallMedia, MessengerChat } from '../api';
-  import CallIcon from './CallIcon.svelte';
   import { dialable, dialBlock, dialer, targetOf } from './dial.svelte';
 
   let { open = $bindable() }: { open: boolean } = $props();
@@ -43,10 +42,10 @@
     <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={36} />
     <span class="name">{c.title}</span>
     {#if c.kind === 'group'}
-      <button class="dial" disabled={!!block} onclick={() => call(c, 'audio')} title={$t('msg_calls_call')} aria-label={$t('msg_calls_call')}><CallIcon name="phone" size={18} /></button>
+      <button class="dial" disabled={!!block} onclick={() => call(c, 'audio')} title={$t('msg_calls_call')} aria-label={$t('msg_calls_call')}><Icon name="phone" size={18} /></button>
     {:else}
-      <button class="dial" disabled={!!block} onclick={() => call(c, 'video')} title={$t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}><CallIcon name="video" size={18} /></button>
-      <button class="dial" disabled={!!block} onclick={() => call(c, 'audio')} title={$t('msg_call_start')} aria-label={$t('msg_call_start')}><CallIcon name="phone" size={18} /></button>
+      <button class="dial" disabled={!!block} onclick={() => call(c, 'video')} title={$t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}><Icon name="video" size={18} /></button>
+      <button class="dial" disabled={!!block} onclick={() => call(c, 'audio')} title={$t('msg_call_start')} aria-label={$t('msg_call_start')}><Icon name="phone" size={18} /></button>
     {/if}
   </li>
 {/snippet}
@@ -67,7 +66,15 @@
       <ul class="list">{#each groups as c (c.id)}{@render row(c)}{/each}</ul>
     {/if}
     {#if !people.length && !groups.length}
-      <p class="hint">{q ? $t('msg_chats_nothing_found') : $t('msg_calls_new_empty')}</p>
+      {#if q}
+        <div class="empty-state found">
+          <span class="empty-icon"><Icon name="search" size={22} /></span>
+          <p>{$t('common_nothing_found')}</p>
+          <span>{$t('common_nothing_found_hint', { q: q.trim() })}</span>
+        </div>
+      {:else}
+        <p class="hint">{$t('msg_calls_new_empty')}</p>
+      {/if}
     {/if}
   </div>
 </Dialog>
@@ -77,7 +84,7 @@
   /* The field of whom: 44 high with the search glyph inside (48 under a finger), the ring around the whole field. */
   .search {
     display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-lg); padding: 0 var(--sp-3);
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-3);
   }
   .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   .search :global(svg) { flex-shrink: 0; }
@@ -101,6 +108,7 @@
   @media (hover: hover) { .dial:hover:not(:disabled) { background: var(--success-bg); } }
   .dial:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .dial:disabled { opacity: 0.45; cursor: default; }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  .hint { margin: 0; }
   @media (pointer: coarse) { .search { min-height: 48px; } .dial { width: 44px; height: 44px; } }
+  .found { padding: var(--sp-6) var(--sp-4); }
 </style>

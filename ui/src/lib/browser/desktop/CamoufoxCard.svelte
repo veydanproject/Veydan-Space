@@ -236,7 +236,7 @@
         </button>
         <!-- The primary button only when there is something to install: a check found the pinned release, or this one is not verified. -->
         <button class="btn" class:btn-primary={needsUpdate()} class:btn-ghost={!needsUpdate()} type="button" disabled={downloading || !camoufox.download_available} onclick={downloadCamoufox}>
-          {downloading ? $t('settings_camoufox_btn_updating') : $t('settings_camoufox_btn_update')}
+          {downloading ? $t('settings_camoufox_btn_updating') : $t('common_update')}
         </button>
       {:else}
         <button class="btn btn-primary" type="button" disabled={downloading || !camoufox.download_available} onclick={downloadCamoufox}>
@@ -255,7 +255,7 @@
     border-radius: var(--radius-md); background: var(--accent-tint); color: var(--accent-text);
   }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .who strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: 1.3; }
+  .who strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .sub { font-size: var(--fs-sm); color: var(--text-2); }
 
   /* What is installed: the names in one column, the values in the other; in a narrow window the name over its value. */
@@ -280,7 +280,7 @@
   .notes > :last-child { margin-bottom: var(--sp-4); }
   .note {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); font-size: var(--fs-base); line-height: 1.5; color: var(--text);
+    border-radius: var(--radius-md); font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text);
   }
   .note :global(svg), .note .spinner { flex-shrink: 0; margin-top: 2px; }
   .note.ok { background: var(--success-bg); }

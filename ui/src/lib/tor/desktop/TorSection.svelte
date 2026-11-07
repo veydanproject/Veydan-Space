@@ -105,7 +105,7 @@
     border-radius: var(--radius-md); background: var(--accent-tint); color: var(--accent-text);
   }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .who strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: 1.3; }
+  .who strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .sub { font-size: var(--fs-sm); color: var(--text-2); }
   .tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
   .ctab {

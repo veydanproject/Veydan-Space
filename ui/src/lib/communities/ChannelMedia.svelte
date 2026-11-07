@@ -271,7 +271,7 @@
           {#if posterSrc}<img src={posterSrc} alt={m.caption ?? m.name} decoding="async" draggable="false" />
           {:else}<span class="ph"><Icon name="video" size={28} /></span>{/if}
           <span class="badge-play" class:off={cannotPlay} class:spin={busy && !fetching}>
-            <Icon name={busy && !fetching ? 'loader' : cannotPlay ? 'ban' : 'play'} size={tile ? 16 : 20} />
+            <Icon name={busy && !fetching ? 'loader' : cannotPlay ? 'info' : 'play'} size={tile ? 16 : 20} />
           </span>
           {#if badge}<span class="badge-len">{badge}</span>{/if}
         </button>
@@ -303,7 +303,7 @@
         {/if}
       </span>
       {#if path}
-        <button class="btn btn-ghost btn-sm" onclick={copyPath} title={path}><Icon name="check" size={13} />{$t('chan_media_saved_short')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={copyPath} title={path}><Icon name="check" size={13} />{$t('common_saved')}</button>
       {:else if !fetching}
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => fetchIt()}>
           <Icon name={busy ? 'loader' : 'download'} size={13} />{$t('chan_media_download')}
@@ -313,7 +313,7 @@
   {/if}
   <!-- The caption is the post's words (the runtime gives it as the item's text, shown above); an envelope of before that says it here. -->
   {#if m.caption && !tile && !item.text}<p class="caption">{m.caption}</p>{/if}
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if error}<p class="error-msg">{error}</p>{/if}
 {/if}
 
 <style>
@@ -356,7 +356,7 @@
   .badge-play.spin :global(svg) { margin-left: 0; animation: spin 1.1s linear infinite; }
   .badge-len {
     position: absolute; left: 8px; bottom: 8px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff;
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; line-height: 1.4;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; line-height: var(--lh-snug);
   }
   .tile .badge-len { left: 6px; bottom: 6px; }
   .vline { max-width: 420px; }
@@ -371,13 +371,13 @@
   .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); }
   .file-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .file-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file-size { font-size: var(--fs-2xs); color: var(--text-3); }
+  .file-size { font-size: var(--fs-xs); color: var(--text-3); }
   .caption { margin: 0; font-size: var(--fs-sm); color: var(--text-body); }
   .saved {
     display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; max-width: 100%; border: none; background: none; padding: 0;
-    font: inherit; font-size: var(--fs-2xs); color: var(--text-3); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: inherit; font-size: var(--fs-xs); color: var(--text-3); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .error { margin: 0; font-size: var(--fs-xs); color: var(--danger-text); }
+  .error-msg { margin: 0; }
   /* A voice message or a circle, its transfer's ring beside it while it comes. */
   .rec { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; }
   .rec :global(.voice) { min-width: 0; flex: 0 1 320px; }

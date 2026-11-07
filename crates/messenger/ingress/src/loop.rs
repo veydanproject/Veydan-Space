@@ -3,11 +3,19 @@
 
 //! `IngressLoop`: consumes a transport's event stream, dedups, classifies,
 //! dispatches. One per session; dropping the handle stops it.
+//!
+//! The body of the loop is [`Ingress::process`], so that the archive of the
+//! conversation (`messenger-archive`, `internal/messenger-archive-plan.md`
+//! §4.4) feeds what it restores through the very same steps: a wire event
+//! as a relay would bring it, an opened gift wrap straight to the DM
+//! handler ([`Ingress::process_opened`]). What the loop keeps it also
+//! tells a [`KeptSink`], which is how the archive records it.
 
 use crate::classify::{classify, KIND_GIFT_WRAP, KIND_PRESENCE};
-use messenger_core::envelope::{KIND_GROUP_TYPING, KIND_TYPING_WRAP};
 use crate::dispatch::{Dispatcher, EffectSink};
-use messenger_core::{Context, Inbound, RawEvent};
+use async_trait::async_trait;
+use messenger_core::envelope::{KIND_GROUP_TYPING, KIND_TYPING_WRAP};
+use messenger_core::{Context, DmInbound, EventSource, Inbound, MetaInbound, RawEvent, Timestamp};
 use messenger_store::{banned, events_raw, servers, Store};
 use nostr::key::Keys;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -49,14 +57,220 @@ impl IngressStats {
     }
 }
 
+/// What of a kept event the archive wants beside the wire event: the
+/// opened wrap of a personal message (the wrap itself is not archived,
+/// `internal/messenger-wire.md` §8), the group of a group event, or the
+/// fact that it is a piece of the snapshot of my relations. Nothing else
+/// the ingress keeps is archived (profiles, relay lists, follows).
+#[derive(Clone, Debug)]
+pub enum Kept {
+    Dm(DmInbound),
+    Group { group_id: String },
+    Relations,
+}
+
+impl Kept {
+    /// What the archive takes of `inbound`, before the dispatch consumes
+    /// it; `None` for a family it does not keep.
+    fn of(inbound: &Inbound) -> Option<Self> {
+        match inbound {
+            Inbound::Dm(dm) => Some(Self::Dm(dm.clone())),
+            Inbound::Group(g) => Some(Self::Group { group_id: g.group_id.clone() }),
+            Inbound::Meta(MetaInbound::Relations { .. }) => Some(Self::Relations),
+            Inbound::Meta(_) | Inbound::Channel(_) | Inbound::Ignored { .. } => None,
+        }
+    }
+}
+
+/// Told of every event the ingress applied and kept in `msg_events_raw`
+/// that came from the network (not one the archive replayed): the runtime
+/// records it in the archive of the conversation. Called after the row is
+/// written, so what it hears is what the device holds.
+#[async_trait]
+pub trait KeptSink: Send + Sync {
+    async fn kept(&self, raw: &RawEvent, what: Kept, received_at: Timestamp);
+}
+
+/// What became of one event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Processed {
+    /// Handled and, when its kind is kept, written as seen.
+    Applied,
+    /// Seen before: nothing done.
+    Duplicate,
+    /// Nothing takes it (no handler, unparseable, not for us, a closed
+    /// group, a group's event by a relay not its server's).
+    Ignored,
+    /// Its handler failed; it is left unseen, so a later copy is taken.
+    Failed,
+}
+
+/// The steps one event goes through: dedup, classify, dispatch, keep. One
+/// per session, shared by the loop that reads the relays and by the replay
+/// of the archive. Events go through one at a time (`gate`), as they did
+/// when the loop alone fed them: a duplicate always finds the row of the
+/// first copy, whichever side brought it.
+pub struct Ingress {
+    store: Store,
+    keys: Option<Keys>,
+    dispatcher: Arc<Dispatcher>,
+    ctx: Context,
+    sink: Arc<dyn EffectSink>,
+    kept: Option<Arc<dyn KeptSink>>,
+    gate: tokio::sync::Mutex<()>,
+    pub stats: Arc<IngressStats>,
+}
+
+impl Ingress {
+    /// One wire event, as a relay brings it, or as the archive replays it
+    /// (`EventSource::Archive`).
+    pub async fn process(&self, raw: RawEvent) -> Processed {
+        let _one_at_a_time = self.gate.lock().await;
+        let st = &self.stats;
+        st.received.fetch_add(1, Ordering::Relaxed);
+        let kept = !is_transient(raw.kind);
+        if kept {
+            match events_raw::contains(&self.store, &raw.id).await {
+                Ok(false) => {}
+                Ok(true) => {
+                    st.duplicates.fetch_add(1, Ordering::Relaxed);
+                    return Processed::Duplicate;
+                }
+                Err(e) => {
+                    eprintln!("messenger ingress: dedup store failed: {e}");
+                    return Processed::Failed;
+                }
+            }
+        }
+        // A gift wrap that came while locked was not read: it stays
+        // unseen, and the history sync after unlock brings it again.
+        let unread = self.keys.is_none() && raw.kind == KIND_GIFT_WRAP;
+        let inbound = classify(&raw, self.keys.as_ref());
+        // An event of a group the network closes (`banned_groups` of
+        // the manifest) is neither handled nor kept as seen: when the
+        // ban lifts, the next history sync brings it again.
+        if let Inbound::Group(g) = &inbound {
+            if banned::group_contains(&self.store, &g.group_id).await.unwrap_or(false) {
+                st.ignored.fetch_add(1, Ordering::Relaxed);
+                return Processed::Ignored;
+            }
+            // A group lives on its server, and only there
+            // (`servers::group_heard_on`): its event by another
+            // relay is not taken, nor kept as seen, so the copy of
+            // the group's own server is taken when it comes. One of
+            // the archive was heard there by the device that kept it.
+            if !servers::group_heard_on(&self.store, &g.group_id, &g.envelope.source).await.unwrap_or(true) {
+                eprintln!("messenger ingress: an event of a group by a relay not of the group's server, dropped");
+                st.ignored.fetch_add(1, Ordering::Relaxed);
+                return Processed::Ignored;
+            }
+        }
+        let ignored = matches!(inbound, Inbound::Ignored { .. });
+        match &inbound {
+            Inbound::Dm(_) => {
+                st.dm.fetch_add(1, Ordering::Relaxed);
+            }
+            Inbound::Ignored { .. } => {
+                st.ignored.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+        st.dispatched.fetch_add(1, Ordering::Relaxed);
+        // The archive takes nothing that came from the archive.
+        let archived = if kept && raw.source != EventSource::Archive { Kept::of(&inbound) } else { None };
+        // Seen only once applied: an event whose handler failed is
+        // taken again from the next copy. Events come one at a
+        // time, so a duplicate still finds the row of the first.
+        let applied = self.dispatcher.dispatch(inbound, &self.ctx, self.sink.as_ref()).await;
+        if !applied {
+            return Processed::Failed;
+        }
+        if kept && !unread {
+            match events_raw::insert_if_new(&self.store, &raw).await {
+                Ok(true) => {
+                    if let (Some(what), Some(sink)) = (archived, &self.kept) {
+                        sink.kept(&raw, what, self.ctx.clock.now()).await;
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => eprintln!("messenger ingress: dedup store failed: {e}"),
+            }
+        }
+        if ignored {
+            Processed::Ignored
+        } else {
+            Processed::Applied
+        }
+    }
+
+    /// A personal message the archive restores: the wrap was opened on
+    /// the device that recorded it, so it goes straight to the DM handler
+    /// (under the same lock per peer the dispatcher keeps), as history
+    /// (`EventSource::Archive`). Once applied, a row stands in for the
+    /// wrap in `msg_events_raw`, by its id and wire time, so that the
+    /// reconciliation with the relays (`dm_local_set`) does not ask for
+    /// it again (plan §9 D8); its `raw_json` holds no wrap, and what
+    /// reads one (the proofs of a report) treats it as a wrap gone.
+    pub async fn process_opened(&self, inbound: DmInbound) -> Processed {
+        let _one_at_a_time = self.gate.lock().await;
+        let st = &self.stats;
+        st.received.fetch_add(1, Ordering::Relaxed);
+        match events_raw::contains(&self.store, &inbound.envelope.wire_id).await {
+            Ok(false) => {}
+            Ok(true) => {
+                st.duplicates.fetch_add(1, Ordering::Relaxed);
+                return Processed::Duplicate;
+            }
+            Err(e) => {
+                eprintln!("messenger ingress: dedup store failed: {e}");
+                return Processed::Failed;
+            }
+        }
+        let stub = stub_of_opened(&inbound);
+        st.dm.fetch_add(1, Ordering::Relaxed);
+        st.dispatched.fetch_add(1, Ordering::Relaxed);
+        if !self.dispatcher.dispatch(Inbound::Dm(inbound), &self.ctx, self.sink.as_ref()).await {
+            return Processed::Failed;
+        }
+        if let Err(e) = events_raw::insert_if_new(&self.store, &stub).await {
+            eprintln!("messenger ingress: dedup store failed: {e}");
+        }
+        Processed::Applied
+    }
+}
+
+/// The row that stands for the wrap of an opened message the archive
+/// replayed: the wrap's id and time, kind 1059; the source names the
+/// private server of the chat (`EventSource::Server`) so that the local
+/// set of that server's reconciliation lists it and the home set's does
+/// not, or the archive for the home chat. The JSON is a marker, not an
+/// event: `{"id", "kind", "created_at", "archive": true}`.
+pub fn stub_of_opened(inbound: &DmInbound) -> RawEvent {
+    let id = inbound.envelope.wire_id.clone();
+    let created_at = inbound.envelope.wire_created_at;
+    RawEvent {
+        json: serde_json::json!({ "id": id.as_hex(), "kind": KIND_GIFT_WRAP, "created_at": created_at.secs(), "archive": true }),
+        id,
+        kind: KIND_GIFT_WRAP,
+        pubkey: inbound.sender.clone(),
+        created_at,
+        source: match &inbound.srv {
+            Some(server) => EventSource::Server { id: server.clone() },
+            None => EventSource::Archive,
+        },
+    }
+}
+
 pub struct IngressLoop {
     handle: JoinHandle<()>,
+    ingress: Arc<Ingress>,
     pub stats: Arc<IngressStats>,
 }
 
 impl IngressLoop {
     /// `keys` opens gift wraps; `None` means DMs are ignored until the host
     /// unlocks (the loop is restarted by the runtime when that happens).
+    /// `kept` hears of every event kept (the archive); `None` tells nobody.
     pub fn spawn(
         mut events: mpsc::Receiver<RawEvent>,
         store: Store,
@@ -64,71 +278,23 @@ impl IngressLoop {
         dispatcher: Arc<Dispatcher>,
         ctx: Context,
         sink: Arc<dyn EffectSink>,
+        kept: Option<Arc<dyn KeptSink>>,
     ) -> Self {
         let stats = Arc::new(IngressStats::default());
-        let st = stats.clone();
+        let ingress = Arc::new(Ingress { store, keys, dispatcher, ctx, sink, kept, gate: tokio::sync::Mutex::new(()), stats: stats.clone() });
+        let steps = ingress.clone();
         let handle = tokio::spawn(async move {
             while let Some(raw) = events.recv().await {
-                st.received.fetch_add(1, Ordering::Relaxed);
-                let kept = !is_transient(raw.kind);
-                if kept {
-                    match events_raw::contains(&store, &raw.id).await {
-                        Ok(false) => {}
-                        Ok(true) => {
-                            st.duplicates.fetch_add(1, Ordering::Relaxed);
-                            continue;
-                        }
-                        Err(e) => {
-                            eprintln!("messenger ingress: dedup store failed: {e}");
-                            continue;
-                        }
-                    }
-                }
-                // A gift wrap that came while locked was not read: it stays
-                // unseen, and the history sync after unlock brings it again.
-                let unread = keys.is_none() && raw.kind == KIND_GIFT_WRAP;
-                let inbound = classify(&raw, keys.as_ref());
-                // An event of a group the network closes (`banned_groups` of
-                // the manifest) is neither handled nor kept as seen: when the
-                // ban lifts, the next history sync brings it again.
-                if let Inbound::Group(g) = &inbound {
-                    if banned::group_contains(&store, &g.group_id).await.unwrap_or(false) {
-                        st.ignored.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                    // A group lives on its server, and only there
-                    // (`servers::group_heard_on`): its event by another
-                    // relay is not taken, nor kept as seen, so the copy of
-                    // the group's own server is taken when it comes.
-                    let relay = g.envelope.source.relay_url().map(|u| u.as_str());
-                    if !servers::group_heard_on(&store, &g.group_id, relay).await.unwrap_or(true) {
-                        eprintln!("messenger ingress: an event of a group by a relay not of the group's server, dropped");
-                        st.ignored.fetch_add(1, Ordering::Relaxed);
-                        continue;
-                    }
-                }
-                match &inbound {
-                    Inbound::Dm(_) => {
-                        st.dm.fetch_add(1, Ordering::Relaxed);
-                    }
-                    Inbound::Ignored { .. } => {
-                        st.ignored.fetch_add(1, Ordering::Relaxed);
-                    }
-                    _ => {}
-                }
-                st.dispatched.fetch_add(1, Ordering::Relaxed);
-                // Seen only once applied: an event whose handler failed is
-                // taken again from the next copy. Events come one at a
-                // time, so a duplicate still finds the row of the first.
-                let applied = dispatcher.dispatch(inbound, &ctx, sink.as_ref()).await;
-                if kept && applied && !unread {
-                    if let Err(e) = events_raw::insert_if_new(&store, &raw).await {
-                        eprintln!("messenger ingress: dedup store failed: {e}");
-                    }
-                }
+                steps.process(raw).await;
             }
         });
-        Self { handle, stats }
+        Self { handle, ingress, stats }
+    }
+
+    /// The steps the loop feeds, for whoever feeds events by another way
+    /// (the replay of the archive).
+    pub fn ingress(&self) -> Arc<Ingress> {
+        self.ingress.clone()
     }
 
     pub fn abort(&self) {
@@ -188,7 +354,7 @@ mod tests {
             session_started_at: Timestamp(0),
             clock: Arc::new(SystemClock),
         };
-        let lp = IngressLoop::spawn(rx, store, Some(bob.clone()), Arc::new(Dispatcher::new()), ctx, sink.clone());
+        let lp = IngressLoop::spawn(rx, store, Some(bob.clone()), Arc::new(Dispatcher::new()), ctx, sink.clone(), None);
 
         let wrap = PrivateDirectMessageBuilder::new(bob.public_key(), "x").finalize(&alice).unwrap();
         let note = EventBuilder::new(Kind::from(1u16), "n").finalize(&alice).unwrap();
@@ -212,6 +378,59 @@ mod tests {
         }
     }
 
+    /// What the archive takes of an inbound: the opened wrap, the group
+    /// of a group event, the fact of a piece of the snapshot; nothing of
+    /// a profile, a relay list or what is ignored.
+    #[test]
+    fn the_archive_takes_messages_groups_and_the_snapshot() {
+        let dm = DmInbound {
+            envelope: messenger_core::inbound::Envelope {
+                wire_id: messenger_core::EventId::parse(&"1".repeat(64)).unwrap(),
+                source: EventSource::Relay { url: RelayUrl::parse("wss://r.example").unwrap() },
+                wire_created_at: Timestamp(7),
+            },
+            rumor_id: messenger_core::EventId::parse(&"2".repeat(64)).unwrap(),
+            sender: PubKey::parse(&"a".repeat(64)).unwrap(),
+            recipients: vec![],
+            created_at: Timestamp(5),
+            content: "x".into(),
+            reply_to: None,
+            rumor_kind: 14,
+            srv: Some("srv1".into()),
+        };
+        assert!(matches!(Kept::of(&Inbound::Dm(dm.clone())), Some(Kept::Dm(_))));
+        let stub = stub_of_opened(&dm);
+        assert_eq!((stub.kind, stub.created_at, &stub.id), (KIND_GIFT_WRAP, Timestamp(7), &dm.envelope.wire_id));
+        assert_eq!(stub.source, EventSource::Server { id: "srv1".into() }, "listed on the side of its server");
+        assert_eq!(stub.json["archive"], true);
+        let at_home = DmInbound { srv: None, ..dm };
+        assert_eq!(stub_of_opened(&at_home).source, EventSource::Archive);
+
+        let group = Inbound::Group(messenger_core::GroupInbound {
+            envelope: at_home.envelope.clone(),
+            group_id: "g".into(),
+            sender: at_home.sender.clone(),
+            created_at: Timestamp(5),
+            kind: 9,
+            key_id: None,
+            ciphertext: String::new(),
+            reply_to: None,
+        });
+        assert!(matches!(Kept::of(&group), Some(Kept::Group { group_id }) if group_id == "g"));
+        let author = at_home.sender.clone();
+        let relations = Inbound::Meta(MetaInbound::Relations {
+            author: author.clone(),
+            id: at_home.envelope.wire_id.clone(),
+            created_at: Timestamp(5),
+            page: 0,
+            content: String::new(),
+        });
+        assert!(matches!(Kept::of(&relations), Some(Kept::Relations)));
+        let profile = Inbound::Meta(MetaInbound::Profile { author, created_at: Timestamp(5), content: String::new() });
+        assert!(Kept::of(&profile).is_none());
+        assert!(Kept::of(&Inbound::ignored(1, "x")).is_none());
+    }
+
     #[tokio::test]
     async fn presence_beats_are_dispatched_but_never_kept() {
         let store = Store::open_in_memory().await.unwrap();
@@ -224,7 +443,7 @@ mod tests {
             session_started_at: Timestamp(0),
             clock: Arc::new(SystemClock),
         };
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), Arc::new(Dispatcher::new()), ctx, sink.clone());
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), Arc::new(Dispatcher::new()), ctx, sink.clone(), None);
 
         let beat = EventBuilder::new(Kind::from(KIND_PRESENCE), "")
             .tag(Tag::parse(["d", crate::classify::PRESENCE_D]).unwrap())
@@ -273,7 +492,7 @@ mod tests {
         banned::group_replace(&store, &["closed".to_string()]).await.unwrap();
 
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher.clone(), ctx_of(&me), sink.clone());
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher.clone(), ctx_of(&me), sink.clone(), None);
         tx.send(raw_of(&closed)).await.unwrap();
         tx.send(raw_of(&open)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -284,7 +503,7 @@ mod tests {
 
         banned::group_replace(&store, &[]).await.unwrap();
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink, None);
         tx.send(raw_of(&closed)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 2, "lifted: taken");
@@ -314,6 +533,7 @@ mod tests {
             push_mode: servers::PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         };
         servers::put(&store, &server("wss://s1.example", servers::KIND_PRIVATE)).await.unwrap();
         servers::put(&store, &server("wss://home.example", servers::KIND_HOME)).await.unwrap();
@@ -345,7 +565,7 @@ mod tests {
         let (private, home) = (event("on-s1"), event("at-home"));
 
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink, None);
         tx.send(by(&private, "wss://home.example")).await.unwrap();
         tx.send(by(&home, "wss://s1.example")).await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -397,7 +617,7 @@ mod tests {
 
         // Locked: nothing opens the wrap, and nothing marks it seen.
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), None, dispatcher.clone(), ctx_of(&bob), sink.clone());
+        let lp = IngressLoop::spawn(rx, store.clone(), None, dispatcher.clone(), ctx_of(&bob), sink.clone(), None);
         tx.send(raw_of(&wrap)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(lp.stats.snapshot().4, 1, "ignored without a signer");
@@ -406,7 +626,7 @@ mod tests {
 
         // Unlocked: the loop is restarted and the next copy is read, once.
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink, None);
         tx.send(raw_of(&wrap)).await.unwrap();
         tx.send(raw_of(&wrap)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -426,7 +646,7 @@ mod tests {
         let dispatcher = Arc::new(Dispatcher::new().with_dm(handler.clone()));
         let sink = Arc::new(Sink(Mutex::new(vec![])));
         let (tx, rx) = mpsc::channel(8);
-        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink.clone());
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink.clone(), None);
 
         let wrap = PrivateDirectMessageBuilder::new(bob.public_key(), "x").finalize(&alice).unwrap();
         tx.send(raw_of(&wrap)).await.unwrap(); // fails

@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
@@ -134,7 +135,7 @@
           placeholder={editing ? $t('msg_media_secret_keep') : ''} /></label>
       {/if}
       <div class="form-actions wide">
-        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{$t('msg_back')}</button>
+        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{$t('common_back')}</button>
         <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{$t('msg_media_save_check')}</button>
       </div>
       <p class="muted small wide">{$t('msg_media_secret_hint')}</p>
@@ -143,12 +144,12 @@
     <button class="btn btn-ghost add" disabled={busy} onclick={() => { resetForm(); adding = true; }}><Icon name="plus" size={18} />{$t('msg_media_add')}</button>
   {/if}
 
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </div>
 
 <style>
   .media-servers { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: 1.5; }
+  .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; line-height: var(--lh-base); }
   .small { font-size: var(--fs-xs); }
   /* The servers as rows of 48 with a line between them (as the facts of «Профиль и ключ»). */
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }

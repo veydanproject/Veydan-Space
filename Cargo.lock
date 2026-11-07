@@ -4152,6 +4152,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "messenger-archive"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "hex",
+ "messenger-core",
+ "messenger-store",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
 name = "messenger-avatar"
 version = "0.1.0"
 dependencies = [
@@ -4286,10 +4302,16 @@ dependencies = [
 name = "messenger-http"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.3.4",
+ "hex",
  "messenger-core",
  "messenger-vlink",
+ "nostr",
  "reqwest 0.13.4",
  "rustls",
+ "serde_json",
+ "sha2 0.11.0",
  "tokio",
  "webpki-roots 1.0.10",
 ]
@@ -4411,16 +4433,12 @@ dependencies = [
 name = "messenger-push"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
- "getrandom 0.3.4",
- "hex",
  "messenger-core",
  "messenger-http",
  "nostr",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -4459,6 +4477,7 @@ dependencies = [
  "base64 0.22.1",
  "getrandom 0.3.4",
  "hex",
+ "messenger-archive",
  "messenger-avatar",
  "messenger-calls",
  "messenger-contacts",
@@ -4533,10 +4552,9 @@ dependencies = [
  "bytes",
  "h2",
  "http",
+ "registry-proto",
  "ring",
  "rustls",
- "serde",
- "serde_json",
  "tokio",
  "tokio-rustls",
  "tracing",
@@ -6113,6 +6131,21 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "registry-proto"
+version = "0.1.1"
+source = "git+https://github.com/veydanproject/Veydan-Common?tag=v0.1.1#4560b035f743fd6c02202f14b35fa574da104e2f"
+dependencies = [
+ "ring",
+ "rustls",
+ "rustls-webpki",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "veydan-denied",
+ "veydan-node",
+]
 
 [[package]]
 name = "reqwest"
@@ -8962,6 +8995,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "veydan-denied"
+version = "0.1.1"
+source = "git+https://github.com/veydanproject/Veydan-Common?tag=v0.1.1#4560b035f743fd6c02202f14b35fa574da104e2f"
+
+[[package]]
 name = "veydan-lock"
 version = "0.1.0"
 dependencies = [
@@ -8995,6 +9033,7 @@ dependencies = [
  "hkdf 0.13.0",
  "jni 0.21.1",
  "log",
+ "messenger-archive",
  "messenger-core",
  "messenger-http",
  "messenger-media",
@@ -9007,6 +9046,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx",
  "tauri",
  "tauri-plugin-fs",
  "tauri-plugin-opener",
@@ -9017,11 +9057,31 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "ts-rs",
  "veydan-build-cfg",
  "veydan-core",
  "veydan-lock",
  "veydan-shell",
+ "veydan-sync",
+ "veydan-sync-host",
  "zeroize",
+]
+
+[[package]]
+name = "veydan-node"
+version = "0.1.1"
+source = "git+https://github.com/veydanproject/Veydan-Common?tag=v0.1.1#4560b035f743fd6c02202f14b35fa574da104e2f"
+dependencies = [
+ "bytes",
+ "h2",
+ "http",
+ "ring",
+ "rustls",
+ "rustls-webpki",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
@@ -9260,8 +9320,8 @@ dependencies = [
 
 [[package]]
 name = "vlink-client"
-version = "0.3.5"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.5#bb3fd62fce63ceba172f6af8a5c5c534177a9e32"
+version = "0.4.1"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.4.1#66144b60b7873a6921994c3a0634972f28cded79"
 dependencies = [
  "bytes",
  "h2",
@@ -9275,12 +9335,13 @@ dependencies = [
 
 [[package]]
 name = "vlink-proto"
-version = "0.3.5"
-source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.3.5#bb3fd62fce63ceba172f6af8a5c5c534177a9e32"
+version = "0.4.1"
+source = "git+https://github.com/veydanproject/Veydan-Link?tag=v0.4.1#66144b60b7873a6921994c3a0634972f28cded79"
 dependencies = [
  "bytes",
  "h2",
  "http",
+ "registry-proto",
  "ring",
  "rustls",
  "rustls-webpki",
@@ -9288,6 +9349,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "veydan-node",
 ]
 
 [[package]]

@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { registry } from '$lib/core/registry';
   import { modulesStore } from '$lib/core/store/modules.svelte';
@@ -64,10 +65,7 @@
   {/each}
 </div>
 {#if error}
-  <div class="note" class:m-error={mobile} role="alert">
-    <Icon name="alert-triangle" size={18} />
-    <span>{error}</span>
-  </div>
+  <div class="err" class:mobile><Notice tone="danger">{error}</Notice></div>
 {/if}
 
 <style>
@@ -89,18 +87,13 @@
   button:disabled .toggle { opacity: 0.45; }
   .m-row { gap: var(--sp-3); }
   .module-icon {
-    display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0;
-    border-radius: var(--radius-md); background: var(--accent-tint); color: var(--accent-text);
+    display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0;
+    border-radius: var(--radius); background: var(--accent-tint); color: var(--accent-text);
   }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
   .m-row .title { font-size: var(--fs-md); }
-  .sub { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); }
+  .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .toggle { flex-shrink: 0; pointer-events: none; }
-  .note {
-    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
-  }
-  .note :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
-  .m-error { margin: var(--sp-2) 0 0; }
+  .err.mobile { margin: var(--sp-2) 0 0; }
 </style>

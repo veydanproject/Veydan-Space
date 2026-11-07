@@ -18,7 +18,6 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
   import { callPeer } from './peer';
   import { liveText, statusText } from './status';
@@ -71,7 +70,7 @@
     {/if}
 
     <header class="top">
-      <button class="leave" onclick={onleave} aria-label={$t('msg_back')}><Icon name="chevron-down" size={26} /></button>
+      <button class="leave" onclick={onleave} aria-label={$t('common_back')}><Icon name="chevron-down" size={26} /></button>
       <span class="e2e"><Icon name="lock-check" size={12} />{$t('msg_call_e2e')}</span>
       <span class="spacer"></span>
     </header>
@@ -84,16 +83,16 @@
           <span class="cap-chips">
             {#if talking && call?.via}
               <span class="chip small" class:relay={call.via === 'relay'}>
-                <CallIcon name={call.via} size={11} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+                <Icon name={call.via === 'relay' ? 'route' : 'arrows-exchange'} size={11} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
               </span>
             {/if}
             {#if rtt != null}<span class="chip small quiet">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
-            {#if call?.muted}<span class="chip warn small"><CallIcon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
+            {#if call?.muted}<span class="chip warn small"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
           </span>
         {/if}
       </div>
       <div class="grow"></div>
-      {#if error}<p class="error over">{error}</p>{/if}
+      {#if error}<p class="error error-msg over">{error}</p>{/if}
     {:else}
       <div class="middle">
         <CallFace {peer} size={132} {ringing} level={talking ? callStore.level : 0} />
@@ -102,33 +101,33 @@
         <div class="chips">
           {#if call?.via}
             <span class="chip" class:relay={call.via === 'relay'}>
-              <CallIcon name={call.via} size={13} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+              <Icon name={call.via === 'relay' ? 'route' : 'arrows-exchange'} size={13} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
             </span>
           {/if}
           {#if rtt != null}<span class="chip quiet">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
-          {#if call?.muted}<span class="chip warn"><CallIcon name="mic-off" size={13} />{$t('msg_call_muted')}</span>{/if}
-          {#if busy}<span class="chip warn"><CallIcon name="missed" size={13} />{$t('msg_call_busy_in_group')}</span>{/if}
+          {#if call?.muted}<span class="chip warn"><Icon name="mic-off" size={13} />{$t('msg_call_muted')}</span>{/if}
+          {#if busy}<span class="chip warn"><Icon name="phone-x" size={13} />{$t('msg_call_busy_in_group')}</span>{/if}
         </div>
-        {#if error}<p class="error">{error}</p>{/if}
+        {#if error}<p class="error error-msg">{error}</p>{/if}
       </div>
     {/if}
 
     <div class="controls" class:many={call?.phase !== 'incoming' && many}>
       {#if call?.phase === 'incoming'}
         <div class="action">
-          <button class="round decline" disabled={callStore.ending} onclick={() => callStore.decline()} aria-label={$t('msg_call_decline')}><CallIcon name="hangup" size={30} /></button>
+          <button class="round decline" disabled={callStore.ending} onclick={() => callStore.decline()} aria-label={$t('msg_call_decline')}><Icon name="phone-hangup" size={30} /></button>
           <span>{$t('msg_call_decline')}</span>
         </div>
         {#if call.media === 'video' && !busy}
           <div class="action">
-            <button class="round soft" disabled={callStore.busy} onclick={() => callStore.acceptWithoutVideo()} aria-label={$t('msg_call_answer_audio')}><CallIcon name="video-off" size={26} /></button>
+            <button class="round soft" disabled={callStore.busy} onclick={() => callStore.acceptWithoutVideo()} aria-label={$t('msg_call_answer_audio')}><Icon name="video-off" size={26} /></button>
             <span>{$t('msg_call_answer_voice')}</span>
           </div>
         {/if}
         {#if !busy}
           <div class="action">
             <button class="round answer" disabled={callStore.busy} onclick={() => callStore.accept()} aria-label={$t('msg_call_answer')}>
-              <CallIcon name={call.media === 'video' ? 'video' : 'phone'} size={30} />
+              <Icon name={call.media === 'video' ? 'video' : 'phone'} size={30} />
             </button>
             <span>{$t('msg_call_answer')}</span>
           </div>
@@ -137,14 +136,14 @@
         <div class="action">
           <button class="round soft" class:on={call.muted} disabled={callStore.busy || call.phase === 'outgoing'} onclick={() => callStore.toggleMute()}
             aria-pressed={call.muted} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}>
-            <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={26} />
+            <Icon name={call.muted ? 'mic-off' : 'mic'} size={26} />
           </button>
           <span>{$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}</span>
         </div>
         <div class="action">
           <button class="round soft" class:lit={cameraOn} disabled={callStore.busy} onclick={() => callStore.toggleCamera()}
             aria-pressed={cameraOn} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')}>
-            <CallIcon name={cameraOn ? 'video' : 'video-off'} size={26} />
+            <Icon name={cameraOn ? 'video' : 'video-off'} size={26} />
           </button>
           <span>{$t('msg_call_camera')}</span>
         </div>
@@ -160,13 +159,13 @@
           <div class="action">
             <button class="round soft" class:on={speaker} disabled={callStore.busy} onclick={() => callStore.toggleSpeaker()}
               aria-pressed={speaker} aria-label={$t('msg_call_speaker')}>
-              <CallIcon name="speaker" size={26} />
+              <Icon name="volume" size={26} />
             </button>
             <span>{$t('msg_call_speaker')}</span>
           </div>
         {/if}
         <div class="action">
-          <button class="round decline" disabled={callStore.ending} onclick={() => callStore.hangUp()} aria-label={$t('msg_call_end')}><CallIcon name="hangup" size={30} /></button>
+          <button class="round decline" disabled={callStore.ending} onclick={() => callStore.hangUp()} aria-label={$t('msg_call_end')}><Icon name="phone-hangup" size={30} /></button>
           <span>{$t('msg_call_end')}</span>
         </div>
       {/if}
@@ -184,7 +183,7 @@
     color: var(--text);
   }
   /* Over the videos: light words, the top and the bottom darkened behind them. */
-  .screen.video { background: #0b0d10; color: #fff; padding-bottom: calc(var(--sab, 0px) + var(--sp-6)); }
+  .screen.video { background: var(--call-bg); color: #fff; padding-bottom: calc(var(--sab, 0px) + var(--sp-6)); }
   .stage { position: absolute; inset: 0; z-index: 0; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .screen.video::before, .screen.video::after { content: ''; position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none; }
@@ -194,11 +193,11 @@
 
   .top { display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; }
   .leave { border: none; background: none; color: inherit; padding: 10px; margin-left: -8px; border-radius: 50%; cursor: pointer; display: inline-flex; }
-  .e2e { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-2xs); color: var(--text-3); position: absolute; left: 50%; transform: translateX(-50%); }
+  .e2e { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); position: absolute; left: 50%; transform: translateX(-50%); }
   .video .e2e { color: rgba(255, 255, 255, 0.75); }
   .spacer { flex: 1; }
   .middle { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); text-align: center; padding-bottom: var(--sp-8); }
-  .name { margin: var(--sp-5) 0 0; font-size: var(--fs-2xl); font-weight: var(--fw-extrabold); letter-spacing: -0.4px; overflow-wrap: anywhere; }
+  .name { margin: var(--sp-5) 0 0; font-size: var(--fs-2xl); font-weight: var(--fw-extrabold); letter-spacing: var(--ls-tight); overflow-wrap: anywhere; }
   .status { font-size: var(--fs-md); color: var(--text-2); }
   .status.clock { font-variant-numeric: tabular-nums; color: var(--success-text); font-weight: var(--fw-semibold); }
   .ended .status { color: var(--text-2); }
@@ -223,10 +222,10 @@
   .chip.relay { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
   .chip.warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
   .chip.quiet { font-variant-numeric: tabular-nums; }
-  .chip.small { padding: 1px 8px; font-size: var(--fs-2xs); text-shadow: none; }
-  .error { margin: var(--sp-2) 0 0; font-size: var(--fs-sm); color: var(--danger-text); max-width: 320px; }
+  .chip.small { padding: 1px 8px; font-size: var(--fs-xs); text-shadow: none; }
+  .error { margin: var(--sp-2) 0 0; max-width: 320px; }
   .error.over {
-    align-self: center; margin: 0 0 var(--sp-3); padding: 6px 12px; border-radius: var(--radius-sm); text-align: center;
+    align-self: center; margin: 0 0 var(--sp-3); padding: 6px 12px; border-radius: var(--radius-md); text-align: center;
     background: var(--danger-bg); border: 1px solid var(--danger-border);
   }
 
@@ -242,7 +241,7 @@
   }
   .many .round { width: 58px; height: 58px; }
   .round:active:not(:disabled) { transform: scale(0.94); }
-  .round:disabled { opacity: 0.55; }
+  .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
   .answer { background: var(--success); animation: nudge 1.6s ease-in-out infinite; }
   .soft { background: var(--surface-3); color: var(--text); border: 1px solid var(--border-strong); }

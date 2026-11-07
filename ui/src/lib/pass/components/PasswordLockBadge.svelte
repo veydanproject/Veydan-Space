@@ -45,7 +45,7 @@
     background: transparent;
     color: var(--danger-text);
     cursor: pointer;
-    line-height: 0;
+    line-height: var(--lh-icon);
     opacity: 0.85;
   }
   .badge.on { color: var(--success-text); }

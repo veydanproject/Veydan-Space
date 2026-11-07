@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { stamp } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
   import { messengerStore } from '../store.svelte';
@@ -52,9 +53,9 @@
 
   <div class="actions">
     <button class="btn btn-ghost" disabled={locked} onclick={() => open(panel === 'export' ? 'none' : 'export')}>
-      <Icon name="key" size={18} />{$t('msg_id_export_btn')}
+      <Icon name="file-export" size={18} />{$t('msg_id_export_btn')}
     </button>
-    <button class="btn btn-ghost danger" disabled={locked} onclick={() => open(panel === 'delete' ? 'none' : 'delete')}>
+    <button class="btn btn-danger-soft" disabled={locked} onclick={() => open(panel === 'delete' ? 'none' : 'delete')}>
       <Icon name="trash-2" size={18} />{$t('msg_id_delete_btn')}
     </button>
   </div>
@@ -79,10 +80,10 @@
   {:else if panel === 'delete'}
     <div class="panel">
       <p class="warn">{$t('msg_id_delete_warning')}</p>
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
       <div class="actions end">
-        <button class="btn btn-ghost" disabled={busy} onclick={() => open('none')}>{$t('msg_back')}</button>
-        <button class="btn btn-danger" disabled={busy} onclick={doDelete}>{$t('msg_id_delete_confirm')}</button>
+        <button class="btn btn-ghost" disabled={busy} onclick={() => open('none')}>{$t('common_back')}</button>
+        <button class="btn btn-danger" disabled={busy} onclick={doDelete}>{$t('common_remove')}</button>
       </div>
     </div>
   {/if}
@@ -110,7 +111,7 @@
   }
   .warn {
     margin: 0; font-size: var(--fs-sm); color: var(--text-body);
-    background: var(--danger-bg); border-radius: var(--radius-sm); padding: var(--sp-2) var(--sp-3);
+    background: var(--danger-bg); border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3);
   }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
   .field span { color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
@@ -120,5 +121,4 @@
     min-height: 44px; padding: 0 var(--sp-3);
   }
   .field input:focus { outline: none; border-color: var(--accent-border); }
-  .btn.danger { color: var(--danger-text); }
 </style>

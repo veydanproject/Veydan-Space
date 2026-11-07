@@ -8,6 +8,7 @@
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   /** Lease badge and diverged-files actions for one profile. `compact` hides the buttons. */
   let { profileId, compact = false }: { profileId: string; compact?: boolean } = $props();
@@ -48,7 +49,7 @@
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => resolve('remote')}>{$t('profile_sync_take_remote')}</button>
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => resolve('mine')}>{$t('profile_sync_push_mine')}</button>
       </div>
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
   {/if}
 {:else if lease}
@@ -68,6 +69,5 @@
   .sync-badge.lease { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
   .sync-badge.diverged { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
   .sync-block { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; margin-bottom: 0.6rem; }
-  .sync-block .hint { font-size: var(--fs-xs); color: var(--text-muted); }
   .sync-actions { display: flex; gap: 0.4rem; }
 </style>

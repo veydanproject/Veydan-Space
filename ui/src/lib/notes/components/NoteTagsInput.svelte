@@ -252,13 +252,13 @@
     align-items: center;
     justify-content: center;
     gap: 0.2rem;
-    font-size: var(--fs-2xs);
-    line-height: 1;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-icon);
     padding: 0.2rem 0.45rem;
     border-radius: var(--radius-pill);
     border-width: 1px;
     border-style: solid;
-    font-weight: 500;
+    font-weight: var(--fw-medium);
     white-space: nowrap;
   }
 
@@ -268,7 +268,7 @@
     cursor: pointer;
     padding: 0;
     font-size: var(--fs-sm);
-    line-height: 1;
+    line-height: var(--lh-icon);
     color: inherit;
     opacity: var(--chip-fade);
     display: flex;
@@ -304,7 +304,7 @@
     min-width: 240px;
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     z-index: 500;
     padding: var(--sp-2);
@@ -319,18 +319,18 @@
     font-size: var(--fs-sm);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-field);
     color: var(--text);
     outline: none;
   }
-  .popup-input:focus { border-color: var(--accent); }
-  .hint { font-size: var(--fs-2xs); color: var(--text-3); padding: 0 0.1rem; }
+  .popup-input:focus { border-color: var(--accent-border); }
+  .hint { padding: 0 0.1rem; }
 
   .suggestions {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 
@@ -351,7 +351,7 @@
 
   .sug-folder-label {
     margin-left: auto;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
     flex-shrink: 0;
   }

@@ -10,6 +10,7 @@
   import SSHConnectionsList from './SSHConnectionsList.svelte';
   import SSHConnectionForm from './SSHConnectionForm.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Drawer from '$lib/core/ui/Drawer.svelte';
   import { t } from '$lib/core/i18n';
 
   interface Props {
@@ -26,6 +27,8 @@
   let editConn = $state<SshConnection | null>(null);
   let pickerSearch = $state('');
   let workspaceNames = $state<Record<string, string>>({});
+  let connForm = $state<ReturnType<typeof SSHConnectionForm>>();
+  let connSaving = $state(false);
 
   $effect(() => {
     loadAll();
@@ -76,9 +79,12 @@
     applyUpdate(updated);
   }
 
+  /** A connection saved here: in place if it was in the list, at its end if it was just made. */
   function applyUpdate(updated: SshConnection) {
-    allConns = allConns.map((c) => (c.id === updated.id ? updated : c));
-    sshStore.connections = sshStore.connections.map((c) => (c.id === updated.id ? updated : c));
+    const put = (list: SshConnection[]) =>
+      list.some((c) => c.id === updated.id) ? list.map((c) => (c.id === updated.id ? updated : c)) : [...list, updated];
+    allConns = put(allConns);
+    sshStore.connections = put(sshStore.connections);
   }
 
   function handleEdit(conn: SshConnection) {
@@ -87,10 +93,14 @@
     showPicker = false;
   }
 
-  function handleFormSave(conn: SshConnection) {
-    applyUpdate(conn);
+  function closeForm() {
     showForm = false;
     editConn = null;
+  }
+
+  function handleFormSave(conn: SshConnection) {
+    applyUpdate(conn);
+    closeForm();
   }
 
   let connectError = $state('');
@@ -106,27 +116,13 @@
 <div class="ssh-tab">
   {#if loading}
     <div class="loading"><Icon name="loader" size={14} /></div>
-  {:else if showForm}
-    <div class="form-header">
-      <button class="back-btn" onclick={() => { showForm = false; editConn = null; }}>
-        <Icon name="arrow-left" size={13} /> {$t('ssh_btn_cancel')}
-      </button>
-      <span class="form-title">{editConn ? $t('ssh_form_edit') : $t('ssh_form_new')}</span>
-    </div>
-    <SSHConnectionForm
-      connection={editConn}
-      defaultWorkspaceId={workspaceId}
-      defaultProfileId={profileId}
-      onSave={handleFormSave}
-      onCancel={() => { showForm = false; editConn = null; }}
-    />
   {:else}
     <div class="tab-header">
       <span class="count">{$t('ssh_profile_linked_count', { n: String(linked.length) })}</span>
       <div class="header-actions">
         <button class="btn btn-sm btn-ghost" onclick={() => { showPicker = !showPicker; pickerSearch = ''; }}>
           <Icon name={showPicker ? 'x' : 'link'} size={12} />
-          {showPicker ? $t('ssh_btn_cancel') : $t('ssh_btn_link')}
+          {showPicker ? $t('common_cancel') : $t('ssh_btn_link')}
         </button>
         <button class="btn btn-sm btn-primary" onclick={() => { showForm = true; editConn = null; }}>
           <Icon name="plus" size={12} /> {$t('ssh_btn_new')}
@@ -148,7 +144,7 @@
         <div class="picker-list">
           {#if pickerConns.length === 0}
             <div class="empty-state">
-              <p>{pickerSearch ? $t('ssh_search_empty') : $t('ssh_picker_all_linked')}</p>
+              <p>{pickerSearch ? $t('common_nothing_found') : $t('ssh_picker_all_linked')}</p>
             </div>
           {/if}
           {#each pickerConns as conn (conn.id)}
@@ -183,6 +179,31 @@
   {/if}
 </div>
 
+<Drawer
+  open={showForm}
+  width="440px"
+  title={editConn ? $t('ssh_form_edit') : $t('ssh_form_new')}
+  onclose={closeForm}
+>
+  {#if showForm}
+    <SSHConnectionForm
+      bind:this={connForm}
+      bind:saving={connSaving}
+      connection={editConn}
+      defaultWorkspaceId={workspaceId}
+      defaultProfileId={profileId}
+      onSave={handleFormSave}
+    />
+  {/if}
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={closeForm}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={() => connForm?.submit()} disabled={connSaving}>
+      {#if connSaving}<Icon name="loader" size={18} />{/if}
+      {editConn ? $t('common_save') : $t('common_create')}
+    </button>
+  {/snippet}
+</Drawer>
+
 <style>
   .ssh-tab { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0; min-height: 100%; }
 
@@ -193,15 +214,6 @@
   .header-actions :global(.btn) {
     height: 34px; padding: 0 13px; font-size: var(--fs-sm); border-radius: var(--radius);
   }
-
-  .form-header { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
-  .back-btn {
-    display: flex; align-items: center; gap: 0.3rem;
-    background: none; border: none; cursor: pointer;
-    color: var(--text-2); font-size: var(--fs-sm); font-family: inherit; padding: 0.2rem 0;
-  }
-  .back-btn:hover { color: var(--text); }
-  .form-title { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text); }
 
   .picker {
     background: var(--surface-2);
@@ -229,7 +241,7 @@
   .picker-item:hover { background: var(--surface-hover); }
   .pi-info { display: flex; flex-direction: column; gap: 1px; }
   .pi-name { font-size: var(--fs-sm); color: var(--text); }
-  .pi-sub { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
+  .pi-sub { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); }
 
   /* «Управление всеми» — вторичная 46px кнопка, прижата к низу вкладки
      (тот же паттерн, что стек действий на вкладке Info) */
@@ -245,7 +257,7 @@
   .connect-error {
     background: var(--danger-bg);
     color: var(--danger-text);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     padding: 0.35rem 0.6rem;
     font-size: var(--fs-xs);
     word-break: break-all;

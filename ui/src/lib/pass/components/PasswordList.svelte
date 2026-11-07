@@ -14,6 +14,7 @@
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import type { PasswordEntry } from '$lib/pass/types';
@@ -26,18 +27,15 @@
 
   let { entries, onopen, onedit }: Props = $props();
 
-  let copied = $state('');
   let error = $state('');
   let unlockOpen = $state(false);
   let pending = $state<PasswordEntry | null>(null);
-  let copyTimer: ReturnType<typeof setTimeout>;
   /** How many chips a row shows; the rest is one counter chip with their names as the tooltip. */
   const MAX_CHIPS = 2;
 
   onMount(() => {
     void directory.ensureLoaded();
     void totpStore.ensureLoaded();
-    return () => clearTimeout(copyTimer);
   });
 
   function profilesOf(tags: string[]): string[] {
@@ -62,20 +60,12 @@
     return directory.summary('note_tag', name)?.color;
   }
 
-  function markCopied(key: string) {
-    copied = '';
-    requestAnimationFrame(() => (copied = key));
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = ''), 2000);
-  }
-
   async function copyUsername(entry: PasswordEntry) {
     if (!entry.username) return;
     error = '';
     try {
       await navigator.clipboard.writeText(entry.username);
-      markCopied(`${entry.id}:user`);
-      toast.success($t('pw_copied'));
+      toast.success($t('toast_copied'));
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -94,8 +84,7 @@
     error = '';
     try {
       await api.passwords.copy(entry.id);
-      markCopied(`${entry.id}:pass`);
-      secretCopied($t('pw_copied'));
+      secretCopied($t('toast_copied'));
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
       if (code === 'vault_locked' || code === 'vault_mismatch' || code === 'decrypt_failed') {
@@ -105,7 +94,6 @@
       try {
         const value = (await api.passwords.reveal(entry.id, 'password')).value;
         await copySecret(value);
-        markCopied(`${entry.id}:pass`);
       } catch (err) {
         error = err instanceof Error ? err.message : String(err);
       }
@@ -113,7 +101,7 @@
   }
 </script>
 
-{#if error}<p class="err">{error}</p>{/if}
+{#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
 <div class="list divided">
   {#each entries as entry (entry.id)}
     {@const profiles = profilesOf(entry.tags)}
@@ -154,24 +142,22 @@
           <button
             type="button"
             class="icon-btn"
-            class:success={copied === `${entry.id}:user`}
             title={$t('ctx_action_copy_username')}
             onclick={() => copyUsername(entry)}
           >
-            <Icon name={copied === `${entry.id}:user` ? 'check' : 'id'} size={13} />
+            <Icon name="id" size={13} />
           </button>
         {/if}
         <button
           type="button"
           class="icon-btn"
-          class:success={copied === `${entry.id}:pass`}
           title={appLock.locked ? $t('lock_title') : $t('ctx_action_copy_password')}
           onclick={() => copyPassword(entry)}
         >
-          <Icon name={copied === `${entry.id}:pass` ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
+          <Icon name={appLock.locked ? 'lock-square-rounded' : 'lock-password'} size={13} />
         </button>
         {#if onedit && !appLock.locked}
-          <button type="button" class="icon-btn" title={$t('pw_btn_edit')} onclick={() => onedit(entry)}>
+          <button type="button" class="icon-btn" title={$t('common_edit')} onclick={() => onedit(entry)}>
             <Icon name="pencil" size={13} />
           </button>
         {/if}
@@ -237,14 +223,13 @@
     max-width: 100%;
     border-width: 1px;
     border-style: solid;
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-2xs);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
     padding: 0.05rem 0.35rem;
     white-space: nowrap;
   }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
-  .totp-more { font-size: var(--fs-2xs); color: var(--text-2); flex-shrink: 0; }
-  .icon-btn.success { color: var(--success-text); }
-  .err { margin: 0 0 var(--sp-2); color: var(--danger-text); font-size: var(--fs-xs); }
+  .totp-more { font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }
+  .err { margin: 0 0 var(--sp-2); }
 </style>

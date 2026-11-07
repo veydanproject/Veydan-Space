@@ -125,7 +125,7 @@
   </div>
 
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={oncancel}>{$t('cancel')}</button>
+    <button class="btn btn-ghost" onclick={oncancel}>{$t('common_cancel')}</button>
     <button class="btn btn-primary" onclick={confirm}>{$t('files_chmod_apply')}</button>
   {/snippet}
 </Dialog>
@@ -150,8 +150,6 @@
     color: var(--text-2);
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
     padding: var(--sp-1);
     text-align: center;
   }

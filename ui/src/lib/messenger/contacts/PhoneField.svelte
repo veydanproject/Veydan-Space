@@ -34,7 +34,7 @@
       </button>
     {/if}
   </div>
-  {#if error}<div class="field-error" role="alert">{error}</div>{/if}
+  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
   <p class="hint" id="own-phone-hint">{$t('msg_profile_phone_hint')}</p>
   <div class="share">
     <span id="own-phone-share">{$t('msg_profile_phone_share_default')}</span>
@@ -49,15 +49,14 @@
   label { font-size: var(--fs-xs); color: var(--text-3); }
   .private {
     display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border);
   }
   .input-row { display: flex; gap: var(--sp-2); align-items: center; }
   .input-row input { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; }
-  .invalid input { border-color: var(--danger-border); }
+  .invalid input { border-color: var(--danger); }
   .icon-btn { flex-shrink: 0; }
-  .field-error { font-size: var(--fs-xs); color: var(--danger-text); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .share { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text-body); }
   .toggle:disabled { opacity: 0.45; cursor: default; }
   @media (pointer: coarse) { .icon-btn { width: 40px; height: 40px; } }

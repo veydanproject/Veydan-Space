@@ -13,6 +13,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { qrPicture } from '$lib/core/ui/qrPicture';
   import { ShareDialog, ShareOutSheet, channelShareItem, confirmStore, saveQr, saveQrError } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelDetail } from './api';
@@ -30,7 +31,6 @@
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
 
-  let copied = $state(false);
   let sharing = $state(false);
   let sharingOut = $state(false);
   let qr = $state<string | null>(null);
@@ -52,8 +52,6 @@
     try {
       await navigator.clipboard.writeText(link);
       copiedToast();
-      copied = true;
-      setTimeout(() => (copied = false), 1600);
     } catch (e) { error = channelError(e, tr); }
   }
 
@@ -70,7 +68,7 @@
 
   /** The code as a picture, after the warning: whoever sees it gets in, as with the link. */
   async function save() {
-    if (!qr || !(await confirmStore.ask($t('msg_qr_save_key_warn'), $t('msg_qr_save')))) return;
+    if (!qr || !(await confirmStore.ask($t('msg_qr_save_key_warn'), $t('common_save')))) return;
     error = ''; busy = true;
     try { await saveQr(qrSvg, 'veydan-channel-qr'); }
     catch (e) { error = saveQrError(e, (x) => channelError(x, tr)); }
@@ -78,7 +76,7 @@
   }
 
   async function rotate() {
-    if (!(await confirmStore.ask($t('chan_link_rotate_confirm'), $t('chan_link_rotate'), true))) return;
+    if (!(await confirmStore.ask($t('chan_link_rotate_confirm'), $t('chan_link_rotate'), true, 'link'))) return;
     error = ''; busy = true;
     try { await channelStore.rotateLink(cid); }
     catch (e) { error = channelError(e, tr); }
@@ -93,19 +91,19 @@
       <p class="hint">{$t(`chan_link_hint_${detail.channel.join}` as 'chan_link_hint_open')}</p>
       <code class="link">{link}</code>
       <div class="grid">
-        <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name={copied ? 'check' : 'copy'} size={18} />{copied ? $t('chan_link_copied') : $t('chan_copy')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={copy}><Icon name="copy" size={18} />{$t('common_copy')}</button>
         <button class="btn btn-ghost btn-sm" onclick={() => (sharing = true)}><Icon name="send" size={18} />{$t('chan_share')}</button>
         <button class="btn btn-ghost btn-sm" onclick={() => (sharingOut = true)}><Icon name="upload" size={18} />{$t('msg_share_out_open')}</button>
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={toggleQr}><Icon name="qr-code" size={18} />{qr ? $t('chan_qr_hide') : $t('chan_qr_show')}</button>
         {#if canRotateLink(detail)}
-          <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={rotate}><Icon name="refresh-cw" size={18} />{$t('chan_link_rotate')}</button>
+          <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={rotate}><Icon name="link" size={18} />{$t('chan_link_rotate')}</button>
         {/if}
       </div>
       {#if qr}
         <img class="qr" src={qr} alt={$t('chan_qr_alt', { name: detail.channel.name })} />
-        <button class="btn btn-ghost btn-sm save" disabled={busy} onclick={save}><Icon name="download" size={18} />{$t('msg_qr_save')}</button>
+        <button class="btn btn-ghost btn-sm save" disabled={busy} onclick={save}><Icon name="download" size={18} />{$t('common_save')}</button>
       {/if}
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </Box>
   </section>
   <ShareDialog bind:open={sharing} {link} exclude={detail.channel.chat_id} />
@@ -115,16 +113,15 @@
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
   .label { display: flex; align-items: center; min-height: 24px; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
+  .hint { margin: 0; }
   .link {
-    font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-3);
+    font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-2); background: var(--surface-3);
     border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; word-break: break-all;
     max-height: 96px; overflow-y: auto; user-select: all;
   }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
   .grid .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .grid .btn { min-height: calc(var(--control-h-sm) + var(--sp-1)); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
-  .danger { color: var(--danger-text); }
+  .grid .btn { min-height: calc(var(--control-h-sm) + var(--sp-1)); min-width: 0; padding-inline: var(--sp-2); white-space: normal; text-wrap: balance; text-align: center; line-height: var(--lh-tight); }
   /* A code is read by a camera: always dark on light, whatever the theme. */
   /* The card of the code is in the picture, white whatever the theme. */
   .qr { align-self: center; width: min(240px, 100%); height: auto; }

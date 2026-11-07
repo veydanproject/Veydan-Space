@@ -165,7 +165,7 @@
   </div>
   <div class="m-list">
     <button type="button" class="m-row" onclick={() => act(onremove)}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('notes_attach_delete')}</span>
+      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
 </BottomSheet>
@@ -181,21 +181,21 @@
     min-height: 88px;
     padding: var(--sp-3);
     border: 0;
-    border-radius: var(--m-radius);
+    border-radius: var(--radius-lg);
     background: var(--m-field);
     color: var(--text);
     font: inherit;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
-  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: 700; }
+  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: var(--fw-bold); }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .row {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 4px 4px 4px 8px;
-    border-radius: var(--m-radius);
+    border-radius: var(--radius-lg);
     background: var(--m-card);
     border: 1px solid var(--m-card-border);
   }
@@ -213,9 +213,9 @@
   }
   .open img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-  .name { font-size: var(--fs-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); }
-  .size.err { color: var(--danger); }
+  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); }
+  .size.err { color: var(--danger-text); }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-text); flex-shrink: 0; }
   .row.remote .dot { background: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }

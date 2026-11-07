@@ -40,8 +40,8 @@ export function actionsFor(rows: QueueItem[], kind: Decision): ModAction[] {
 export function confirmDecision(kind: Decision, names: string[], n: number): Promise<boolean> {
   const tr = get(t) as (key: string, params?: Record<string, string>) => string;
   const who = names.join(', ');
-  if (kind === 'spam') return confirmStore.ask(tr('chan_mod_spam_confirm', { names: who }), tr('chan_mod_spam'), true);
+  if (kind === 'spam') return confirmStore.ask(tr('chan_mod_spam_confirm', { names: who }), tr('chan_mod_spam'), true, 'ban');
   const text = tr(kind === 'approve' ? 'chan_mod_approve_confirm' : 'chan_mod_reject_confirm', { names: who, n: String(n) });
-  return confirmStore.ask(text, tr(kind === 'approve' ? 'chan_mod_approve' : 'chan_mod_reject'), kind === 'reject');
+  return confirmStore.ask(text, tr(kind === 'approve' ? 'chan_mod_approve' : 'chan_mod_reject'), kind === 'reject', 'x');
 }
 

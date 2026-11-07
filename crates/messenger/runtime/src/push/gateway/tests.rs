@@ -103,6 +103,7 @@ async fn setup() -> Setup {
             call_node: None,
             name: Some("S1".into()),
             push_mode: None,
+            access: None,
         })
         .await
         .unwrap();
@@ -445,6 +446,7 @@ async fn no_more_servers_wake_through_one_gateway_than_it_gives_tickets_for() {
                 call_node: None,
                 name: None,
                 push_mode: None,
+                access: None,
             })
             .await
             .unwrap();

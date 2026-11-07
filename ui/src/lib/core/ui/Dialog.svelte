@@ -106,7 +106,7 @@
           <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
           <div class="dialog-title-row"><h2 class="dialog-title">{title}</h2>{@render titleAside?.()}</div>
           <button class="dialog-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
-            <Icon name="x" size={16} />
+            <Icon name="x" size={18} />
           </button>
         </div>
       {/if}
@@ -175,7 +175,8 @@
     min-width: 0;
     font-size: var(--fs-lg);
     font-weight: var(--fw-bold);
-    line-height: 1.35;
+    line-height: var(--lh-tight);
+    letter-spacing: var(--ls-tight);
     color: var(--text);
   }
   .dialog-close {
@@ -204,7 +205,7 @@
 
   /* The phone's sheet. */
   .sheet-header { display: flex; align-items: center; gap: var(--sp-3); }
-  .sheet-body { display: flex; flex-direction: column; gap: var(--sp-3); line-height: 1.45; }
+  .sheet-body { display: flex; flex-direction: column; gap: var(--sp-3); line-height: var(--lh-snug); }
   /* A sheet that can be pulled up fills the screen it grew to. */
   .sheet-body.grow { flex: 1 0 auto; }
   /* A finger does not drag a resize corner: the field grows with its text. */

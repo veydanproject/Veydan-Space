@@ -3,24 +3,29 @@
 
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/ssh/api';
   import type { SshKey } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import SshKeyForm from './SshKeyForm.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { formatDate, formatError } from '$lib/core/utils';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
 
+  interface Props {
+    /** The window of a new key (import / generate), undefined = closed; the buttons that open it are the page's head. */
+    formMode?: 'import' | 'generate' | undefined;
+  }
+  let { formMode = $bindable() }: Props = $props();
+
   let keys = $state<SshKey[]>([]);
   let loading = $state(false);
   let error = $state('');
   let search = $state('');
 
-  // form drawer: undefined = closed
-  let formMode = $state<'import' | 'generate' | undefined>(undefined);
   // view/rename drawer
   let viewKey = $state<SshKey | null>(null);
   let revealPrivate = $state(false);
@@ -29,9 +34,6 @@
   let editName = $state('');
   let editComment = $state('');
   let savingEdit = $state(false);
-  let deleteModal = $state({ open: false, id: '', name: '', usage: 0 });
-  let copiedId = $state('');
-  let copyTimer: ReturnType<typeof setTimeout>;
 
   onMount(load);
 
@@ -65,9 +67,6 @@
     try {
       await navigator.clipboard.writeText(k.public_key);
       copiedToast();
-      copiedId = k.id;
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => (copiedId = ''), 2000);
     } catch {}
   }
 
@@ -120,16 +119,20 @@
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(k: SshKey) {
+    const label = $t('ssh_key_btn_delete');
+    const usage = k.usage_count;
+    const message = usage > 0
+      ? $t('ssh_key_confirm_delete_used', { name: k.name, n: String(usage) })
+      : $t('ssh_key_confirm_delete', { name: k.name });
+    if (!(await ask({ title: confirmTitle(label), message, confirmLabel: label, variant: 'danger', icon: 'trash-2' }))) return;
     try {
-      await api.sshKeys.delete(deleteModal.id);
-      keys = keys.filter((k) => k.id !== deleteModal.id);
+      await api.sshKeys.delete(k.id);
+      keys = keys.filter((x) => x.id !== k.id);
       // Connections referencing the key had ssh_key_id cleared server-side.
-      if (deleteModal.usage > 0) await sshStore.loadConnections();
+      if (usage > 0) await sshStore.loadConnections();
     } catch (e) {
       error = formatError(e);
-    } finally {
-      deleteModal = { open: false, id: '', name: '', usage: 0 };
     }
   }
 
@@ -139,49 +142,41 @@
   }
 </script>
 
-{#if error}<div class="error-msg" style="margin-bottom:1rem">{error}</div>{/if}
+{#if error}<div style="margin-bottom:1rem"><Notice tone="danger">{error}</Notice></div>{/if}
 
 <!-- Toolbar -->
 <div class="filter-bar">
   <div class="search-field">
-    <Icon name="search" size={13} />
+    <Icon name="search" size={18} />
     <input type="text" bind:value={search} placeholder={$t('ssh_keys_search_placeholder')} />
     {#if search}
-      <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
+      <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={18} /></button>
     {/if}
   </div>
 
   <span class="count-badge">{$t('ssh_keys_count', { n: String(filtered.length) })}</span>
-
-  <div class="toolbar-actions">
-    <button class="btn btn-ghost" onclick={() => (formMode = 'import')}>
-      <Icon name="download" size={14} />{$t('ssh_keys_add')}
-    </button>
-    <button class="btn btn-primary" onclick={() => (formMode = 'generate')}>
-      <Icon name="plus" size={14} />{$t('ssh_keys_generate')}
-    </button>
-  </div>
 </div>
 
 {#if loading}
   <div class="empty-state">{$t('loading')}</div>
 {:else if keys.length === 0}
   <div class="empty-state">
-    <div class="empty-icon"><Icon name="key" size={40} strokeWidth={1.5} /></div>
+    <span class="empty-icon"><Icon name="key" size={22} /></span>
     <p>{$t('ssh_keys_empty')}</p>
     <button class="btn btn-primary" onclick={() => (formMode = 'generate')}>
-      <Icon name="plus" size={14} />{$t('ssh_keys_generate')}
+      <Icon name="plus" size={18} />{$t('ssh_keys_generate')}
     </button>
   </div>
 {:else if filtered.length === 0}
   <div class="empty-state">
-    <Icon name="search" size={32} strokeWidth={1.5} />
-    <p>{$t('terminal_not_found')}</p>
+    <span class="empty-icon"><Icon name="search" size={22} /></span>
+    <p>{$t('common_nothing_found')}</p>
+    <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
   </div>
 {:else}
-  <div class="table-wrap">
+  <div class="data-table table-scroll">
     <table class="keys-table">
-      <thead>
+      <thead class="data-table-head">
         <tr>
           <th class="col-num">#</th>
           <th>{$t('ssh_key_col_name')}</th>
@@ -194,17 +189,17 @@
       </thead>
       <tbody>
         {#each filtered as k, i (k.id)}
-          <tr class="key-row" onclick={() => openView(k)}>
+          <tr class="data-table-row key-row" onclick={() => openView(k)}>
             <td class="col-num text-muted">{i + 1}</td>
             <td class="col-name">
               <span class="key-name">{k.name}</span>
               {#if k.comment}<span class="key-comment">{k.comment}</span>{/if}
             </td>
             <td class="col-algo">
-              <span class="auth-badge">{algoLabel(k)}</span>
+              <span class="badge badge-accent tag">{algoLabel(k)}</span>
               {#if k.has_passphrase}
                 <span class="pass-badge" title={$t('ssh_key_selected_passphrase_hint')}>
-                  <Icon name="shield" size={10} />
+                  <Icon name="lock" size={18} />
                 </span>
               {/if}
             </td>
@@ -213,7 +208,7 @@
             </td>
             <td class="col-usage">
               {#if k.usage_count > 0}
-                <span class="usage-chip">{$t('ssh_key_usage_n', { n: String(k.usage_count) })}</span>
+                <span class="badge badge-ok tag">{$t('ssh_key_usage_n', { n: String(k.usage_count) })}</span>
               {:else}
                 <span class="text-muted">{$t('ssh_key_unused')}</span>
               {/if}
@@ -225,28 +220,27 @@
               <div class="row-actions">
                 <button
                   class="icon-btn"
-                  class:success={copiedId === k.id}
                   title={$t('ssh_key_btn_copy_public')}
                   onclick={(e) => { e.stopPropagation(); copyPublic(k); }}
                 >
-                  <Icon name={copiedId === k.id ? 'check' : 'copy'} size={13} />
+                  <Icon name="copy" size={18} />
                 </button>
                 <button
                   class="icon-btn"
                   title={$t('ssh_key_btn_view')}
                   onclick={(e) => { e.stopPropagation(); openView(k); }}
                 >
-                  <Icon name="eye" size={13} />
+                  <Icon name="eye" size={18} />
                 </button>
                 <button
                   class="icon-btn danger-soft"
                   title={$t('ssh_key_btn_delete')}
                   onclick={(e) => {
                     e.stopPropagation();
-                    deleteModal = { open: true, id: k.id, name: k.name, usage: k.usage_count };
+                    void confirmDelete(k);
                   }}
                 >
-                  <Icon name="trash-2" size={13} />
+                  <Icon name="trash-2" size={18} />
                 </button>
               </div>
             </td>
@@ -258,16 +252,9 @@
 {/if}
 
 <!-- Add / generate drawer -->
-<Drawer
-  open={formMode !== undefined}
-  width="440px"
-  title={formMode === 'generate' ? $t('ssh_keys_generate') : $t('ssh_keys_add')}
-  onclose={() => (formMode = undefined)}
->
-  {#if formMode !== undefined}
-    <SshKeyForm mode={formMode} onSave={onFormSaved} onCancel={() => (formMode = undefined)} />
-  {/if}
-</Drawer>
+{#if formMode !== undefined}
+  <SshKeyForm mode={formMode} onSave={onFormSaved} onCancel={() => (formMode = undefined)} />
+{/if}
 
 <!-- View / rename drawer -->
 <Drawer
@@ -279,7 +266,7 @@
   {#if viewKey}
     <div class="view-body">
       <div class="view-meta">
-        <span class="auth-badge">{algoLabel(viewKey)}</span>
+        <span class="badge badge-accent tag">{algoLabel(viewKey)}</span>
         {#if viewKey.fingerprint}<code class="fp">{viewKey.fingerprint}</code>{/if}
       </div>
 
@@ -293,168 +280,118 @@
       </div>
 
       <div class="form-group">
-        <span class="field-label">{$t('ssh_key_public_label')}</span>
-        <textarea class="mono" readonly rows="4" value={viewKey.public_key}></textarea>
+        <label for="ssh-key-view-public">{$t('ssh_key_public_label')}</label>
+        <textarea id="ssh-key-view-public" class="mono" readonly rows="4" value={viewKey.public_key}></textarea>
         <button class="btn btn-ghost btn-sm self-start" onclick={() => copyPublic(viewKey!)}>
-          <Icon name={copiedId === viewKey.id ? 'check' : 'copy'} size={12} />
-          {copiedId === viewKey.id ? $t('ssh_key_copied') : $t('ssh_key_btn_copy_public')}
+          <Icon name="copy" size={18} />
+          {$t('ssh_key_btn_copy_public')}
         </button>
       </div>
 
       <div class="form-group">
-        <span class="field-label">{$t('ssh_key_private_label')}</span>
+        <label for="ssh-key-view-private">{$t('ssh_key_private_label')}</label>
         {#if revealPrivate}
-          <textarea class="mono" readonly rows="9" value={privateKeyText}></textarea>
+          <textarea id="ssh-key-view-private" class="mono" readonly rows="9" value={privateKeyText}></textarea>
         {:else}
           <div class="private-hidden">
-            <Icon name="eye-off" size={14} />
+            <Icon name="eye-off" size={18} />
             {$t('ssh_key_private_hidden')}
           </div>
         {/if}
         <div class="private-actions">
           <button class="btn btn-ghost btn-sm" onclick={toggleReveal}>
-            <Icon name={revealPrivate ? 'eye-off' : 'eye'} size={12} />
+            <Icon name={revealPrivate ? 'eye-off' : 'eye'} size={18} />
             {revealPrivate ? $t('ssh_key_hide') : $t('ssh_key_reveal')}
           </button>
           <button class="btn btn-ghost btn-sm" onclick={copyPrivate}>
-            <Icon name="copy" size={12} />
+            <Icon name="copy" size={18} />
             {$t('ssh_key_btn_copy_private')}
           </button>
         </div>
       </div>
-
-      <div class="form-actions">
-        <button class="btn btn-ghost" onclick={() => (viewKey = null)}>{$t('ssh_btn_cancel')}</button>
-        <button class="btn btn-primary" onclick={saveEdit} disabled={savingEdit || !editName.trim()}>
-          {#if savingEdit}<Icon name="loader" size={13} />{/if}
-          {$t('ssh_btn_save')}
-        </button>
-      </div>
     </div>
   {/if}
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={() => (viewKey = null)}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={saveEdit} disabled={savingEdit || !editName.trim()}>
+      {#if savingEdit}<Icon name="loader" size={18} />{/if}
+      {$t('common_save')}
+    </button>
+  {/snippet}
 </Drawer>
 
-<Modal
-  open={deleteModal.open}
-  title={$t('ssh_key_btn_delete')}
-  message={deleteModal.usage > 0
-    ? $t('ssh_key_confirm_delete_used', { name: deleteModal.name, n: String(deleteModal.usage) })
-    : $t('ssh_key_confirm_delete', { name: deleteModal.name })}
-  confirmLabel={$t('ssh_key_btn_delete')}
-  cancelLabel={$t('ssh_btn_cancel')}
-  variant="danger"
-  onconfirm={confirmDelete}
-  oncancel={() => (deleteModal = { open: false, id: '', name: '', usage: 0 })}
-/>
-
 <style>
-  .toolbar-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
   /* The placeholder names three fields; the primitive's 240px cut it. */
   .filter-bar .search-field { width: 300px; }
 
-  .table-wrap {
-    flex: 1; min-height: 0; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    background: var(--surface);
-  }
-
-  .keys-table {
-    width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
-    table-layout: fixed;
-  }
-  .keys-table thead {
-    position: sticky; top: 0; z-index: 1;
-    background: var(--surface); border-bottom: 1px solid var(--border);
-  }
+  /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
+  .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+  .keys-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   .keys-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: inherit; white-space: nowrap;
   }
-  .keys-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--surface-2); vertical-align: middle; }
-  .key-row:last-child td { border-bottom: none; }
-  .key-row:hover td { background: var(--surface-row-hover); }
+  .keys-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
   .key-row { cursor: pointer; }
 
   .col-num { width: 44px; color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-xs); }
-  .col-algo { width: 140px; }
-  .col-fp { width: 220px; }
-  .col-usage { width: 144px; }
-  .col-created { width: 110px; }
-  /* three 32px buttons, two gaps and the cell's padding */
-  .col-actions { width: calc(3 * 32px + 2 * var(--sp-1) + 2 * var(--sp-4)); }
+  .col-fp { max-width: 220px; }
+  /* the buttons stay on one line */
+  .col-actions { width: 1%; }
 
-  .key-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .key-comment { display: block; color: var(--text-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .key-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; overflow-wrap: anywhere; }
+  .key-comment { display: block; color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
 
   code {
-    font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-body);
+    font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
     background: var(--surface-2); padding: 4px 8px; border-radius: var(--radius-sm);
     display: inline-block; max-width: 100%;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
   }
 
-  .auth-badge {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: 4px 12px; border-radius: var(--radius-sm);
-    border: none; background: var(--accent-tint); color: var(--accent-text-2);
-  }
+  /* A word in a chip (the common .badge): 24 high, the interface's font. */
+  .tag { height: 24px; padding-block: 0; box-sizing: border-box; }
   .pass-badge {
-    display: inline-flex; align-items: center; margin-left: var(--sp-1);
+    display: inline-flex; align-items: center; margin-left: var(--sp-1); vertical-align: middle;
     color: var(--warn-text);
-  }
-
-  .usage-chip {
-    font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em;
-    padding: 0.15rem var(--sp-2); border-radius: var(--radius-pill);
-    background: var(--success-bg);
-    border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border));
-    color: var(--success-text);
-    white-space: nowrap;
   }
 
   .text-muted { color: var(--text-3); font-size: var(--fs-xs); }
   .row-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
-  .empty-icon { opacity: 0.4; }
 
-  /* View drawer */
+  /* A narrow window: a row folds, as the connections' table — the name on top, the fingerprint under it, the buttons
+     at the right; the number, the type, the usage and the date a line below. No column is lost. */
+  @media (max-width: 900px) {
+    .keys-table thead { display: none; }
+    .keys-table tbody { display: block; }
+    .key-row {
+      display: grid; align-items: center; column-gap: var(--sp-3); row-gap: var(--sp-1); padding: var(--sp-3) var(--sp-4);
+      grid-template-columns: 2.5rem auto auto minmax(0, 1fr) auto;
+      grid-template-areas: 'name name name name act' 'fp fp fp fp act' 'num algo usage created created';
+    }
+    .keys-table td { display: block; width: auto; max-width: none; padding: 0; min-width: 0; }
+    .key-row .col-num { grid-area: num; }
+    .key-row .col-name { grid-area: name; }
+    .key-row .col-algo { grid-area: algo; }
+    .key-row .col-fp { grid-area: fp; }
+    .key-row .col-usage { grid-area: usage; }
+    .key-row .col-created { grid-area: created; }
+    .key-row .col-actions { grid-area: act; }
+  }
+
+  /* View drawer: the common captions and fields on the panel's glass, 40 high. */
   .view-body { display: flex; flex-direction: column; gap: var(--sp-4); }
   .view-meta { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .view-meta .fp { max-width: 100%; }
-  /* The fields of the view drawer only: the toolbar's search keeps the
-     padding .search-field reserves for its icon. */
-  .view-body .form-group { display: flex; flex-direction: column; gap: 8px; }
-  .view-body label, .view-body .field-label {
-    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
-    font-weight: var(--fw-bold); letter-spacing: 0.5px;
-  }
-  .view-body input, .view-body textarea {
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    color: var(--text);
-    padding: 0 14px;
-    height: var(--control-h-lg);
-    font-size: var(--fs-base);
-    font-family: inherit;
-    resize: vertical;
-  }
-  .view-body textarea { height: auto; min-height: 72px; padding: 12px 14px; font-size: var(--fs-xs); }
-  .view-body input:focus, .view-body textarea:focus {
-    outline: none;
-    border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
-  }
+  .view-body input { height: var(--control-h); }
+  .view-body textarea { resize: vertical; font-size: var(--fs-xs); }
   .private-hidden {
     display: flex; align-items: center; gap: var(--sp-2);
     padding: var(--sp-4);
-    background: var(--surface-3); border: 1px dashed var(--border);
+    border: 1px dashed var(--border);
     border-radius: var(--radius-field);
     color: var(--text-3); font-size: var(--fs-sm);
   }
   .private-actions { display: flex; gap: var(--sp-2); }
   .self-start { align-self: flex-start; }
-  .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

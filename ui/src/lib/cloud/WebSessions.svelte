@@ -19,6 +19,7 @@
   import { CABINET_HOST, originLine, WEB_LOGIN_ROUTE } from '$lib/cloud/web';
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   onMount(() => {
     void webStore.load();
@@ -42,7 +43,7 @@
   {#each sessions as session (session.id)}
     <NavRow variant="list" icon="world" title={originLine(session.country, session.ua_family, $t, $locale)} sub={line(session.created_at, session.last_seen_at)}>
       {#snippet end()}
-        <button class="btn btn-ghost btn-sm danger" type="button" disabled={webStore.busy} onclick={() => webStore.revoke({ id: session.id })}>{$t('cloud_web_end')}</button>
+        <button class="btn btn-danger-soft btn-sm" type="button" disabled={webStore.busy} onclick={() => webStore.revoke({ id: session.id })}>{$t('cloud_web_end')}</button>
       {/snippet}
     </NavRow>
   {/each}
@@ -57,8 +58,7 @@
     </NavRow>
   {/if}
 </RowList>
-{#if error && webStore.sessions !== null}<div class="error-msg" role="alert">{error}</div>{/if}
+{#if error && webStore.sessions !== null}<Notice tone="danger">{error}</Notice>{/if}
 
 <style>
-  .danger { color: var(--danger-text); }
 </style>

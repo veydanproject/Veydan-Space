@@ -61,10 +61,10 @@
     display: inline-flex; align-items: center; gap: var(--sp-1); flex-shrink: 0;
     height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border);
     background: var(--surface-2); color: var(--text-2);
-    font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 18px; white-space: nowrap;
+    font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-snug); white-space: nowrap;
   }
   .srv-label :global(svg) { flex-shrink: 0; }
-  .srv-label.md { height: auto; gap: 3px; padding: 1px 8px; line-height: 18px; }
+  .srv-label.md { height: auto; min-height: 22px; gap: 3px; padding: 1px 8px; }
   /* The icon one: a mark of the row (16, the colour of the chip), a 20 square when it is a button. */
   .srv-mark { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
   /* A 20 square that answers a touch over 40: the hit area is a ring of 10 around it. */

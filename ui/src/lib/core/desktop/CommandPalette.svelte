@@ -5,6 +5,7 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { backdropIn, backdropOut, dialogIn, dialogOut } from '$lib/core/ui/motion';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
@@ -114,7 +115,7 @@
           <div class="empty">{$t('cmd_empty')}</div>
         {/if}
       </div>
-      {#if error}<div class="error">{error}</div>{/if}
+      {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
     </div>
   </div>
 {/if}
@@ -148,18 +149,18 @@
   .input-row input {
     flex: 1; width: auto; min-width: 0; height: auto;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none;
-    color: var(--text); font-size: var(--fs-body); line-height: 1.4; padding: 0.2rem 0;
+    color: var(--text); font-size: var(--fs-body); line-height: var(--lh-snug); padding: 0.2rem 0;
   }
   .input-row input:focus { border: 0; box-shadow: none; outline: none; }
   kbd {
-    font-size: var(--fs-2xs); color: var(--text-3);
+    font-size: var(--fs-xs); color: var(--text-3);
     border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 0.3rem;
   }
-  .list { overflow-y: auto; padding: 0.3rem; }
+  .list { overflow-y: auto; padding: 0.3rem 0.3rem var(--sp-3); }
   .group {
     padding: 0.4rem 0.6rem 0.15rem;
-    font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--text-3); font-weight: 600;
+    font-size: var(--fs-xs);
+    color: var(--text-3); font-weight: var(--fw-semibold);
   }
   .row {
     display: flex; align-items: center; gap: 0.5rem; width: 100%;
@@ -170,5 +171,5 @@
   .row.active { background: color-mix(in srgb, var(--accent) 15%, transparent); }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .empty { padding: var(--sp-4); text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
-  .error { padding: 0.5rem 0.8rem; border-top: 1px solid var(--border); color: var(--danger-text); font-size: var(--fs-xs); }
+  .err { padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border); }
 </style>

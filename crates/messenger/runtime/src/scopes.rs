@@ -147,6 +147,7 @@ mod tests {
             push_mode: servers::PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         }
     }
 

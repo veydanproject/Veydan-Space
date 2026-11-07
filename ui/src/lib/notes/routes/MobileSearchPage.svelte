@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { leave } from '$lib/core/ui/back';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import { api, formatError, type NoteSearchResult, type NoteTag } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
@@ -103,7 +104,7 @@
   </div>
 
   <div class="m-body">
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
 
   {#if !q}
     <div class="m-empty"><Icon name="search" size={40} /><p>{$t('search_hint')}</p></div>
@@ -166,19 +167,20 @@
 </div>
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .sec {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--sp-4) var(--sp-1) var(--sp-2);
   }
-  .sec h3 { margin: 0; font-size: var(--fs-body); font-weight: 700; }
+  .sec h3 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-bold); }
   .more {
     border: 0;
     background: transparent;
     color: var(--accent-text);
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     padding: 0;
   }
   /* Rows of the list, flat on the page with a hairline between them (design kit, notes-list). */

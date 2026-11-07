@@ -104,7 +104,7 @@
               <span class="handle">{s.h}</span>
             </span>
           </button>
-          <button type="button" class="icon-btn remove" {disabled} onclick={() => remove(i)} title={$t('msg_profile_socials_remove')} aria-label={$t('msg_profile_socials_remove')}>
+          <button type="button" class="icon-btn danger-soft" {disabled} onclick={() => remove(i)} title={$t('msg_profile_socials_remove')} aria-label={$t('msg_profile_socials_remove')}>
             <Icon name="x" size={14} />
           </button>
         </li>
@@ -113,7 +113,7 @@
   {:else}
     <p class="hint">{$t('msg_profile_socials_empty')}</p>
   {/if}
-  {#if error}<div class="field-error" role="alert">{error}</div>{/if}
+  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
   <div class="foot">
     <button type="button" class="btn btn-ghost btn-sm" disabled={disabled || full} onclick={add}>
       <Icon name="plus" size={13} />{$t('msg_profile_socials_add')}
@@ -144,7 +144,7 @@
   {/if}
   {#snippet footer()}
     {#if step === 'handle'}
-      <button type="button" class="btn btn-ghost" onclick={back}>{$t('msg_back')}</button>
+      <button type="button" class="btn btn-ghost" onclick={back}>{$t('common_back')}</button>
       <button type="button" class="btn btn-primary" disabled={!handle.trim()} onclick={commit}>
         <Icon name="check" size={14} />{editing !== null ? $t('common_confirm') : $t('msg_profile_socials_add')}
       </button>
@@ -161,19 +161,18 @@
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font: inherit;
   }
   .main:hover:not(:disabled) { border-color: var(--border-2); background: var(--surface-hover); }
-  .main:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .main:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .mark, .pmark {
     width: 30px; height: 30px; border-radius: var(--radius-sm); flex-shrink: 0;
     display: inline-flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text);
   }
   .text { display: flex; flex-direction: column; min-width: 0; }
-  .pname { font-size: var(--fs-2xs); color: var(--text-3); font-weight: var(--fw-semibold); }
+  .pname { font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-semibold); }
   .handle { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .remove { flex-shrink: 0; }
+  .danger-soft { flex-shrink: 0; }
   .foot { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .btn :global(svg) { margin-right: 2px; }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
-  .field-error { font-size: var(--fs-xs); color: var(--danger-text); }
+  .hint { margin: 0; }
   .pick { display: flex; flex-direction: column; gap: var(--sp-3); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--sp-2); }
   .platform {
@@ -182,13 +181,13 @@
     color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-align: center;
   }
   .platform:hover { border-color: var(--accent-tint-border); background: var(--surface-hover); }
-  .platform:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .platform:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .platform .pmark { background: var(--surface-3); }
   .plabel { overflow: hidden; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; }
   .handle-form { display: flex; flex-direction: column; gap: var(--sp-2); }
   .lbl { font-size: var(--fs-xs); color: var(--text-3); }
   @media (pointer: coarse) {
-    .remove { width: 40px; height: 40px; }
+    .danger-soft { width: 40px; height: 40px; }
     .main { min-height: 44px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
   }

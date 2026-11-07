@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import type { RelayPolicy, VideoQuality } from '../api';
@@ -95,13 +96,14 @@
   <button class="btn btn-ghost open" onclick={() => (settingsRequest.tab = 'network')}>
     <Icon name="arrow-right" size={18} />{$t('msg_card_open')}
   </button>
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </div>
 
 <style>
   .calls { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
-  .warn-line { margin: 0; font-size: var(--fs-sm); color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); }
+  .muted, .hint { margin: 0; line-height: var(--lh-snug); }
+  .muted { font-size: var(--fs-sm); color: var(--text-2); }
+  .warn-line { margin: 0; font-size: var(--fs-sm); color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3); }
   /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .block + .block { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }

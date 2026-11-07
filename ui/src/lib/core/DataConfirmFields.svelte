@@ -73,8 +73,9 @@
     autocapitalize="off"
     spellcheck="false"
     {disabled}
+    aria-invalid={!!wrong}
   />
-  {#if wrong}<span class="err">{$t('lock_wrong')}</span>{/if}
+  {#if wrong}<span class="error-msg">{$t('lock_wrong')}</span>{/if}
 {/if}
 
 <style>
@@ -83,7 +84,7 @@
   .choice input { margin-top: 3px; flex-shrink: 0; }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .title { font-size: var(--fs-sm); color: var(--text); }
-  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .secret {
     width: 100%;
     box-sizing: border-box;
@@ -97,5 +98,5 @@
     background-color: var(--surface-3);
     color: var(--text-body);
   }
-  .err { display: block; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--danger-text); }
+  .error-msg { display: block; margin-top: var(--sp-1); }
 </style>

@@ -12,7 +12,9 @@
 //!   remembers a removal of it not older than the server's `added_at`; a
 //!   server it has stays as it is. Absence is no word: an older build
 //!   writes no `servers`, and a server left out removes nothing. The home
-//!   set is each device's own choice and never travels.
+//!   set is each device's own choice and never travels. Its access mode
+//!   goes with it (`access`, when not `open`); the invite of a card never
+//!   does, nor whether its relay refused this device.
 //! - `servers_removed`: `[id, removed_at]`, the newest `SERVERS_REMOVED_MAX`.
 //!   A removal newer than the `added_at` of the server here takes it and
 //!   everything of it, its groups too; one of a server this device does
@@ -77,10 +79,24 @@ pub(super) struct ServerEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_url: Option<String>,
     pub added_at: i64,
+    /// Who may use the server (internal/messenger-wire.md, «Режимы доступа
+    /// сервера»): written when it is not `open`, read as `open` when it is
+    /// not there (an older build), and as `open` when it is a mode this
+    /// build does not know. Never an invite: that is the card's alone.
+    #[serde(default = "access_open", skip_serializing_if = "is_open")]
+    pub access: String,
 }
 
 fn push_off() -> String {
     servers::PUSH_OFF.into()
+}
+
+fn access_open() -> String {
+    servers::ACCESS_OPEN.into()
+}
+
+fn is_open(access: &str) -> bool {
+    access == servers::ACCESS_OPEN
 }
 
 impl ServerEntry {
@@ -95,6 +111,7 @@ impl ServerEntry {
             push_mode: r.push_mode.clone(),
             push_url,
             added_at: r.added_at,
+            access: r.access.clone(),
         }
     }
 
@@ -132,6 +149,11 @@ impl ServerEntry {
             push_mode: self.push_mode.clone(),
             source: Some(servers::SOURCE_SNAPSHOT.into()),
             added_at: self.added_at,
+            access: if servers::is_access(&self.access) {
+                self.access.clone()
+            } else {
+                servers::ACCESS_OPEN.into()
+            },
         }
     }
 }

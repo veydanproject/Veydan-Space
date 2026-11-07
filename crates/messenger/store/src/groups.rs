@@ -144,8 +144,9 @@ pub async fn delete(store: &Store, id: &str) -> Result<()> {
 // ─── Keys owed to the secret store ──────────────────────────────────────────
 
 /// The keys of groups forgotten with their server (`servers::remove_private`)
-/// whose secrets the group service has yet to delete: `[[group, key], …]`
-/// in `msg_settings`. The removal comes by the snapshot too, in a crate
+/// or with the account (`account::wipe`) whose secrets the group service has
+/// yet to delete: `[[group, key], …]` in `msg_settings`, a link secret as
+/// `[group, "link.<epoch>"]` ([`OWED_LINK_PREFIX`]). The removal comes by the snapshot too, in a crate
 /// that holds no secret store; the group service empties the list
 /// (`GroupService::forget_gone`).
 pub const SECRETS_OWED: &str = "groups.secrets_owed";
@@ -174,6 +175,36 @@ pub(crate) async fn set_secrets_owed_in(db: &mut sqlx::SqliteConnection, owed: &
     Ok(())
 }
 
+/// The second part of an owed link secret: `link.<epoch>` (a key id is hex,
+/// never this).
+pub const OWED_LINK_PREFIX: &str = "link.";
+/// Epochs of a group's link looked at, at most: one per rotation of it.
+pub const MAX_LINK_EPOCHS: i64 = 4096;
+
+/// The owed entries of the link secrets of `group_id`, every epoch up to
+/// `link_epoch`: a rotated link stays in the secret store under its epoch.
+pub fn owed_links(group_id: &str, link_epoch: i64) -> impl Iterator<Item = (String, String)> + '_ {
+    (0..=link_epoch.clamp(0, MAX_LINK_EPOCHS)).map(move |e| (group_id.to_string(), format!("{OWED_LINK_PREFIX}{e}")))
+}
+
+/// The link secrets of the groups of `tx` (all, or the one named) join the
+/// owed entries, with no repeat.
+pub(crate) async fn owe_links_in(db: &mut sqlx::SqliteConnection, group_id: Option<&str>, owed: &mut Vec<(String, String)>) -> Result<()> {
+    let groups: Vec<(String, i64)> = sqlx::query_as("SELECT id, link_epoch FROM msg_groups WHERE ?1 IS NULL OR id = ?1 ORDER BY id")
+        .bind(group_id)
+        .fetch_all(&mut *db)
+        .await
+        .map_err(storage)?;
+    for (id, epoch) in groups {
+        for entry in owed_links(&id, epoch) {
+            if !owed.contains(&entry) {
+                owed.push(entry);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The keys whose secrets are owed, `(group, key)`.
 pub async fn secrets_owed(store: &Store) -> Result<Vec<(String, String)>> {
     let mut conn = store.pool().acquire().await.map_err(storage)?;
@@ -187,6 +218,78 @@ pub async fn secrets_forgotten(store: &Store, done: &[(String, String)]) -> Resu
     owed.retain(|k| !done.contains(k));
     set_secrets_owed_in(&mut tx, &owed).await?;
     tx.commit().await.map_err(storage)
+}
+
+// ─── Groups I forgot ────────────────────────────────────────────────────────
+
+/// The groups a header of my relations names as forgotten at most, the
+/// latest first (`groups_forgotten`).
+pub const FORGOTTEN_MAX: usize = 500;
+
+/// I forgot the group at `at` (my clock), here or on another device of
+/// mine: the mark is raised, never lowered, and what of the archive's
+/// personal messages would bring the group back is dropped
+/// ([`crate::archive`]). `true` when the mark moved.
+pub async fn mark_forgotten(store: &Store, group_id: &str, at: i64) -> Result<bool> {
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
+    let moved = sqlx::query(
+        "INSERT INTO msg_groups_forgotten (group_id, forgotten_at) VALUES (?1, ?2)
+         ON CONFLICT(group_id) DO UPDATE SET forgotten_at = excluded.forgotten_at
+          WHERE excluded.forgotten_at > msg_groups_forgotten.forgotten_at",
+    )
+    .bind(group_id)
+    .bind(at)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?
+    .rows_affected()
+        > 0;
+    if moved {
+        crate::archive::drop_group_protocol_in(&mut tx, group_id, at).await?;
+    }
+    tx.commit().await.map_err(storage)?;
+    Ok(moved)
+}
+
+/// Up to when (inclusive) a welcome of the group brings it back no more;
+/// `None` when I never forgot it.
+pub async fn forgotten_at(store: &Store, group_id: &str) -> Result<Option<i64>> {
+    sqlx::query_scalar("SELECT forgotten_at FROM msg_groups_forgotten WHERE group_id = ?")
+        .bind(group_id)
+        .fetch_optional(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// The groups I forgot, `(group_id, forgotten_at)`, the latest first,
+/// [`FORGOTTEN_MAX`] at most.
+pub async fn forgotten(store: &Store) -> Result<Vec<(String, i64)>> {
+    sqlx::query_as("SELECT group_id, forgotten_at FROM msg_groups_forgotten ORDER BY forgotten_at DESC, group_id LIMIT ?")
+        .bind(FORGOTTEN_MAX as i64)
+        .fetch_all(store.pool())
+        .await
+        .map_err(storage)
+}
+
+/// A group I forgot on another device of mine goes here as one I left
+/// goes with its server (`servers::forget_group_in`): its rows, its chat, its
+/// events, the archive's scope of it; its keys and links are owed to the
+/// secret store (`GroupService::forget_gone`). `false` when there was no
+/// row of it.
+pub async fn forget_copy(store: &Store, group_id: &str) -> Result<bool> {
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
+    let here: Option<i64> = sqlx::query_scalar("SELECT 1 FROM msg_groups WHERE id = ?")
+        .bind(group_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage)?;
+    if here.is_none() {
+        return Ok(false);
+    }
+    crate::servers::forget_group_in(&mut tx, group_id).await?;
+    crate::archive::remove_scope_in(&mut tx, &format!("group:{group_id}")).await?;
+    tx.commit().await.map_err(storage)?;
+    Ok(true)
 }
 
 // ─── Operations ─────────────────────────────────────────────────────────────

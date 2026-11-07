@@ -11,6 +11,8 @@
   --hit-max: 22px; /* the most a zone may grow on a side, see the hit area rule below */
   /* The slot of the tab bar: its 56 plate and 12 of air above it, where the counts stand out of the plate (10 and their 2 ring). */
   --nav-h: 68px;
+  /* The floating «+» (.m-fab) stands this high on every screen, over the tab bar or where a screen has none: the bar's slot (68 + its 10 of air) and 16. */
+  --fab-lift: calc(68px + 10px + var(--sp-4));
   --bar-plate-h: 64px; /* a plain bar (the attach strip, a bulk bar) */
   /* No growth to the screen edge unless a control or its header says so (the hit area rule below). */
   --hit-t: 0px;
@@ -23,7 +25,6 @@
   /* The bar floats: this much glow under it, above the system's own bar. */
   --nav-gap: 10px;
   --page-sab: 0px; /* the gesture stripe a page leaves itself: a screen without the bar has nothing else above it */
-  --m-radius: 16px; /* rows, fields, players and small tiles of the phone */
   /* Android injects real insets into these; env() covers iOS / fixed WebViews. */
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
@@ -124,41 +125,37 @@ html.scan-cover .shell { visibility: hidden; }
   mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
 }
 .m-title {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-tight);
+  line-height: var(--lh-tight);
 }
 .m-sub {
   color: var(--text-2);
   font-size: var(--fs-base);
-  line-height: 1.45;
+  line-height: var(--lh-snug);
 }
 .m-hint {
   color: var(--text-2);
   font-size: var(--fs-base);
-  line-height: 1.45;
+  line-height: var(--lh-snug);
   margin-bottom: var(--sp-4);
 }
 .m-label {
-  font-size: var(--fs-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
   padding: var(--sp-4) var(--sp-1) var(--sp-2);
 }
 .m-section {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text-2);
   padding: var(--sp-4) var(--sp-1) var(--sp-2);
 }
-.m-error {
-  color: var(--danger-text);
-  font-size: var(--fs-sm);
-  margin-bottom: var(--sp-3);
-}
+/* .m-error is the error of a field, the same look as .error-msg (base.css);
+   only the gap under it lives here. */
+.m-error { margin-bottom: var(--sp-3); }
 
 /* ── Header: back/menu, optional folder tile, title, right actions ── */
 .m-header {
@@ -310,7 +307,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   border: 0;
   background: transparent;
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-size: var(--fs-body);
   padding: 0 var(--sp-1);
 }
@@ -338,7 +335,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: var(--m-seg);
   color: var(--text);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 .m-seg-btn.active {
   background: var(--accent);
@@ -395,7 +392,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex: 1;
   min-width: 0;
   font-size: var(--fs-body);
-  font-weight: 700;
+  font-weight: var(--fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -465,9 +462,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-row:active { background: var(--surface-2); }
 .m-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-row-value { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
-.m-row .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: 600; }
+.m-row .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .m-row .chev { color: var(--text-3); display: inline-flex; }
-.m-row.danger { color: var(--danger-text); justify-content: center; font-weight: 600; }
+.m-row.danger { color: var(--danger-text); justify-content: center; font-weight: var(--fw-semibold); }
 .m-dot {
   width: 10px;
   height: 10px;
@@ -486,7 +483,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: transparent;
   color: var(--accent-text);
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   text-decoration: none;
 }
 
@@ -507,7 +504,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   transition: transform var(--dur-fast);
 }
 .m-tile svg { color: var(--accent-text); }
-.m-tile .label { font-size: var(--fs-xs); font-weight: 600; text-align: center; }
+.m-tile .label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-align: center; }
 .m-tile:active { transform: scale(0.96); }
 .m-tile.active {
   background: var(--accent-grad);
@@ -559,8 +556,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 /* A count (or a word, «новое») at the icon's corner. */
 .m-bar-badge {
   position: absolute; top: -5px; left: calc(100% - 8px); min-width: 17px; height: 17px; padding: 0 4px;
-  border-radius: var(--radius-badge); background: var(--danger); color: #fff; box-shadow: 0 0 0 2px var(--pane-strong);
-  font-size: var(--fs-2xs); font-weight: var(--fw-bold); line-height: 17px; text-align: center; white-space: nowrap;
+  border-radius: var(--radius-pill); background: var(--danger); color: #fff; box-shadow: 0 0 0 2px var(--pane-strong);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon); white-space: nowrap;
 }
 .m-bar-badge.accent { background: var(--accent); }
 /* The app's tab bar (BottomNav): a capsule of 56 on the glass. The chosen item stands on a capsule of its own, a count
@@ -571,7 +569,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   width: 100%;
   height: calc(var(--nav-h) - 12px);
   padding: var(--sp-1);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-bar);
   background: var(--glass-bar);
   border-color: var(--glass-border);
 }
@@ -580,9 +578,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex: 1 1 0;
   min-width: var(--touch);
   gap: 1px;
-  border-radius: var(--radius-card);
+  border-radius: calc(var(--radius-bar) - var(--sp-1) - 1px);
   font-size: var(--fs-xs);
-  line-height: 14px;
+  line-height: var(--lh-tight);
 }
 .m-bar--nav .m-bar-item.active { background: var(--accent-bg); color: var(--text); font-weight: var(--fw-bold); }
 .m-bar--nav .m-bar-item.active .m-bar-ico { color: var(--accent-text); }
@@ -610,7 +608,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: var(--accent-grad);
   color: #fff;
   font-size: var(--fs-body);
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   box-shadow: var(--shadow-accent);
   text-decoration: none;
 }
@@ -619,7 +617,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 @media (prefers-reduced-motion: reduce) {
   .m-ibtn:active, .m-btn-grad:active { transform: none; }
 }
-.m-btn-grad:disabled { opacity: 0.5; box-shadow: none; }
+.m-btn-grad:disabled { opacity: 0.45; box-shadow: none; }
 
 /* ── Field with label (forms) ── */
 .m-field {
@@ -629,11 +627,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   margin-bottom: var(--sp-3);
 }
 .m-field label {
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 .m-field input, .m-field select { width: 100%; }
 
@@ -641,7 +637,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-fab {
   position: fixed;
   right: var(--sp-4);
-  bottom: calc(var(--nav-h) + var(--nav-gap) + var(--sab));
+  bottom: calc(var(--fab-lift) + var(--sab));
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -649,11 +645,12 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-grad);
+  background: var(--accent);
   color: #fff;
-  box-shadow: var(--shadow-accent);
+  box-shadow: var(--shadow-lg);
   z-index: 5;
 }
+.m-fab > .icon { width: 22px; height: 22px; }
 .m-fab:active { filter: brightness(1.08); }
 
 /* ── Chips / tags ── */
@@ -674,7 +671,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: var(--m-tag);
   color: var(--accent-text);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -688,7 +685,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-chips.scroll::-webkit-scrollbar { display: none; }
 .m-chip.active { background: var(--accent); color: #fff; }
-.m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-2xs); }
+.m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-xs); }
 .m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
 /* A chip in the user's colour is `.m-chip.tinted` with `style:--chip`: its
    colours are the one rule of base.css (`.tinted`), as on the desktop. One
@@ -725,7 +722,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   border-radius: var(--radius);
   background: var(--c);
   color: #fff;
-  font-weight: 800;
+  font-weight: var(--fw-extrabold);
   font-size: var(--fs-body);
   flex-shrink: 0;
 }
@@ -760,7 +757,7 @@ mark.m-highlight {
   color: var(--text-3);
   text-align: center;
 }
-.m-empty p { color: var(--text-2); font-weight: 600; margin: 0; }
+.m-empty p { color: var(--text-2); font-weight: var(--fw-semibold); margin: 0; }
 .m-empty span { font-size: var(--fs-sm); }
 
 /* ── Bottom sheet chrome ── */
@@ -780,7 +777,7 @@ mark.m-highlight {
   flex-direction: column;
   background: var(--glass-bg);
   border-radius: var(--radius-card) var(--radius-card) 0 0;
-  padding: var(--sp-2) var(--sp-4) calc(var(--sp-4) + var(--sab));
+  padding: var(--sp-2) var(--sp-5) calc(var(--sp-4) + var(--sab));
   will-change: transform;
   box-shadow: var(--glass-highlight);
   -webkit-backdrop-filter: var(--glass-filter);

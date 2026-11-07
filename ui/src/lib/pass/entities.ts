@@ -50,7 +50,7 @@ const tagged = (list: { id: string; tags: string[] }[], key: string) => list.fil
 export const passEntities: EntityKindDef[] = [
   {
     kind: 'totp',
-    icon: 'shield',
+    icon: 'shield-lock',
     label: 'ctx_kind_totp',
     ensureLoaded: () => totpStore.ensureLoaded(),
     list: () =>

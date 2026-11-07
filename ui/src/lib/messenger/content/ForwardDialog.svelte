@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -21,7 +22,7 @@
   import { dmErrorCode, messengerError, type MessengerChat } from '../api';
   import { chatMatches, contactHaystacks } from '../shared/search';
   import { mediaErrorText } from '../media/errors';
-  import { holdBack } from '../attach/sheetBack';
+  import { holdBack } from '$lib/core/ui/sheetBack';
   import { ForwardSessions, forwardOutcome, forwardTarget, MAX_FORWARD_MESSAGES, MAX_FORWARD_TARGETS } from '../dm/select';
   import { openChat } from './actions';
 
@@ -106,7 +107,7 @@
         const n = out.done.length;
         const one = n === 1 ? out.done[0] : null;
         toast.success($t(countKey('msg_fwd_done', n, $locale), { n: String(n) }),
-          one ? { action: $t('msg_fwd_open'), onAction: () => void openChat(one), duration: 5000 } : {});
+          one ? { action: $t('common_open'), onAction: () => void openChat(one), duration: 5000 } : {});
       } else {
         const lines = out.short.map((s) => {
           const title = titleOf(s.target);
@@ -120,8 +121,10 @@
       open = false;
       onforwarded?.();
     } catch (e) {
+      // A limit is information, not an error: the same toast as in the chat.
+      if (/\bforward_too_many_(messages|targets)\b/.test(messengerError(e))) toast.info(explain(e));
       // Its sheet is gone: the toast tells it, the new sheet keeps its own state.
-      if (!sessions.live(opening)) toast.error(explain(e), { action: false });
+      else if (!sessions.live(opening)) toast.error(explain(e), { action: false });
       else error = explain(e);
     } finally {
       if (sessions.live(opening)) busy = false;
@@ -133,7 +136,7 @@
   {@const on = chosen.includes(c.id)}
   <li>
     <button class="row" class:on disabled={busy || (!on && full)} onclick={() => toggle(c)} aria-pressed={on}>
-      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={34} />
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={36} />
       <span class="name">{c.title}</span>
       {#if c.kind === 'group'}<span class="dim"><Icon name="users" size={12} /></span>{/if}
       <span class="tick" class:on aria-hidden="true">{#if on}<Icon name="check" size={12} />{/if}</span>
@@ -151,7 +154,7 @@
 <Dialog bind:open title={$t('msg_fwd_forward')} width="min(440px, calc(100vw - 24px))" expandable {footer}>
   <div class="body">
     <input type="text" class="field" bind:value={query} placeholder={$t('msg_share_search')} spellcheck="false" disabled={busy} />
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="lists">
       {#if found}
         {#if found.length}<ul class="list divided">{#each found as c (c.id)}{@render row(c)}{/each}</ul>
@@ -201,14 +204,14 @@
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
   .lists { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-  .section { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; padding: var(--sp-2) 8px 2px; }
+  .section { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); padding: var(--sp-2) 8px 2px; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 6px 8px; text-align: left;
-    border: none; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-1) var(--sp-2); text-align: left;
+    border: none; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; cursor: pointer;
   }
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
-  .row:disabled { cursor: default; opacity: 0.5; }
+  .row:disabled { cursor: default; opacity: 0.45; }
   .row.on { background: var(--accent-bg); }
   .name { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dim { color: var(--text-3); display: inline-flex; }
@@ -226,12 +229,12 @@
   }
   /* «Скрыть отправителя»: the words on the left, the switch (base.css `.toggle`) on the right. */
   .option { display: flex; align-items: center; gap: var(--sp-3); }
-  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: 1.4; }
-  .toggle:disabled { opacity: 0.5; cursor: default; }
-  .hint { margin: 0; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
+  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: var(--lh-snug); }
+  .toggle:disabled { opacity: 0.45; cursor: default; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .send { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .send :global(svg) { flex-shrink: 0; }
   .spin { display: inline-flex; animation: spin 1.1s linear infinite; }
   @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
-  @media (pointer: coarse) { .field { font-size: var(--fs-md); } .row { padding: 9px 8px; } .lists { max-height: none; } }
+  @media (pointer: coarse) { .field { font-size: var(--fs-md); } .row { min-height: 56px; } .lists { max-height: none; } }
 </style>

@@ -16,6 +16,7 @@
 <script lang="ts">
   import { t, locale } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { isMobile } from '$lib/core/platform';
   import type { CloudPlanOffer } from '$lib/cloud/api';
   import { formatBytes } from '$lib/cloud/account';
@@ -153,7 +154,7 @@
   <div class="cta">
     {#if plan.free && canActivate}
       <button class="btn btn-primary" type="button" disabled={activating} onclick={onActivate}>
-        {activating ? $t('cloud_activating') : $t('cloud_activate')}
+        {activating ? $t('cloud_activating') : $t('settings_sync_cloud_activate')}
       </button>
     {:else if plan.free}
       <span class="quiet">{mine ? $t('cloud_plan_in_use') : $t('cloud_plan_free_after')}</span>
@@ -173,9 +174,9 @@
   <div class="head">
     <h2 id="cloud-plans-title" class={isMobile ? 'm-label' : 'section-label'}>{$t('cloud_plans_title')}</h2>
     {#if !viewOnly && currencies.length > 1}
-      <select class="currency" value={currency} onchange={(e) => (pickedCurrency = e.currentTarget.value)} aria-label={$t('cloud_plan_currency')}>
-        {#each currencies as code (code)}<option value={code}>{code}</option>{/each}
-      </select>
+      <div class="currency">
+        <CustomSelect options={currencies.map((code) => ({ value: code, label: code }))} value={currency} onchange={(v) => (pickedCurrency = v ?? null)} ariaLabel={$t('cloud_plan_currency')} />
+      </div>
     {/if}
   </div>
   {#if !viewOnly && periods.length > 1}
@@ -214,12 +215,11 @@
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   h2 { margin: 0; }
   .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-1); }
-  .currency { width: auto; height: var(--control-h); font-weight: var(--fw-semibold); }
-  .m .currency { height: var(--control-h-lg); }
+  .currency { flex-shrink: 0; }
   .save {
     margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border);
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   /* The periods: one row of equal parts; on a phone the saving goes under the name, so four fit. */
   .periods { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
@@ -260,13 +260,13 @@
   .name-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 26px; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
   .price-row { display: flex; align-items: baseline; gap: 6px; }
-  .price { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); letter-spacing: -0.01em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .price { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); line-height: var(--lh-tight); font-variant-numeric: tabular-nums; }
   .price.none { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-2); }
   .per { font-size: var(--fs-sm); color: var(--text-2); }
   .bill { font-size: var(--fs-sm); color: var(--text-2); min-height: 1.4em; display: flex; align-items: center; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 
   .features { list-style: none; margin: 0; padding: var(--sp-4) 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-2); }
-  .features li { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); line-height: 1.4; color: var(--text-body); }
+  .features li { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-body); }
   .features li :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--success-text); }
   .features li.more { color: var(--text); font-weight: var(--fw-semibold); }
   .m .features li { font-size: var(--fs-base); }
@@ -275,5 +275,5 @@
   .cta .btn { flex: 1; justify-content: center; }
   .m .cta .btn { min-height: var(--sp-12); font-size: var(--fs-body); }
   .quiet { font-size: var(--fs-sm); color: var(--text-3); min-height: var(--control-h); display: flex; align-items: center; }
-  .note { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .note { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-snug); }
 </style>

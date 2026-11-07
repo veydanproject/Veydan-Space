@@ -131,7 +131,7 @@
         <Icon name="git-merge" size={14} />
         {$t('notes_merge_title')}
       </span>
-      <button class="btn-cancel-header" onclick={oncancel} title={$t('notes_btn_cancel')}>
+      <button class="btn-cancel-header" onclick={oncancel} title={$t('common_cancel')}>
         <Icon name="x" size={14} />
       </button>
     </div>
@@ -144,16 +144,16 @@
     {:else if error}
       <div class="error-bar">{error}</div>
       <div class="footer">
-        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('notes_btn_cancel')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
       </div>
     {:else if !hasConflicts}
       <div class="no-conflicts">
-        <Icon name="check-circle" size={20} />
+        <Icon name="check" size={20} />
         <p>{$t('notes_merge_clean')}</p>
         <span>{$t('notes_merge_clean_hint')}</span>
       </div>
       <div class="footer">
-        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('notes_btn_cancel')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
         <button class="btn btn-primary btn-sm" onclick={apply}>{$t('notes_merge_apply')}</button>
       </div>
     {:else}
@@ -166,7 +166,7 @@
             </span>
           {:else}
             <span class="badge badge-ok">
-              <Icon name="check-circle" size={12} />
+              <Icon name="check" size={12} />
               {$t('notes_merge_resolved')}
             </span>
           {/if}
@@ -202,7 +202,7 @@
       </div>
 
       <div class="footer">
-        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('notes_btn_cancel')}</button>
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
         <button class="btn btn-primary btn-sm" onclick={apply} disabled={!allResolved}>
           {$t('notes_merge_apply')}
         </button>
@@ -249,7 +249,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     font-size: var(--fs-base);
     color: var(--text);
   }

@@ -142,7 +142,7 @@
     flex: 1; min-width: 0; min-height: var(--control-h); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); cursor: pointer;
     font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text-2);
   }
-  .act:disabled { opacity: 0.5; cursor: default; }
+  .act:disabled { opacity: 0.45; cursor: default; }
   .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .act.danger { background: var(--danger-bg); color: var(--danger-text); }
   .act.main { background: var(--accent); color: #fff; }

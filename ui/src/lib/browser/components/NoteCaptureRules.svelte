@@ -8,6 +8,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
   import { directory } from '$lib/core/directory';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Row { domain: string; folder_id: string; tags: string; template_id: string }
 
@@ -98,12 +99,15 @@
           bind:value={row.domain}
           oninput={scheduleSave}
         />
-        <select class="rule-input folder" bind:value={row.folder_id} onchange={scheduleSave} aria-label={$t('settings_capture_folder')} title={$t('settings_capture_folder')}>
-          <option value="">{$t('settings_capture_no_folder')}</option>
-          {#each folders as f (f.id)}
-            <option value={f.id}>{f.name}</option>
-          {/each}
-        </select>
+        <div class="rule-pick folder">
+          <CustomSelect
+            options={[{ value: '', label: $t('settings_capture_no_folder') }, ...folders.map((f) => ({ value: f.id, label: f.name }))]}
+            bind:value={row.folder_id}
+            onchange={scheduleSave}
+            ariaLabel={$t('settings_capture_folder')}
+            title={$t('settings_capture_folder')}
+          />
+        </div>
         <input
           class="rule-input tags"
           type="text"
@@ -112,13 +116,16 @@
           bind:value={row.tags}
           oninput={scheduleSave}
         />
-        <select class="rule-input template" bind:value={row.template_id} onchange={scheduleSave} aria-label={$t('note_template_label')} title={$t('note_template_label')}>
-          <option value="">{$t('note_template_none')}</option>
-          {#each templates as n (n.id)}
-            <option value={n.id}>{n.name}</option>
-          {/each}
-        </select>
-        <button type="button" class="btn btn-ghost del" onclick={() => removeRow(i)} aria-label={$t('notes_tag_delete')} title={$t('notes_tag_delete')}>
+        <div class="rule-pick template">
+          <CustomSelect
+            options={[{ value: '', label: $t('note_template_none') }, ...templates.map((n) => ({ value: n.id, label: n.name }))]}
+            bind:value={row.template_id}
+            onchange={scheduleSave}
+            ariaLabel={$t('note_template_label')}
+            title={$t('note_template_label')}
+          />
+        </div>
+        <button type="button" class="btn btn-ghost del" onclick={() => removeRow(i)} aria-label={$t('common_delete')} title={$t('common_delete')}>
           <Icon name="trash-2" size={18} />
         </button>
       </div>
@@ -142,6 +149,7 @@
     color: var(--text);
   }
   .rule-input:focus { border-color: var(--accent-border); outline: none; }
+  .rule-pick { min-width: 0; }
   .del { width: var(--control-h); height: var(--control-h); padding: 0; justify-content: center; color: var(--text-2); }
   .foot { margin-top: var(--sp-1); padding-top: var(--sp-2); border-top: 1px solid var(--divider); }
   .add { height: var(--control-h); display: inline-flex; align-items: center; gap: var(--sp-2); }

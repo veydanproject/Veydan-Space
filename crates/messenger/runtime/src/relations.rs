@@ -107,6 +107,14 @@ fn told(applied: &Applied, start: bool) -> Vec<Effect> {
         // page shows the list again, and the session listens to it.
         out.push(Effect::Emit(UiEvent { name: UI_EVENT_SERVERS_UPDATED.into(), payload: serde_json::json!({}) }));
     }
+    if !applied.groups_forgotten.is_empty() {
+        // Groups I forgot on another device of mine went from the store
+        // here: the group driver lets go of their keys and subscriptions.
+        out.push(Effect::Emit(UiEvent {
+            name: messenger_dm::snapshot::UI_EVENT_GROUPS_FORGOTTEN.into(),
+            payload: serde_json::json!({ "ids": applied.groups_forgotten }),
+        }));
+    }
     out.extend(welcomes_wanted(&applied.groups_wanted).into_iter().map(Effect::Send));
     out
 }
@@ -156,6 +164,7 @@ pub(crate) async fn open_inbox(
     me: PubKey,
     started_at: Timestamp,
     ui: broadcast::Sender<UiEvent>,
+    archive: Arc<crate::archive::ArchiveBridge>,
 ) {
     // Before the list is read: a server it brings is told while the start
     // is still under way, and must not be missed.
@@ -191,7 +200,7 @@ pub(crate) async fn open_inbox(
     // The home set first: a private server that is down holds back only
     // the ones after it.
     for server in servers {
-        history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), server).await;
+        history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), server, archive.clone()).await;
     }
     // After the history, which may bring welcomes of my own: each group I
     // am in gets one welcome to myself that my list can name, once.
@@ -202,11 +211,17 @@ pub(crate) async fn open_inbox(
     loop {
         match told.recv().await {
             Ok(ev) if ev.name != UI_EVENT_SERVERS_UPDATED => continue,
-            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            // A server that let me in: what its relay refused is asked again.
+            Ok(ev) => {
+                if let Some(id) = ev.payload.get(crate::private::access::JOINED).and_then(|v| v.as_str()) {
+                    listening.forget(id);
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
             Err(broadcast::error::RecvError::Closed) => return,
         }
         for server in listening.follow(&store, &relays, &pool, &ui).await {
-            history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), Some(server)).await;
+            history_catch_up(store.clone(), pool.clone(), me.clone(), started_at, ui.clone(), Some(server), archive.clone()).await;
         }
     }
 }

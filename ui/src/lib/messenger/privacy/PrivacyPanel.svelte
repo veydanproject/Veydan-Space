@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import Avatar from '../contacts/Avatar.svelte';
@@ -40,7 +41,7 @@
       <ToggleRow surface="row" title={$t('msg_privacy_presence')} hint={$t('msg_privacy_presence_hint')} label={$t('msg_privacy_presence')}
         on={view.presence} disabled={privacyStore.busy} onclick={() => privacyStore.setPresence(!view.presence)} />
     </div>
-    {#if privacyStore.error}<p class="warn">{privacyStore.error}</p>{/if}
+    {#if privacyStore.error}<Notice tone="danger">{privacyStore.error}</Notice>{/if}
   {/if}
 </div>
 
@@ -74,7 +75,7 @@
       </div>
       <p class="muted small">{$t('msg_privacy_keep_hint')}</p>
     </div>
-    {#if privacyStore.dmError}<p class="warn">{privacyStore.dmError}</p>{/if}
+    {#if privacyStore.dmError}<Notice tone="danger">{privacyStore.dmError}</Notice>{/if}
   {/if}
 </div>
 
@@ -105,7 +106,7 @@
       {/each}
     </ul>
   {/if}
-  {#if privacyStore.blockedError}<p class="warn">{privacyStore.blockedError}</p>{/if}
+  {#if privacyStore.blockedError}<Notice tone="danger">{privacyStore.blockedError}</Notice>{/if}
 </div>
 
 <InvitesCard />
@@ -114,7 +115,6 @@
   .privacy { display: flex; flex-direction: column; gap: var(--sp-3); }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
   .small { font-size: var(--fs-sm); }
-  .warn { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   .line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 40px; font-size: var(--fs-base); }
   /* The settings of a card one under another, a line between them (as «Профиль и ключ»). */
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -128,5 +128,5 @@
   .who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .who-text { display: flex; flex-direction: column; min-width: 0; }
   .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .npub { font-size: var(--fs-2xs); color: var(--text-3); }
+  .npub { font-size: var(--fs-xs); color: var(--text-3); }
 </style>

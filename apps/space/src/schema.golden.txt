@@ -2,6 +2,7 @@ pragma application_id = 1447385412
 module browser = 1
 module core = 2
 module lock = 3
+module messenger = 1
 module notes = 1
 module pass = 1
 module ssh = 1
@@ -17,6 +18,8 @@ index labels_kind: CREATE INDEX labels_kind ON labels (kind)
 index sqlite_autoindex_app_settings_1: 
 index sqlite_autoindex_labels_1: 
 index sqlite_autoindex_lock_secrets_1: 
+index sqlite_autoindex_messenger_archive_secrets_1: 
+index sqlite_autoindex_messenger_archive_segments_1: 
 index sqlite_autoindex_note_folder_links_1: 
 index sqlite_autoindex_note_folders_1: 
 index sqlite_autoindex_note_history_1: 
@@ -66,6 +69,26 @@ table lock_secrets
   column key TEXT notnull=1 default=- pk=2
   column value TEXT notnull=1 default=- pk=0
   index sqlite_autoindex_lock_secrets_1 (box, key) unique=1 origin=pk
+table messenger_archive_secrets
+  column name TEXT notnull=1 default=- pk=1
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column hash TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  column tomb INTEGER notnull=1 default=0 pk=0
+  index sqlite_autoindex_messenger_archive_secrets_1 (name) unique=1 origin=pk
+table messenger_archive_segments
+  column entity_id TEXT notnull=1 default=- pk=1
+  column head_hlc TEXT notnull=1 default='' pk=0
+  column hash TEXT notnull=1 default='' pk=0
+  column lf TEXT notnull=1 default='' pk=0
+  column meta TEXT notnull=1 default='' pk=0
+  column merged_hash TEXT notnull=1 default='' pk=0
+  column replayed_hash TEXT notnull=1 default='' pk=0
+  column refused TEXT notnull=1 default='' pk=0
+  column deleted INTEGER notnull=1 default=0 pk=0
+  column tomb INTEGER notnull=1 default=0 pk=0
+  column republish INTEGER notnull=1 default=0 pk=0
+  index sqlite_autoindex_messenger_archive_segments_1 (entity_id) unique=1 origin=pk
 table note_folder_links
   column note_id TEXT notnull=1 default=- pk=1
   column folder_id TEXT notnull=1 default=- pk=2

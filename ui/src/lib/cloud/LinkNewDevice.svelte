@@ -7,12 +7,14 @@
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import { VAULT_UNREACHABLE } from '$lib/cloud/api';
+  import { holdArchiveGate } from '$lib/core/ui/archiveGate';
   import { qrPicture } from '$lib/core/ui/qrPicture';
   import { linkErrorKey, NewDeviceLink } from '$lib/cloud/link.svelte';
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
   import WordChips from '$lib/cloud/WordChips.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   const link = new NewDeviceLink();
   let password = $state('');
@@ -72,6 +74,8 @@
   }
 
   function openChats() {
+    // The chats come back from the archive: the first screen waits for the newest months.
+    holdArchiveGate();
     // The messenger reads its identity anew on a fresh start of the page.
     window.location.assign('/messenger');
   }
@@ -98,7 +102,7 @@
       </div>
       {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
       <Actions>
-        <button class="btn btn-ghost" type="button" onclick={leave}>{$t('cloud_link_cancel')}</button>
+        <button class="btn btn-ghost" type="button" onclick={leave}>{$t('common_cancel')}</button>
         <button class="btn btn-primary" type="submit" disabled={!password || link.phase === 'signing_in'}>{$t('cloud_link_sign_in')}</button>
       </Actions>
     </form>
@@ -109,7 +113,7 @@
         <Actions>
           {#if link.vaultAway}
             <!-- The account can still come without the storage: the link is kept. -->
-            <button class="btn btn-ghost" type="button" onclick={leave}>{$t('cloud_link_cancel')}</button>
+            <button class="btn btn-ghost" type="button" onclick={leave}>{$t('common_cancel')}</button>
             <button class="btn btn-primary" type="button" onclick={() => link.receive(null, true)}>{$t('cloud_vault_skip')}</button>
           {:else}
             <button class="btn btn-primary" type="button" onclick={begin}>{$t('cloud_link_new_code')}</button>
@@ -151,7 +155,7 @@
     <p class="wait"><span class="spinner" aria-hidden="true"></span>{$t('cloud_link_waiting')}</p>
     <Countdown expiresAt={link.shown.expires_at} {total} {now} label={(time) => $t('cloud_link_time_left', { time })} />
   </div>
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
 {:else}
   <p class="wait"><span class="spinner" aria-hidden="true"></span>{$t('cloud_link_preparing')}</p>
 {/if}
@@ -159,7 +163,7 @@
 <style>
   .block, .check, .foot { display: flex; flex-direction: column; gap: var(--sp-2); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .text.small { font-size: var(--fs-sm); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
   /* A QR code is black on white in either theme: a camera reads nothing else as well. */

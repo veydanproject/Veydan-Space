@@ -48,8 +48,10 @@
 //! messenger-cli [--data-dir DIR] push-tickets | push-ticket-rm <8 hex>   (the tickets of the gateways, by their first 8 hex)
 //! messenger-cli [--data-dir DIR] push-unseal <data.json>   (what a sealed push is, opened as the phone's handler opens it)
 //! messenger-cli [--data-dir DIR] servers [veydan|own|refresh]   (with nothing: the mode, the manifest and the private servers)
-//! messenger-cli [--data-dir DIR] server-add <wss-url> [--key K] [--media URL] [--node address:port#id] [--name N] [--push veydan|off] [--push-url URL]   (a private server by hand)
-//! messenger-cli [--data-dir DIR] server-add <veydan://server/…|a link with srv=>   (the server of a card: what it is printed, then added; one of the home set is left as it is)
+//! messenger-cli [--data-dir DIR] server-add <wss-url> [--key K] [--media URL] [--node address:port#id] [--name N] [--push veydan|off] [--push-url URL] [--access open|team|channel]   (a private server by hand)
+//! messenger-cli [--data-dir DIR] server-add <veydan://server/…|a link with srv=> [--invite vi1.…]   (the server of a card: what it is printed, then added; one of the home set is left as it is); a team server is joined with the invite (the card's inv=, or --invite)
+//! messenger-cli [--data-dir DIR] server-join <id> <vi1.…>   (join a server of its members with an invite of its admin)
+//! messenger-cli [--data-dir DIR] server-access <id>   (the access mode the server says, what I am there, the refusal of its relay)
 //! messenger-cli [--data-dir DIR] link <uri>   (what a link leads to, as the app's card shows it: JSON)
 //! messenger-cli [--data-dir DIR] link-open <uri> [note…]   (a link opened as the app does after «Добавить»: its server added, then the private chat with the person or the group)
 //! messenger-cli [--data-dir DIR] contact-link [<npub|hex>] [--server <id>]   (a person's link, mine by default; --server: of the private chat on that private server of mine, with its card)
@@ -106,7 +108,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] [--server <id>] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | push-tickets | push-ticket-rm <8 hex> | push-unseal <data.json> | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | server-add <wss-url|card> [--key K] [--media URL] [--node REF] [--name N] [--push veydan|off] [--push-url URL] | link <uri> | link-open <uri> [note…] | contact-link [<key>] [--server <id>] | open-private <key> <server id> [--invite SECRET] | server-rm <id> | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] [--server <id>] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | push-tickets | push-ticket-rm <8 hex> | push-unseal <data.json> | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | server-add <wss-url|card> [--key K] [--media URL] [--node REF] [--name N] [--push veydan|off] [--push-url URL] [--access open|team|channel] [--invite CODE] | server-join <id> <code> | server-access <id> | link <uri> | link-open <uri> [note…] | contact-link [<key>] [--server <id>] | open-private <key> <server id> [--invite SECRET] | server-rm <id> | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -185,15 +187,27 @@ async fn main() {
                 println!("checked   {:?}", info.checked_at);
                 // The private servers, by the id a peer address names
                 // (`<peer>@<id>`); never their keys.
+                let denied: std::collections::HashMap<String, Option<String>> = rt
+                    .servers_private_view()
+                    .await
+                    .unwrap_or_else(die)
+                    .into_iter()
+                    .map(|v| (v.id, v.denied))
+                    .collect();
                 for s in rt.servers_private().await.unwrap_or_else(die) {
                     println!(
-                        "private   {}  {}  media={} node={} key={}  {}",
+                        "private   {}  {}  media={} node={} key={} access={}  {}{}",
                         s.id,
                         s.relay_url,
                         s.media_url.as_deref().unwrap_or("-"),
                         s.call_node.as_deref().unwrap_or("-"),
                         if s.relay_key.is_some() { "yes" } else { "no" },
-                        s.name.unwrap_or_default()
+                        s.access,
+                        s.name.clone().unwrap_or_default(),
+                        match denied.get(&s.id).cloned().flatten() {
+                            Some(d) => format!("  denied: {d}"),
+                            None => String::new(),
+                        }
                     );
                 }
             }
@@ -203,9 +217,17 @@ async fn main() {
             // The server of a card (alone, or the srv= of a link of a
             // person or a group): what the dialog of the app shows, then
             // what «Добавить» does.
-            let preview = rt.server_preview(&args[0]).await.unwrap_or_else(die);
+            // An invite on the command line wins over the card's (`inv=`):
+            // the server is joined with it once added. Never printed.
+            let invite = take_flag(&mut args, "--invite");
+            let mut card = messenger_runtime::private::card::card_of_text(&args[0]).unwrap_or_else(die);
+            if let Some(code) = invite {
+                card.invite = Some(code);
+            }
+            let link = card.encode();
+            let preview = rt.server_preview(&link).await.unwrap_or_else(die);
             print_server(&preview);
-            let id = rt.server_accept(&args[0]).await.unwrap_or_else(die);
+            let id = rt.server_accept(&link).await.unwrap_or_else(die);
             println!("server {id} (a peer on it: <npub|hex>@{id})");
         }
         "server-add" => {
@@ -222,6 +244,7 @@ async fn main() {
                 call_node: take_flag(&mut args, "--node"),
                 name: take_flag(&mut args, "--name"),
                 push_mode: take_flag(&mut args, "--push"),
+                access: take_flag(&mut args, "--access"),
             };
             // Its push server, which wakes the phone through the gateway.
             let push = take_flag(&mut args, "--push-url");
@@ -299,6 +322,26 @@ async fn main() {
             let chat = rt.contact_open_private(peer, server, invite.as_deref()).await.unwrap_or_else(die);
             flush(&rt).await;
             println!("chat {}", chat.id);
+        }
+        "server-join" => {
+            // Join a server of its members with the invite of its admin.
+            let [id, code] = args.as_slice() else { usage() };
+            rt.server_join(id, code).await.unwrap_or_else(die);
+            println!("joined server {id}");
+        }
+        "server-access" => {
+            // What the server says of its access mode, what I am there,
+            // and what its relay said when it last refused me.
+            let [id] = args.as_slice() else { usage() };
+            let info = rt.server_access_info(id).await.unwrap_or_else(die);
+            println!("mode      {}", info.mode);
+            println!("invites   {}", if info.invite { "yes" } else { "no" });
+            match rt.server_access_me(id).await {
+                Ok(me) => println!("me        member={} admin={}", me.member, me.admin),
+                Err(e) => println!("me        unknown ({e})"),
+            }
+            let denied = rt.servers_private_view().await.unwrap_or_else(die).into_iter().find(|s| s.id == *id).and_then(|s| s.denied);
+            println!("denied    {}", denied.as_deref().unwrap_or("-"));
         }
         "server-rm" => {
             // A private server removed here and on my other devices, with
@@ -2194,7 +2237,7 @@ fn card_line(c: &messenger_runtime::CardView) -> String {
 /// it is added.
 fn print_server(s: &messenger_runtime::ServerPreview) {
     println!(
-        "server {}  \"{}\"  {}  relay {}  media {}  calls {}  push {}{}",
+        "server {}  \"{}\"  {}  relay {}  media {}  calls {}  push {}  access {}{}{}",
         s.id,
         s.name,
         if s.is_veydan { "Veydan" } else { "not Veydan" },
@@ -2202,6 +2245,8 @@ fn print_server(s: &messenger_runtime::ServerPreview) {
         s.media.as_deref().unwrap_or("-"),
         s.call_node.as_deref().unwrap_or("-"),
         s.push,
+        s.access.as_str(),
+        if s.invite.is_some() { "  (with an invite)" } else { "" },
         if s.known { "  (mine already)" } else { "" },
     );
 }

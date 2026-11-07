@@ -8,10 +8,10 @@
   import { api, DEFAULT_ATTACHMENT_POLICY, type NoteAttachmentPolicy } from '$lib/notes/api';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
+  import { toast } from '$lib/core/ui/toast.svelte';
 
   let policy = $state<NoteAttachmentPolicy>({ ...DEFAULT_ATTACHMENT_POLICY });
   let loaded = $state(false);
-  let saved = $state(false);
   let error = $state('');
 
   onMount(async () => {
@@ -27,8 +27,7 @@
     error = '';
     try {
       policy = await api.notes.attachmentPolicySet($state.snapshot(policy));
-      saved = true;
-      setTimeout(() => (saved = false), 2000);
+      toast.success($t('common_saved'));
     } catch (e) {
       error = formatError(e);
     }
@@ -80,8 +79,7 @@
       <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>
     {/if}
     <div class="foot">
-      {#if saved}<span class="ok" role="status">{$t('note_status_saved')}</span>{/if}
-      <button type="button" class="btn btn-primary" onclick={save}>{$t('settings_notes_save')}</button>
+      <button type="button" class="btn btn-primary" onclick={save}>{$t('common_save')}</button>
     </div>
   </div>
 {/if}
@@ -115,17 +113,16 @@
     font-size: var(--fs-sm); color: var(--text-body);
   }
   .input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); outline: none; }
-  .hint { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); margin: 0; }
+  .hint { line-height: var(--lh-snug); margin: 0; }
   .note { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
   .note :global(svg) { flex-shrink: 0; color: var(--text-dim); }
   .fail {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
     overflow-wrap: anywhere;
   }
   .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
   .foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-3); }
-  .ok { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--success-text); }
 
   /* A narrow window: the numbers one under another. */
   @container (max-width: 560px) {

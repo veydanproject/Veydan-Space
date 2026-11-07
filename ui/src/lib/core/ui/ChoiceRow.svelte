@@ -45,13 +45,13 @@
   .choice:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .choice.on { border-color: var(--accent-border); background: var(--accent-bg); }
   .tile {
-    flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center;
     background: var(--surface-2); color: var(--text-2);
   }
   .panel .tile { background: var(--surface-3); }
   .on .tile { background: transparent; color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .title { font-size: var(--fs-base); font-weight: var(--fw-bold); }
-  .hint { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
+  .hint { line-height: var(--lh-snug); }
   .check { flex-shrink: 0; display: inline-flex; color: var(--accent-text); }
 </style>

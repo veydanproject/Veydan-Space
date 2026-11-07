@@ -40,7 +40,7 @@
   }
   .pick.picture { padding: 0; }
   .pick img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
-  .pick-name { max-width: 100%; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick-name { max-width: 100%; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .unpick {
     position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; padding: 0; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;

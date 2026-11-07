@@ -33,7 +33,7 @@
     {/if}
   {/if}
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={() => decide('abort')}>{$t('cancel')}</button>
+    <button class="btn btn-ghost" onclick={() => decide('abort')}>{$t('common_cancel')}</button>
     <button class="btn btn-ghost" onclick={() => decide('skip')}>{$t('files_conflict_skip')}</button>
     <button class="btn btn-danger" onclick={() => decide('overwrite')}>{$t('files_conflict_overwrite')}</button>
   {/snippet}

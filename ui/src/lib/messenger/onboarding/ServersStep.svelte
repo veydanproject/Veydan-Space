@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -137,22 +138,22 @@
       {/if}
     </p>
   {/if}
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="actions">
     {#if error}
-      <button class="btn btn-ghost" onclick={back}>{$t('msg_back')}</button>
+      <button class="btn btn-ghost" onclick={back}>{$t('common_back')}</button>
       <button class="btn btn-primary" onclick={chooseVeydan}>{$t('msg_srv_veydan_title')}</button>
     {:else}
-      <button class="btn btn-primary" disabled={busy || !check} onclick={doneVeydan}>{$t('msg_srv_done')}</button>
+      <button class="btn btn-primary" disabled={busy || !check} onclick={doneVeydan}>{$t('common_done')}</button>
     {/if}
   </div>
 {:else if phase === 'cloud'}
-  <div class="card-title">{$t('msg_cloud_free_title')}</div>
+  <div class="card-title">{$t('cloud_free_title')}</div>
   <p class="muted">{$t('msg_cloud_free_text')}</p>
   {#if cloudOnboarding.phase === 'failed'}<p class="meta">{$t('msg_cloud_free_failed')}</p>{/if}
   <div class="actions">
-    <button class="btn btn-ghost" onclick={() => finishCloud(false)}>{$t('msg_cloud_later')}</button>
-    <button class="btn btn-primary" onclick={() => finishCloud(true)}>{$t('msg_cloud_setup_recovery')}</button>
+    <button class="btn btn-ghost" onclick={() => finishCloud(false)}>{$t('common_later')}</button>
+    <button class="btn btn-primary" onclick={() => finishCloud(true)}>{$t('cloud_recovery_setup')}</button>
   </div>
 {:else}
   <div class="card-title">{$t('msg_srv_own_title')}</div>
@@ -179,10 +180,10 @@
     <MediaServersPanel />
   </details>
   <p class="meta">{$t('msg_srv_own_push')}</p>
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="actions">
-    <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('msg_back')}</button>
-    <button class="btn btn-primary" disabled={busy || !canFinishOwn} onclick={finishOwn}>{$t('msg_srv_done')}</button>
+    <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('common_back')}</button>
+    <button class="btn btn-primary" disabled={busy || !canFinishOwn} onclick={finishOwn}>{$t('common_done')}</button>
   </div>
 {/if}
 
@@ -196,7 +197,7 @@
     padding: var(--sp-3); cursor: pointer; color: var(--text); font: inherit;
   }
   .option:hover, .option:focus-visible { border-color: var(--accent-border); outline: none; }
-  .option-title { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; }
+  .option-title { display: flex; align-items: center; gap: var(--sp-2); font-weight: var(--fw-semibold); }
   .result { margin: 0; font-size: var(--fs-sm); color: var(--success-text); }
   .result.fallback { color: var(--text-2); }
   .spinner {
@@ -205,7 +206,7 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .section-label { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .section-label { color: var(--text-3); font-size: var(--fs-xs); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .row {
     display: flex; align-items: center; gap: var(--sp-2);

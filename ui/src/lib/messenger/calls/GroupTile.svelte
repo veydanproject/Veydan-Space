@@ -28,7 +28,7 @@
   import type { GroupParticipant } from '../api';
   import { nameStore } from '../groups/names.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { MY_VIDEO_MID, layerFor, seatMuted, seatSendsVideo, seatVideoWord, tileWait } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import VideoTile, { type TileInfo } from './VideoTile.svelte';
@@ -126,41 +126,41 @@
   {#if !video || !on || waiting}
     <span class="face">
       <CallFace peer={face} size={big && !compact ? 96 : compact ? 34 : 56} level={p.verified ? level : 0} />
-      {#if !p.verified}<span class="checking" title={$t('msg_gcall_checking')}><CallIcon name="shield-question" size={13} />{#if !compact}{$t('msg_gcall_checking')}{/if}</span>{/if}
-      {#if !p.me && waiting && video}<span class="checking mine" role="status" title={$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}><CallIcon name={wait === 'lost' ? 'video-off' : p.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}{/if}</span>{/if}
-      {#if p.me && sending}<span class="checking mine" title={$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}><CallIcon name={groupCallStore.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}{/if}</span>{/if}
+      {#if !p.verified}<span class="checking" title={$t('msg_gcall_checking')}><Icon name="shield-question" size={13} />{#if !compact}{$t('msg_gcall_checking')}{/if}</span>{/if}
+      {#if !p.me && waiting && video}<span class="checking mine" role="status" title={$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}><Icon name={wait === 'lost' ? 'video-off' : p.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(wait === 'lost' ? 'msg_call_video_lost' : 'msg_call_video_waiting')}{/if}</span>{/if}
+      {#if p.me && sending}<span class="checking mine" title={$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}><Icon name={groupCallStore.screen ? 'screen-share' : 'video'} size={13} />{#if !compact}{$t(groupCallStore.screen ? 'msg_call_sharing' : 'msg_gcall_camera_on')}{/if}</span>{/if}
     </span>
   {/if}
   <span class="label">
-    {#if p.verified && !p.me}<span class="ok" title={$t('msg_gcall_verified_hint')}><CallIcon name="shield-check" size={12} /></span>{/if}
+    {#if p.verified && !p.me}<span class="ok" title={$t('msg_gcall_verified_hint')}><Icon name="shield-check" size={12} /></span>{/if}
     <span class="name">{name}</span>
-    {#if silent}<span class="mark" title={$t('msg_call_muted')}><CallIcon name="mic-off" size={12} /></span>{/if}
-    {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><CallIcon name="speaking" size={12} />{#if !compact}{$t('msg_gcall_speaking')}{/if}</span>{/if}
+    {#if silent}<span class="mark" title={$t('msg_call_muted')}><Icon name="mic-off" size={12} /></span>{/if}
+    {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><Icon name="wave-sine" size={12} />{#if !compact}{$t('msg_gcall_speaking')}{/if}</span>{/if}
   </span>
-  {#if noSignal}<span class="lost" role="status"><CallIcon name="video-off" size={13} />{#if !compact}{$t('msg_call_video_lost')}{/if}</span>{/if}
+  {#if noSignal}<span class="lost" role="status"><Icon name="video-off" size={13} />{#if !compact}{$t('msg_call_video_lost')}{/if}</span>{/if}
   {#if big && live && !lost && info}<span class="info">{$t('msg_call_video_info', { size: `${info.width}×${info.height}`, fps: String(info.fps) })}</span>{/if}
-  {#if pinned}<span class="pin" title={$t('msg_gcall_pinned')}><CallIcon name="pip" size={12} /></span>{/if}
+  {#if pinned}<span class="pin" title={$t('msg_gcall_pinned')}><Icon name="picture-in-picture" size={12} /></span>{/if}
 </div>
 
 <style>
   .tile {
     position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; padding: 0; margin: 0;
-    border-radius: var(--radius-md); border: 2px solid transparent; background: #1a1e24; color: #fff; font: inherit; cursor: default;
+    border-radius: var(--radius-md); border: 2px solid transparent; background: var(--call-surface-2); color: #fff; font: inherit; cursor: default;
     display: block; text-align: left; box-sizing: border-box; transition: border-color 160ms ease-out;
   }
   .tile.pickable { cursor: pointer; }
   .tile.speaking { border-color: var(--success); }
   .tile.pinned { border-color: rgba(255, 255, 255, 0.7); }
   .tile.speaking.pinned { border-color: var(--success); }
-  .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .face {
-    position: absolute; inset: 0; background: #1a1e24; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    position: absolute; inset: 0; background: var(--call-surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
     z-index: 1; padding-bottom: 18px;
   }
   .unverified .face { opacity: 0.75; }
   .checking {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); font-size: var(--fs-2xs); white-space: nowrap;
+    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); font-size: var(--fs-xs); white-space: nowrap;
   }
   .checking.mine { background: color-mix(in srgb, var(--accent) 45%, rgba(0, 0, 0, 0.4)); color: #fff; }
   .label {
@@ -176,21 +176,21 @@
     display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%;
     background: rgba(0, 0, 0, 0.55); color: #fff;
   }
-  .ok { color: #7ee2a8; pointer-events: auto; cursor: help; }
-  .mark { color: #ffb4a8; }
+  .ok { color: var(--call-ok); pointer-events: auto; cursor: help; }
+  .mark { color: var(--call-danger); }
   .talk {
     display: inline-flex; align-items: center; gap: 3px; padding: 2px var(--sp-2); border-radius: var(--radius-pill);
-    background: var(--success); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-bold); white-space: nowrap;
+    background: var(--success); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   .pin { position: absolute; z-index: 2; top: 6px; right: 6px; }
   .lost {
     position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px;
     padding: 3px 10px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9);
-    font-size: var(--fs-2xs); white-space: nowrap; pointer-events: none;
+    font-size: var(--fs-xs); white-space: nowrap; pointer-events: none;
   }
   .info {
     position: absolute; z-index: 2; top: 6px; left: 6px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums;
+    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
   .big .name { font-size: var(--fs-sm); }

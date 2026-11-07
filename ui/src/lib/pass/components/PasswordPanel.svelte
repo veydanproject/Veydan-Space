@@ -37,13 +37,13 @@
   <div class="bar">
     <span class="count"><PasswordLockBadge size={9} />{entries.length}</span>
     {#if canWrite}
-      <button class="btn btn-primary btn-sm" onclick={() => (creating = true)}>
-        <Icon name="plus" size={14} /> {$t('pw_btn_add')}
+      <button class="icon-btn create" onclick={() => (creating = true)} title={$t('common_add')} aria-label={$t('common_add')}>
+        <Icon name="plus" size={18} />
       </button>
     {/if}
   </div>
   {#if selected}
-    <button type="button" class="btn btn-ghost btn-sm" onclick={() => (selectedId = null)}>{$t('pw_back')}</button>
+    <button type="button" class="btn btn-ghost btn-sm" onclick={() => (selectedId = null)}>{$t('common_back')}</button>
     <PasswordCard entry={selected} onedit={() => (editingId = selected.id)} ondeleted={() => (selectedId = null)} />
   {:else if entries.length === 0}
     <p class="muted">{$t('pw_empty_profile')}</p>

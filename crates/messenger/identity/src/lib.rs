@@ -14,9 +14,10 @@
 pub mod keys;
 
 use messenger_core::{MessengerError, PubKey, Result, SecretStore, Timestamp};
-use messenger_store::{identity as repo, Store};
+use messenger_store::{account, identity as repo, Store};
 use nostr::key::Keys;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
@@ -44,11 +45,20 @@ pub struct CreatedIdentity {
 pub struct IdentityService {
     store: Store,
     secrets: Arc<dyn SecretStore>,
+    /// The last create or import wiped the data of another identity
+    /// (`take_wiped`): the files and the memory of it are the runtime's.
+    wiped: AtomicBool,
 }
 
 impl IdentityService {
     pub fn new(store: Store, secrets: Arc<dyn SecretStore>) -> Self {
-        Self { store, secrets }
+        Self { store, secrets, wiped: AtomicBool::new(false) }
+    }
+
+    /// Whether a create or an import wiped the data of another identity
+    /// since the last call (`account::wipe`).
+    pub fn take_wiped(&self) -> bool {
+        self.wiped.swap(false, Ordering::SeqCst)
     }
 
     /// The current identity, if one was created or imported.
@@ -95,12 +105,14 @@ impl IdentityService {
         spawn_kdf(keys, password.to_string(), EXPORT_LOG_N).await
     }
 
-    /// Remove the identity and its secret. Chats and contacts are not touched
-    /// here; the caller decides what a "logout" means for them.
+    /// Remove the identity and its secret. Chats and contacts stay, and so
+    /// does the record of whose they are (`account::KEY_OWNER`): the same
+    /// key imported again finds them, another key wipes them (`persist`).
     pub async fn delete(&self) -> Result<()> {
-        if repo::get(&self.store).await?.is_none() {
+        let Some(row) = repo::get(&self.store).await? else {
             return Ok(());
-        }
+        };
+        account::set_owner(&self.store, &row.pubkey_hex).await?;
         self.secrets.delete(SECRET_KEY_REF).await?;
         repo::delete(&self.store).await
     }
@@ -131,11 +143,23 @@ impl IdentityService {
         Ok(())
     }
 
+    /// The key becomes the identity. The data the store holds is of one
+    /// identity (`account::owner`): that of another key, or of nobody known,
+    /// is wiped first (nobody known: when it holds any); the same key
+    /// keeps it.
     async fn persist(&self, keys: &Keys) -> Result<Identity> {
-        let secret: Zeroizing<[u8; 32]> = Zeroizing::new(keys.secret_key().to_secret_bytes());
-        self.secrets.put(SECRET_KEY_REF, secret.as_slice()).await?;
         let npub = keys::npub(keys);
         let pubkey_hex = keys.public_key().to_hex();
+        let theirs = match account::owner(&self.store).await? {
+            Some(owner) => owner != pubkey_hex,
+            None => account::holds_data(&self.store).await?,
+        };
+        if theirs {
+            account::wipe(&self.store).await?;
+            self.wiped.store(true, Ordering::SeqCst);
+        }
+        let secret: Zeroizing<[u8; 32]> = Zeroizing::new(keys.secret_key().to_secret_bytes());
+        self.secrets.put(SECRET_KEY_REF, secret.as_slice()).await?;
         let created_at = now();
         let row = repo::IdentityRow {
             id: "primary".to_string(),
@@ -149,6 +173,7 @@ impl IdentityService {
             let _ = self.secrets.delete(SECRET_KEY_REF).await;
             return Err(e);
         }
+        account::set_owner(&self.store, &pubkey_hex).await?;
         Ok(row_to_identity(row))
     }
 }
@@ -238,6 +263,106 @@ mod tests {
         assert!(svc.get().await.unwrap().is_none());
         assert!(secrets.get(SECRET_KEY_REF).await.unwrap().is_none());
         assert!(matches!(svc.load_keys().await, Err(MessengerError::NotLoggedIn)));
+    }
+
+    async fn chats(svc: &IdentityService) -> usize {
+        messenger_store::chats::list(&svc.store, true).await.unwrap().len()
+    }
+
+    /// The key went (a reset of the lock, the demo data): the chats stay
+    /// for the same key imported again, and go before another key is made
+    /// or imported — another account never sees them.
+    #[tokio::test]
+    async fn another_key_wipes_the_data_of_the_one_before_and_the_same_key_keeps_it() {
+        let (svc, _) = service(false).await;
+        let a = keys::generate();
+        svc.import_nsec(&keys::nsec(&a)).await.unwrap();
+        assert!(!svc.take_wiped(), "a fresh store has nothing to wipe");
+        messenger_store::chats::ensure_dm(&svc.store, "bb", None).await.unwrap();
+        svc.delete().await.unwrap();
+
+        // The same key keeps everything.
+        svc.import_nsec(&keys::nsec(&a)).await.unwrap();
+        assert!(!svc.take_wiped());
+        assert_eq!(chats(&svc).await, 1);
+        svc.delete().await.unwrap();
+
+        // Another key, created: the chats go.
+        let created = svc.create("pw").await.unwrap();
+        assert!(svc.take_wiped());
+        assert!(!svc.take_wiped(), "told once");
+        assert_eq!(chats(&svc).await, 0);
+        assert_eq!(
+            messenger_store::account::owner(&svc.store).await.unwrap().as_deref(),
+            Some(created.identity.pubkey.as_hex())
+        );
+
+        // And imported: the chats of the created one go too.
+        messenger_store::chats::ensure_dm(&svc.store, "cc", None).await.unwrap();
+        svc.delete().await.unwrap();
+        svc.import_nsec(&keys::nsec(&a)).await.unwrap();
+        assert!(svc.take_wiped());
+        assert_eq!(chats(&svc).await, 0);
+    }
+
+    /// A store from before the record of its owner: the identity went with
+    /// nothing written; the author of a message sent from here tells whose
+    /// the data is, and with nothing to tell the data goes.
+    #[tokio::test]
+    async fn a_store_from_before_the_record_is_told_by_what_it_sent() {
+        let (svc, _) = service(false).await;
+        let a = keys::generate();
+        let sent = |id: &'static str, author: String| {
+            let store = svc.store.clone();
+            async move {
+                messenger_store::chats::ensure_dm(&store, "bb", None).await.unwrap();
+                sqlx_insert_sent(&store, id, &author).await;
+            }
+        };
+        sent("m1", a.public_key().to_hex()).await;
+        svc.import_nsec(&keys::nsec(&a)).await.unwrap();
+        assert!(!svc.take_wiped());
+        assert_eq!(chats(&svc).await, 1);
+
+        // Gone without a record (as before this version), another key comes.
+        forget_unrecorded(&svc).await;
+        svc.create("pw").await.unwrap();
+        assert!(svc.take_wiped());
+        assert_eq!(chats(&svc).await, 0);
+
+        // Nothing sent: nobody is known and the data goes.
+        messenger_store::chats::ensure_dm(&svc.store, "dd", None).await.unwrap();
+        forget_unrecorded(&svc).await;
+        svc.import_nsec(&keys::nsec(&a)).await.unwrap();
+        assert!(svc.take_wiped());
+        assert_eq!(chats(&svc).await, 0);
+    }
+
+    /// The identity removed as the builds before removed it: no record of the owner.
+    async fn forget_unrecorded(svc: &IdentityService) {
+        svc.delete().await.unwrap();
+        messenger_store::settings::delete(&svc.store, messenger_store::account::KEY_OWNER).await.unwrap();
+    }
+
+    async fn sqlx_insert_sent(store: &Store, id: &str, author: &str) {
+        let m = messenger_store::messages::NewMessage {
+            id: id.into(),
+            chat_id: "dm:bb".into(),
+            wire_id: None,
+            direction: "out".into(),
+            status: "sent".into(),
+            content_type: "text".into(),
+            text: Some("hi".into()),
+            envelope_json: "{}".into(),
+            sender_pubkey: author.into(),
+            reply_to_id: None,
+            target_id: None,
+            created_at: 1,
+            is_hidden: false,
+            outbox_local_id: None,
+            media_json: None,
+        };
+        assert!(messenger_store::messages::insert(store, &m).await.unwrap());
     }
 
     #[tokio::test]

@@ -18,7 +18,8 @@
     type FormField, type FormProblem, type TorForm,
   } from '$lib/tor/settings';
   import type { BridgeMode } from '$lib/tor/types';
-  import TorNote from '$lib/tor/desktop/TorNote.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   let stored = $state<import('$lib/tor/types').TorSettings | null>(null);
   let form = $state<TorForm | null>(null);
@@ -87,7 +88,7 @@
 </script>
 
 {#if loadFailed}
-  <TorNote tone="danger">{$t('tor_settings_load_failed')}</TorNote>
+  <Notice tone="danger">{$t('tor_settings_load_failed')}</Notice>
 {:else if form}
   <form class="tor-settings" oninput={touched} onchange={touched} onsubmit={(e) => { e.preventDefault(); save(); }}>
     <p class="scope">{$t('tor_settings_scope')}</p>
@@ -98,34 +99,30 @@
       <p class="muted small">{$t('tor_bridges_hint')}</p>
       <div class="form-group">
         <label for="tor-bridge-mode">{$t('tor_bridges_mode')}</label>
-        <select id="tor-bridge-mode" bind:value={form.bridgeMode}>
-          {#each BRIDGE_MODES as m (m.id)}
-            <option value={m.id}>{$t(m.label)}</option>
-          {/each}
-        </select>
+        <CustomSelect id="tor-bridge-mode" options={BRIDGE_MODES.map((m) => ({ value: m.id, label: $t(m.label) }))} bind:value={form.bridgeMode} />
       </div>
       {#if form.bridgeMode === 'builtin'}
         <div class="form-group">
           <label for="tor-bridge-kind">{$t('tor_bridges_kind')}</label>
           {#if builtin.length}
-            <select id="tor-bridge-kind" bind:value={form.bridgeBuiltin}>
-              {#if !builtin.includes(form.bridgeBuiltin)}
-                <option value={form.bridgeBuiltin}>{form.bridgeBuiltin}</option>
-              {/if}
-              {#each builtin as kind (kind)}
-                <option value={kind}>{kind}</option>
-              {/each}
-            </select>
+            <CustomSelect
+              id="tor-bridge-kind"
+              options={[
+                ...(builtin.includes(form.bridgeBuiltin) ? [] : [{ value: form.bridgeBuiltin, label: form.bridgeBuiltin }]),
+                ...builtin.map((kind) => ({ value: kind, label: kind })),
+              ]}
+              bind:value={form.bridgeBuiltin}
+            />
           {:else}
-            <TorNote tone="warn">{$t('tor_bridges_no_builtin')}</TorNote>
+            <Notice tone="warn">{$t('tor_bridges_no_builtin')}</Notice>
           {/if}
         </div>
       {:else if form.bridgeMode === 'custom'}
         <div class="form-group">
           <label for="tor-bridge-lines">{$t('tor_bridges_lines')}</label>
           <textarea id="tor-bridge-lines" class="mono" rows="4" bind:value={form.bridgeLines} placeholder={'obfs4 192.0.2.1:443 FINGERPRINT cert=… iat-mode=0'} spellcheck="false" class:bad={!!problems.bridgeLines} aria-invalid={!!problems.bridgeLines}></textarea>
+          {#if problems.bridgeLines}<span class="error-msg">{problemText('bridgeLines')}</span>{/if}
           <span class="muted small">{$t('tor_bridges_lines_hint')}</span>
-          {#if problems.bridgeLines}<span class="field-error">{problemText('bridgeLines')}</span>{/if}
         </div>
       {/if}
     </div>
@@ -136,23 +133,27 @@
       <p class="muted small">{$t('tor_upstream_hint')}</p>
       <div class="form-group">
         <label for="tor-upstream-kind">{$t('tor_upstream_kind')}</label>
-        <select id="tor-upstream-kind" bind:value={form.upstreamKind}>
-          <option value="off">{$t('tor_upstream_off')}</option>
-          <option value="socks5">SOCKS5</option>
-          <option value="https">HTTPS</option>
-        </select>
+        <CustomSelect
+          id="tor-upstream-kind"
+          options={[
+            { value: 'off', label: $t('tor_upstream_off') },
+            { value: 'socks5', label: 'SOCKS5' },
+            { value: 'https', label: 'HTTPS' },
+          ]}
+          bind:value={form.upstreamKind}
+        />
       </div>
       {#if form.upstreamKind !== 'off'}
         <div class="form-row">
           <div class="form-group">
             <label for="tor-upstream-host">{$t('tor_upstream_host')}</label>
             <input id="tor-upstream-host" type="text" bind:value={form.upstreamHost} autocomplete="off" spellcheck="false" class:bad={!!problems.upstreamHost} aria-invalid={!!problems.upstreamHost} />
-            {#if problems.upstreamHost}<span class="field-error">{problemText('upstreamHost')}</span>{/if}
+            {#if problems.upstreamHost}<span class="error-msg">{problemText('upstreamHost')}</span>{/if}
           </div>
           <div class="form-group">
             <label for="tor-upstream-port">{$t('tor_upstream_port')}</label>
             <input id="tor-upstream-port" type="text" inputmode="numeric" bind:value={form.upstreamPort} autocomplete="off" class:bad={!!problems.upstreamPort} aria-invalid={!!problems.upstreamPort} />
-            {#if problems.upstreamPort}<span class="field-error">{problemText('upstreamPort')}</span>{/if}
+            {#if problems.upstreamPort}<span class="error-msg">{problemText('upstreamPort')}</span>{/if}
           </div>
         </div>
         <div class="form-row">
@@ -175,8 +176,8 @@
       <div class="form-group">
         <label for="tor-ports">{$t('tor_ports_label')}</label>
         <input id="tor-ports" type="text" bind:value={form.ports} placeholder="80, 443" autocomplete="off" spellcheck="false" class:bad={!!problems.ports} aria-invalid={!!problems.ports} />
+        {#if problems.ports}<span class="error-msg">{problemText('ports')}</span>{/if}
         <span class="muted small">{$t('tor_ports_hint')}</span>
-        {#if problems.ports}<span class="field-error">{problemText('ports')}</span>{/if}
       </div>
     </div>
 
@@ -186,8 +187,8 @@
       <div class="form-group">
         <label for="tor-exclude">{$t('tor_exclude_label')}</label>
         <input id="tor-exclude" type="text" bind:value={form.exclude} placeholder={$t('tor_countries_placeholder')} autocomplete="off" spellcheck="false" class:bad={!!problems.exclude} aria-invalid={!!problems.exclude} />
+        {#if problems.exclude}<span class="error-msg">{problemText('exclude')}</span>{/if}
         <span class="muted small">{$t('tor_exclude_hint')}</span>
-        {#if problems.exclude}<span class="field-error">{problemText('exclude')}</span>{/if}
       </div>
       <div class="toggle-row">
         <div class="toggle-info">
@@ -225,8 +226,8 @@
       <div class="form-group">
         <label for="tor-idle">{$t('tor_idle_label')}</label>
         <input id="tor-idle" class="narrow" type="text" inputmode="numeric" bind:value={form.idleMinutes} autocomplete="off" class:bad={!!problems.idleMinutes} aria-invalid={!!problems.idleMinutes} />
+        {#if problems.idleMinutes}<span class="error-msg">{problemText('idleMinutes')}</span>{/if}
         <span class="muted small">{$t('tor_idle_hint')}</span>
-        {#if problems.idleMinutes}<span class="field-error">{problemText('idleMinutes')}</span>{/if}
       </div>
     </div>
 
@@ -254,7 +255,7 @@
             <span class="mono">127.0.0.1:</span>
             <input id="tor-external-port" class="narrow" type="text" inputmode="numeric" bind:value={form.externalPort} autocomplete="off" class:bad={!!problems.externalPort} aria-invalid={!!problems.externalPort} />
           </div>
-          {#if problems.externalPort}<span class="field-error">{problemText('externalPort')}</span>{/if}
+          {#if problems.externalPort}<span class="error-msg">{problemText('externalPort')}</span>{/if}
         </div>
       {/if}
     </div>
@@ -262,23 +263,23 @@
     <!-- Advanced -->
     <div class="card" id="advanced">
       <h3 class="card-title">{$t('tor_section_advanced')}</h3>
-      <TorNote tone="warn">{$t('tor_torrc_warning')}</TorNote>
+      <Notice tone="warn">{$t('tor_torrc_warning')}</Notice>
       <div class="form-group">
         <label for="tor-torrc">{$t('tor_torrc_label')}</label>
         <textarea id="tor-torrc" class="mono" rows="4" bind:value={form.extraTorrc} placeholder="AvoidDiskWrites 1" spellcheck="false"></textarea>
       </div>
     </div>
 
-    {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <!-- The bar stays at the foot of the pane while the cards scroll: what the save did at the left, the buttons at the right. -->
     <div class="save-bar">
       <div class="said">
-        {#if saved}<TorNote tone="ok">{$t('tor_saved')}</TorNote>{/if}
-        {#if Object.keys(problems).length}<TorNote tone="danger">{$t('tor_fix_fields')}</TorNote>{/if}
+        {#if saved}<Notice tone="ok">{$t('tor_saved')}</Notice>{/if}
+        {#if Object.keys(problems).length}<Notice tone="danger">{$t('tor_fix_fields')}</Notice>{/if}
       </div>
       <button class="btn btn-ghost" type="button" disabled={saving || !changed} onclick={reset}>{$t('tor_btn_revert')}</button>
       <button class="btn btn-primary" type="submit" disabled={saving || !changed}>
-        {saving ? $t('tor_btn_saving') : $t('tor_btn_save')}
+        {saving ? $t('tor_btn_saving') : $t('common_save')}
       </button>
     </div>
   </form>
@@ -289,13 +290,12 @@
   .scope { margin: 0; font-size: var(--fs-base); color: var(--text-2); }
   .card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); }
   .card-title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .card > .muted { margin: calc(var(--sp-1) * -1) 0 0; font-size: var(--fs-base); line-height: 1.5; }
-  .small { font-size: var(--fs-sm); line-height: 1.45; }
-  .field-error { font-size: var(--fs-sm); color: var(--danger-text); }
-  .bad { border-color: var(--danger-border); }
+  .card > .muted { margin: calc(var(--sp-1) * -1) 0 0; font-size: var(--fs-base); line-height: var(--lh-base); }
+  .small { font-size: var(--fs-sm); line-height: var(--lh-snug); }
+  .bad { border-color: var(--danger); }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
   .toggle-info { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-base); color: var(--text); }
-  .toggle-info .muted { font-size: var(--fs-sm); line-height: 1.45; }
+  .toggle-info .muted { font-size: var(--fs-sm); line-height: var(--lh-snug); }
   .narrow { max-width: 9rem; }
   .addr-row { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
   textarea { resize: vertical; }

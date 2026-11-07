@@ -23,7 +23,7 @@ const KINDS: Record<string, { icon: string; label: TranslationKey }> = {
   profile: { icon: 'user-circle', label: 'ctx_kind_profile' },
   proxy: { icon: 'globe', label: 'ctx_kind_proxy' },
   ssh: { icon: 'terminal', label: 'ctx_kind_ssh' },
-  totp: { icon: 'shield', label: 'ctx_kind_totp' },
+  totp: { icon: 'shield-lock', label: 'ctx_kind_totp' },
   password: { icon: 'lock-password', label: 'ctx_kind_password' },
   note: { icon: 'notes', label: 'ctx_kind_note' },
 };

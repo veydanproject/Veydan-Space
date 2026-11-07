@@ -8,6 +8,7 @@
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import ProfileSidePanel from './ProfileSidePanel.svelte';
   import { directory } from '$lib/core/directory';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
@@ -266,17 +267,22 @@
         <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
       {/if}
     </div>
-    <select class="filter-select" bind:value={filterProxy}>
-      <option value="">{$t('kanban_filter_proxy')}</option>
-      {#each proxies as pr}
-        <option value={pr.id}>{pr.name}</option>
-      {/each}
-    </select>
-    <select class="filter-select" bind:value={filterRuntime}>
-      <option value="">{$t('kanban_filter_runtime')}</option>
-      <option value="running">{$t('kanban_filter_running')}</option>
-      <option value="stopped">{$t('kanban_filter_stopped')}</option>
-    </select>
+    <div class="filter-select">
+      <CustomSelect
+        options={[{ value: '', label: $t('kanban_filter_proxy') }, ...proxies.map((pr) => ({ value: pr.id, label: pr.name }))]}
+        bind:value={filterProxy}
+      />
+    </div>
+    <div class="filter-select">
+      <CustomSelect
+        options={[
+          { value: '', label: $t('kanban_filter_runtime') },
+          { value: 'running', label: $t('kanban_filter_running') },
+          { value: 'stopped', label: $t('kanban_filter_stopped') },
+        ]}
+        bind:value={filterRuntime}
+      />
+    </div>
     {#if search || filterProxy || filterRuntime}
       <button class="filter-clear" onclick={() => { search = ''; filterProxy = ''; filterRuntime = ''; }} title={$t('kanban_clear_filters')} aria-label={$t('kanban_clear_filters')}>
         <Icon name="x" size={12} />
@@ -297,7 +303,7 @@
         role="list"
       >
         <div class="col-header">
-          <span class="col-dot" style="background:{col.color}; box-shadow: 0 0 8px {col.color}"></span>
+          <span class="col-dot" style="background:{col.color}"></span>
           {#if editingCol?.id === col.id}
             <input
               class="col-edit-input"
@@ -320,10 +326,10 @@
             <span class="col-title">{col.name}</span>
             <span class="col-count">{cards.length}</span>
             <button class="icon-btn" onclick={() => startEditCol(col)} title={$t('kanban_edit_column')} aria-label={$t('kanban_edit_column')}>
-              <Icon name="edit" size={11} />
+              <Icon name="pencil" size={11} />
             </button>
-            <button class="icon-btn danger" onclick={() => deleteCol(col)} title={$t('kanban_delete_column')} aria-label={$t('kanban_delete_column')}>
-              <Icon name="trash" size={11} />
+            <button class="icon-btn danger-soft" onclick={() => deleteCol(col)} title={$t('kanban_delete_column')} aria-label={$t('kanban_delete_column')}>
+              <Icon name="trash-2" size={11} />
             </button>
           {/if}
         </div>
@@ -379,7 +385,7 @@
         role="list"
       >
         <div class="col-header">
-          <span class="col-dot" style="background:var(--cat-blue); box-shadow: 0 0 8px var(--cat-blue)"></span>
+          <span class="col-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_unassigned')}</span>
           <span class="col-count">{cards.length}</span>
         </div>
@@ -428,7 +434,7 @@
     {#if columns.length === 0}
       <div class="column" role="list">
         <div class="col-header">
-          <span class="col-dot" style="background:var(--cat-blue); box-shadow: 0 0 8px var(--cat-blue)"></span>
+          <span class="col-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_all_profiles')}</span>
           <span class="col-count">{profiles.filter(filterProfile).length}</span>
         </div>
@@ -497,10 +503,10 @@
           {/each}
         </div>
         <div class="add-col-actions">
-          <button class="btn-primary" onclick={addColumn} disabled={addColLoading || !newColName.trim()}>
-            {addColLoading ? '…' : $t('workspaces_btn_create')}
+          <button class="btn btn-primary" onclick={addColumn} disabled={addColLoading || !newColName.trim()}>
+            {addColLoading ? '…' : $t('common_create')}
           </button>
-          <button class="btn-ghost" onclick={() => { showAddColumn = false; newColName = ''; }}>{$t('workspaces_btn_cancel')}</button>
+          <button class="btn btn-ghost" onclick={() => { showAddColumn = false; newColName = ''; }}>{$t('common_cancel')}</button>
         </div>
       </div>
     {/if}
@@ -562,16 +568,16 @@
     min-height: 44px; flex-wrap: wrap;
   }
   .col-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-body); flex: 1; }
+  .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-body); flex: 1; }
   .col-count {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; border-radius: var(--radius-sm);
+    width: 24px; height: 24px; border-radius: var(--radius-pill);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     background: var(--surface-2); color: var(--text-2);
   }
 
   .col-edit-input {
-    flex: 1; background: var(--surface-3); border: 1px solid var(--accent); border-radius: var(--radius-xs);
+    flex: 1; background: var(--surface-3); border: 1px solid var(--accent); border-radius: var(--radius-field);
     color: var(--text); font-size: var(--fs-sm); padding: 0.2rem 0.4rem; outline: none;
   }
   .col-color-row { display: flex; gap: 3px; flex-wrap: wrap; width: 100%; padding-top: var(--sp-1); }
@@ -602,17 +608,17 @@
     color: var(--accent-text-2);
     border: 1px solid var(--accent-tint-border);
     border-radius: var(--radius-badge);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     padding: 0.05rem 0.35rem;
-    font-weight: 600;
-    line-height: 1.4;
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-snug);
     flex-shrink: 0;
   }
   .card-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   .meta-item { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-dim); }
-  /* OS / fingerprint preset chip — mono per design */
+  /* OS / fingerprint preset chip */
   .meta-item:first-child {
-    font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-soft);
+    font-size: var(--fs-xs); color: var(--text-soft);
     background: var(--border); padding: 3px 8px; border-radius: var(--radius-sm);
   }
   .meta-item.accent { color: var(--accent-text-2); }
@@ -628,7 +634,7 @@
     border-radius: var(--radius-badge);
     padding: 0.4rem 0.65rem;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text);
     box-shadow: var(--shadow-lg);
     transform: translate(12px, -50%);
@@ -656,7 +662,7 @@
     padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2);
   }
   .col-name-input {
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-field);
     color: var(--text); padding: 0.4rem 0.6rem; font-size: var(--fs-base); outline: none;
     width: 100%;
   }
@@ -675,12 +681,10 @@
   .icon-btn {
     width: auto; height: auto;
     background: none; border: none; cursor: pointer; color: var(--text-3);
-    padding: 0.2rem; border-radius: var(--radius-xs); display: inline-flex; align-items: center;
+    padding: 0.2rem; border-radius: var(--radius-sm); display: inline-flex; align-items: center;
     opacity: 0;
     transition: opacity 0.15s, color 0.15s;
   }
   .col-header:hover .icon-btn { opacity: 1; }
   .icon-btn:hover { color: var(--text); background: var(--surface-3); }
-  .icon-btn.danger { background: none; border: none; }
-  .icon-btn.danger:hover { color: var(--danger-text); background: var(--danger-bg); }
 </style>

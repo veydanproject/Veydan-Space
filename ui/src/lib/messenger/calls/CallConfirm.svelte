@@ -12,7 +12,7 @@
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import type { CallMedia } from '../api';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { callStore } from './callStore.svelte';
   import type { CallPeer } from './peer';
 
@@ -63,7 +63,7 @@
     <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
     <!-- svelte-ignore a11y_autofocus -->
     <button type="button" class="btn btn-success" onclick={go} autofocus>
-      <CallIcon name={media === 'video' ? 'video' : 'phone'} size={15} />
+      <Icon name={media === 'video' ? 'video' : 'phone'} size={15} />
       {action ?? $t(media === 'video' ? 'msg_call_video_start' : 'msg_call_start')}
     </button>
   {/snippet}
@@ -71,8 +71,8 @@
 
 <style>
   .ask { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-2) 0 var(--sp-4); }
-  .name { margin-top: var(--sp-2); font-size: var(--fs-lg); font-weight: var(--fw-extrabold); letter-spacing: -0.3px; overflow-wrap: anywhere; }
+  .name { margin-top: var(--sp-2); font-size: var(--fs-lg); font-weight: var(--fw-extrabold); letter-spacing: var(--ls-tight); overflow-wrap: anywhere; }
   .question { font-size: var(--fs-sm); color: var(--text-2); }
   .never { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-body); cursor: pointer; user-select: none; }
-  .hint { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: var(--sp-2) 0 0; line-height: var(--lh-snug); }
 </style>

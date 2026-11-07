@@ -24,7 +24,6 @@
   import { onPhone } from '../shared/phone';
   import { clock as timeOfDay, dayKey, dayLabel } from '../shared/time';
   import type { CallLogEntry, CallMedia } from '../api';
-  import CallIcon, { type CallGlyph } from './CallIcon.svelte';
   import { callLog } from './callLog.svelte';
   import { dialable, dialer, targetOf, type DialTarget } from './dial.svelte';
   import { foldLog, isLogMissed, lineOf, logSections, type LogRow } from './log';
@@ -63,10 +62,10 @@
     return { name: chat?.title || nameStore.label(e.peer), picture: chat?.picture ?? nameStore.picture(e.peer), seed: e.peer };
   }
 
-  function glyph(e: CallLogEntry): CallGlyph {
+  function glyph(e: CallLogEntry): string {
     if (e.kind === 'group') return e.media === 'video' ? 'video' : 'phone';
-    if (isLogMissed(e)) return 'missed';
-    return e.direction === 'in' ? 'incoming' : 'outgoing';
+    if (isLogMissed(e)) return 'phone-x';
+    return e.direction === 'in' ? 'phone-incoming' : 'phone-outgoing';
   }
 
   function words(e: CallLogEntry): string {
@@ -100,7 +99,7 @@
   let menu = $state<{ open: boolean; x: number; y: number; row: LogRow | null }>({ open: false, x: 0, y: 0, row: null });
 
   function forget(row: LogRow) {
-    callLog.hide(row.calls.map((c) => c.call_id)).catch(() => toast.error($t('msg_action_failed'), { onAction: () => forget(row) }));
+    callLog.hide(row.calls.map((c) => c.call_id)).catch(() => toast.error($t('msg_calls_forget_failed'), { onAction: () => forget(row) }));
   }
 
   const items = $derived.by((): MenuEntry[] => {
@@ -124,8 +123,8 @@
   });
 
   async function clearAll() {
-    if (!(await confirmStore.ask($t('msg_calls_clear_confirm'), $t('msg_calls_clear'), true))) return;
-    callLog.clear().catch(() => toast.error($t('msg_action_failed'), { onAction: () => void clearAll() }));
+    if (!(await confirmStore.ask($t('msg_calls_clear_confirm'), $t('msg_calls_clear'), true, 'trash-2'))) return;
+    callLog.clear().catch(() => toast.error($t('msg_calls_clear_failed'), { onAction: () => void clearAll() }));
   }
 
   /** The next page comes as the end of the list nears. */
@@ -152,13 +151,13 @@
             <span class="list-row-time">{timeOfDay(e.started_at)}</span>
           </span>
           <span class="list-row-bottom">
-            <span class="glyph"><CallIcon name={glyph(e)} size={14} /></span>
+            <span class="glyph"><Icon name={glyph(e)} size={14} /></span>
             <span class="list-row-line what">{words(e)}</span>
           </span>
         </span>
       </button>
       <button class="dial" disabled={!to} onclick={() => back(e)} title={$t('msg_call_back')} aria-label={$t('msg_call_back')}>
-        <CallIcon name={e.media === 'video' && e.kind === 'dm' ? 'video' : 'phone'} size={18} />
+        <Icon name={e.media === 'video' && e.kind === 'dm' ? 'video' : 'phone'} size={18} />
       </button>
     </div>
   </li>
@@ -181,7 +180,7 @@
     {#if !callLog.loaded}
       <span class="list-cover-empty" role="status"><span class="spinner" aria-hidden="true"></span></span>
     {:else if sections.length === 0}
-      <span class="list-cover-empty" role="status" aria-label={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')} title={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')}><CallIcon name="phone" size={22} /></span>
+      <span class="list-cover-empty" role="status" aria-label={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')} title={callLog.failed ? $t('msg_calls_load_failed') : filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')}><Icon name="phone" size={22} /></span>
     {:else}
       <ul class="covers-list">
         {#each sections as s (s.day)}{#each s.rows as r (r.key)}{@render cover(r)}{/each}{/each}
@@ -204,15 +203,15 @@
       <span class="empty-icon"><Icon name="alert-triangle" size={26} /></span>
       <p>{$t('msg_calls_load_failed')}</p>
       {#if callLog.reason}<span class="reason">{callLog.reason}</span>{/if}
-      <button class="btn btn-ghost btn-sm" onclick={() => callLog.load()}><Icon name="refresh-cw" size={13} />{$t('msg_calls_retry')}</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => callLog.load()}><Icon name="arrow-forward-up" size={13} />{$t('common_try_again')}</button>
     </div>
   {:else if sections.length === 0}
     <div class="empty">
-      <span class="empty-icon"><CallIcon name={filter === 'missed' ? 'missed' : 'phone'} size={26} /></span>
+      <span class="empty-icon"><Icon name={filter === 'missed' ? 'phone-x' : 'phone'} size={26} /></span>
       <p>{filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')}</p>
       {#if filter === 'all'}
         <span>{$t('msg_calls_empty_hint')}</span>
-        {#if onnew}<button class="btn btn-primary btn-sm" onclick={onnew}><CallIcon name="phone" size={14} />{$t('msg_calls_call')}</button>{/if}
+        {#if onnew}<button class="btn btn-primary btn-sm" onclick={onnew}><Icon name="phone" size={14} />{$t('msg_calls_call')}</button>{/if}
       {/if}
     </div>
   {:else}
@@ -243,7 +242,7 @@
   :global(.msg-m) .filter .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
   :global(.msg-m) .list-wrap { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
-  .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: none; }
+  .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
   .day:first-child { margin-top: var(--sp-1); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows;
      the row's main part a .list-row-main button, the handset at its end. */
@@ -258,11 +257,11 @@
     display: inline-flex; align-items: center; justify-content: center; background: none; color: var(--success-text); cursor: pointer;
   }
   @media (hover: hover) { .dial:hover:not(:disabled) { background: var(--success-bg); } }
-  .dial:disabled { color: var(--text-3); opacity: 0.5; cursor: default; }
+  .dial:disabled { color: var(--text-3); opacity: 0.45; cursor: default; }
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-8) var(--sp-4); color: var(--text-3); }
   .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .empty > span:not(.empty-icon) { font-size: var(--fs-xs); line-height: 1.5; max-width: 260px; }
-  .reason { font-family: var(--font-mono); font-size: var(--fs-2xs) !important; color: var(--text-3); overflow-wrap: anywhere; }
+  .empty > span:not(.empty-icon) { font-size: var(--fs-xs); line-height: var(--lh-base); max-width: 260px; }
+  .reason { font-family: var(--font-mono); font-size: var(--fs-xs) !important; color: var(--text-3); overflow-wrap: anywhere; }
   .empty-icon { width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); margin-bottom: var(--sp-1); }
   .empty .btn { margin-top: var(--sp-2); }
   .clear {

@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import type { NetMode } from '../api';
   import { netErrorText } from './errors';
@@ -87,12 +88,13 @@
     </form>
     <p class="hint">{$t('msg_bridge_add_hint')}</p>
   {/if}
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </div>
 
 <style>
   .bridges { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .muted, .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .muted, .hint { margin: 0; line-height: var(--lh-snug); }
+  .muted { font-size: var(--fs-sm); color: var(--text-2); }
   .state { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
   .dot.via { background: var(--success-text); }

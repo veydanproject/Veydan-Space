@@ -15,7 +15,7 @@
   import { t } from '$lib/core/i18n';
   import { messengerStore } from '../store.svelte';
   import { callHref, groupCallHref } from '../mobile/routes';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import CallSounds from './CallSounds.svelte';
   import { callStore } from './callStore.svelte';
   import { groupCallStore } from './groupCallStore.svelte';
@@ -66,7 +66,7 @@
 
 {#if bar && peer}
   <button class="back-to-call" aria-label={$t('msg_call_return')} title={$t('msg_call_return')} class:ringing={bar.phase === 'incoming'} onclick={() => goto(callHref())}>
-    <CallIcon name={bar.phase === 'incoming' ? 'incoming' : 'phone'} size={15} />
+    <Icon name={bar.phase === 'incoming' ? 'phone-incoming' : 'phone'} size={15} />
     <span class="who">{peer.name}</span>
     <span class="what">{status}</span>
   </button>
@@ -74,7 +74,7 @@
 
 {#if roomBar}
   <button class="back-to-call" aria-label={$t('msg_call_return')} title={$t('msg_call_return')} onclick={() => goto(groupCallHref())}>
-    <CallIcon name="phone" size={15} />
+    <Icon name="phone" size={15} />
     <span class="who">{roomName}</span>
     <span class="what">{roomStatus}</span>
   </button>

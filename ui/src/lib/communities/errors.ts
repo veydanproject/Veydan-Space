@@ -22,6 +22,9 @@ export const KNOWN = new Set([
   'not_member_of_scope', 'scope_no_post', 'no_transfer', 'tickets_open', 'level_name', 'level_last', 'level_limit', 'scope_everyone', 'scope_limit',
 ]);
 
+/** Codes said by the text of another: one message, one key. */
+const SAME: Record<string, string> = { transport: 'not_delivered' };
+
 /** Text for a refusal of the module; `null` when the error is not one. */
 export function channelRefusal(e: unknown, tr: Translate): string | null {
   const code = channelErrorCode(e);
@@ -29,7 +32,7 @@ export function channelRefusal(e: unknown, tr: Translate): string | null {
   const short = code.slice('channel_'.length);
   // A host that refused a file: what it answered (its address, its words), after the code.
   const answer = errorText(e).trim().replace(/^channel_[a-z_]+:\s*(channel: upload refused:\s*)?/, '');
-  return tr(KNOWN.has(short) ? `chan_err_${short}` : 'chan_err_other', { code, answer });
+  return tr(KNOWN.has(short) ? `chan_err_${SAME[short] ?? short}` : 'chan_err_other', { code, answer });
 }
 
 /** Text for any error of a command of the module. */

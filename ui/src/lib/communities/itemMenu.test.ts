@@ -34,14 +34,14 @@ describe('the menu of a post', () => {
   });
 
   it('offers the author of a post its edit and its removal', () => {
-    expect(labels(detail('author'), post(ME))).toEqual(['chan_menu_comments', 'chan_menu_copy', 'chan_menu_edit', '—', 'chan_menu_delete']);
+    expect(labels(detail('author'), post(ME))).toEqual(['chan_menu_comments', 'chan_menu_copy', 'common_edit', '—', 'common_remove']);
   });
 
   it('offers a moderator the pin, the hiding, the author\'s mute and ban and the removal of a post below (ревью UX п. 18)', () => {
     expect(labels(detail('moderator'), post('w'))).toEqual([
       'chan_menu_comments', 'chan_menu_copy', 'chan_menu_pin', 'chan_menu_write', '—',
       '# chan_mod_title', 'chan_menu_hide', 'chan_mod_hide_author', 'chan_member_mute', '—',
-      'chan_menu_delete', 'chan_member_ban', 'chan_menu_report',
+      'common_remove', 'chan_member_ban', 'chan_menu_report',
     ]);
   });
 
@@ -60,7 +60,7 @@ describe('the menu of a post', () => {
     expect(labels(detail('moderator'), post('w', { review: 'pending' }))).toEqual([
       'chan_menu_comments', 'chan_menu_copy', 'chan_menu_write', '—',
       '# chan_mod_title', 'chan_mod_approve | chan_mod_reject', 'chan_menu_hide', 'chan_mod_hide_author', 'chan_member_mute', '—',
-      'chan_menu_delete', 'chan_mod_spam', 'chan_menu_report',
+      'common_remove', 'chan_mod_spam', 'chan_menu_report',
     ]);
   });
 

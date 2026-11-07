@@ -37,7 +37,7 @@
 {#if covers}
   <div class="covers">
     {#if contacts.length === 0}
-      <span class="list-cover-empty" role="status" aria-label={q ? $t('msg_chats_nothing_found') : $t('msg_contacts_empty')} title={q ? $t('msg_chats_nothing_found') : $t('msg_contacts_empty')}><Icon name="book-user" size={22} /></span>
+      <span class="list-cover-empty" role="status" aria-label={q ? $t('common_nothing_found') : $t('msg_contacts_empty')} title={q ? $t('common_nothing_found') : $t('msg_contacts_empty')}><Icon name="book-user" size={22} /></span>
     {:else}
       <ul class="covers-list">
         {#each contacts as c (c.pubkey)}
@@ -55,7 +55,7 @@
   {#if contacts.length === 0}
     <div class="empty">
       <Icon name="book-user" size={28} />
-      <p>{q ? $t('msg_chats_nothing_found') : $t('msg_contacts_empty')}</p>
+      <p>{q ? $t('common_nothing_found') : $t('msg_contacts_empty')}</p>
       {#if !q}<span>{$t('msg_contacts_text')}</span>{/if}
     </div>
   {:else}
@@ -80,8 +80,8 @@
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-8) var(--sp-4); color: var(--text-3); }
-  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .empty span { font-size: var(--fs-xs); line-height: 1.5; }
+  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-body); }
+  .empty span { font-size: var(--fs-sm); line-height: var(--lh-base); }
   /* The column of covers: the open one lit. */
   .covers { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; padding: var(--sp-1) 0 var(--sp-3); }
   .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }

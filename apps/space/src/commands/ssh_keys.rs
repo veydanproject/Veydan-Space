@@ -72,7 +72,58 @@ const SELECT_KEY: &str = "SELECT k.*, \
 /// Parse a pasted private key, decrypting it when a passphrase is supplied.
 /// Mirrors the parse chain in `ssh::do_authenticate`.
 pub fn parse_imported(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, AppError> {
+    parse_pasted(pem, passphrase).map(|(key, _)| key)
+}
+
+/// `parse_imported` with the text the key was read from: the paste itself, or
+/// it cleaned by `normalize_pem` when only that reads.
+fn parse_pasted(pem: &str, passphrase: Option<&str>) -> Result<(PrivateKey, String), AppError> {
     let pem = pem.trim();
+    match parse_pem(pem, passphrase) {
+        Ok(key) => Ok((key, pem.to_string())),
+        Err(e) => match normalize_pem(pem) {
+            Some(clean) if clean.trim_end() != pem => {
+                let key = parse_pem(&clean, passphrase)?;
+                Ok((key, clean.trim_end().to_string()))
+            }
+            _ => Err(e),
+        },
+    }
+}
+
+/// A pasted key the way `ssh-keygen` writes it, from what a text field or a
+/// chat makes of it: spaces at the ends of the lines, the body in one line or
+/// split by spaces, `\n` written out. The base64 body is wrapped anew (70 for
+/// OpenSSH, 64 for PEM); a legacy PEM with `Proc-Type` headers is left alone.
+pub fn normalize_pem(pem: &str) -> Option<String> {
+    let text = pem.replace("\\r\\n", "\n").replace("\\n", "\n");
+    let begin = text.find("-----BEGIN ")?;
+    let label_end = begin + 11 + text[begin + 11..].find("-----")?;
+    let label = text[begin + 11..label_end].trim();
+    let footer = format!("-----END {label}-----");
+    let body_start = label_end + 5;
+    let body_end = body_start + text[body_start..].find(&footer)?;
+    let body = &text[body_start..body_end];
+    if body.contains(':') {
+        return None;
+    }
+    let b64: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    let width = if label == "OPENSSH PRIVATE KEY" {
+        70
+    } else {
+        64
+    };
+    let mut out = format!("-----BEGIN {label}-----\n");
+    for line in b64.as_bytes().chunks(width) {
+        out.push_str(std::str::from_utf8(line).ok()?);
+        out.push('\n');
+    }
+    out.push_str(&footer);
+    out.push('\n');
+    Some(out)
+}
+
+fn parse_pem(pem: &str, passphrase: Option<&str>) -> Result<PrivateKey, AppError> {
     let pass = passphrase.filter(|p| !p.is_empty());
     if let Ok(key) = PrivateKey::from_openssh(pem) {
         if key.is_encrypted() {
@@ -262,9 +313,10 @@ pub async fn ssh_key_export_private(core: State<'_, Core>, id: String) -> CmdRes
 
 #[tauri::command]
 pub async fn ssh_key_import(core: State<'_, Core>, input: SshKeyImportInput) -> CmdResult<SshKey> {
-    let key = parse_imported(&input.private_key, input.passphrase.as_deref())?;
-    // Store the PEM verbatim as pasted; the passphrase column decrypts it at connect time.
-    let material = derive_material(&key, input.private_key.trim().to_string())?;
+    // Stored as it parsed (cleaned of what the paste added); the passphrase
+    // column decrypts it at connect time.
+    let (key, pem) = parse_pasted(&input.private_key, input.passphrase.as_deref())?;
+    let material = derive_material(&key, pem)?;
     let id = insert_key(
         &core.db,
         &input.name,
@@ -382,5 +434,84 @@ mod tests {
         let pem = key.to_openssh(LineEnding::LF).unwrap().to_string();
         assert!(parse_imported(&pem, Some("left over")).is_ok());
         assert!(parse_imported(&pem, None).is_ok());
+    }
+
+    /// What `ssh-keygen -t ed25519` writes: the real tool when it is here,
+    /// else the same openssh-key-v1 text (70-column base64, LF) from ssh-key.
+    fn keygen_ed25519(pass: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("veydan-keygen-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("id_ed25519");
+        let made = std::process::Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-C", "qa@veydan", "-N", pass, "-f"])
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        let pem = if made {
+            std::fs::read_to_string(&path).unwrap()
+        } else if pass.is_empty() {
+            let mut rng = rand::rng();
+            PrivateKey::from(Ed25519Keypair::random(&mut rng))
+                .to_openssh(LineEnding::LF)
+                .unwrap()
+                .to_string()
+        } else {
+            encrypted_ed25519(pass)
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        pem
+    }
+
+    /// What a text field, a chat or a typing robot makes of a pasted key.
+    fn mangled(pem: &str) -> Vec<(&'static str, String)> {
+        vec![
+            ("as written", pem.to_string()),
+            ("CRLF", pem.replace('\n', "\r\n")),
+            ("spaces at the line ends", pem.replace('\n', " \n")),
+            ("indented lines", pem.replace('\n', "\n    ")),
+            ("lines joined by spaces", pem.replace('\n', " ")),
+            ("one line", pem.replace('\n', "")),
+            ("\\n written out", pem.replace('\n', "\\n")),
+            ("blank lines between", pem.replace('\n', "\n\n")),
+        ]
+    }
+
+    #[test]
+    fn an_ssh_keygen_ed25519_key_imports_however_it_was_pasted() {
+        let pem = keygen_ed25519("");
+        let want = parse_imported(&pem, None)
+            .unwrap()
+            .fingerprint(HashAlg::Sha256);
+        for (how, text) in mangled(&pem) {
+            let (key, stored) = parse_pasted(&text, None).unwrap_or_else(|e| panic!("{how}: {e}"));
+            assert_eq!(key.fingerprint(HashAlg::Sha256), want, "{how}");
+            // What is stored reads again at connect time without the cleanup.
+            assert!(parse_pem(&stored, None).is_ok(), "{how}: stored {stored:?}");
+        }
+    }
+
+    #[test]
+    fn an_ssh_keygen_ed25519_key_with_a_passphrase_imports_however_it_was_pasted() {
+        let pem = keygen_ed25519("correct horse");
+        for (how, text) in mangled(&pem) {
+            let key = parse_imported(&text, Some("correct horse"))
+                .unwrap_or_else(|e| panic!("{how}: {e}"));
+            assert!(!key.is_encrypted(), "{how}");
+            let err = parse_imported(&text, None).unwrap_err().to_string();
+            assert!(err.contains(ERR_KEY_ENCRYPTED), "{how}: {err}");
+            let err = parse_imported(&text, Some("wrong"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains(ERR_KEY_WRONG_PASSPHRASE), "{how}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_broken_key_still_says_it_does_not_read() {
+        let pem = keygen_ed25519("");
+        let cut = pem.replacen("AAAA", "", 1);
+        let err = parse_imported(&cut, None).unwrap_err().to_string();
+        assert!(err.contains("Failed to parse private key"), "{err}");
+        assert!(normalize_pem("not a key").is_none());
     }
 }

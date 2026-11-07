@@ -34,7 +34,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 /// The prefix of the subscription ids of the channels of a community.
 pub const CHANNEL_SUB_PREFIX: &str = "channel:";
@@ -94,6 +94,61 @@ impl Sink {
         match self {
             Sink::Stream(tx) => tx.send(raw).await.is_ok(),
             Sink::Channels(tx) => tx.send(raw).is_ok(),
+        }
+    }
+}
+
+/// The words a relay starts a refusal of this device with
+/// (internal/messenger-wire.md, «Режимы доступа сервера»): not a member, or
+/// not signed in. `rate-limited:` is no refusal: the device is let in,
+/// only slower.
+pub const DENIAL_PREFIXES: [&str; 2] = ["restricted:", "auth-required:"];
+
+/// Whether what a relay said (`CLOSED`, `OK false`) refuses this device.
+pub fn is_denial(message: &str) -> bool {
+    let m = message.trim_start();
+    DENIAL_PREFIXES.iter().any(|p| m.starts_with(p))
+}
+
+/// How many signals of access wait for a slow reader before the oldest go.
+const ACCESS_SIGNALS: usize = 64;
+
+/// What a relay of a private server said of this device's access.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccessVerdict {
+    /// A `CLOSED` or an `OK false` that refuses it (`is_denial`): the
+    /// relay's words.
+    Denied(String),
+    /// An `OK true`: the relay took an event of mine.
+    Written,
+    /// An `EOSE`: the relay answered a request of mine.
+    Read,
+}
+
+/// The access verdict of relay `relay_url` of private server `server_id`.
+/// Told when it changes, not for every message: one refusal again, or
+/// every `OK true` of a relay that took the last one too, is not told.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RelayAccess {
+    pub relay_url: RelayUrl,
+    pub server_id: String,
+    pub verdict: AccessVerdict,
+}
+
+/// What the forwarder told last of each relay, so that it tells changes.
+#[derive(Default)]
+struct AccessTold {
+    last: HashMap<String, AccessVerdict>,
+}
+
+impl AccessTold {
+    /// Whether `verdict` of `relay` is news: another refusal, a write after
+    /// anything else, a read after a refusal or nothing.
+    fn news(&self, relay: &str, verdict: &AccessVerdict) -> bool {
+        match (self.last.get(relay), verdict) {
+            (Some(last), v) if last == v => false,
+            (Some(AccessVerdict::Written), AccessVerdict::Read) => false,
+            _ => true,
         }
     }
 }
@@ -158,7 +213,10 @@ pub struct RelayPool {
     rx: Mutex<Option<mpsc::Receiver<RawEvent>>>,
     /// Configured relays, each with its server; nostr-sdk keeps the live
     /// set. What a scope reaches is read from here (`members`).
-    configured: Mutex<Vec<RelayConfig>>,
+    configured: Arc<Mutex<Vec<RelayConfig>>>,
+    /// What the relays of private servers say of this device's access
+    /// (`access_signals`).
+    access: broadcast::Sender<RelayAccess>,
     /// The websockets open now, whichever way they went.
     sockets: Arc<crate::ws::Sockets>,
 }
@@ -189,7 +247,8 @@ impl RelayPool {
             silent: AtomicBool::new(false),
             tx,
             rx: Mutex::new(Some(rx)),
-            configured: Mutex::new(Vec::new()),
+            configured: Arc::default(),
+            access: broadcast::channel(ACCESS_SIGNALS).0,
             sockets,
         };
         pool.spawn_forwarder();
@@ -203,13 +262,52 @@ impl RelayPool {
     /// never reach the ingress — the copy of a group's own server after
     /// one by a wrong relay was dropped, the history of a private server
     /// put in again. The ingress dedups (`msg_events_raw`).
+    ///
+    /// What a relay of a private server says of this device's access (a
+    /// `CLOSED` or an `OK false` that refuses it, an `OK true`, an `EOSE`)
+    /// goes to `access_signals`, when it changed: only relays of private
+    /// servers, only these messages, so the home set costs nothing.
     fn spawn_forwarder(&self) {
         let mut stream = self.client.notifications();
         let tx = self.tx.clone();
+        let configured = self.configured.clone();
+        let access = self.access.clone();
         tokio::spawn(async move {
+            let mut told = AccessTold::default();
             while let Some(n) = stream.next().await {
                 match n {
                     ClientNotification::Message { relay_url, message } => {
+                        let verdict = match &*message {
+                            RelayMessage::Ok { status: true, .. } => Some(AccessVerdict::Written),
+                            RelayMessage::Ok { status: false, message, .. } | RelayMessage::Closed { message, .. }
+                                if is_denial(message) =>
+                            {
+                                Some(AccessVerdict::Denied(message.to_string()))
+                            }
+                            RelayMessage::EndOfStoredEvents(_) => Some(AccessVerdict::Read),
+                            _ => None,
+                        };
+                        if let Some(verdict) = verdict {
+                            let url = to_core_url(&relay_url);
+                            let server = configured
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|c| c.url == url)
+                                .and_then(|c| c.server_id.clone());
+                            if let Some(server_id) = server {
+                                if told.news(url.as_str(), &verdict) {
+                                    let key = url.as_str().to_string();
+                                    let signal = RelayAccess { relay_url: url, server_id, verdict: verdict.clone() };
+                                    // Nobody listens (no session): the
+                                    // change is told to the next one.
+                                    if access.send(signal).is_ok() {
+                                        told.last.insert(key, verdict);
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         let RelayMessage::Event { event, subscription_id } = *message else { continue };
                         let Some(raw) = to_raw(&event, EventSource::Relay { url: to_core_url(&relay_url) }) else {
                             continue;
@@ -342,6 +440,25 @@ impl RelayPool {
     /// `nostr-sdk`, which a terminate it has not yet seen leaves stuck.
     pub fn reopen(&self) {
         self.sockets.close_all();
+    }
+
+    /// What the relays of private servers say of this device's access, as
+    /// it changes (`RelayAccess`). Each call is a reader of its own.
+    pub fn access_signals(&self) -> broadcast::Receiver<RelayAccess> {
+        self.access.subscribe()
+    }
+
+    /// Closes the connections to the relays of private server `server_id`:
+    /// `nostr-sdk` makes them anew and signs in again, so a connection
+    /// signed in before this device was made a member there (a join)
+    /// becomes a member's. The subscriptions it still holds are sent again
+    /// on the new one. How many were closed.
+    pub fn reopen_server(&self, server_id: &str) -> usize {
+        self.configured()
+            .iter()
+            .filter(|c| c.server_id.as_deref() == Some(server_id))
+            .map(|c| self.sockets.close_of(c.url.as_str()))
+            .sum()
     }
 
     pub fn is_silent(&self) -> bool {
@@ -1362,5 +1479,107 @@ mod tests {
         let mut ev = signed_note(&keys, "a");
         ev.json["content"] = serde_json::Value::String("b".into());
         assert!(RelayPool::parse_event(&ev.json).is_err());
+    }
+
+    /// A relay of a team server played by a local relay: while `member` is
+    /// off it refuses my requests and my events as vguard does.
+    #[derive(Debug)]
+    struct Team {
+        member: Arc<AtomicBool>,
+    }
+
+    const NOT_A_MEMBER: &str = "not a member of this server";
+
+    impl nostr_sdk::local_relay::WritePolicy for Team {
+        fn admit_event<'a>(
+            &'a self,
+            _: &'a Event,
+            _: &'a std::net::SocketAddr,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = nostr_sdk::local_relay::WritePolicyResult> + Send + 'a>> {
+            use nostr_sdk::local_relay::WritePolicyResult;
+            let member = self.member.load(Ordering::SeqCst);
+            Box::pin(async move {
+                if member {
+                    WritePolicyResult::Accept
+                } else {
+                    WritePolicyResult::reject(nostr::message::MachineReadablePrefix::Restricted, NOT_A_MEMBER)
+                }
+            })
+        }
+    }
+
+    impl nostr_sdk::local_relay::QueryPolicy for Team {
+        fn admit_query<'a>(
+            &'a self,
+            _: &'a mut Filter,
+            _: &'a std::net::SocketAddr,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = nostr_sdk::local_relay::QueryPolicyResult> + Send + 'a>> {
+            use nostr_sdk::local_relay::QueryPolicyResult;
+            let member = self.member.load(Ordering::SeqCst);
+            Box::pin(async move {
+                if member {
+                    QueryPolicyResult::Accept
+                } else {
+                    QueryPolicyResult::reject(nostr::message::MachineReadablePrefix::Restricted, NOT_A_MEMBER)
+                }
+            })
+        }
+    }
+
+    async fn next_access(rx: &mut broadcast::Receiver<RelayAccess>) -> RelayAccess {
+        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.expect("a signal of access").unwrap()
+    }
+
+    /// A refusal of a relay of a private server is told once, with its
+    /// words; an event it takes later is told too; a home relay that
+    /// refuses tells nothing; and a reopen makes the server's connection
+    /// anew.
+    #[tokio::test]
+    async fn the_refusal_of_a_relay_of_a_private_server_is_told() {
+        assert!(is_denial("restricted: not a member of this server; ask its admin for an invite"));
+        assert!(is_denial("auth-required: this server is for its members"));
+        assert!(!is_denial("rate-limited: slow down"));
+        assert!(!is_denial("blocked: spam") && !is_denial("duplicate: have it"));
+
+        let member = Arc::new(AtomicBool::new(false));
+        let team = LocalRelay::builder()
+            .write_policy(Team { member: member.clone() })
+            .query_policy(Team { member: member.clone() })
+            .build();
+        team.run().await.unwrap();
+        let team_url = RelayUrl::parse(team.url().await.as_str_without_trailing_slash()).unwrap();
+        let home_refuses = LocalRelay::builder()
+            .write_policy(Team { member: Arc::new(AtomicBool::new(false)) })
+            .build();
+        home_refuses.run().await.unwrap();
+        let home_url = RelayUrl::parse(home_refuses.url().await.as_str_without_trailing_slash()).unwrap();
+
+        let keys = Keys::generate();
+        let pool = connected_pool(Some(keys.clone()), vec![home(&home_url), of_server(&team_url, "s1")]).await;
+        let mut signals = pool.access_signals();
+
+        let filter = CoreFilter(serde_json::json!({ "kinds": [1], "limit": 1 }));
+        pool.send(Outbound::Subscribe { id: SubId("dm-live@s1".into()), filter, scope: server("s1") }).await.unwrap();
+        let said = next_access(&mut signals).await;
+        assert_eq!(said.server_id, "s1");
+        assert_eq!(said.relay_url, team_url);
+        assert_eq!(said.verdict, AccessVerdict::Denied(format!("restricted: {NOT_A_MEMBER}")));
+        // The same refusal of an event is no news; the home relay's is none.
+        let _ = pool.send(Outbound::PublishScoped { scope: server("s1"), event: signed_note(&keys, "x") }).await;
+        let _ = pool.send(Outbound::PublishOwn { event: signed_note(&keys, "home") }).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), signals.recv()).await.is_err(),
+            "nothing more told"
+        );
+
+        member.store(true, Ordering::SeqCst);
+        let ack = pool.send(Outbound::PublishScoped { scope: server("s1"), event: signed_note(&keys, "y") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![team_url.clone()]);
+        assert_eq!(next_access(&mut signals).await.verdict, AccessVerdict::Written);
+
+        assert_eq!(pool.reopen_server("s1"), 1, "the server's one connection");
+        assert_eq!(pool.reopen_server("nobody"), 0);
+        assert!(wait_connected(&pool, 10).await, "made anew");
+        pool.shutdown().await;
     }
 }

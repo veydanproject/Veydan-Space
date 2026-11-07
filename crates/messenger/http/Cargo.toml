@@ -17,6 +17,13 @@ reqwest.workspace = true
 rustls.workspace = true
 webpki-roots.workspace = true
 tokio = { workspace = true, features = ["sync", "macros", "net"] }
+# NIP-98: how a request to a server of the user proves who is asking.
+nostr.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 messenger-vlink = { workspace = true, features = ["testing"] }

@@ -26,6 +26,7 @@
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let { search = '', onleave }: { search?: string; onleave?: () => void } = $props();
 
@@ -168,14 +169,14 @@
   <StateView tone="ok" title={$t('cloud_web_approved_title')}>
     <p>{$t('cloud_web_approved_text', { host: CABINET_HOST })}</p>
     {#snippet actions()}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('cloud_done')}</button></Actions>
+      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('common_done')}</button></Actions>
     {/snippet}
   </StateView>
 {:else if phase === 'denied'}
   <StateView tone="warn" title={$t('cloud_web_denied_title')}>
     <p>{frozenUntil ? $t('cloud_web_denied_frozen', { date: dateOf(frozenUntil, $locale) }) : $t('cloud_web_denied')}</p>
     {#snippet actions()}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('cloud_done')}</button></Actions>
+      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('common_done')}</button></Actions>
     {/snippet}
   </StateView>
 {:else if phase === 'over'}
@@ -199,9 +200,9 @@
     {:else}
       <p class="text">{$t('cloud_web_by_code')}</p>
     {/if}
-    {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <Actions>
-      <button class="btn btn-ghost danger" type="button" disabled={phase === 'sending' || webStore.busy} onclick={deny}>{$t('cloud_web_not_me')}</button>
+      <button class="btn btn-danger-soft" type="button" disabled={phase === 'sending' || webStore.busy} onclick={deny}>{$t('cloud_web_not_me')}</button>
       {#if !byCode}
         <button class="btn btn-primary" type="button" disabled={phase === 'sending' || webStore.busy} onclick={approve}>
           {phase === 'sending' ? $t('cloud_web_signing_in') : $t('cloud_web_sign_in')}
@@ -219,7 +220,7 @@
   {:else}
     {#if isMobile}
       <button class="m-btn-grad" type="button" onclick={() => { error = ''; scanning = true; }}>
-        <Icon name="qr-code" size={18} />{$t('cloud_web_scan')}
+        <Icon name="scan" size={18} />{$t('cloud_web_scan')}
       </button>
     {:else}
       <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={picked} />
@@ -244,7 +245,7 @@
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-1); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
   .or { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-3); font-size: var(--fs-sm); }
   .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--border-2); }
@@ -258,5 +259,4 @@
   .origin { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--sp-3); border-radius: var(--radius); background: var(--surface-2); }
   .place { font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text); }
   .browser { font-size: var(--fs-md); color: var(--text-2); }
-  .danger { color: var(--danger-text); }
 </style>

@@ -14,7 +14,7 @@
   import { t, locale } from '$lib/core/i18n';
   import Actions from '$lib/cloud/Actions.svelte';
   import Avatar from '$lib/cloud/Avatar.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
   import { timeLeft } from '$lib/cloud/link.svelte';
   import { helpInputOf, HelpStore, shortKey, socialErrorKey } from '$lib/cloud/social.svelte';
@@ -63,15 +63,15 @@
   <StateView tone="ok" title={$t('cloud_help_sent_title')}>
     <p>{$t('cloud_help_sent_text')}</p>
     {#snippet actions()}
-      <Actions><a class="btn btn-primary" href="/cloud" onclick={done}>{$t('cloud_done')}</a></Actions>
+      <Actions><a class="btn btn-primary" href="/cloud" onclick={done}>{$t('common_done')}</a></Actions>
     {/snippet}
   </StateView>
 {:else if store.phase === 'closed'}
-  <StateView tone="info" icon="shield" title={$t('cloud_help_dismissed_title')}>
+  <StateView tone="info" icon="heart" title={$t('cloud_help_dismissed_title')}>
     <p>{$t('cloud_help_dismissed')}</p>
     {#snippet actions()}
       <Actions>
-        <a class="btn btn-ghost" href="/cloud" onclick={done}>{$t('cloud_done')}</a>
+        <a class="btn btn-ghost" href="/cloud" onclick={done}>{$t('common_done')}</a>
         <button class="btn btn-primary" type="button" onclick={() => { input = ''; store.reset(); }}>{$t('cloud_help_another')}</button>
       </Actions>
     {/snippet}
@@ -106,7 +106,7 @@
       <span>{$t('cloud_help_checkbox')}</span>
     </label>
   {/if}
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
   <Actions>
     <button class="btn btn-ghost" type="button" disabled={store.phase === 'sending'} onclick={() => store.close()}>{$t('cloud_help_not_them')}</button>
     {#if view.can_confirm}
@@ -133,7 +133,7 @@
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .text.small { font-size: var(--fs-sm); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
   input::placeholder { font-family: var(--font-ui); }
@@ -145,14 +145,14 @@
   .code {
     margin: 0; padding: var(--sp-4); text-align: center; border-radius: var(--radius-md);
     background: var(--accent-tint); border: 1px solid var(--accent-tint-border); color: var(--text);
-    font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: 0.06em; white-space: nowrap;
+    font-size: var(--fs-xl); font-weight: var(--fw-bold); white-space: nowrap;
     user-select: text; -webkit-user-select: text;
   }
   /* The promise of a talk by voice is the one thing that guards the friend: a row of its own, not a small print. */
   .pledge {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); cursor: pointer;
     border-radius: var(--radius-md); border: 1px solid var(--border-2); background: var(--surface-2);
-    font-size: var(--fs-base); line-height: 1.45; color: var(--text);
+    font-size: var(--fs-base); line-height: var(--lh-snug); color: var(--text);
   }
   .pledge.on { border-color: var(--accent-border); background: var(--accent-tint); }
   .pledge input { margin-top: 2px; }

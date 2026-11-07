@@ -88,6 +88,9 @@
 <Frame bind:open title={$t('totp_title')}>
   {#snippet actions()}
     <span class="count-badge">{filteredEntries.length}</span>
+    <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
+      <Icon name="plus" size={18} />
+    </button>
   {/snippet}
 
   {#snippet subheader()}
@@ -133,16 +136,10 @@
       {#if totpStore.loading && !totpStore.loaded}
         <div class="loading-msg">{$t('loading')}</div>
       {:else}
-        <!-- No add button in the empty list: the footer has it. -->
+        <!-- No add button in the empty list: the head has it. -->
         <TotpList entries={filteredEntries} showProfileBadge={true} query={search.trim()} />
       {/if}
 
-  {#snippet footer()}
-    <button class="btn-primary" onclick={() => (showAdd = true)}>
-      <Icon name="plus" size={13} />
-      {$t('totp_btn_add')}
-    </button>
-  {/snippet}
 </Frame>
 
 {#if showAdd}
@@ -157,8 +154,8 @@
     background: var(--accent-tint);
     color: var(--accent-text-2);
     border: 1px solid var(--accent-tint-border);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-2xs);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     padding: 0.05rem 0.4rem;
     font-weight: var(--fw-semibold);
@@ -175,7 +172,7 @@
 
   .search-icon {
     position: absolute;
-    left: 0.6rem;
+    left: 0.85rem;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-2);
@@ -186,10 +183,11 @@
   .search-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 0.45rem 0.6rem 0.45rem var(--sp-8);
+    height: var(--control-h);
+    padding: 0 0.6rem 0 var(--sp-8);
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-pill);
     color: var(--text);
     font-size: var(--fs-sm);
   }
@@ -244,26 +242,4 @@
     color: var(--text-2);
     font-size: var(--fs-sm);
   }
-
-
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    background: var(--accent-grad);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius-field);
-    height: 42px;
-    padding: 0 var(--sp-4);
-    font-size: var(--fs-base);
-    font-weight: var(--fw-semibold);
-    box-shadow: var(--shadow-accent);
-    cursor: pointer;
-    width: 100%;
-    justify-content: center;
-    transition: filter var(--dur-fast);
-  }
-
-  .btn-primary:hover { filter: brightness(1.08); }
 </style>

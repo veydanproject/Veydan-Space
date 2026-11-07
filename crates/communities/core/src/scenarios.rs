@@ -2522,7 +2522,9 @@ async fn a_voice_message_and_a_circle_go_as_a_post_and_as_a_readers_comment() {
     let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
     let outgoing = dir.path().join("outgoing");
     let voice: Vec<u8> = (0..40_000u32).map(|i| (i % 199) as u8).collect();
-    let circle: Vec<u8> = (0..90_000u32).map(|i| (i % 211) as u8).collect();
+    // A WebM of Chrome's recorder: its video says it has alpha (the last byte of the head) and has none.
+    let alpha_head = [0x18, 0x53, 0x80, 0x67, 0x91, 0x16, 0x54, 0xAE, 0x6B, 0x8C, 0xAE, 0x8A, 0xE0, 0x88, 0xB0, 0x82, 0x01, 0xE0, 0x53, 0xC0, 0x81, 0x01];
+    let circle: Vec<u8> = alpha_head.iter().copied().chain((0..90_000u32).map(|i| (i % 211) as u8)).collect();
     let rec = |kind: &str, mime: &str, bytes: &[u8], ms: u64, wave: Option<Vec<u8>>| NewRecording {
         kind: kind.into(),
         mime: mime.into(),
@@ -2570,6 +2572,13 @@ async fn a_voice_message_and_a_circle_go_as_a_post_and_as_a_readers_comment() {
     assert_eq!(std::fs::read(got).unwrap_or_default(), circle);
     let playable = owner.svc.media_playable(&cid, &circle_comment, out.path()).await.unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(playable.map(|(_, m)| m), Some("video/webm".to_string()));
+    // Shown on Linux: the mark goes as 0 to the page, the file stays as it came.
+    let shown = owner.svc.media_data_url(&cid, &circle_comment, out.path()).await.unwrap_or_else(|e| panic!("{e}")).unwrap_or_default();
+    let shown = B64.decode(shown.strip_prefix("data:video/webm;base64,").unwrap_or_else(|| panic!("a WebM"))).unwrap_or_else(|e| panic!("{e}"));
+    let mut cleared = circle.clone();
+    cleared[alpha_head.len() - 1] = 0;
+    assert!(shown == cleared, "only the mark is put to 0");
+    assert_eq!(std::fs::read(owner.svc.media_playable(&cid, &circle_comment, out.path()).await.ok().flatten().unwrap_or_else(|| panic!("here")).0).unwrap_or_default(), circle);
 
     // A reader records a comment, not a post; a reader's picked file is refused; so is what a chat refuses.
     assert!(send(&reader, rec("voice", "audio/webm", &voice, 1_000, None), RecordingPlace::default()).await.is_err(), "a reader's post");

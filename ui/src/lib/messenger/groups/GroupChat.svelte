@@ -11,6 +11,7 @@
   import { locale, localeTag, t } from '$lib/core/i18n';
   import { membersKey } from '../i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import type { MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import ChatWindow from '../dm/ChatWindow.svelte';
   import GroupInfo from './GroupInfo.svelte';
@@ -113,7 +114,7 @@
   }
 
   async function spam(m: MessengerMessage) {
-    if (!(await confirmStore.ask($t('msg_mod_spam_confirm', { names: author(m.sender_pubkey) }), $t('msg_mod_spam'), true))) return;
+    if (!(await confirmStore.ask($t('msg_mod_spam_confirm', { names: author(m.sender_pubkey) }), $t('msg_mod_spam'), true, 'ban'))) return;
     await decide({ t: 'spam', author: m.sender_pubkey, target: m.id });
   }
 
@@ -132,16 +133,16 @@
     if (!hasModeration(group) || m.direction === 'out' || m.content_type === 'system') return list;
     // The moderator's group under its title (mockups c8.js); the verdict a pair of buttons.
     if (m.review === 'pending' && canApprove(group)) {
-      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield' });
+      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield-check' });
       list.push({ type: 'pair', items: [
         { label: $t('msg_mod_approve'), icon: 'check', onselect: () => decide({ t: 'approve', target: m.id, version: m.version ?? m.id }) },
         { label: $t('msg_mod_reject'), icon: 'x', onselect: () => decide({ t: 'reject', target: m.id }) },
       ] });
       if (canSpam(group, m.sender_pubkey)) list.push({ label: $t('msg_mod_spam'), icon: 'ban', danger: true, onselect: () => spam(m) });
     } else if (canHide(group, m.sender_pubkey)) {
-      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield' });
+      list.push({ type: 'heading', label: $t('msg_mod_title'), icon: 'shield-check' });
       list.push({ label: $t('msg_mod_hide'), icon: 'eye-off', onselect: () => decide({ t: 'hide', targets: [m.id] }) });
-      list.push({ label: $t('msg_mod_hide_author'), icon: 'eye-off', onselect: () => { hiding = { open: true, author: m.sender_pubkey, span: 'hour' }; } });
+      list.push({ label: $t('msg_mod_hide_author'), icon: 'user-off', onselect: () => { hiding = { open: true, author: m.sender_pubkey, span: 'hour' }; } });
     }
     return list;
   }
@@ -164,7 +165,7 @@
   const mutedText = $derived.by(() => {
     if (!group?.muted) return null;
     const until = me?.muted_until ? when(me.muted_until) : null;
-    return until ? $t('msg_mod_you_muted_until', { time: until }) : $t('msg_group_you_are_muted');
+    return until ? $t('msg_mod_you_muted_until', { time: until }) : $t('msg_err_group_muted');
   });
 
   const closedText = $derived.by(() => {
@@ -193,12 +194,12 @@
   });
 
   async function leave() {
-    if (!(await confirmStore.ask($t('msg_group_leave_confirm', { name: view.title }), $t('msg_group_leave'), true))) return;
+    if (!(await confirmStore.ask($t('msg_group_leave_confirm', { name: view.title }), $t('msg_group_leave'), true, 'logout'))) return;
     await run(() => groupStore.act(groupId, { op: 'leave' }));
   }
 
   async function forget() {
-    if (!(await confirmStore.ask($t('msg_group_forget_confirm', { name: view.title }), $t('msg_group_forget'), true))) return;
+    if (!(await confirmStore.ask($t('msg_group_forget_confirm', { name: view.title }), $t('msg_group_forget'), true, 'trash-2'))) return;
     await run(async () => {
       await groupStore.forget(groupId);
       chatStore.close();
@@ -219,8 +220,8 @@
 
   const entries = $derived.by((): MenuEntry[] => {
     const list: MenuEntry[] = [];
-    if (waitingQueue > 0) list.push({ label: $t('msg_mod_tab_queue'), badge: String(waitingQueue), icon: 'shield', onselect: () => openModeration('queue') });
-    if (waitingAsks > 0) list.push({ label: $t('msg_group_requests'), badge: String(waitingAsks), icon: 'user-plus', onselect: () => openModeration('requests') });
+    if (waitingQueue > 0) list.push({ label: $t('msg_mod_tab_queue'), badge: String(waitingQueue), icon: 'shield-check', onselect: () => openModeration('queue') });
+    if (waitingAsks > 0) list.push({ label: $t('msg_group_requests'), badge: String(waitingAsks), icon: 'user-question', onselect: () => openModeration('requests') });
     if (list.length) list.push({ type: 'separator' });
     if (phone && callButton?.canStart()) {
       const blocked = !!callButton.startBlocked();
@@ -233,12 +234,12 @@
     list.push({ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } });
     if (seesModeration(group)) {
       const tab: ModerationTab = answersRequests(group) && group.requests.length ? 'requests' : hasModeration(group) ? 'queue' : 'requests';
-      list.push({ label: $t('msg_mod_title'), icon: 'shield', onselect: () => openModeration(tab) });
+      list.push({ label: $t('msg_mod_title'), icon: 'shield-check', onselect: () => openModeration(tab) });
     }
     // A closed group is not reported again: the network has already acted.
     if (group && !banned) list.push({ label: $t('msg_report_group'), icon: 'alert-triangle', danger: true,
       onselect: () => reportStore.open({ target: 'group', accused: '', name: view.title, context: { t: 'group', group_id: groupId }, canBlock: false }) });
-    if (group?.membership === 'joined' && group.my_role !== 'owner') list.push({ label: $t('msg_group_leave'), icon: 'x', danger: true, onselect: leave });
+    if (group?.membership === 'joined' && group.my_role !== 'owner') list.push({ label: $t('msg_group_leave'), icon: 'logout', danger: true, onselect: leave });
     if (group && group.membership !== 'joined') list.push({ label: $t('msg_group_forget'), icon: 'trash-2', danger: true, onselect: forget });
     return list;
   });
@@ -263,21 +264,21 @@
 {/snippet}
 
 {#snippet banner()}
-  {#if banned}<div class="strip warn" role="status"><Icon name="alert-triangle" size={13} />{$t('msg_group_removed')}</div>{/if}
+  {#if banned}<div class="strip"><Notice tone="warn" role="status">{$t('msg_group_removed')}</Notice></div>{/if}
   {#if membership === 'joined'}<GroupCallBanner {groupId} />{/if}
   {#if group && group.undecrypted > 0 && membership === 'joined'}
-    <div class="strip info"><Icon name="key" size={13} />{$t('msg_group_undecrypted', { n: String(group.undecrypted) })}</div>
+    <div class="strip"><Notice tone="info" icon="key">{$t('msg_group_undecrypted', { n: String(group.undecrypted) })}</Notice></div>
   {/if}
   {#if group?.needs_update && membership === 'joined'}
-    <div class="strip warn"><Icon name="download" size={13} />{$t('msg_mod_needs_update')}</div>
+    <div class="strip"><Notice tone="warn" icon="download">{$t('msg_mod_needs_update')}</Notice></div>
   {/if}
   {#if mutedText && membership === 'joined'}
-    <div class="strip warn"><Icon name="bell-off" size={13} />{mutedText}</div>
+    <div class="strip"><Notice tone="warn" icon="message-circle-off">{mutedText}</Notice></div>
   {/if}
   {#if zoneText}
-    <div class="strip warn"><Icon name="clock" size={13} />{$t('msg_mod_schedule_tz_unknown', { tz: zoneText })}</div>
+    <div class="strip"><Notice tone="warn" icon="clock">{$t('msg_mod_schedule_tz_unknown', { tz: zoneText })}</Notice></div>
   {/if}
-  {#if error}<div class="strip danger">{error}</div>{/if}
+  {#if error}<div class="strip"><Notice tone="danger">{error}</Notice></div>{/if}
 {/snippet}
 
 {#snippet footer()}
@@ -296,7 +297,7 @@
       <span class="mine" title={group.request_note}>{$t('msg_group_request_mine', { note: group.request_note })}</span>
     {/if}
     {#if membership !== 'joined' && membership !== 'joining'}
-      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={forget}>{$t('msg_group_forget')}</button>
+      <button class="btn btn-ghost" disabled={busy} onclick={forget}>{$t('msg_group_forget')}</button>
     {/if}
   </div>
 {/snippet}
@@ -319,10 +320,8 @@
 <style>
   /* Inline, not a flex box: in a narrow head (a phone) the line ellipsizes instead of turning into «…». */
   .sub-line :global(svg) { vertical-align: middle; }
-  .strip { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-4); font-size: var(--fs-xs); border-bottom: 1px solid var(--border); }
-  .strip.info { color: var(--text-2); background: var(--surface-2); }
-  .strip.warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-border); }
-  .strip.danger { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
+  /* The plates over the feed (core/ui/Notice), as in a chat (RelationBanner). */
+  .strip { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
   .closed {
     display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3);
     border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-2);

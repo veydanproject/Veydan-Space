@@ -10,6 +10,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
@@ -80,24 +81,24 @@
         </li>
       {/each}
     </ul>
-    {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('chan_cancel')}</button>
-    <button type="button" class="btn btn-primary" disabled={busy} onclick={save}>{$t('chan_save')}</button>
+    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
+    <button type="button" class="btn btn-primary" disabled={busy} onclick={save}>{$t('common_save')}</button>
   {/snippet}
 </Dialog>
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .levels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .check { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 6px 4px; border-radius: var(--radius-sm); cursor: pointer; user-select: none; }
   .check:hover { background: var(--surface-row-hover); }
   .check input { margin-top: 3px; flex-shrink: 0; }
   .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); }
-  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); }
+  .tag { font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
   @media (pointer: coarse) { .check { padding: 10px 4px; } }
 </style>

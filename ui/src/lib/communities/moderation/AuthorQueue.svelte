@@ -15,6 +15,7 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { Avatar, MessageContent, listStamp, myKey, stamp } from '$lib/messenger/seams/shared';
   import { nameStore } from '../names.svelte';
   import { channelStore } from '../channelStore.svelte';
@@ -98,7 +99,7 @@
   <button class="btn btn-ghost btn-sm" onclick={onback}><Icon name="list" size={13} />{$t('chan_mod_queue_all')}</button>
 </div>
 
-{#if error}<div class="error-msg">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if items.length}
   <div class="bulk">
@@ -155,23 +156,22 @@
   .acts .spam { flex: 0 0 auto; color: var(--danger-text); padding-inline: var(--sp-3); }
   @container (max-width: 360px) {
     .acts { gap: 6px; }
-    .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: 1.25; }
+    .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: var(--lh-tight); }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .msg { display: flex; gap: var(--sp-2); padding: 10px 4px; align-items: flex-start; }
   .tick { margin-top: 3px; flex-shrink: 0; }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .when { font-size: var(--fs-2xs); color: var(--text-3); }
+  .when { font-size: var(--fs-xs); color: var(--text-3); }
   .text { font-size: var(--fs-sm); color: var(--text-body); overflow-wrap: anywhere; }
   .row-acts { display: flex; gap: 2px; flex-shrink: 0; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 8px; border-radius: var(--radius-sm); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
   .icon.ok { color: var(--success-text, var(--success)); }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) {
-    .icon { padding: 11px; }
     .acts .btn { min-height: 44px; }
   }
 </style>

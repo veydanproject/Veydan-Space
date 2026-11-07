@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import '../shared/emoji/font.css';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
@@ -30,7 +31,6 @@
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import SettingsView from './SettingsView.svelte';
   import { SETTINGS_TABS, SETTINGS_ICONS, settingsUi } from './settingsTab.svelte';
-  import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
   import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
   import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
@@ -46,7 +46,6 @@
   import CallDetails from '../calls/CallDetails.svelte';
   import NewCallDialog from '../calls/NewCallDialog.svelte';
   import Dialer from '../calls/Dialer.svelte';
-  import CallIcon from '../calls/CallIcon.svelte';
   import { callLog } from '../calls/callLog.svelte';
   import { chatSections } from '../seams/sections.svelte';
   import PaneResizer from '$lib/core/ui/PaneResizer.svelte';
@@ -219,7 +218,7 @@
 <!-- The head of the covers: the head's own new, and the search (it widens the column). -->
 {#snippet coversTop(add: () => void, addTitle: string, addIcon: string, search: string, searching: boolean)}
   <div class="covers-top">
-    <button class="icon accent" onclick={add} title={addTitle} aria-label={addTitle}><Icon name={addIcon} size={18} /></button>
+    <button class="icon-btn create" onclick={add} title={addTitle} aria-label={addTitle}><Icon name={addIcon} size={18} /></button>
     <button class="icon" class:active={searching} onclick={openSearch} title={search} aria-label={search}><Icon name="search" size={18} /></button>
   </div>
 {/snippet}
@@ -234,9 +233,9 @@
 {#if !s}
   <div class="page"><div class="skel"><Skeleton height={64} size={44} trailing /></div></div>
 {:else if !s.compiled}
-  <div class="page"><div class="error-msg">{$t('msg_status_not_compiled')}</div></div>
+  <div class="page"><Notice tone="danger">{$t('msg_status_not_compiled')}</Notice></div>
 {:else if s.error}
-  <div class="page"><div class="error-msg">{$t('msg_status_error', { error: s.error })}</div></div>
+  <div class="page"><Notice tone="danger">{$t('msg_status_error', { error: s.error })}</Notice></div>
 {:else if messengerStore.needsOnboarding}
   <div class="page">
     <div class="page-header">
@@ -308,7 +307,7 @@
           <span class="spacer"></span>
           <ScanQrButton icon disabled={!s.runtime?.session_active} />
           <MyQrButton icon disabled={!s.runtime?.session_active} />
-          <button class="icon accent" onclick={() => (addingContact = true)} title={$t('msg_contacts_new')}><Icon name="user-plus" size={16} /></button>
+          <button class="icon-btn create" onclick={() => (addingContact = true)} title={$t('msg_contacts_new')}><Icon name="user-plus" size={18} /></button>
         </div>
         <div class="search">
           <Icon name="search" size={16} />
@@ -323,13 +322,13 @@
         {#if covers}
           <!-- The journal has no search: the new call alone. -->
           <div class="covers-top">
-            <button class="icon accent" onclick={() => (newCall = true)} title={$t('msg_calls_new')} aria-label={$t('msg_calls_new')}><CallIcon name="phone" size={18} /></button>
+            <button class="icon-btn create" onclick={() => (newCall = true)} title={$t('msg_calls_new')} aria-label={$t('msg_calls_new')}><Icon name="phone-plus" size={18} /></button>
           </div>
         {:else}
         <div class="rail-head">
           <span class="rail-title">{$t('msg_nav_calls')}</span>
           <span class="spacer"></span>
-          <button class="icon accent" onclick={() => (newCall = true)} title={$t('msg_calls_new')}><CallIcon name="phone" size={17} /></button>
+          <button class="icon-btn create" onclick={() => (newCall = true)} title={$t('msg_calls_new')}><Icon name="phone-plus" size={18} /></button>
         </div>
         {/if}
         <CallHistory {covers} selected={callChat ? callRow : null} onselect={(r) => { callChat = r.head.chat_id; callRow = r.key; }} onchat={writeTo} onnew={() => (newCall = true)} />
@@ -344,7 +343,7 @@
         <div class="rail-head">
           <span class="rail-title">{$t(host.title)}</span>
           <span class="spacer"></span>
-          <button class="icon accent" onclick={() => (creating[host.id] = true)} title={$t(host.newTitle)}><Icon name={host.newIcon} size={16} /></button>
+          <button class="icon-btn create" onclick={() => (creating[host.id] = true)} title={$t(host.newTitle)}><Icon name={host.newIcon} size={18} /></button>
         </div>
         <div class="search">
           <Icon name="search" size={16} />
@@ -363,7 +362,7 @@
             {#if groupStore.invites.length}<div class="covers-banners">{@render coverBanner('user-plus', groupInvitesWords)}</div>{/if}
           {:else}
             {@render coversTop(() => (newChat = true), $t('msg_newchat_title'), 'message-circle-plus', $t('msg_chats_search'), !!query)}
-            {#if netStore.toOffer}<div class="covers-banners">{@render coverBanner('shield', $t('msg_bridge_offer_title'))}</div>{/if}
+            {#if netStore.toOffer}<div class="covers-banners">{@render coverBanner('building-bridge', $t('msg_bridge_offer_title'))}</div>{/if}
           {/if}
           <ChatList {query} kind={view === 'groups' ? 'group' : 'dm'} onopen={openChat} covers />
         {:else}
@@ -371,9 +370,9 @@
           <span class="rail-title">{view === 'groups' ? $t('msg_nav_groups') : $t('msg_nav_chats')}</span>
           <span class="spacer"></span>
           {#if view === 'groups'}
-            <button class="icon accent" onclick={() => (newGroup = true)} title={$t('msg_groups_new')}><Icon name="users-plus" size={16} /></button>
+            <button class="icon-btn create" onclick={() => (newGroup = true)} title={$t('msg_groups_new')} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={18} /></button>
           {:else}
-            <button class="icon accent" onclick={() => (newChat = true)} title={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={16} /></button>
+            <button class="icon-btn create" onclick={() => (newChat = true)} title={$t('msg_newchat_title')} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={18} /></button>
           {/if}
         </div>
         {#if requestsUi.shown}
@@ -416,23 +415,23 @@
         {:else if view === 'calls'}
           {#if callChat}
             <div class="pane-scroll">
-              <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (callChat = null)}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
+              <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (callChat = null)}><Icon name="chevron-left" size={12} />{$t('common_back')}</button>
               <CallDetails chatId={callChat} onchat={writeTo} ongone={() => (callChat = null)} />
             </div>
           {:else}
             <div class="welcome empty-state">
-              <div class="welcome-icon empty-icon"><CallIcon name="phone" size={24} /></div>
+              <div class="welcome-icon empty-icon"><Icon name="phone" size={24} /></div>
               <p>{$t('msg_calls_pick')}</p>
               <span>{$t('msg_calls_pick_text')}</span>
               <div class="welcome-actions">
-                <button class="btn btn-primary" onclick={() => (newCall = true)}><CallIcon name="phone" size={18} />{$t('msg_calls_new')}</button>
+                <button class="btn btn-primary" onclick={() => (newCall = true)}><Icon name="phone-plus" size={18} />{$t('msg_calls_new')}</button>
               </div>
             </div>
           {/if}
         {:else if view === 'contacts'}
           {#if contact}
             <div class="pane-scroll">
-              <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (contactKey = null)}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
+              <button class="back-narrow btn btn-ghost btn-sm" onclick={() => (contactKey = null)}><Icon name="chevron-left" size={12} />{$t('common_back')}</button>
               <ContactDetails {contact} onchat={(pubkey) => { show('chat'); chatStore.openPeer(pubkey).catch(() => {}); }}
                 onopenchat={(chatId) => { show('chat'); chatStore.open(chatId).catch(() => {}); }} onremoved={() => (contactKey = null)} />
             </div>
@@ -448,7 +447,7 @@
           {/if}
         {:else if view === 'settings'}
           <header class="pane-head">
-            <button class="back-narrow btn btn-ghost btn-sm" onclick={() => show('chat')}><Icon name="arrow-left" size={12} />{$t('msg_back')}</button>
+            <button class="back-narrow btn btn-ghost btn-sm" onclick={() => show('chat')}><Icon name="chevron-left" size={12} />{$t('common_back')}</button>
             <h2>{$t(`msg_settings_tab_${settingsUi.tab}` as 'msg_settings_tab_profile')}</h2>
           </header>
           <div class="pane-scroll">
@@ -498,7 +497,6 @@
     <ContactAddForm stacked onadded={() => (addingContact = false)} />
   </Dialog>
   <Dialer />
-  <ConfirmHost />
   <ReportHost />
   <ServerAcceptDialog />
   <ServerInfoDialog />
@@ -540,7 +538,7 @@
   .sec-badge { position: absolute; top: 2px; right: 0; box-shadow: 0 0 0 2px var(--chrome); }
   .sec.me { width: 44px; height: 44px; border-radius: 50%; padding: 0; }
   .sec.me.active { box-shadow: 0 0 0 2px var(--accent); background: none; }
-  .sec-net { display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--sp-1); font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-2); }
+  .sec-net { display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .sec-net .net { margin-left: 0; }
   .rail { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .rail-head { display: flex; align-items: center; gap: 2px; padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-4); min-height: 64px; }
@@ -567,12 +565,12 @@
     display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 var(--sp-3) var(--sp-2); padding: 0 var(--sp-4);
     background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
   }
-  .search:focus-within { border-color: var(--accent-border); }
-  /* The pill is the field: its border is the one focus mark. */
+  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  /* The pill is the field: its border and halo are the one focus mark. */
   .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-base); color: var(--text); padding: 7px 0; }
   .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .setnav { padding: var(--sp-5) var(--sp-2) var(--sp-3); gap: var(--sp-3); overflow-y: auto; }
-  .setnav-title { padding: 0 var(--sp-3); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
+  .setnav-title { padding: 0 var(--sp-3); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .setnav-list { display: flex; flex-direction: column; gap: 2px; }
   .setnav-item {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 40px; padding: 0 var(--sp-3);
@@ -596,7 +594,7 @@
   .welcome { margin: auto; max-width: 380px; padding: var(--sp-6); }
   .welcome-icon { background: var(--accent-bg); color: var(--accent-text); }
   .welcome p { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text); }
-  .welcome span { max-width: none; font-size: var(--fs-base); line-height: 1.5; color: var(--text-2); }
+  .welcome span { max-width: none; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text-2); }
   .welcome-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: center; }
   .welcome-actions .btn { gap: var(--sp-2); padding: 0 var(--sp-4); }
 

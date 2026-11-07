@@ -4,7 +4,9 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
   import { parseProxyList, toBulkItems, type ProxyImportType } from '$lib/browser/proxyImport';
   import { formatError } from '$lib/core/utils';
@@ -151,7 +153,7 @@
 
       <div class="form-row">
         <button class="btn btn-ghost btn-sm" onclick={() => fileInput?.click()} disabled={phase === 'importing'}>
-          <Icon name="file-import" size={13} />
+          <Icon name="file-import" size={18} />
           {$t('proxy_import_load_file')}
         </button>
         <input
@@ -201,20 +203,10 @@
         {/if}
       {/if}
 
-      <div class="check-after">
-        <span>{$t('proxy_import_check_after')}</span>
-        <button
-          class="toggle"
-          class:on={checkAfter}
-          onclick={() => (checkAfter = !checkAfter)}
-          aria-pressed={checkAfter}
-          aria-label={$t('proxy_import_check_after')}
-          disabled={phase === 'importing'}
-        ></button>
-      </div>
+      <ToggleRow title={$t('proxy_import_check_after')} bind:on={checkAfter} disabled={phase === 'importing'} />
 
       {#if error}
-        <div class="error-msg">{error}</div>
+        <Notice tone="danger">{error}</Notice>
       {/if}
     </div>
   {:else}
@@ -230,7 +222,7 @@
 
       {#if checking}
         <div class="check-progress">
-          <Icon name="refresh-cw" size={13} />
+          <Icon name="refresh-cw" size={18} />
           {$t('proxy_import_checking_progress', { done: String(checkDone), total: String(checkTotal) })}
         </div>
       {:else if checkTotal > 0}
@@ -274,9 +266,9 @@
 
   {#snippet footer()}
     {#if phase === 'done'}
-      <button class="btn btn-primary" onclick={onclose}>{$t('pwgen_btn_close')}</button>
+      <button class="btn btn-primary" onclick={onclose}>{$t('common_close')}</button>
     {:else}
-      <button class="btn btn-ghost" onclick={onclose} disabled={phase === 'importing'}>{$t('proxy_btn_cancel')}</button>
+      <button class="btn btn-ghost" onclick={onclose} disabled={phase === 'importing'}>{$t('common_cancel')}</button>
       <button class="btn btn-primary" disabled={validCount === 0 || phase === 'importing'} onclick={doImport}>
         {phase === 'importing'
           ? $t('proxy_import_btn_loading')
@@ -327,7 +319,6 @@
     font-size: var(--fs-sm);
     color: var(--text-3);
   }
-  .type-select .seg-btn { font-family: var(--font-mono); }
 
   .preview-summary, .result-summary {
     font-size: var(--fs-sm);
@@ -341,15 +332,6 @@
     gap: 0.4rem;
     font-size: var(--fs-sm);
     color: var(--text-2);
-  }
-
-  .check-after {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-3);
-    font-size: var(--fs-sm);
-    color: var(--text-body);
   }
 
   .line-list {
@@ -394,12 +376,10 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
     padding: 3px 9px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
     flex-shrink: 0;
     max-width: 45%;
     overflow: hidden;

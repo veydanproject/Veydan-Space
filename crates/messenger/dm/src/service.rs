@@ -814,7 +814,9 @@ impl DmService {
         }
         let url = match &msg.envelope.source {
             EventSource::Relay { url } | EventSource::Sync { url } => url,
-            EventSource::Server { .. } => return Ok(Some(None)),
+            // A wrap of a private chat carries `srv` (above); one replayed
+            // from the archive without it is of the home chat.
+            EventSource::Server { .. } | EventSource::Archive => return Ok(Some(None)),
         };
         match servers::private_of_relay(&self.store, url.as_str()).await {
             Ok(server) => Ok(Some(server)),
@@ -856,8 +858,8 @@ impl DmService {
             msg.sender.clone()
         };
         let peer = DmPeer::on(peer, server.as_deref());
-        let historical =
-            msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
+        let historical = msg.created_at < ctx.session_started_at
+            || matches!(msg.envelope.source, EventSource::Sync { .. } | EventSource::Archive);
         // The chat row is made only when something visible lands in it, so
         // a copy, a dropped message or a hidden row does not bring back a
         // chat deleted here.
@@ -1023,7 +1025,7 @@ impl DmService {
         if content_type == repo::CT_CONTROL {
             let action = envelope.str_field("action").map(String::from);
             effects.extend(
-                self.on_control(&chat_id, &peer, from_me, action.as_deref(), msg.created_at.secs(), historical, invited)
+                self.on_control(&chat_id, &id, &peer, from_me, action.as_deref(), msg.created_at.secs(), historical, invited)
                     .await?,
             );
             return Ok(effects);
@@ -5087,6 +5089,78 @@ mod tests {
         assert!(sends(&fx).is_empty(), "answered by A already");
         assert_eq!(mode(&d, &bob).await, "full_chat");
         assert_eq!(uses_of(&d, &id).await, vec![bob.pk().as_hex().to_string()]);
+    }
+
+    /// Bob came in by my invitation, then I deleted the chat: a device of
+    /// mine set up afterwards reads his accept as history (the archive, a
+    /// relay) after the snapshot, and the chat stays deleted — not an
+    /// empty card. What he writes next is a new chat.
+    #[tokio::test]
+    async fn a_chat_let_in_by_an_invitation_and_deleted_stays_out_of_a_new_device() {
+        let alice = gated().await;
+        let bob = gated().await;
+        invite_of(&alice, "AAECAwQFBgcICQoLDA0O_w", Some(1), None).await;
+        let req = bob.dm.request_by_invite(&bob.keys, &alice.pk(), "AAECAwQFBgcICQoLDA0O_w").await.unwrap();
+        let accept = for_peer(&req.outbounds)[0].clone();
+        let fx = alice.receive(&accept).await;
+        let mine = match &sends(&fx)[1] {
+            Outbound::PublishOwn { event } => event.clone(),
+            other => panic!("{other:?}"),
+        };
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        alice.dm.delete_chat_by_me(&chat_id).await.unwrap();
+
+        let phone = gated_with(alice.keys.clone()).await;
+        phone.clock.0.store(1_000_200, Ordering::SeqCst);
+        let (_, events) = alice.dm.build_relations_snapshot(&alice.keys, 1_000_100).await.unwrap();
+        let me = alice.keys.public_key();
+        let pieces: Vec<_> = events.iter().filter_map(|e| crate::snapshot::Piece::of_json(&e.json, &me)).collect();
+        phone.dm.apply_relations_snapshot(&phone.keys, &pieces).await.unwrap();
+        phone.receive_from(&accept, true).await;
+        phone.receive_from(&mine, true).await;
+        assert!(phone.dm.chat(&chat_id).await.unwrap().is_none(), "the deleted chat is not back");
+        assert!(phone.dm.list_chats(true).await.unwrap().is_empty());
+        assert_eq!(mode(&phone, &bob).await, "full_chat", "the relationship stands");
+
+        bob.clock.0.store(1_000_300, Ordering::SeqCst);
+        let new = bob.dm.prepare_text(&bob.keys, &alice.pk(), "five", None).await.unwrap();
+        phone.receive_from(&peer_event(&new), true).await;
+        assert_eq!(visible(&phone, &bob).await, vec!["five"]);
+    }
+
+    /// Bob came in by my invitation, I deleted the chat at 1_000_100, and he
+    /// comes in again by a new one, his accept dated `bob_at`: the chat is
+    /// back, however his time stands to the deletion.
+    async fn let_in_again_after_the_deletion(bob_at: i64) {
+        let alice = gated().await;
+        let bob = gated().await;
+        invite_of(&alice, "AAECAwQFBgcICQoLDA0O_w", Some(1), None).await;
+        let req = bob.dm.request_by_invite(&bob.keys, &alice.pk(), "AAECAwQFBgcICQoLDA0O_w").await.unwrap();
+        alice.receive(&for_peer(&req.outbounds)[0]).await;
+        let chat_id = chats::dm_chat_id(bob.pk().as_hex(), None);
+        alice.clock.0.store(1_000_100, Ordering::SeqCst);
+        alice.dm.delete_chat_by_me(&chat_id).await.unwrap();
+        assert_eq!(chats::cleared_at(&alice.dm.store, &chat_id).await.unwrap(), 1_000_100);
+
+        invite_of(&alice, "EBESExQVFhcYGRobHB0e_w", Some(1), None).await;
+        bob.clock.0.store(bob_at, Ordering::SeqCst);
+        let req = bob.dm.request_by_invite(&bob.keys, &alice.pk(), "EBESExQVFhcYGRobHB0e_w").await.unwrap();
+        let accept = for_peer(&req.outbounds)[0].clone();
+        alice.receive(&accept).await;
+        assert!(alice.dm.chat(&chat_id).await.unwrap().is_some(), "a new accept at {bob_at} opens the chat");
+        assert_eq!(alice.dm.list_chats(true).await.unwrap().len(), 1);
+        assert_eq!(mode(&alice, &bob).await, "full_chat");
+    }
+
+    #[tokio::test]
+    async fn a_new_accept_by_an_invitation_in_the_second_of_the_deletion_opens_the_chat() {
+        let_in_again_after_the_deletion(1_000_100).await;
+    }
+
+    #[tokio::test]
+    async fn a_new_accept_by_an_invitation_from_a_clock_behind_mine_opens_the_chat() {
+        let_in_again_after_the_deletion(1_000_040).await;
     }
 
     /// A blocked key is let in by nothing, and its right secret is no

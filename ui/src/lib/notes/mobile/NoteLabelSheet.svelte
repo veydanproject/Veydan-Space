@@ -210,7 +210,7 @@
     gap: 8px;
     min-height: 44px;
     padding: 0 12px;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-pill);
     background: var(--m-field);
     flex-shrink: 0;
   }
@@ -228,7 +228,7 @@
     font-size: var(--fs-body);
   }
   .find input:focus { border: 0; box-shadow: none; }
-  .hint { margin: var(--sp-3) var(--sp-2) 0; color: var(--text-3); font-size: var(--fs-xs); }
+  .hint { margin: var(--sp-3) var(--sp-2) 0; }
   .hits {
     max-height: min(280px, 42vh);
     overflow-y: auto;
@@ -251,7 +251,7 @@
     font-size: var(--fs-body);
     text-align: left;
   }
-  .hit:disabled { opacity: 0.5; }
+  .hit:disabled { opacity: 0.45; }
   .dot {
     width: 10px;
     height: 10px;

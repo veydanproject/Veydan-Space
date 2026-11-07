@@ -49,7 +49,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-2);
     white-space: nowrap;
   }
@@ -84,7 +84,7 @@
     background: var(--success-bg);
     border: 1px solid color-mix(in srgb, var(--success) 25%, var(--border));
     border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--success-text);
     white-space: nowrap;
     text-decoration: none;

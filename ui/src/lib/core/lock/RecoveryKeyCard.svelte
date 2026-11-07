@@ -36,9 +36,7 @@
     return [groups.slice(0, cut).join('-'), groups.slice(cut).join('-')].filter(Boolean);
   });
 
-  let copied = $state(false);
   let acknowledged = $state(false);
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
   // The check of the words: three positions (1-based), typed back.
   let checking = $state(false);
@@ -71,9 +69,6 @@
   async function copy() {
     await navigator.clipboard.writeText(code);
     copiedToast();
-    copied = true;
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = false), 2000);
   }
 
   async function saveToFile() {
@@ -110,13 +105,13 @@
         </label>
       {/each}
     </div>
-    {#if wrong}<p class="err">{$t('lock_recovery_check_wrong')}</p>{/if}
+    {#if wrong}<p class="error-msg">{$t('lock_recovery_check_wrong')}</p>{/if}
     <div class="finish">
       <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={showAgain}>
         {$t('lock_recovery_check_back')}
       </button>
       <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!typedOk} onclick={confirmWords}>
-        {$t('lock_recovery_done')}
+        {$t('common_done')}
       </button>
     </div>
   {:else}
@@ -138,8 +133,8 @@
     <div class="actions">
       <!-- The way to keep the key, not the step's end: the end («Готово», «Продолжить») is the one primary button. -->
       <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={copy}>
-        <Icon name={copied ? 'check' : 'copy'} size={16} />
-        {copied ? $t('lock_recovery_copied') : $t('lock_recovery_copy')}
+        <Icon name="copy" size={16} />
+        {$t('lock_recovery_copy')}
       </button>
       {#if !isMobile}
         <button class="btn btn-ghost btn-sm" type="button" onclick={saveToFile}>
@@ -160,7 +155,7 @@
           <span>{$t('lock_recovery_ack')}</span>
         </label>
         <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!acknowledged} onclick={ondone}>
-          {$t('lock_recovery_done')}
+          {$t('common_done')}
         </button>
       {/if}
     </div>
@@ -178,16 +173,15 @@
   .mobile .actions .btn,
   .mobile .finish .btn { width: 100%; min-height: var(--sp-12); justify-content: center; }
   .head { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
-  .head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
-  .intro { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .head h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+  .intro { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .code {
     padding: var(--sp-3);
     border: 1px dashed var(--accent-border);
     border-radius: var(--radius-md);
     background: var(--surface-2);
     font-size: var(--fs-md);
-    font-weight: 600;
-    letter-spacing: 0.06em;
+    font-weight: var(--fw-semibold);
     text-align: center;
     user-select: all;
     color: var(--text);
@@ -206,13 +200,13 @@
     border-radius: var(--radius-md);
     background: var(--surface-2);
     font-size: var(--fs-md);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text);
     user-select: all;
   }
   .mobile .words { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); font-size: var(--fs-body); }
   .words li { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
-  .words .num { min-width: 1.6em; font-size: var(--fs-xs); font-weight: 400; color: var(--text-3); text-align: right; }
+  .words .num { min-width: 1.6em; font-size: var(--fs-xs); font-weight: var(--fw-normal); color: var(--text-3); text-align: right; }
   .ack-text { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text); }
   .check { display: flex; flex-direction: column; gap: var(--sp-2); }
   .check-word { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
@@ -222,11 +216,11 @@
     padding: 6px 10px;
     font: inherit;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-field);
     background: var(--bg-2);
     color: var(--text);
   }
-  .err { margin: 0; font-size: var(--fs-xs); color: var(--danger-text); }
+  .error-msg { margin: 0; }
   .ack { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text); cursor: pointer; }
   /* Global input rules set width 100% and a touch min-height, which turns the box into a full-width slab. */
   .ack input[type="checkbox"] {
@@ -234,5 +228,5 @@
     margin: 2px 0 0;
     flex: 0 0 auto;
   }
-  .ack span { flex: 1; min-width: 0; line-height: 1.4; }
+  .ack span { flex: 1; min-width: 0; line-height: var(--lh-snug); }
 </style>

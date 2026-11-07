@@ -27,7 +27,7 @@
   /** The lock guards the account: its password is asked before it goes. */
   const needsPassword = $derived(appLock.status.enabled);
   const comparing = $derived(link.phase === 'compare' || link.phase === 'sending');
-  const steps = $derived([$t('cloud_link_step_code'), $t('cloud_link_step_compare'), $t('cloud_link_step_sent')]);
+  const steps = $derived([$t('cloud_link_step_code'), $t('cloud_link_step_compare'), $t('common_done')]);
 
   async function next() {
     await link.resolve(input);
@@ -74,7 +74,7 @@
   <StateView tone="ok" title={$t('cloud_link_sent_title')}>
     <p>{$t('cloud_link_sent_text')}</p>
     {#snippet actions()}
-      <Actions><a class="btn btn-primary" href="/cloud">{$t('cloud_done')}</a></Actions>
+      <Actions><a class="btn btn-primary" href="/cloud">{$t('common_done')}</a></Actions>
     {/snippet}
   </StateView>
 {:else if link.phase === 'mismatch'}
@@ -114,7 +114,7 @@
     </div>
     {#if isMobile}
       <button class="m-btn-grad" type="button" disabled={link.phase === 'resolving'} onclick={() => (scanning = true)}>
-        <Icon name="qr-code" size={18} />{$t('cloud_link_scan')}
+        <Icon name="scan" size={18} />{$t('cloud_link_scan')}
       </button>
       <div class="or"><span>{$t('cloud_or')}</span></div>
     {/if}
@@ -136,9 +136,9 @@
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-1); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
-  textarea { resize: vertical; line-height: 1.5; }
+  textarea { resize: vertical; line-height: var(--lh-base); }
   .or { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-3); font-size: var(--fs-sm); }
   .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--border-2); }
 </style>

@@ -11,6 +11,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import PasswordRow from '$lib/pass/mobile/PasswordRow.svelte';
@@ -99,7 +100,7 @@
     menu = null;
     if (!entry.username) return;
     await writeClipboard(entry.username);
-    toast.success($t('pw_copied'));
+    toast.success($t('toast_copied'));
   }
 
   async function copyPassword(entry: PasswordEntry) {
@@ -111,7 +112,7 @@
     }
     try {
       const value = (await api.passwords.reveal(entry.id, 'password')).value;
-      await copySecret(value, { toast: $t('pw_copied') });
+      await copySecret(value, { toast: $t('toast_copied') });
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         pendingCopy = entry;
@@ -155,9 +156,6 @@
       <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title title-with-badge">{$t('pw_title')}<PasswordLockBadge size={11} /></h1>
-    {#if canAdd}
-      <a class="m-ibtn" href="/passwords/add" aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={24} /></a>
-    {/if}
   </div>
   <div class="m-search">
     <div class="field">
@@ -166,7 +164,7 @@
     </div>
   </div>
   <div class="m-body">
-    {#if error}<div class="m-error">{error}</div>{/if}
+    {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
     {#if !loaded}
       <!-- The shape of the rows, no empty-state flash before the list arrives. -->
       <Skeleton height={56} avatar="square" />
@@ -181,7 +179,7 @@
     {:else if filtered.length === 0}
       <div class="m-empty">
         <Icon name="search" size={40} />
-        <p>{$t('pass_nothing_found')}</p>
+        <p>{$t('common_nothing_found')}</p>
         <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       </div>
     {:else}
@@ -198,6 +196,9 @@
       </div>
     {/if}
   </div>
+  {#if canAdd}
+    <a class="m-fab" href="/passwords/add" aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={22} /></a>
+  {/if}
 </div>
 
 <BottomSheet open={!!menu} title={menu?.title ?? ''} onclose={() => (menu = null)}>
@@ -214,10 +215,10 @@
       </button>
       {#if canAdd}
         <button type="button" class="m-row" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
-          <Icon name="pencil" size={20} /><span class="m-row-label">{$t('pw_btn_edit')}</span>
+          <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
         </button>
         <button type="button" class="m-row" onclick={() => remove(entry)}>
-          <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('pw_btn_delete')}</span>
+          <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
         </button>
       {/if}
     </div>
@@ -234,8 +235,10 @@
 />
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .title-with-badge { display: flex; align-items: center; gap: 2px; }
-  .list { gap: 2px; --rows-gap: 2px; padding-bottom: var(--sp-6); }
+  /* Room under the last row for the floating «+» (.m-fab). */
+  .list { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
   .danger { color: var(--danger-text); }
 </style>

@@ -9,6 +9,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/mobile/i18n';
   import { generatePassword, pwSettings } from '$lib/pass/password-gen';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
@@ -59,6 +60,10 @@
   }: Props = $props();
 
   let show = $state(false);
+  // One error line for the form: under the field it is about, else above the button.
+  const titleErr = $derived(!!error && error === $t('pw_err_title'));
+  const passErr = $derived(!!error && error === $t('pw_err_password'));
+  const genErr = $derived(!!error && error === $t('pwgen_error_no_charset'));
 
   function generate() {
     try {
@@ -73,8 +78,10 @@
 
 <!-- Not a <form>: the sheets of the TOTP and label fields render inside it, and Enter there must not save. -->
 <div class="form">
-  {#if error}<div class="m-error">{error}</div>{/if}
-  <div class="m-field"><label for="pw-title">{$t('pw_field_title')}</label><input id="pw-title" bind:value={title} autocomplete="off" /></div>
+  <div class="m-field">
+    <label for="pw-title">{$t('pw_field_title')}</label><input id="pw-title" bind:value={title} autocomplete="off" aria-invalid={titleErr} />
+    {#if titleErr}<div class="m-error">{error}</div>{/if}
+  </div>
   <div class="m-field"><label for="pw-user">{$t('pw_field_username')}</label><input id="pw-user" bind:value={username} autocomplete="off" /></div>
   <div class="m-field"><label for="pw-url">{$t('pw_field_url')}</label><input id="pw-url" type="url" bind:value={url} autocomplete="off" /></div>
   <div class="m-field">
@@ -87,6 +94,7 @@
         bind:value={password}
         autocomplete="new-password"
         placeholder={editing ? $t('pw_unchanged') : ''}
+        aria-invalid={passErr}
       />
       <button type="button" class="m-ibtn" onclick={() => (show = !show)} aria-label={$t(show ? 'pw_btn_hide' : 'pw_btn_reveal')}>
         <Icon name={show ? 'eye-off' : 'eye'} size={20} />
@@ -95,6 +103,7 @@
         <Icon name="dices" size={20} />
       </button>
     </div>
+    {#if passErr || genErr}<div class="m-error">{error}</div>{/if}
   </div>
   <div class="m-field">
     <label for="pw-note">{$t('pw_field_note')}</label>
@@ -110,13 +119,15 @@
     suggestName={title}
   />
   <LabelField linkNotes {tags} onchange={(next) => (tags = next)} />
+  {#if error && !titleErr && !passErr && !genErr}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
   <button type="button" class="m-btn-grad save" onclick={onsave} disabled={saving}>
     <Icon name="check" size={18} />
-    {$t('pw_btn_save')}
+    {$t('common_save')}
   </button>
 </div>
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .form { display: flex; flex-direction: column; padding-bottom: var(--sp-6); }
   .secret { position: relative; display: flex; align-items: center; }
   /* Room for the two buttons inside the field. */

@@ -22,7 +22,6 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { groupStore } from '../groups/groupStore.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { groupStatusText, peopleIn, roomPath, roomPathText } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import GroupRoster from './GroupRoster.svelte';
@@ -135,7 +134,7 @@
         </span>
       </span>
       {#if path}
-        <span class="chip" class:moving title={$t(cascade ? 'msg_gcall_via_cascade_hint' : 'msg_gcall_via_node_hint')}><CallIcon name="server" size={11} />{path}</span>
+        <span class="chip" class:moving title={$t(cascade ? 'msg_gcall_via_cascade_hint' : 'msg_gcall_via_node_hint')}><Icon name="server" size={11} />{path}</span>
       {/if}
       <span class="chip quiet" title={$t('msg_gcall_e2e_hint')}><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
       {#if call}
@@ -163,24 +162,24 @@
       {/if}
     </div>
 
-    {#if error}<div class="error" role="alert">{error}</div>{/if}
+    {#if error}<div class="error error-msg" role="alert">{error}</div>{/if}
 
     {#if call}
       <div class="bar">
         <button class="ctl" class:off={call.muted} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleMute()}
           title={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-pressed={call.muted}>
-          <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={17} />
+          <Icon name={call.muted ? 'mic-off' : 'mic'} size={17} />
         </button>
         <button class="ctl" class:off={!cameraOn} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleCamera()}
           title={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-pressed={cameraOn}>
-          <CallIcon name={cameraOn ? 'video' : 'video-off'} size={17} />
+          <Icon name={cameraOn ? 'video' : 'video-off'} size={17} />
         </button>
         <ScreenPicker {sharing} share={(id) => groupCallStore.shareScreen(id)} stop={() => groupCallStore.stopScreen()}>
           {#snippet button({ onclick, expanded })}
             <button class="ctl" class:active={sharing} disabled={groupCallStore.busy} {onclick}
               title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
               aria-pressed={sharing} aria-haspopup="menu" aria-expanded={expanded}>
-              <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
+              <Icon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
             </button>
           {/snippet}
         </ScreenPicker>
@@ -188,7 +187,7 @@
           <Icon name="users" size={17} />
         </button>
         <button class="ctl end" disabled={groupCallStore.ending} onclick={() => groupCallStore.leave()} title={$t('msg_gcall_leave')} aria-label={$t('msg_gcall_leave')}>
-          <CallIcon name="hangup" size={18} />
+          <Icon name="phone-hangup" size={18} />
         </button>
       </div>
     {/if}
@@ -200,7 +199,7 @@
     position: fixed; z-index: 70; right: 16px; bottom: 16px;
     width: clamp(420px, 44vw, 680px); height: clamp(300px, 34vw, 480px);
     display: flex; flex-direction: column;
-    border-radius: var(--radius-card); overflow: hidden; background: #0b0d10; color: #fff;
+    border-radius: var(--radius-card); overflow: hidden; background: var(--call-bg); color: #fff;
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
     animation: rise 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
   }
@@ -214,21 +213,21 @@
   .big .top { cursor: default; padding: 10px 12px; }
   .top:active { cursor: grabbing; }
   .big .top:active { cursor: default; }
-  .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: var(--lh-tight); }
   .name { font-weight: var(--fw-bold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { display: flex; gap: 5px; font-size: var(--fs-2xs); color: rgba(255, 255, 255, 0.7); white-space: nowrap; overflow: hidden; }
-  .phase.clock { font-variant-numeric: tabular-nums; color: #7ee2a8; font-weight: var(--fw-semibold); }
+  .sub { display: flex; gap: 5px; font-size: var(--fs-xs); color: rgba(255, 255, 255, 0.7); white-space: nowrap; overflow: hidden; }
+  .phase.clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
   .dotsep { opacity: 0.6; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); white-space: nowrap; cursor: help;
+    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); white-space: nowrap; cursor: help;
   }
   .chip.quiet { color: rgba(255, 255, 255, 0.65); }
   .chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px);
-    display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-xs); line-height: 1.35;
-    background: rgba(18, 22, 27, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-xs); line-height: var(--lh-snug);
+    background: var(--call-glass); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
   }
   .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
   .spin { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
@@ -239,30 +238,30 @@
     display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.1); color: #fff;
   }
   .hbtn:hover { background: rgba(255, 255, 255, 0.22); }
-  .hbtn:focus-visible, .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hbtn:focus-visible, .ctl:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .body { flex: 1; min-height: 0; display: flex; }
   .stage { position: relative; flex: 1; min-width: 0; }
-  .side { width: 260px; flex-shrink: 0; border-left: 1px solid rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; min-height: 0; background: #12161b; }
+  .side { width: 260px; flex-shrink: 0; border-left: 1px solid rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; min-height: 0; background: var(--call-surface); }
   .win:not(.big) .side { width: 220px; }
   .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.85); }
   .error {
     position: absolute; z-index: 6; left: 50%; bottom: 66px; transform: translateX(-50%); width: max-content; max-width: 80%;
-    padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); text-align: center;
-    background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); box-shadow: var(--shadow);
+    padding: 6px 10px; border-radius: var(--radius-md); text-align: center;
+    background: var(--danger-bg); border: 1px solid var(--danger-border); box-shadow: var(--shadow);
   }
   .bar { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; flex-shrink: 0; }
   .ctl {
-    width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+    width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, 0.14); color: #fff; transition: background var(--dur-fast) var(--ease);
   }
   .ctl:hover:not(:disabled) { background: rgba(255, 255, 255, 0.26); }
   .ctl.off { background: #fff; color: #111; }
-  .ctl.off:hover:not(:disabled) { background: #e8e8e8; }
+  .ctl.off:hover:not(:disabled) { background: var(--call-text); }
   .ctl.active { background: var(--accent); }
   .ctl.end { width: 52px; border-radius: var(--radius-pill); background: var(--danger); }
   .ctl.end:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
-  .ctl:disabled { opacity: 0.5; cursor: default; }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
   @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
   @media (prefers-reduced-motion: reduce) { .win, .spin { animation: none; } }
 </style>

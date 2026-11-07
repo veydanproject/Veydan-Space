@@ -201,7 +201,7 @@
     outline: none;
   }
   .viewport:active { cursor: grabbing; }
-  .viewport:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+  .viewport:focus-visible { box-shadow: 0 0 0 2px var(--focus-ring); }
   .disabled .viewport { cursor: default; opacity: 0.7; }
   img {
     position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0;
@@ -214,7 +214,7 @@
   }
   .zoom { display: flex; align-items: center; gap: var(--sp-2); width: min(100%, 320px); }
   .zoom input[type='range'] { flex: 1; min-width: 0; padding: 0; border: none; background: none; box-shadow: none; accent-color: var(--accent); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); text-align: center; max-width: 320px; }
+  .hint { margin: 0; text-align: center; max-width: 320px; }
   @media (pointer: coarse) {
     .zoom .icon-btn { width: 40px; height: 40px; }
   }

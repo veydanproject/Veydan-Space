@@ -2,32 +2,18 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { sshStore } from '$lib/ssh/store/ssh.svelte';
+  import { sshStore, type KeyboardPromptPayload } from '$lib/ssh/store/ssh.svelte';
   import { api } from '$lib/ssh/api';
   import { explainTorMessage } from '$lib/ssh/tor-error';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { parseHostKeyMismatch } from '$lib/core/utils';
-
-  interface KeyboardPromptItem {
-    prompt: string;
-    echo: boolean;
-  }
-
-  interface KeyboardPromptPayload {
-    session_id: string;
-    name: string;
-    instructions: string;
-    prompts: KeyboardPromptItem[];
-    /** First-connection host key awaiting the user's trust decision. */
-    host_key?: string | null;
-  }
 
   interface Props {
     sessionId: string;
@@ -44,7 +30,6 @@
   let term: Terminal | null = null;
   let fitAddon: FitAddon | null = null;
   let resizeObserver: ResizeObserver | null = null;
-  let unlistenPrompt: UnlistenFn | null = null;
 
   // Keyboard-interactive overlay state
   let activePrompt = $state<KeyboardPromptPayload | null>(null);
@@ -63,6 +48,8 @@
   // TOFU: new fingerprint from a HOST_KEY_MISMATCH error (null = no mismatch)
   let mismatchFingerprint = $derived(parseHostKeyMismatch(session?.error));
   let trusting = $state(false);
+  /** The changed key whose plate «Cancel» put away: the plain «disconnected» one stands instead. */
+  let dismissedFp = $state<string | null>(null);
 
   let drawerHeight = $derived(
     isMaximized ? `calc(100vh - 2.5rem)` : `${drawerVh}vh`
@@ -128,20 +115,23 @@
     }
   }
 
-  onMount(async () => {
+  onMount(() => {
     if (!termEl) return;
 
+    // xterm draws on a canvas and can't read CSS vars: the tokens are resolved here.
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
     term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', 'Fira Code', Menlo, monospace",
+      fontFamily: token('--font-mono', 'monospace'),
       // The terminal viewport is ALWAYS dark, regardless of app theme: remote
       // ANSI output (vim, htop, dotfiles) assumes a dark background.
-      // Palette matches the dark half of the palette «quiet» (JS data — xterm can't read CSS vars)
+      // --term-* are the same in both themes (palettes/quiet.css).
       theme: {
-        background: '#15171e',
-        foreground: '#eef1f7',
-        cursor: '#b9b1f2',
+        background: token('--term-bg', '#15171e'),
+        foreground: token('--term-fg', '#eef1f7'),
+        cursor: token('--term-cursor', '#b9b1f2'),
         selectionBackground: 'rgba(112,102,198,0.35)',
       },
       scrollback: 5000,
@@ -170,12 +160,16 @@
         term?.write(bytes);
       });
     }));
+  });
 
-    // Listen for keyboard-interactive prompts from backend
-    unlistenPrompt = await listen<KeyboardPromptPayload>('ssh://keyboard-prompt', (event) => {
-      if (event.payload.session_id !== sessionId) return;
-      activePrompt = event.payload;
-      promptInputs = event.payload.prompts.map(() => '');
+  // A login question of this session (the store holds it from before the terminal was drawn).
+  $effect(() => {
+    if (!sshStore.prompts[sessionId]) return;
+    untrack(() => {
+      const p = sshStore.takePrompt(sessionId);
+      if (!p) return;
+      activePrompt = p;
+      promptInputs = p.prompts.map(() => '');
       promptError = '';
       // Ensure terminal is visible when prompt arrives
       if (!visible) {
@@ -185,7 +179,6 @@
   });
 
   onDestroy(() => {
-    unlistenPrompt?.();
     resizeObserver?.disconnect();
     sshStore.unregisterDataCallback(sessionId);
     term?.dispose();
@@ -224,8 +217,8 @@
     try {
       const newId = await sshStore.connect(s.connection_id);
       await sshStore.removeSession(sessionId);
+      // The new session takes this one's place, open: no onDisconnect, it would fold the panel (ROO-822).
       sshStore.activeTerminalId = newId;
-      onDisconnect?.();
     } catch {}
   }
 
@@ -270,39 +263,43 @@
       <div class="header-actions">
         {#if onMinimize}
           <button class="hbtn" onclick={onMinimize} title={$t('ssh_btn_minimize')}>
-            <Icon name="minus" size={13} />
+            <Icon name="minus" size={18} />
           </button>
         {/if}
         <button class="hbtn" onclick={toggleMaximize} title={isMaximized ? $t('window_restore') : $t('window_maximize')}>
-          <Icon name={isMaximized ? 'minimize-2' : 'maximize-2'} size={13} />
+          <Icon name={isMaximized ? 'minimize-2' : 'maximize-2'} size={18} />
         </button>
         <button class="hbtn danger" onclick={disconnect} title={$t('ssh_btn_disconnect')}>
-          <Icon name="x" size={13} />
+          <Icon name="plug-connected-x" size={18} />
         </button>
       </div>
     </div>
 
     {#if session?.status === 'error' || session?.status === 'disconnected'}
-      {#if mismatchFingerprint}
-        <!-- Host key changed (TOFU mismatch) — offer to trust the new fingerprint -->
-        <div class="disconnected-banner hostkey-banner">
-          <Icon name="alert-triangle" size={13} />
-          <span class="hostkey-text">
-            {$t('ssh_hostkey_changed_title')}
+      <div class="plate">
+        {#if mismatchFingerprint && dismissedFp !== mismatchFingerprint}
+          <!-- Host key changed (TOFU mismatch): the one plate of a server's key (FilePanel, ProxiesPage, WorkspacePage);
+               trusting it is the dangerous way, so its button is the red secondary one. -->
+          <Notice tone="warn" role="alert">
+            <b>{$t('ssh_hostkey_changed_title')}</b>
             <code class="hostkey-fp">{mismatchFingerprint}</code>
             {$t('ssh_hostkey_changed_hint')}
-          </span>
-          <button class="btn-primary btn-sm" onclick={trustAndReconnect} disabled={trusting}>
-            {trusting ? $t('ssh_connecting') : $t('ssh_hostkey_trust_btn')}
-          </button>
-        </div>
-      {:else}
-        <div class="disconnected-banner">
-          <Icon name="wifi-off" size={13} />
-          {session?.error ? $t('ssh_terminal_error', { msg: explainTorMessage(session.error, $t) }) : $t('ssh_terminal_closed')}
-          <button class="btn-primary btn-sm" onclick={reconnect}>{$t('ssh_btn_reconnect')}</button>
-        </div>
-      {/if}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => (dismissedFp = mismatchFingerprint)} disabled={trusting}>{$t('common_cancel')}</button>
+              <button class="btn btn-danger-soft btn-sm" type="button" onclick={trustAndReconnect} disabled={trusting}>
+                {trusting ? $t('ssh_connecting') : $t('ssh_hostkey_trust_btn')}
+              </button>
+            {/snippet}
+          </Notice>
+        {:else}
+          <Notice tone="danger" icon="wifi-off">
+            {session?.error ? $t('ssh_terminal_error', { msg: explainTorMessage(session.error, $t) }) : $t('ssh_terminal_closed')}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={reconnect}>{$t('ssh_btn_reconnect')}</button>
+            {/snippet}
+          </Notice>
+        {/if}
+      </div>
     {/if}
 
     <div class="xterm-container" bind:this={termEl}></div>
@@ -319,10 +316,10 @@
               <div class="prompt-error">{promptError}</div>
             {/if}
             <div class="prompt-actions">
-              <button class="btn-sm btn-ghost" onclick={() => answerHostKey(false)} disabled={promptSubmitting}>
+              <button class="btn btn-ghost" onclick={() => answerHostKey(false)} disabled={promptSubmitting}>
                 {$t('ssh_hostkey_reject')}
               </button>
-              <button class="btn-sm btn-primary" onclick={() => answerHostKey(true)} disabled={promptSubmitting}>
+              <button class="btn btn-primary" onclick={() => answerHostKey(true)} disabled={promptSubmitting}>
                 {$t('ssh_hostkey_trust')}
               </button>
             </div>
@@ -360,10 +357,10 @@
             <div class="prompt-error">{promptError}</div>
           {/if}
           <div class="prompt-actions">
-            <button class="btn-sm btn-ghost" onclick={() => { activePrompt = null; promptInputs = []; }} disabled={promptSubmitting}>
-              {$t('ssh_btn_cancel')}
+            <button class="btn btn-ghost" onclick={() => { activePrompt = null; promptInputs = []; }} disabled={promptSubmitting}>
+              {$t('common_cancel')}
             </button>
-            <button class="btn-sm btn-primary" onclick={submitPromptResponses} disabled={promptSubmitting}>
+            <button class="btn btn-primary" onclick={submitPromptResponses} disabled={promptSubmitting}>
               {promptSubmitting ? $t('ssh_connecting') : $t('ssh_btn_send')}
             </button>
           </div>
@@ -448,7 +445,7 @@
     flex: 1;
     min-width: 0;
   }
-  .host-label { color: var(--text-dim); font-size: var(--fs-2xs); }
+  .host-label { color: var(--text-dim); font-size: var(--fs-xs); }
   .terminal-status { display: flex; align-items: center; }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .dot.green { background: var(--success); }
@@ -464,40 +461,27 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 22px;
+    width: 36px;
+    height: 36px;
     background: none;
     border: none;
     cursor: pointer;
     color: var(--text-3);
-    border-radius: 3px;
+    border-radius: var(--radius);
     transition: background 0.12s, color 0.12s;
     padding: 0;
   }
   .hbtn:hover { background: var(--surface-hover); color: var(--text-2); }
   .hbtn.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
 
-  .disconnected-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: 0.3rem var(--sp-3);
-    background: var(--danger-bg);
-    color: var(--danger-text);
-    font-size: var(--fs-xs);
-    border-bottom: 1px solid var(--danger-border);
-    flex-shrink: 0;
-  }
-  .disconnected-banner .btn-primary { margin-left: auto; flex-shrink: 0; }
+  .plate { padding: var(--sp-2) var(--sp-3); flex-shrink: 0; }
 
-  .hostkey-banner { align-items: flex-start; }
-  .hostkey-text { flex: 1; min-width: 0; line-height: 1.5; }
   .hostkey-fp {
     display: block;
+    margin: var(--sp-1) 0;
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     word-break: break-all;
-    opacity: 0.9;
   }
 
   .xterm-container {
@@ -506,7 +490,7 @@
     overflow: hidden;
     padding: 0.2rem 0.25rem;
     /* Always dark to match the fixed xterm palette — no light seams around the canvas */
-    background: #15171e;
+    background: var(--term-bg);
     color-scheme: dark;
   }
   .xterm-container :global(.xterm) { height: 100%; width: 100%; }
@@ -538,8 +522,10 @@
     box-shadow: var(--shadow-lg);
   }
   .prompt-title {
-    font-size: var(--fs-base);
-    font-weight: 600;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
     color: var(--text);
   }
   .prompt-instructions {
@@ -567,14 +553,14 @@
   .prompt-field input {
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-badge);
+    border-radius: var(--radius-field);
     padding: 0.45rem 0.6rem;
     color: var(--text);
     font-size: var(--fs-sm);
     outline: none;
     transition: border-color 0.15s;
   }
-  .prompt-field input:focus { border-color: var(--accent); }
+  .prompt-field input:focus { border-color: var(--accent-border); }
   .prompt-error {
     font-size: var(--fs-xs);
     color: var(--danger-text);

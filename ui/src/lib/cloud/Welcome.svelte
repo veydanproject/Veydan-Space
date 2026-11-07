@@ -9,7 +9,7 @@
   import type { CloudActivation } from '$lib/cloud/api';
   import { activating } from '$lib/cloud/status.svelte';
   import { errorKeyOf, formatBytes } from '$lib/cloud/account';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let {
     activation,
@@ -53,7 +53,7 @@
   </ul>
   <div class="actions">
     <button class="btn btn-primary" type="button" disabled={running} onclick={onActivate}>
-      {running ? $t('cloud_activating') : $t('cloud_activate')}
+      {running ? $t('cloud_activating') : $t('settings_sync_cloud_activate')}
     </button>
     <button class="btn btn-ghost" type="button" disabled={running} onclick={onKey}><Icon name="key" size={14} />{$t('cloud_key_have')}</button>
   </div>
@@ -74,8 +74,8 @@
     display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px;
     border-radius: var(--radius-md); background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent);
   }
-  h2 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.01em; color: var(--text); }
-  .text { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: 1.5; max-width: 520px; }
+  h2 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: var(--ls-tight); color: var(--text); }
+  .text { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-base); max-width: 520px; }
   .gives { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .gives li { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); color: var(--text-body); }
   .gives li :global(svg) { color: var(--accent-text); flex-shrink: 0; }

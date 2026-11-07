@@ -186,7 +186,7 @@
   {#if failure !== null}
     <div class="mark danger unsent-mark" role="alert" title={failure || undefined}>
       <Icon name="alert-triangle" size={14} />{$t('chan_not_sent')}
-      {#if onretry}<button class="retry" onclick={() => onretry?.(item)}><Icon name="refresh-cw" size={11} />{$t('chan_retry')}</button>{/if}
+      {#if onretry}<button class="retry" onclick={() => onretry?.(item)}><Icon name="arrow-forward-up" size={11} />{$t('common_retry')}</button>{/if}
     </div>
   {/if}
 {/snippet}
@@ -358,9 +358,9 @@
     position: relative; display: flex; flex-direction: column; gap: var(--sp-2); width: min(680px, 100%); align-self: center;
     transition: box-shadow var(--dur-base) var(--ease);
   }
-  .post.card, .post.comment { border-radius: var(--radius-card, 18px); background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
+  .post.card, .post.comment { border-radius: var(--radius-card); background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
   /* A card of the feed (the redesign of the feed): 20 round, the title row, the words, the reactions, who at its foot. */
-  .post.card { width: min(720px, 100%); padding: 14px var(--sp-4) var(--sp-3) var(--sp-5); gap: 10px; border-radius: var(--radius-pane); box-sizing: border-box; }
+  .post.card { width: min(720px, 100%); padding: 14px var(--sp-4) var(--sp-3) var(--sp-5); gap: 10px; border-radius: var(--radius-card); box-sizing: border-box; }
   .post.phone.card { width: min(680px, 100%); padding: var(--sp-3) var(--sp-3) 10px var(--sp-4); }
   .post.full { width: 100%; gap: var(--sp-3); }
   /* A comment: a card of its own (the mockup c4.js), 16 round. */
@@ -398,7 +398,7 @@
   .name-text { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* A moderator's or an author's chip is drawn by its edge: a grey fill on the post's own fill is lost in the dark. */
-  .role { flex-shrink: 0; display: inline-flex; align-items: center; height: 20px; box-sizing: border-box; font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); }
+  .role { flex-shrink: 0; display: inline-flex; align-items: center; height: 20px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); }
   .role.owner { border-color: transparent; background: var(--accent-tint); color: var(--accent-text-2); }
   .role.admin { border-color: transparent; background: var(--success-bg); color: var(--success-text, var(--success)); }
   .sep { margin-inline: 3px; }
@@ -413,13 +413,13 @@
   .section-line + .title-row { margin-top: -2px; }
   .tags { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; min-width: 0; margin-left: auto; }
   .title {
-    flex: 1; min-width: 0; margin: 0; padding-top: var(--sp-1); font-size: var(--fs-md); line-height: 23px; font-weight: var(--fw-bold); color: var(--text);
+    flex: 1; min-width: 0; margin: 0; padding-top: var(--sp-1); font-size: var(--fs-md); line-height: var(--lh-snug); font-weight: var(--fw-bold); color: var(--text);
     overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
   }
   /* The post page: the title 20, the whole width; the pin beside it, on its first line. */
-  .full .title { font-size: var(--fs-xl); line-height: 26px; letter-spacing: -0.01em; display: block; overflow: visible; user-select: text; padding-top: 0; }
+  .full .title { font-size: var(--fs-xl); line-height: var(--lh-tight); display: block; overflow: visible; user-select: text; padding-top: 0; }
   .full .title-row { margin-right: 0; }
-  .full .tags { min-height: 26px; }
+  .full .tags { min-height: 24px; }
   .pin { display: inline-flex; flex-shrink: 0; color: var(--accent-text); }
   .scope-mark {
     display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex-shrink: 1; height: 24px; padding: 0 var(--sp-2); box-sizing: border-box;
@@ -445,7 +445,7 @@
   .mark.danger { background: var(--danger-bg); color: var(--danger-text); }
   .text { color: var(--text); }
   .card .text, .full .text { color: var(--text-body); }
-  .comment .text :global(.text) { font-size: var(--fs-base); line-height: 1.45; }
+  .comment .text :global(.text) { font-size: var(--fs-base); line-height: var(--lh-snug); }
   .media { display: flex; flex-direction: column; gap: 4px; }
   /* Pictures as one block: the menu of a post without words sits on its corner. */
   .visual { position: relative; width: min(420px, 100%); }
@@ -481,7 +481,7 @@
     -webkit-mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
     mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
   }
-  .dots { position: absolute; display: inline-flex; align-items: center; font-size: var(--fs-body); line-height: 1; color: var(--text-2); pointer-events: none; }
+  .dots { position: absolute; display: inline-flex; align-items: center; font-size: var(--fs-body); line-height: var(--lh-icon); color: var(--text-2); pointer-events: none; }
   .read {
     align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; margin-top: -4px; padding: 2px 0; border: none; background: none; cursor: pointer;
     font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--accent-text);
@@ -492,7 +492,7 @@
   /* A reaction's pill: its own class, not the global `.chip` (another height, fill and hover). */
   .react {
     display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
-    background: var(--surface-3); color: var(--text-2); font: inherit; line-height: 1; cursor: pointer;
+    background: var(--surface-3); color: var(--text-2); font: inherit; line-height: var(--lh-icon); cursor: pointer;
   }
   .react:hover { background: var(--surface-hover); }
   .react.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }

@@ -9,7 +9,7 @@
 
 [workspace]
 resolver = "2"
-members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "calls", "rtc", "runtime", "testkit", "evidence"]
+members = ["core", "vlink", "http", "links", "richtext", "preview", "store", "identity", "transport", "ingress", "contacts", "dm", "media", "avatar", "groups", "push", "presence", "notify", "calls", "rtc", "runtime", "testkit", "evidence", "archive"]
 # The vendored C++ bridge of the engine (crates/messenger/rtc/vendor/webrtc-sys,
 # the [patch] below) is a dependency, not a member: it is built as the
 # registry crate would be, and neither tested nor linted as ours.
@@ -108,6 +108,7 @@ messenger-runtime = { path = "runtime" }
 messenger-testkit = { path = "testkit" }
 messenger-rtc = { path = "rtc" }
 messenger-evidence = { path = "evidence" }
+messenger-archive = { path = "archive" }
 
 [patch.crates-io]
 # webrtc-sys as published, with four small patches (its PATCH.md): the

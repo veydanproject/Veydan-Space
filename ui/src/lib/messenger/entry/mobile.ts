@@ -18,6 +18,7 @@ import ProfilePane from '../pages/ProfilePane.svelte';
 import NoticeBanner from '../push/NoticeBanner.svelte';
 import CallWatcher from '../calls/CallWatcher.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
+import ArchiveGate from '../archive/ArchiveGate.svelte';
 
 /**
  * The bar of the messenger's tabs: «Чаты», «Группы», the sections modules
@@ -58,6 +59,8 @@ export const module: ModuleDef = {
     { id: 'calls', component: CallWatcher, place: 'window' },
     // A link clicked outside the app: its card, once the app is unlocked.
     { id: 'incoming-link', component: IncomingLink, place: 'window' },
+    // The first screen after a restore or a linking, while the newest months of the archive come back.
+    { id: 'archive-gate', component: ArchiveGate, place: 'window' },
   ],
   // The tabs keep the bar of the tabs; the chat and settings screens use the whole height.
   bar: (url) => (TABS.has(url.pathname.replace(/\/$/, '')) ? tabs() : url.pathname.startsWith(`${BASE}/`) ? null : undefined),

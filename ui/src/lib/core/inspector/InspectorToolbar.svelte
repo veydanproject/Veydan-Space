@@ -8,6 +8,7 @@
   import { toggleTheme } from '$lib/core/theme';
   import { takeScreenshot } from './screenshot';
   import InspectorCustomGrid from './InspectorCustomGrid.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   const GRID_OPTIONS: GridSize[] = [4, 8, 12, 'custom', 'off'];
   const ZOOM_OPTIONS: ZoomLevel[] = [90, 100, 110, 125];
@@ -34,14 +35,17 @@
     showPresetInput = false;
   }
 
-  function handleLoadPreset(e: Event) {
-    const sel = e.target as HTMLSelectElement;
-    inspectorApp.loadPreset(sel.value);
+  let presetPicked = $state('');
+
+  function handleLoadPreset(name: string | null | undefined) {
+    presetPicked = name ?? '';
+    inspectorApp.loadPreset(presetPicked);
   }
 
   function handleDeletePreset() {
-    const sel = document.querySelector<HTMLSelectElement>('.preset-select');
-    if (sel?.value) inspectorApp.deletePreset(sel.value);
+    if (!presetPicked) return;
+    inspectorApp.deletePreset(presetPicked);
+    presetPicked = '';
   }
 
   async function handleScreenshot() {
@@ -141,13 +145,14 @@
   <!-- Presets -->
   <span class="label">{$t('inspector_presets')}</span>
   {#if inspectorApp.presets.length > 0}
-    <select class="preset-select" onchange={handleLoadPreset}>
-      <option value="">—</option>
-      {#each inspectorApp.presets as p}
-        <option value={p.name}>{p.name}</option>
-      {/each}
-    </select>
-    <button title={$t('inspector_preset_delete')} onclick={handleDeletePreset}>✕</button>
+    <div class="preset-select">
+      <CustomSelect
+        options={[{ value: '', label: '—' }, ...inspectorApp.presets.map((p) => ({ value: p.name, label: p.name }))]}
+        value={presetPicked}
+        onchange={handleLoadPreset}
+      />
+    </div>
+    <button title={$t('common_delete')} onclick={handleDeletePreset}>✕</button>
   {/if}
   {#if showPresetInput}
     <input
@@ -156,7 +161,7 @@
       placeholder={$t('inspector_preset_name')}
       onkeydown={(e) => e.key === 'Enter' && handleSavePreset()}
     />
-    <button onclick={handleSavePreset}>{$t('inspector_preset_save')}</button>
+    <button onclick={handleSavePreset}>{$t('common_save')}</button>
     <button onclick={() => (showPresetInput = false)}>✕</button>
   {:else}
     <button onclick={() => (showPresetInput = true)}>+</button>
@@ -184,7 +189,7 @@
     border-bottom: 1px solid rgba(99, 102, 241, 0.3);
     backdrop-filter: blur(6px);
     pointer-events: auto;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: #cbd5e1;
     overflow-x: auto;
     overflow-y: hidden;
@@ -227,7 +232,7 @@
     color: #94a3b8;
     padding: 0.15rem 0.4rem;
     cursor: pointer;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     white-space: nowrap;
     transition: all 0.1s;
   }
@@ -254,22 +259,14 @@
     color: #fca5a5;
   }
 
-  select.preset-select {
-    background: rgba(30, 41, 59, 0.9);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-    border-radius: var(--radius-xs);
-    color: #cbd5e1;
-    font-size: var(--fs-2xs);
-    padding: 0.1rem 0.25rem;
-    cursor: pointer;
-  }
+  .preset-select { flex-shrink: 0; }
 
   input.preset-input {
     background: rgba(30, 41, 59, 0.9);
     border: 1px solid rgba(99, 102, 241, 0.4);
     border-radius: var(--radius-xs);
     color: #e2e8f0;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     padding: 0.15rem 0.35rem;
     width: 120px;
   }

@@ -18,7 +18,6 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { groupStore } from '../groups/groupStore.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { groupStatusText, peopleIn, roomPathText } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
   import GroupRoster from './GroupRoster.svelte';
@@ -69,7 +68,7 @@
   <div class="screen">
     <span class="sr" aria-live="polite">{call ? '' : status}</span>
     <header class="top">
-      <button class="round-btn" onclick={onleave} aria-label={$t('msg_back')}><Icon name="chevron-down" size={24} /></button>
+      <button class="round-btn" onclick={onleave} aria-label={$t('common_back')}><Icon name="chevron-down" size={24} /></button>
       <span class="title">
         <span class="name">{name}</span>
         <span class="sub"><span class:clock={call?.phase === 'in_room'}>{status}</span>{#if count}<span>· {count}</span>{/if}</span>
@@ -82,9 +81,9 @@
     </header>
     {#if call}
       <div class="chips">
-        {#if path}<span class="chip" class:moving><CallIcon name="server" size={11} />{path}</span>{/if}
+        {#if path}<span class="chip" class:moving><Icon name="server" size={11} />{path}</span>{/if}
         <span class="chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
-        {#if call.muted}<span class="chip warn"><CallIcon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
+        {#if call.muted}<span class="chip warn"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
       </div>
     {/if}
 
@@ -99,21 +98,21 @@
       {/if}
     </div>
 
-    {#if error}<p class="error">{error}</p>{/if}
+    {#if error}<p class="error error-msg">{error}</p>{/if}
 
     {#if call}
       <div class="controls" class:many>
         <div class="action">
           <button class="round soft" class:on={call.muted} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleMute()}
             aria-pressed={call.muted} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}>
-            <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={26} />
+            <Icon name={call.muted ? 'mic-off' : 'mic'} size={26} />
           </button>
           <span>{$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}</span>
         </div>
         <div class="action">
           <button class="round soft" class:lit={cameraOn} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleCamera()}
             aria-pressed={cameraOn} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')}>
-            <CallIcon name={cameraOn ? 'video' : 'video-off'} size={26} />
+            <Icon name={cameraOn ? 'video' : 'video-off'} size={26} />
           </button>
           <span>{$t('msg_call_camera')}</span>
         </div>
@@ -129,14 +128,14 @@
           <div class="action">
             <button class="round soft" class:on={speaker} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleSpeaker()}
               aria-pressed={speaker} aria-label={$t('msg_call_speaker')}>
-              <CallIcon name="speaker" size={26} />
+              <Icon name="volume" size={26} />
             </button>
             <span>{$t('msg_call_speaker')}</span>
           </div>
         {/if}
         <div class="action">
           <button class="round decline" disabled={groupCallStore.ending} onclick={() => groupCallStore.leave()} aria-label={$t('msg_gcall_leave')}>
-            <CallIcon name="hangup" size={30} />
+            <Icon name="phone-hangup" size={30} />
           </button>
           <span>{$t('msg_gcall_leave')}</span>
         </div>
@@ -154,7 +153,7 @@
   .screen {
     position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px;
     padding: calc(var(--sat, 0px) + 4px) 0 calc(var(--sab, 0px) + var(--sp-5));
-    background: #0b0d10; color: #fff;
+    background: var(--call-bg); color: #fff;
   }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .top { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 8px; }
@@ -163,22 +162,22 @@
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
   .round-btn.lit { background: rgba(255, 255, 255, 0.16); }
-  .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+  .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: var(--lh-tight); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: flex; gap: 5px; font-size: var(--fs-xs); color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
-  .clock { font-variant-numeric: tabular-nums; color: #7ee2a8; font-weight: var(--fw-semibold); }
+  .clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-2xs); white-space: nowrap;
+    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); white-space: nowrap;
   }
   .chip.quiet { color: rgba(255, 255, 255, 0.65); }
   .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
   .chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 16px; right: 16px; top: 8px; margin: 0 auto; max-width: 420px;
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-sm); line-height: 1.35;
-    background: rgba(18, 22, 27, 0.92); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
+    background: var(--call-glass); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
   }
   .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
   .spin { width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
@@ -186,8 +185,8 @@
   .stage { position: relative; flex: 1; min-height: 0; }
   .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: rgba(255, 255, 255, 0.85); }
   .error {
-    align-self: center; margin: 0 16px; padding: 6px 12px; border-radius: var(--radius-sm); text-align: center; font-size: var(--fs-sm);
-    background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text);
+    align-self: center; margin: 0 16px; padding: 6px 12px; border-radius: var(--radius-md); text-align: center;
+    background: var(--danger-bg); border: 1px solid var(--danger-border);
   }
   .controls { display: flex; justify-content: center; gap: clamp(18px, 7vw, 64px); padding-top: 8px; }
   .controls.many { gap: clamp(6px, 2.5vw, 22px); }
@@ -200,7 +199,7 @@
   }
   .many .round { width: 58px; height: 58px; }
   .round:active:not(:disabled) { transform: scale(0.94); }
-  .round:disabled { opacity: 0.55; }
+  .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
   .soft { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.22); }
   .soft.on { background: #fff; color: #111; }
@@ -208,7 +207,7 @@
   .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
   .sheet {
     position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 70%; display: flex; flex-direction: column;
-    padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: var(--radius-head) var(--radius-head) 0 0; background: var(--surface); color: var(--text);
+    padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--surface); color: var(--text);
     box-shadow: var(--shadow-lg); animation: up 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
   }
   @keyframes up { from { transform: translateY(40px); opacity: 0; } }

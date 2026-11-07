@@ -139,7 +139,7 @@ const ENTITY_ICON: Record<EntityKind, string> = {
   profile: 'user-circle',
   proxy: 'globe',
   ssh: 'terminal',
-  totp: 'shield',
+  totp: 'shield-lock',
   password: kindIcon('password'),
 };
 

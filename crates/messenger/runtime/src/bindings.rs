@@ -18,7 +18,7 @@ use crate::calls::{
 };
 use crate::call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 use crate::cards::{ContactPrivateView, OwnPrivateView};
-use crate::links::{GroupMembership, LinkGroupKind, LinkView, PrivateServerView, ServerPreview};
+use crate::links::{GroupMembership, LinkGroupKind, LinkView, PrivateServerView, ServerAccess, ServerPreview};
 use crate::moderation::{
     BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView, LogEntry, LogPage, ModAction, QueueFilter,
     QueueItem, QueuePage, RequestAction, RequestView, RequestsPage, Schedule,
@@ -64,6 +64,7 @@ pub fn links_ts() -> String {
     let mut out = String::from(HEADER);
     out += &export::<GroupMembership>(&cfg, "What I am to a group, as far as this device knows.");
     out += &export::<LinkGroupKind>(&cfg, "Whether a group lets anyone in by its link.");
+    out += &export::<ServerAccess>(&cfg, "Who may use a server: anyone, its members alone (an invite lets one in), or anyone reads and its authors write.");
     out += &export::<ServerPreview>(&cfg, "A server as its card shows it, before it is added: what it has, whether it is Veydan's, whether it is mine already.");
     out += &export::<LinkView>(&cfg, "What a link inside leads to, as the runtime sees it. The UI never takes a link apart itself.");
     out += &export::<PrivateServerView>(&cfg, "A private server of mine as the settings list it; never its app key.");

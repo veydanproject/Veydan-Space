@@ -53,8 +53,8 @@
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
   .toggle-row:hover:not(:disabled) { border-color: var(--border-2); }
   .toggle-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .toggle-row:disabled { cursor: default; opacity: 0.6; }
-  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-base); line-height: 1.4; }
+  .toggle-row:disabled { cursor: default; opacity: 0.45; }
+  .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-base); line-height: var(--lh-snug); }
   .title { font-weight: var(--fw-semibold); }
-  .hint { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .hint { line-height: var(--lh-snug); }
 </style>

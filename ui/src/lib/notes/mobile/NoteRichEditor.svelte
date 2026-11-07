@@ -382,16 +382,16 @@
     outline: none;
     padding: var(--sp-2) 0;
     font-size: var(--fs-body);
-    line-height: 1.6;
+    line-height: var(--lh-base);
     word-wrap: break-word;
     white-space: pre-wrap;
     user-select: text;
     -webkit-user-select: text;
   }
-  .host :global(h1), .host :global(h2), .host :global(h3) { margin: 1em 0 0.4em; line-height: 1.3; }
-  .host :global(h1) { font-size: 1.5em; }
-  .host :global(h2) { font-size: 1.3em; }
-  .host :global(h3) { font-size: 1.15em; }
+  .host :global(h1), .host :global(h2), .host :global(h3) { margin: 1em 0 0.4em; line-height: var(--lh-snug); }
+  .host :global(h1) { font-size: var(--fs-xl); }
+  .host :global(h2) { font-size: var(--fs-lg); }
+  .host :global(h3) { font-size: var(--fs-md); }
   .host :global(.ProseMirror > :first-child) { margin-top: 0; }
   .host :global(p) { margin: 0 0 0.7em; }
   .host :global(a) { color: var(--accent-text); text-decoration: none; }
@@ -421,7 +421,7 @@
     padding: var(--sp-3);
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     font-family: var(--font-mono);
   }
   .host :global(pre code) { background: none; border: none; padding: 0; font-size: var(--fs-sm); }
@@ -446,7 +446,7 @@
   .host :global(img) {
     max-width: 100%;
     height: auto;
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     vertical-align: middle;
     user-select: none;
     -webkit-user-select: none;
@@ -492,7 +492,7 @@
   .host :global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); border-radius: 3px; }
   .host :global([data-resize-container].ProseMirror-selectednode) {
     outline: 2px solid var(--accent);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
   }
   .lightbox {
     position: fixed;

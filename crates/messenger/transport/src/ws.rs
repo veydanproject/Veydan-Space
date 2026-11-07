@@ -117,7 +117,7 @@ impl WebSocketTransport for BridgedTransport {
                 Some(host) if self.net.route(host) == Route::Bridge => self.through_bridge(url, host).await?,
                 _ => DefaultWebsocketTransport.connect(url, proxy).await?,
             };
-            Ok(self.sockets.keep(halves))
+            Ok(self.sockets.keep(base_of(url.as_str()), halves))
         })
     }
 }
@@ -133,6 +133,9 @@ pub struct Sockets {
 }
 
 struct Socket {
+    /// The relay it goes to, without its query (the app key) or a
+    /// trailing slash: what `close_of` is asked by. Never logged.
+    relay: String,
     sink: Mutex<WebSocketSink>,
     /// Messages received, of any kind: a sign of life.
     heard: AtomicU64,
@@ -170,8 +173,9 @@ impl Sockets {
 
     /// Puts a new connection on the list and gives back its halves, which
     /// end when the connection is closed from here.
-    fn keep(&self, (sink, stream): (WebSocketSink, WebSocketStream)) -> (WebSocketSink, WebSocketStream) {
+    fn keep(&self, relay: String, (sink, stream): (WebSocketSink, WebSocketStream)) -> (WebSocketSink, WebSocketStream) {
         let socket = Arc::new(Socket {
+            relay,
             sink: Mutex::new(sink),
             heard: AtomicU64::new(0),
             closed: AtomicBool::new(false),
@@ -236,9 +240,31 @@ impl Sockets {
         }
     }
 
+    /// Closes the open connections to `relay` (`wss://host[:port][/path]`,
+    /// as `base_of` writes it): `nostr-sdk` makes them anew, and signs in
+    /// again. How many were closed.
+    pub fn close_of(&self, relay: &str) -> usize {
+        let relay = base_of(relay);
+        let mut closed = 0;
+        for socket in self.live() {
+            if socket.relay == relay {
+                socket.shut();
+                closed += 1;
+            }
+        }
+        closed
+    }
+
     pub fn count(&self) -> usize {
         self.live().len()
     }
+}
+
+/// A relay's address as sockets are compared by: without the query (the
+/// app key), the fragment and a trailing slash, lower case.
+fn base_of(url: &str) -> String {
+    let base = url.split(['?', '#']).next().unwrap_or(url);
+    base.trim().trim_end_matches('/').to_ascii_lowercase()
 }
 
 /// The size of a message past its limit, and the limit: a negentropy
@@ -396,7 +422,7 @@ mod tests {
         let sockets = Arc::new(Sockets::default());
         let sink: WebSocketSink = Box::pin(futures_util::sink::drain().sink_map_err(|e: std::convert::Infallible| match e {}));
         let stream: WebSocketStream = Box::pin(futures_util::stream::iter(messages.into_iter().map(Ok)));
-        let (_, stream) = sockets.keep((sink, stream));
+        let (_, stream) = sockets.keep("wss://relay.example".into(), (sink, stream));
         (sockets, stream)
     }
 

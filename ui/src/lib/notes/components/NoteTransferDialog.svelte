@@ -88,7 +88,7 @@
           <Icon name="folder-open" size={13} /> {$t('notes_export_dir')}
         </button>
         <button class="btn btn-ghost btn-sm" disabled={busy || exportIds.length === 0} onclick={() => exportTo(true)}>
-          <Icon name="download" size={13} /> {$t('notes_export_zip')}
+          <Icon name="file-export" size={13} /> {$t('notes_export_zip')}
         </button>
       </div>
       <div class="encrypted">
@@ -110,13 +110,13 @@
       </div>
     {/if}
     {#if result}<p class="result ok">{result}</p>{/if}
-    {#if error}<p class="result err">{error}</p>{/if}
+    {#if error}<p class="result error-msg">{error}</p>{/if}
   </div>
 </Dialog>
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+  .hint { margin: 0; }
   .choices { display: flex; gap: var(--sp-2); }
   .choices .btn { flex: 1; justify-content: center; }
   /* The passphrase has a row of its own: its placeholder is read whole. */
@@ -124,5 +124,4 @@
   .encrypted input { width: 100%; min-width: 0; }
   .result { margin: 0; font-size: var(--fs-xs); word-break: break-all; }
   .result.ok { color: var(--success); }
-  .result.err { color: var(--danger); }
 </style>

@@ -157,12 +157,12 @@
     </button>
   {:else if version === 2}
     <p class="lead kept"><Icon name="check" size={18} />{$t('lock_recover_kept')}</p>
-    <button class="btn btn-primary wide" type="button" onclick={ondone}>{$t('lock_recovery_done')}</button>
+    <button class="btn btn-primary wide" type="button" onclick={ondone}>{$t('common_done')}</button>
   {:else}
     <RecoveryKeyCard code={newCode} title={$t('lock_recover_step3')} intro={$t('lock_recover_step3_hint')} {ondone} />
   {/if}
 
-  {#if error}<p class="err">{error}</p>{/if}
+  {#if error}<p class="error-msg">{error}</p>{/if}
 </div>
 
 <style>
@@ -180,13 +180,13 @@
     color: var(--text-2);
     cursor: pointer;
   }
-  .back:disabled { opacity: 0.3; cursor: default; }
+  .back:disabled { opacity: 0.45; cursor: default; }
   .titles { display: flex; flex-direction: column; }
-  .titles h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+  .titles h3 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); color: var(--text); }
   .step { font-size: var(--fs-xs); color: var(--text-3); }
-  .lead { margin: 0; font-size: var(--fs-base); font-weight: 600; color: var(--text); }
+  .lead { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text); }
   .lead.kept { display: flex; align-items: center; gap: var(--sp-2); color: var(--success-text); }
-  .sub { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .sub { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .sub.none { color: var(--warn-text); }
   .field {
     width: 100%;
@@ -194,14 +194,14 @@
     padding: 6px 10px;
     font: inherit;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-field);
     background: var(--bg-2);
     color: var(--text);
   }
-  .field.code { letter-spacing: 0.08em; text-align: center; }
-  .field.words { resize: vertical; line-height: 1.5; }
+  .field.code { text-align: center; }
+  .field.words { resize: vertical; line-height: var(--lh-base); }
   .row { display: flex; gap: var(--sp-2); }
   .grow { flex: 1; justify-content: center; }
   .wide { width: 100%; justify-content: center; }
-  .err { margin: 0; font-size: var(--fs-xs); color: var(--danger-text); }
+  .error-msg { margin: 0; }
 </style>

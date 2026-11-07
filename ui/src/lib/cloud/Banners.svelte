@@ -6,9 +6,11 @@
   import { isMobile } from '$lib/core/platform';
   import QuotaBanner from '$lib/cloud/QuotaBanner.svelte';
   import RecoveryAlert from '$lib/cloud/RecoveryAlert.svelte';
+  import { zone } from '$lib/core/ui/zone';
 </script>
 
-<div class="banners" class:m={isMobile}>
+<!-- On a computer the toast stands over this column (--zone-cloud), not on its buttons; the column leaves the toast its room (--zone-toast), so the toast's top stays in the window. -->
+<div class="banners" class:m={isMobile} use:zone={isMobile ? null : '--zone-cloud'}>
   <RecoveryAlert />
   <QuotaBanner />
 </div>
@@ -18,7 +20,7 @@
     position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: var(--z-panel);
     width: min(440px, calc(100vw - 2 * var(--sp-4)));
     display: flex; flex-direction: column; gap: var(--sp-2); pointer-events: none;
-    max-height: calc(100vh - 2 * var(--sp-4)); overflow-y: auto;
+    max-height: calc(100vh - 2 * var(--sp-4) - var(--zone-toast, 0px)); overflow-y: auto;
   }
   .banners.m {
     left: var(--sp-3); right: var(--sp-3); width: auto;

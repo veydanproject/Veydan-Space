@@ -206,6 +206,10 @@ struct ErrorFields {
     message: String,
     #[serde(default)]
     pool: Option<String>,
+    /// `read_only`: when the account's grace ends (unix seconds), when the
+    /// server says.
+    #[serde(default)]
+    until: Option<i64>,
     #[serde(default)]
     used: Option<u64>,
     #[serde(default)]
@@ -565,6 +569,10 @@ fn fail(answer: &Answer, what: &str) -> SyncError {
             ": {}",
             e.message.chars().take(300).collect::<String>()
         ));
+    }
+    if let Some(until) = e.until {
+        // `read_only`: the handlers that pause on it read the date from here.
+        msg.push_str(&format!(" until={until}"));
     }
     if let Some(id) = body.request_id {
         msg.push_str(&format!(" (request {id})"));

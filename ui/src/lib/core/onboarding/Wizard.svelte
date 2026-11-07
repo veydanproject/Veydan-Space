@@ -74,7 +74,7 @@
             <Icon name="x" size={22} />
           </button>
         {:else if at > 0}
-          <button type="button" class="ob-back" onclick={() => onboarding.back()} aria-label={$t('ob_back')}>
+          <button type="button" class="ob-back" onclick={() => onboarding.back()} aria-label={$t('common_back')}>
             <Icon name="chevron-left" size={24} />
           </button>
         {:else}
@@ -114,7 +114,7 @@
               </button>
             {:else if at > 0}
               <button type="button" class="ob-back text" onclick={() => onboarding.back()}>
-                <Icon name="chevron-left" size={14} />{$t('ob_back')}
+                <Icon name="chevron-left" size={14} />{$t('common_back')}
               </button>
             {/if}
           </div>

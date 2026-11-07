@@ -5,20 +5,21 @@
   The strip at the top of a group's chat while a call is on in it: "A call
   is on · 3 participants", the faces of who is in, and Join. A call of a
   group does not ring: this is how a member finds it. While I am in it,
-  the strip says so and leads back to the room. A refusal shows under it
-  for a moment, also when the call it was about went and the strip with
-  it ("The call is already over").
+  the strip says so and leads back to the room. A refusal is an error
+  toast, also when the call it was about went and the strip with it
+  ("The call is already over").
 
   A screen reader hears which call is on when that changes, never the
   clock that runs in the strip while I am in the call.
 -->
 <script lang="ts">
   import { locale, t, countKey } from '$lib/core/i18n';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { nameStore } from '../groups/names.svelte';
   import { onPhone } from '../shared/phone';
   import { messengerStore } from '../store.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { callStore } from './callStore.svelte';
   import { bannerKey, peopleIn } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
@@ -47,26 +48,18 @@
   const count = $derived(people > 0 ? $t(countKey('msg_gcall_people', people, $locale), { n: String(people) }) : '');
   const what = $derived(mine || live ? tr(bannerKey(!!mine, (mine ?? live)?.media)) : '');
 
-  let refusal = $state('');
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
   async function join() {
     if (reason) return;
     const { view, refusal: why } = await groupCallStore.join(groupId);
     if (view) { openGroupRoom(phone); return; }
-    if (!why) return;
-    refusal = callErrorText(why, tr);
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => (refusal = ''), 5000);
+    if (why) toast.error(callErrorText(why, tr), { action: false });
   }
-
-  $effect(() => () => { if (timer) clearTimeout(timer); });
 </script>
 
 <span class="sr" aria-live="polite">{what}</span>
 {#if mine || live}
   <div class="banner" class:mine={!!mine}>
-    <span class="dot" aria-hidden="true"><CallIcon name={(mine ?? live)?.media === 'video' ? 'video' : 'phone'} size={14} /></span>
+    <span class="dot" aria-hidden="true"><Icon name={(mine ?? live)?.media === 'video' ? 'video' : 'phone'} size={14} /></span>
     <span class="words">
       <span class="what">{what}</span>
       {#if count}<span class="count">{count}</span>{/if}
@@ -81,15 +74,14 @@
       </span>
     {/if}
     {#if mine}
-      <button class="btn-join soft" onclick={() => openGroupRoom(phone)}>{$t('msg_gcall_open_room')}</button>
+      <button class="btn-join soft" onclick={() => openGroupRoom(phone)}>{$t('common_open')}</button>
     {:else}
       <button class="btn-join" disabled={!!reason || groupCallStore.busy} title={reason || undefined} onclick={join}>
-        <CallIcon name="phone" size={13} />{$t('msg_gcall_join')}
+        <Icon name="phone" size={13} />{$t('msg_gcall_join')}
       </button>
     {/if}
   </div>
 {/if}
-{#if refusal}<div class="refusal" role="alert">{refusal}</div>{/if}
 
 <style>
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -114,7 +106,7 @@
   .face { margin-left: -6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--success-bg); display: inline-flex; }
   .face:first-child { margin-left: 0; }
   .face.more {
-    width: 22px; height: 22px; align-items: center; justify-content: center; font-size: var(--fs-2xs); font-weight: var(--fw-bold);
+    width: 22px; height: 22px; align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: var(--fw-bold);
     background: var(--surface-3); color: var(--text-2);
   }
   .btn-join {
@@ -122,13 +114,9 @@
     border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--success); color: #fff;
   }
   .btn-join.soft { background: var(--surface); color: var(--success-text); border: 1px solid var(--success-border); }
-  .btn-join:disabled { opacity: 0.5; cursor: default; }
+  .btn-join:disabled { opacity: 0.45; cursor: default; }
   @media (hover: hover) { .btn-join:hover:not(:disabled) { filter: brightness(1.08); } }
   @media (pointer: coarse) { .btn-join { padding: 7px 14px; } }
-  .refusal {
-    padding: 6px var(--sp-4); font-size: var(--fs-xs); border-bottom: 1px solid var(--danger-border);
-    background: var(--danger-bg); color: var(--danger-text);
-  }
   @keyframes pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(1.45); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .banner .dot::after { animation: none; opacity: 0; } }
 </style>

@@ -22,7 +22,7 @@
 
 {#if visible}
   <div class="update-banner" role="status">
-    <Icon name="download" size={14} />
+    <Icon name="circle-arrow-up" size={14} />
     {#if updaterStore.status === 'downloading'}
       <span class="banner-text">{$t('settings_update_downloading')} {updaterStore.progress}%</span>
     {:else if updaterStore.status === 'installing'}
@@ -39,11 +39,11 @@
         </button>
       {/if}
       <button class="banner-btn" onclick={() => updaterStore.dismiss()}>
-        {$t('update_banner_later')}
+        {$t('common_later')}
       </button>
     {/if}
     {#if updaterStore.status === 'available'}
-      <button class="banner-close" onclick={() => updaterStore.dismiss()} title={$t('update_banner_later')}>
+      <button class="banner-close" onclick={() => updaterStore.dismiss()} title={$t('common_later')}>
         <Icon name="x" size={13} />
       </button>
     {/if}
@@ -72,7 +72,7 @@
     border: 1px solid var(--accent-tint-border);
     background: transparent;
     color: var(--accent-text);
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-sm);
     padding: 2px 10px;
     font-size: inherit;
     font-family: inherit;

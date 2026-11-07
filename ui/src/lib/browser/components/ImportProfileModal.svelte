@@ -6,6 +6,7 @@
   import { api } from '$lib/browser/api';
   import type { Profile, ProfileExport } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { formatError } from '$lib/core/utils';
   import { torLabel } from '$lib/browser/proxy-label';
@@ -185,6 +186,7 @@
           oninput={handleJsonInput}
           rows="8"
           spellcheck="false"
+          aria-invalid={!!previewError}
         ></textarea>
       {/if}
 
@@ -231,11 +233,11 @@
       {/if}
 
       {#if error}
-        <div class="error-msg">{error}</div>
+        <Notice tone="danger">{error}</Notice>
       {/if}
 
   {#snippet footer()}
-        <button class="btn btn-ghost" onclick={onclose}>{$t('profile_btn_cancel')}</button>
+        <button class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
         <button class="btn btn-primary" disabled={!canImport} onclick={doImport}>
           {loading ? $t('import_btn_loading') : $t('import_btn')}
         </button>
@@ -307,11 +309,9 @@
   }
 
   .preview-title {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
-    text-transform: uppercase;
     color: var(--text-dim);
-    letter-spacing: 0.7px;
     margin-bottom: 0.2rem;
   }
 

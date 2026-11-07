@@ -59,7 +59,7 @@
   }
   .nav-group { display: flex; flex-direction: column; gap: 2px; }
   /* The kit's group label: plain case, 12/600. */
-  .section-label { padding: 0 var(--sp-3); margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); text-transform: none; letter-spacing: 0; }
+  .section-label { padding: 0 var(--sp-3); margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .nav-item {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 40px; text-align: left;
     padding: 0 var(--sp-3);

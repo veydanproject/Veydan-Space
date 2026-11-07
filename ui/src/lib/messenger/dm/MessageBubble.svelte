@@ -110,7 +110,7 @@
     {/if}
 
     {#if m.deleted}
-      <span class="tomb"><Icon name="ban" size={14} />{$t('msg_message_deleted')}</span>
+      <span class="tomb"><Icon name="trash-2" size={14} />{$t('msg_message_deleted')}</span>
     {:else if m.content_type === 'contact'}
       <ContactCardMessage message={m} />
     {:else if m.bot_card}
@@ -150,7 +150,7 @@
     <div class="failed-row">
       <Icon name="alert-triangle" size={14} /><span class="failed-why">{$t(sendFailureKey(m.failure_reason))}</span>
       <button class="btn btn-ghost btn-sm retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
-        <Icon name="refresh-cw" size={16} />{$t('msg_message_retry')}
+        <Icon name="arrow-forward-up" size={16} />{$t('common_retry')}
       </button>
     </div>
   {/if}
@@ -174,7 +174,7 @@
   .bubble {
     position: relative; max-width: min(620px, 86%); padding: 6px var(--sp-3);
     background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
-    --r: var(--radius-head); --r-joined: var(--radius-badge); --r-tail: var(--radius-badge);
+    --r: var(--radius-bubble); --r-joined: var(--radius-badge); --r-tail: var(--radius-badge);
     border-radius: var(--r); display: flex; flex-direction: column; gap: 2px; min-width: 64px;
   }
   /* A run of one author: the corners that touch the next bubble are small. */
@@ -194,7 +194,7 @@
   .bubble.file-only:has(:global(.err), :global(.fail), :global(.foreign)) > .meta { position: static; }
   .bubble.bot { width: min(400px, 86%); box-sizing: border-box; padding: var(--sp-3); --file-meta: 56px; }
   /* With an action the time stands beside it, in the middle of its height. */
-  .bubble.bot:has(:global(.act)) > .meta { position: absolute; right: var(--sp-3); bottom: calc(var(--sp-3) + (var(--control-h) - var(--fs-2xs)) / 2); }
+  .bubble.bot:has(:global(.act)) > .meta { position: absolute; right: var(--sp-3); bottom: calc(var(--sp-3) + (var(--control-h) - var(--fs-xs)) / 2); }
   .bubble.contact { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .bubble.contact > .meta { margin-top: var(--sp-1); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
@@ -204,11 +204,11 @@
     .line { padding-inline: var(--sp-3); touch-action: pan-y; }
   }
   /* Forwarded: whose it was, over what it says. */
-  .fwd { font-size: var(--fs-2xs); font-style: italic; color: var(--text-2); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .fwd { font-size: var(--fs-xs); font-style: italic; color: var(--text-2); line-height: var(--lh-snug); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
   .line.out .fwd { color: var(--bubble-out-meta); }
-  .author { font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  .author { font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
   .tomb { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); color: var(--text-3); font-style: italic; }
-  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; white-space: nowrap; }
+  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: var(--lh-icon); white-space: nowrap; }
   /* On the last line of the text: a float after the words takes the room left
      on that line, or drops to a line of its own at the right when there is none. */
   .reacts { margin-top: var(--sp-1); max-width: min(620px, 86%); }
@@ -242,7 +242,7 @@
   .line.out .reply { background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .reply-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
   .reply-thumb { flex: 0 0 auto; width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
-  .reply-who { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--accent-text-2); }
+  .reply-who { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--accent-text-2); }
   .reply-text { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
   .reply-text :global(.text) { font-size: inherit; line-height: inherit; white-space: inherit; user-select: none; }
   .failed-row { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-1); max-width: min(620px, 86%); font-size: var(--fs-sm); color: var(--danger-text); }

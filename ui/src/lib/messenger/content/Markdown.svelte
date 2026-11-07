@@ -80,17 +80,17 @@
   .b { font-weight: var(--fw-bold); }
   .i { font-style: italic; }
   .s { text-decoration: line-through; }
-  .h { font-weight: var(--fw-bold); line-height: 1.3; }
-  .h1 { font-size: 1.25em; }
-  .h2 { font-size: 1.12em; }
-  .h3 { font-size: 1em; }
+  .h { font-weight: var(--fw-bold); line-height: var(--lh-snug); }
+  .h1 { font-size: var(--fs-xl); }
+  .h2 { font-size: var(--fs-lg); }
+  .h3 { font-size: var(--fs-md); }
   a { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; }
   /* Marks of the direction of writing in the words cannot move the words over the host beside them. */
   a, .host, .inside { unicode-bidi: isolate; }
   /* Where a link leads, whatever its words say. */
   .host {
     display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: var(--radius-xs); vertical-align: baseline;
-    font-size: 0.8em; line-height: 1.5; color: var(--text-3); background: color-mix(in srgb, currentColor 8%, transparent); white-space: nowrap;
+    font-size: 0.8em; line-height: var(--lh-base); color: var(--text-3); background: color-mix(in srgb, currentColor 8%, transparent); white-space: nowrap;
   }
   .inside { color: var(--accent-text-2); font-weight: var(--fw-semibold); }
   .ic, pre {
@@ -99,9 +99,9 @@
   }
   .ic { padding: 1px 5px; overflow-wrap: anywhere; }
   .pre { position: relative; display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
-  .lang { align-self: flex-start; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-3); padding: 0 2px 2px; }
+  .lang { align-self: flex-start; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); padding: 0 2px 2px; }
   pre {
-    padding: 8px 10px; overflow-x: auto; white-space: pre; overflow-wrap: normal; line-height: 1.45;
+    padding: 8px 10px; overflow-x: auto; white-space: pre; overflow-wrap: normal; line-height: var(--lh-snug);
     max-width: 100%; touch-action: pan-x pan-y;
     border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   }

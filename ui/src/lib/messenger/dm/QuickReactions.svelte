@@ -35,7 +35,7 @@
       <button class="quick" class:mine={mine.has(e)} aria-pressed={mine.has(e)} onclick={() => onreact(e)}>{e}</button>
     {/each}
     <button class="quick other" onclick={onmore} title={$t('msg_react_more')} aria-label={$t('msg_react_more')}>
-      <Icon name="plus" size={16} />
+      <Icon name="smile-plus" size={16} />
     </button>
   </div>
 {/if}
@@ -46,7 +46,7 @@
   .quick {
     flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; display: inline-flex; align-items: center; justify-content: center;
     padding: 0; border: 1px solid transparent; border-radius: 50%;
-    background: none; font: inherit; font-size: var(--fs-xl); line-height: 1; cursor: pointer; color: var(--text-2);
+    background: none; font: inherit; font-size: var(--fs-xl); line-height: var(--lh-icon); cursor: pointer; color: var(--text-2);
   }
   .quick:hover { background: var(--surface-hover, var(--surface-3)); }
   .quick.mine { border-color: var(--accent); background: var(--accent-tint); }

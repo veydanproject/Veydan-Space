@@ -45,6 +45,6 @@ pub use error::LinkError;
 pub use kind::LinkType;
 pub use outside::{from_outside, SCANNER_ONLY};
 pub use recover::RecoverLink;
-pub use server::{server_id, ServerLink};
+pub use server::{server_id, Access, ServerLink};
 pub use uri::{Uri, UriBuilder, MAX_LINK_LEN, SCHEME};
 pub use web::{is_web_id, WebLink};

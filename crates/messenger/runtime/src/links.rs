@@ -102,6 +102,61 @@ pub struct ServerPreview {
     /// Its relay is one of the Veydan network's (the manifest in use names
     /// it): «серверы Veydan» rather than a server of somebody's own.
     pub is_veydan: bool,
+    /// Who may use it, as the card says: `open` (anyone), `team` (its
+    /// members alone: without an invite this device is let in only after
+    /// its admin adds it) or `channel` (anyone reads, its authors write).
+    #[serde(default)]
+    pub access: ServerAccess,
+    /// The invite the card carries (`inv=`): accepting the card joins the
+    /// server with it (`messenger_server_join`). Never stored.
+    #[serde(default)]
+    pub invite: Option<String>,
+}
+
+/// Who may use a server (internal/messenger-wire.md, «Режимы доступа
+/// сервера»): `open`, `team` or `channel`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerAccess {
+    /// Anyone.
+    #[default]
+    Open,
+    /// Its members alone; one gets in by an invite.
+    Team,
+    /// Anyone reads what is public, joins and comments; its authors write.
+    Channel,
+}
+
+impl ServerAccess {
+    /// The mode a store or a server names; `Open` for a word this build
+    /// does not know.
+    pub fn of_word(word: &str) -> Self {
+        messenger_links::Access::parse(word).map(Self::from).unwrap_or_default()
+    }
+
+    pub fn as_str(self) -> &'static str {
+        messenger_links::Access::from(self).as_str()
+    }
+}
+
+impl From<messenger_links::Access> for ServerAccess {
+    fn from(a: messenger_links::Access) -> Self {
+        match a {
+            messenger_links::Access::Open => Self::Open,
+            messenger_links::Access::Team => Self::Team,
+            messenger_links::Access::Channel => Self::Channel,
+        }
+    }
+}
+
+impl From<ServerAccess> for messenger_links::Access {
+    fn from(a: ServerAccess) -> Self {
+        match a {
+            ServerAccess::Open => Self::Open,
+            ServerAccess::Team => Self::Team,
+            ServerAccess::Channel => Self::Channel,
+        }
+    }
 }
 
 /// A private server of mine as the settings list it; never its app key.
@@ -125,6 +180,14 @@ pub struct PrivateServerView {
     #[serde(default)]
     #[ts(type = "number")]
     pub groups: i64,
+    /// Who may use it.
+    #[serde(default)]
+    pub access: ServerAccess,
+    /// What its relay said when it last refused this device
+    /// (`restricted: …`, `auth-required: …`): «Нет доступа». `None` once
+    /// it let the device in (an event taken, a join).
+    #[serde(default)]
+    pub denied: Option<String>,
 }
 
 impl From<&servers::ServerRow> for PrivateServerView {
@@ -139,6 +202,8 @@ impl From<&servers::ServerRow> for PrivateServerView {
             added_at: s.added_at,
             chats: 0,
             groups: 0,
+            access: ServerAccess::of_word(&s.access),
+            denied: None,
         }
     }
 }
@@ -441,6 +506,8 @@ impl MessengerRuntime {
             push: card.push.clone(),
             known,
             is_veydan,
+            access: card.access.into(),
+            invite: card.invite.clone(),
         })
     }
 
@@ -549,7 +616,7 @@ impl MessengerRuntime {
             .filter(|s| s.is_private())
             .ok_or_else(|| MessengerError::Invalid("server_unknown".into()))?;
         let push_url = servers::push_of(self.store(), &s.id).await?.and_then(|p| p.push_url);
-        ServerLink::of_parts(&s.relay_url, s.relay_key.as_deref(), s.media_url.as_deref(), s.call_node.as_deref(), push_url.as_deref(), &s.push_mode, s.name.as_deref())
+        ServerLink::of_parts(&s.relay_url, s.relay_key.as_deref(), s.media_url.as_deref(), s.call_node.as_deref(), push_url.as_deref(), &s.push_mode, s.name.as_deref(), &s.access)
             .ok_or_else(|| MessengerError::Invalid("server_card_invalid".into()))
     }
 }
@@ -906,6 +973,7 @@ mod tests {
             call_node: None,
             name: Some("S1".into()),
             push_mode: None,
+            access: None,
         };
         let s1 = rt.server_put_private(&put("wss://relay.s1.example")).await.unwrap();
         let s2 = rt.server_put_private(&put("wss://relay.s2.example")).await.unwrap();

@@ -80,7 +80,7 @@ no picker yet.
   `--fs-lg` 18 (dialog titles) · `--fs-xl` 20 (pane titles) · `--fs-2xl` 28 (H1); weights up to `--fw-extrabold` 800.
 - Radius: `--radius-xs` 4 · `--radius-badge` 6 · `--radius-sm` 8 (menu items, small buttons) ·
   `--radius` 10 (buttons, fields) · `--radius-md` 12 (menus, nested) · `--radius-lg` 16 (list rows) ·
-  `--radius-head` 18 (header plates) · `--radius-pane` 20 (panes) · `--radius-card` 24 (cards, dialogs, sheets) ·
+  `--radius-head` 18 (header plates) · `--radius-bubble` 18 (message bubbles; a picture in one: 15) · `--radius-pane` 20 (panes) · `--radius-card` 24 (cards, dialogs, sheets) ·
   `--radius-bar` 26 (the phone's floating bars) · `--radius-pill`.
 - Size: `--topbar-h` 64 · `--control-h` 40 · `--control-h-sm` 32 · `--control-h-lg` 44 (touch) ·
   `--drawer-w` 440 · `--drawer-w-md` 480 · `--drawer-w-lg` 520 · `--dialog-w` 440.
@@ -99,8 +99,8 @@ field is a pill.
 ## Primitives
 
 `.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`(+`.card--hover`)/`.card-title`
-· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-sm`)
-· `.icon-btn`(+`.success/.danger/.accent-soft`) · `.badge`(+`-accent/-ok/-danger/-warn`) · `.chip`(+`.active`)
+· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-danger-soft/-sm`)
+· `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`) · `.chip`(+`.active`)
 · `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
@@ -114,7 +114,7 @@ field is a pill.
 · `.list-cover`(+`.active`)/`.list-cover-corner`(+`.muted/.missed`)/`.list-cover-empty` (a list pane at 72, a column of covers).
 · `.count-pill` — the one counter everywhere (a section of the rail, a row of a list, a cover's corner, ⋮, a tile,
   a tab, a block's head): a pill never narrower than tall, the number centred, bold, tabular figures. Sizes:
-  `.sm` 18 (`--fs-2xs`: a corner, ⋮, a tab), 20 by default (`--fs-xs`: a block's head), `.lg` 22 (a row of a list).
+  `.sm` 18 (`--fs-xs`: a corner, ⋮, a tab), 20 by default (`--fs-xs`: a block's head), `.lg` 22 (a row of a list).
   Colours: the accent with white (unread, the default), `.quiet` (surface-3 / text-2: muted, or only a total),
   `.danger` (missed, errors). A corner count adds only its position and a 2px ring of `--chrome`.
   Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
@@ -192,9 +192,14 @@ keeps no copy of its own.
   goes through `copySecret` (Pass) or `secretCopied()` — 30 s with
   «Очистить сейчас». An undoable action shows `toast.undo` with its undo; a
   failed action `toast.error` with its retry. No local toasts.
-- **Confirmation** — `ask({ title, message, confirmLabel, variant })`
-  (`core/ui/confirm.svelte.ts`): a Modal on a computer, a sheet on the phone
-  with the buttons stacked the whole width, the verb on top, no ×.
+- **Confirmation** — `ask({ title, message, confirmLabel, variant, icon })`
+  (`core/ui/confirm.svelte.ts`), the app's only one (the messenger's
+  `confirmStore.ask` goes there too, no `<Modal>` of its own anywhere): the
+  title (`confirmTitle(label)`, «Удалить чат?»), the text, «Отмена» on the
+  left; a danger question has the red verb and the red tile with its action's
+  icon (`trash-2`, `logout`, `user-minus`, `user-cancel`; default
+  `alert-triangle`) beside the title. A Modal on a computer, a sheet on the
+  phone with the buttons stacked the whole width, the verb on top, no ×.
 - **Tooltip** — a `title` is enough: on a computer `tooltip.ts` shows every
   title as the glass `.vtip` (500 ms for a mouse, at once for the keyboard's
   focus; a shortcut at the end, «Найти (Ctrl+F)», becomes a key chip). An

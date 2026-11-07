@@ -12,7 +12,7 @@
 
 import { pushState } from '$app/navigation';
 import { page } from '$app/state';
-import { BACK_WAIT_MS } from '$lib/core/ui/back';
+import { BACK_WAIT_MS } from './back';
 
 /** The browser, given to a test in its place. */
 export interface SheetBackEnv {
@@ -25,7 +25,7 @@ export interface SheetBackEnv {
 }
 
 /** What holds a place of the history (`App.PageState`). */
-export type BackPlace = 'attachSheet' | 'chooseMessages' | 'forwardSheet' | 'emojiDock';
+export type BackPlace = 'attachSheet' | 'chooseMessages' | 'forwardSheet' | 'emojiDock' | 'selectSheet';
 
 const browser = (place: BackPlace): SheetBackEnv => ({
   push: () => pushState('', { ...page.state, [place]: true }),

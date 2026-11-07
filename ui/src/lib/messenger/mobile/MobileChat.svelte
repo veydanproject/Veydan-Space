@@ -128,7 +128,7 @@
     {#if missingId === id || stuck}
       <div class="note">{$t('msg_mobile_chat_missing')}</div>
       <div class="out">
-        <button type="button" class="m-btn-grad" onclick={toList}>{$t('msg_back')}</button>
+        <button type="button" class="m-btn-grad" onclick={toList}>{$t('common_back')}</button>
       </div>
     {:else}
       <div class="note">{$t('loading')}</div>

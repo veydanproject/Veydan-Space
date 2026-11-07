@@ -24,7 +24,7 @@
 {@render children?.()}
 <div class="foot">
   <div class="pw-actions">
-    <button type="button" class="icon-btn" title={$t('ctx_action_open')} onclick={() => def.open?.(id)}>
+    <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(id)}>
       <Icon name="external-link" size={13} />
     </button>
   </div>

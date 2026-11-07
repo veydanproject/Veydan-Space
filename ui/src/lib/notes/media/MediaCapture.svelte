@@ -137,6 +137,6 @@
     justify-content: center;
   }
   .trigger:active { background: var(--m-seg); }
-  .trigger:disabled { opacity: 0.35; }
+  .trigger:disabled { opacity: 0.45; }
   .danger { color: var(--danger-text); }
 </style>

@@ -45,6 +45,7 @@
 
   --accent:        #7066c6;
   --accent-hover:  #655cb2;
+  --accent-active: #5a529e;
   --accent-bg:     rgba(112, 102, 198, 0.26);
   --accent-border: rgba(185, 177, 242, 0.4);
   --focus-ring:    #b9b1f2;  /* keyboard focus ring: 7.4-9.1:1 on bg, surface, surface-2 */
@@ -57,11 +58,17 @@
 
   --success:        #9fd8b8;
   --success-bg:     rgba(159, 216, 184, 0.13);
+  --success-hover:  #1c6e45;
+  --success-active: #19623e;
+  --success-bg-hover: rgba(159, 216, 184, 0.2);
   --success-text:   #9fd8b8;
   --success-border: rgba(159, 216, 184, 0.28);
   --success-grad:   #1f7a4d;
   --danger:         #d63640;  /* solid danger buttons */
   --danger-bg:      rgba(242, 109, 109, 0.14);
+  --danger-hover:   #c1313a;
+  --danger-active:  #ab2b33;
+  --danger-bg-hover: rgba(242, 109, 109, 0.22);
   --danger-text:    #f26d6d;
   --danger-border:  rgba(242, 109, 109, 0.3);
   --warn-bg:        rgba(245, 196, 81, 0.12);
@@ -122,6 +129,7 @@
   --shadow-lg:   0 16px 40px rgba(0, 0, 0, 0.5);
   --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-danger: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-success: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-drawer: -24px 0 60px rgba(0, 0, 0, 0.5);
   --shadow-knob: 0 2px 5px rgba(0, 0, 0, 0.4);  /* toggle knob */
 
@@ -162,6 +170,21 @@
   --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
   --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
   --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
+  /* A call's windows: dark in both themes (the video is the picture). */
+  --call-bg:            #0b0d10;
+  --call-surface:       #12161b;
+  --call-surface-2:     #1a1e24;
+  --call-surface-3:     #1c2026;
+  --call-text:          #e8e8e8;
+  --call-ok:            #7ee2a8;
+  --call-danger:        #ffb4a8;
+  --call-warn:          #ffd38a;
+  --call-glass:         rgba(18, 22, 27, 0.92);
+  --call-scrim:         rgba(12, 14, 18, 0.62);
+  /* The terminal: dark in both themes. */
+  --term-bg:            #15171e;
+  --term-fg:            #eef1f7;
+  --term-cursor:        #b9b1f2;
 }
 
 /* ── Colours: LIGHT ── */
@@ -194,6 +217,7 @@
 
   --accent:        #7066c6;  /* brand purple, darker step for light bg */
   --accent-hover:  #655cb2;
+  --accent-active: #5a529e;
   --accent-bg:     rgba(112, 102, 198, 0.12);
   --accent-border: rgba(112, 102, 198, 0.28);
   --focus-ring:    #5f50d8;  /* keyboard focus ring: 5.0-5.8:1 on bg, surface, surface-2 */
@@ -206,11 +230,17 @@
 
   --success:        #1f7a4d;
   --success-bg:     rgba(31, 122, 77, 0.1);
+  --success-hover:  #1c6e45;
+  --success-active: #19623e;
+  --success-bg-hover: rgba(31, 122, 77, 0.16);
   --success-text:   #1f7a4d;
   --success-border: rgba(31, 122, 77, 0.22);
   --success-grad:   #1f7a4d;
   --danger:         #d63640;
   --danger-bg:      rgba(217, 45, 54, 0.14);
+  --danger-hover:   #c1313a;
+  --danger-active:  #ab2b33;
+  --danger-bg-hover: rgba(217, 45, 54, 0.22);
   --danger-text:    #c92a32;
   --danger-border:  rgba(217, 45, 54, 0.3);
   --warn-bg:        rgba(214, 158, 20, 0.12);
@@ -263,6 +293,7 @@
   --shadow-lg:   0 16px 40px rgba(23, 20, 60, 0.13);
   --shadow-accent: 0 1px 2px rgba(23, 20, 60, 0.12);
   --shadow-danger: 0 1px 2px rgba(23, 20, 60, 0.12);
+  --shadow-success: 0 1px 2px rgba(23, 20, 60, 0.12);
   --shadow-drawer: -24px 0 60px rgba(23, 20, 60, 0.14);
   --shadow-knob: 0 1px 3px rgba(23, 20, 60, 0.25);
 
@@ -300,4 +331,18 @@
   --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
   --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
   --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
+  /* A call's windows and the terminal: dark here too, as in the dark block. */
+  --call-bg:            #0b0d10;
+  --call-surface:       #12161b;
+  --call-surface-2:     #1a1e24;
+  --call-surface-3:     #1c2026;
+  --call-text:          #e8e8e8;
+  --call-ok:            #7ee2a8;
+  --call-danger:        #ffb4a8;
+  --call-warn:          #ffd38a;
+  --call-glass:         rgba(18, 22, 27, 0.92);
+  --call-scrim:         rgba(12, 14, 18, 0.62);
+  --term-bg:            #15171e;
+  --term-fg:            #eef1f7;
+  --term-cursor:        #b9b1f2;
 }

@@ -50,7 +50,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--color-text-muted);
   }
 
@@ -61,7 +61,7 @@
     border: 1px solid var(--color-border-soft);
     border-radius: var(--radius-xs);
     color: var(--color-text-main);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     text-align: center;
   }
 

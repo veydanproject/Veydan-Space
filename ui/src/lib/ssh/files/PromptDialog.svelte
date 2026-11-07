@@ -69,7 +69,7 @@
     />
   </div>
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={oncancel}>{$t('cancel')}</button>
+    <button class="btn btn-ghost" onclick={oncancel}>{$t('common_cancel')}</button>
     <button class="btn btn-primary" disabled={!current.trim()} onclick={confirm}>
       {confirmLabel ?? $t('files_op_ok')}
     </button>

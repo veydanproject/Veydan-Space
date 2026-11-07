@@ -10,6 +10,7 @@
   import { t } from '$lib/core/mobile/i18n';
   import { hasErrorCode } from '$lib/core/utils';
   import { appLock } from '$lib/core/lock/store.svelte';
+  import { copied } from '$lib/core/ui/toast.svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
@@ -18,17 +19,8 @@
   let { id }: { id: string } = $props();
 
   const entry = $derived(passwordStore.list.find((e) => e.id === id));
-  /** `user` or `pass`: the value just copied */
-  let copied = $state('');
-  let copyTimer: ReturnType<typeof setTimeout>;
   let unlockOpen = $state(false);
   let pendingCopy = $state(false);
-
-  function markCopied(key: string) {
-    copied = key;
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = ''), 1600);
-  }
 
   async function writeClipboard(value: string) {
     try {
@@ -49,7 +41,7 @@
   async function copyUsername() {
     if (!entry?.username) return;
     await writeClipboard(entry.username);
-    markCopied('user');
+    copied();
   }
 
   async function copyPassword() {
@@ -61,7 +53,6 @@
     try {
       const value = (await api.passwords.reveal(id, 'password')).value;
       await copySecret(value);
-      markCopied('pass');
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         pendingCopy = true;
@@ -72,12 +63,12 @@
 </script>
 
 {#if entry?.username}
-  <button type="button" class="chev" class:ok={copied === 'user'} onclick={copyUsername} aria-label={$t('ctx_action_copy_username')}>
-    <Icon name={copied === 'user' ? 'check' : 'id'} size={18} />
+  <button type="button" class="chev" onclick={copyUsername} aria-label={$t('ctx_action_copy_username')}>
+    <Icon name="id" size={18} />
   </button>
 {/if}
-<button type="button" class="chev" class:ok={copied === 'pass'} onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
-  <Icon name={copied === 'pass' ? 'check' : appLock.locked ? 'lock-square-rounded' : 'copy'} size={18} />
+<button type="button" class="chev" onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
+  <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={18} />
 </button>
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (!pendingCopy) return; pendingCopy = false; void copyPassword(); }} />
 
@@ -86,5 +77,4 @@
     display: inline-flex; align-items: center; justify-content: center;
     width: 40px; height: 44px; border: 0; background: transparent; color: var(--text-3);
   }
-  .chev.ok { color: var(--success-text); }
 </style>

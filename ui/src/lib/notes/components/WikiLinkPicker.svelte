@@ -98,7 +98,7 @@
     </button>
   {/each}
   {#if rows.length === 0}
-    <div class="row empty">{entityQuery ? $t('ctx_no_entities') : $t('note_link_type_to_search')}</div>
+    <div class="row empty">{entityQuery ? $t('common_nothing_found') : $t('note_link_type_to_search')}</div>
   {/if}
   {#if kindHints.length > 0}
     <div class="hints">
@@ -123,7 +123,7 @@
     padding: 0.25rem;
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
   .row {
@@ -145,5 +145,5 @@
   .row.empty { color: var(--text-3); cursor: default; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hints { display: flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.3rem 0.5rem 0.15rem; border-top: 1px solid var(--border); }
-  .hint { display: inline-flex; align-items: center; gap: 0.2rem; font-size: var(--fs-2xs); color: var(--text-3); font-family: var(--font-mono, monospace); }
+  .hint { display: inline-flex; align-items: center; gap: 0.2rem; font-family: var(--font-mono); }
 </style>

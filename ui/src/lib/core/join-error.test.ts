@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ERR_JOIN_OWN_LOCK, ERR_NO_ATOMIC_MOVE, ERR_NO_CONDITIONAL_PUT, ERR_SYNC_RUNNING, ERR_VAULT_UNREAD, joinErrorKey, storageErrorKey } from './join-error';
+import { ERR_JOIN_OWN_LOCK, ERR_NO_ATOMIC_MOVE, ERR_NO_CONDITIONAL_PUT, ERR_NO_VAULT, ERR_SYNC_RUNNING, ERR_VAULT_UNREAD, isNoVault, joinErrorKey, storageErrorKey } from './join-error';
 
 describe('joinErrorKey', () => {
   it('knows the text the lock crate refuses a join with', () => {
@@ -61,5 +61,20 @@ describe('storageErrorKey', () => {
     expect(storageErrorKey('storage: webdav put: 507 Insufficient Storage')).toBeNull();
     expect(storageErrorKey(null)).toBeNull();
     expect(storageErrorKey('')).toBeNull();
+  });
+});
+
+describe('isNoVault', () => {
+  it('knows the text the sync crate says a storage without a vault with', () => {
+    const source = readFileSync(new URL('../../../../crates/sync/src/lib.rs', import.meta.url), 'utf8');
+    expect(source).toContain(`#[error(${JSON.stringify(ERR_NO_VAULT)})]\n    NoVault,`);
+  });
+
+  it('reads an error of a command and the last error of the cycle', () => {
+    expect(isNoVault({ code: 'other', message: ERR_NO_VAULT })).toBe(true);
+    expect(isNoVault(ERR_NO_VAULT)).toBe(true);
+    expect(isNoVault({ code: 'other', message: 'wrong passphrase' })).toBe(false);
+    expect(isNoVault(null)).toBe(false);
+    expect(isNoVault('')).toBe(false);
   });
 });

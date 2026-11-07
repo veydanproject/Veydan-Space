@@ -27,12 +27,12 @@ describe('the Tor codes in an error message', () => {
   });
 
   it('translates a Tor message and leaves another one alone', () => {
-    expect(explainTorMessage('tor_failed: boom', tr)).toBe('<ssh_tor_err_failed>');
+    expect(explainTorMessage('tor_failed: boom', tr)).toBe('<proxy_tor_err_failed>');
     expect(explainTorMessage('connection refused', tr)).toBe('connection refused');
   });
 
   it('reads the message of an AppError', () => {
-    expect(explainError({ code: 'proxy', message: 'x tor_in_use: busy' }, tr)).toBe('<ssh_tor_err_in_use>');
+    expect(explainError({ code: 'proxy', message: 'x tor_in_use: busy' }, tr)).toBe('<proxy_tor_err_in_use>');
     expect(explainError('plain', tr)).toBe('plain');
   });
 });

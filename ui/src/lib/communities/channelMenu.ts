@@ -45,8 +45,8 @@ export interface StaffCounts {
 /** The rows of the counts that are not zero, first in the menu. */
 export function countEntries(c: StaffCounts, tr: Translate): MenuEntry[] {
   const rows: MenuEntry[] = [];
-  if (c.queue > 0) rows.push({ label: tr('chan_menu_queue'), badge: String(c.queue), icon: 'shield', onselect: c.openQueue });
-  if (c.requests > 0) rows.push({ label: tr('chan_mod_tab_requests'), badge: String(c.requests), icon: 'user-plus', onselect: c.openRequests });
+  if (c.queue > 0) rows.push({ label: tr('chan_menu_queue'), badge: String(c.queue), icon: 'shield-check', onselect: c.openQueue });
+  if (c.requests > 0) rows.push({ label: tr('chan_mod_tab_requests'), badge: String(c.requests), icon: 'user-question', onselect: c.openRequests });
   return rows;
 }
 
@@ -57,7 +57,7 @@ export function channelEntries(
 ): MenuEntry[] {
   const waiting = counts ? countEntries(counts, tr) : [];
   const list: MenuEntry[] = [...waiting, ...(waiting.length ? [{ type: 'separator' } as const] : []), { label: tr('chan_info'), icon: 'info', onselect: a.info }];
-  if (isModerator(d)) list.push({ label: tr('chan_mod_title'), icon: 'shield', onselect: a.moderation });
+  if (isModerator(d)) list.push({ label: tr('chan_mod_title'), icon: 'shield-check', onselect: a.moderation });
   list.push(
     { type: 'separator' },
     { label: tr(row.pinned ? 'chan_unpin_chat' : 'chan_pin_chat'), icon: 'pin', onselect: a.pin },
@@ -67,7 +67,7 @@ export function channelEntries(
     { label: tr('chan_report_channel'), icon: 'alert-triangle', danger: true, onselect: a.report },
   );
   if (waitingKey && !isOwner(d)) list.push({ label: tr('chan_cancel_join'), icon: 'x', danger: true, onselect: a.cancelJoin });
-  else if (joined(d) && !isOwner(d)) list.push({ label: tr('chan_leave'), icon: 'x', danger: true, onselect: a.leave });
+  else if (joined(d) && !isOwner(d)) list.push({ label: tr('chan_leave'), icon: 'logout', danger: true, onselect: a.leave });
   else if (!joined(d)) list.push({ label: tr('chan_forget'), icon: 'trash-2', danger: true, onselect: a.forget });
   return list;
 }

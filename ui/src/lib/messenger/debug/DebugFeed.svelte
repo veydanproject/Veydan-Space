@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { clockSeconds } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
@@ -65,11 +66,11 @@
   </form>
   {#if !canSend}<div class="muted small">{$t('msg_debug_no_session')}</div>{/if}
   {#if lastSent}<div class="muted small">{$t('msg_debug_sent', { id: lastSent })}</div>{/if}
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   <div class="feed-head">
     <span class="muted small">{$t('msg_debug_feed', { n: String(messengerStore.feed.length) })}</span>
-    <button class="btn btn-ghost" disabled={!messengerStore.feed.length} onclick={() => messengerStore.clearFeed()}>{$t('msg_debug_clear')}</button>
+    <button class="btn btn-ghost" disabled={!messengerStore.feed.length} onclick={() => messengerStore.clearFeed()}>{$t('common_clear')}</button>
   </div>
   <ul class="list">
     {#each messengerStore.feed as e, i (e.at + ':' + i)}

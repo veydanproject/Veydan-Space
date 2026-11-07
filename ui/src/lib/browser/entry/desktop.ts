@@ -17,7 +17,7 @@ export const module: ModuleDef = {
   ...common,
   nav: [
     { id: 'workspaces', title: 'nav_workspaces', icon: 'layers', href: '/' },
-    { id: 'proxies', title: 'nav_proxies', icon: 'globe', href: '/proxies' },
+    { id: 'proxies', title: 'nav_proxies', icon: 'network', href: '/proxies' },
   ],
   settings: [
     { id: 'camoufox', title: 'settings_camoufox_title', group: 'settings_group_browser', order: 10, icon: 'browser', component: CamoufoxCard, bare: true },

@@ -25,6 +25,7 @@
   import type { MessengerPicked, MessengerPoster, MessengerRecording, TextFormat } from "../api";
   import { posterUrl, videoPoster } from '../media/poster';
   import { chatStore } from '../chats/chatStore.svelte';
+  import { act as chatAct } from '../chats/act';
   import { messengerStore } from '../store.svelte';
   import { confirmStore } from '../shared/confirm.svelte';
   import { reportStore, type ReportTarget } from '../shared/report.svelte';
@@ -44,7 +45,8 @@
   import { privateInvite } from '../servers/privateInvite.svelte';
   import ForwardDialog from '../content/ForwardDialog.svelte';
   import { buildTimeline } from '../content/timeline';
-  import { holdBack } from '../attach/sheetBack';
+  import { holdBack } from '$lib/core/ui/sheetBack';
+  import ArchiveEarlier from '../archive/ArchiveEarlier.svelte';
   import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
 
   interface Props {
@@ -204,7 +206,7 @@
 
   async function deleteChosen() {
     const ids = [...chosen];
-    if (!ids.length || !(await confirmStore.ask($t('msg_fwd_delete_confirm', { n: String(ids.length) }), $t('msg_fwd_delete'), true))) return;
+    if (!ids.length || !(await confirmStore.ask($t('msg_fwd_delete_confirm', { n: String(ids.length) }), $t('common_delete'), true, 'trash-2'))) return;
     stopChoosing();
     await guard(() => chatStore.removeMany(ids));
   }
@@ -448,11 +450,11 @@
   }
 
   async function act(a: DmAction) {
-    if (a === "block" && !(await confirmStore.ask($t("msg_rel_confirm_block", { name: chat.title }), $t("msg_rel_cta_block"), true))) return;
-    if (a === "remove" && chat.is_contact && chat.mode === "full_chat" && !(await confirmStore.ask($t("msg_rel_confirm_remove", { name: chat.title }), $t("msg_rel_cta_remove"), true))) return;
-    error = ""; acting = true;
+    if (a === "block" && !(await confirmStore.ask($t("msg_rel_confirm_block", { name: chat.title }), $t("msg_rel_cta_block"), true, "user-cancel"))) return;
+    if (a === "remove" && chat.is_contact && chat.mode === "full_chat" && !(await confirmStore.ask($t("msg_rel_confirm_remove", { name: chat.title }), $t("msg_rel_cta_remove"), true, "user-minus"))) return;
+    acting = true;
     try { await chatStore.act(chat.id, a); }
-    catch (e) { error = explain(e); }
+    catch (e) { toast.error(explain(e), { action: false }); }
     finally { acting = false; }
   }
 
@@ -477,7 +479,7 @@
         list.push({ label: $t("msg_srv_invite_title"), icon: "server-2", onselect: () => privateInvite.show({ peer }) });
       }
       // A banned key cannot be unblocked, so the menu has no way back for it.
-      if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "lock-open", onselect: () => act("unblock") }); }
+      if (chat.mode === "blocked") { if (!chat.banned) list.push({ label: $t("msg_rel_cta_unblock"), icon: "user-check", onselect: () => act("unblock") }); }
       else {
         if (chat.is_contact) list.push({ label: $t("msg_rel_cta_remove"), icon: "user-minus", onselect: () => act("remove") });
         // The bot of Veydan Cloud is approved by the build and is nobody's contact.
@@ -494,19 +496,21 @@
     }
     // No line on top of the menu or twice in a row (the bot of Veydan Cloud has no entries of a relation).
     if (list.length && list[list.length - 1].type !== "separator") list.push({ type: "separator" });
-    list.push({ label: chat.pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatStore.setPinned(chat.id, !chat.pinned) });
-    list.push({ label: chat.is_muted ? $t("msg_chat_unmute") : $t("msg_chat_mute"), icon: chat.is_muted ? "bell" : "bell-off", onselect: () => chatStore.setMuted(chat.id, !chat.is_muted) });
+    // A failure is the toast of the list of chats, with «Повторить».
+    const id = chat.id;
+    const pinned = chat.pinned, muted = chat.is_muted;
+    list.push({ label: pinned ? $t("msg_chat_unpin") : $t("msg_chat_pin"), icon: "pin", onselect: () => chatAct(pinned ? "msg_chat_unpin_failed" : "msg_chat_pin_failed", () => chatStore.setPinned(id, !pinned)) });
+    list.push({ label: muted ? $t("msg_chat_unmute") : $t("msg_chat_mute"), icon: muted ? "bell" : "bell-off", onselect: () => chatAct(muted ? "msg_chat_unmute_failed" : "msg_chat_mute_failed", () => chatStore.setMuted(id, !muted)) });
     // An archived chat is closed (as a deleted one): its page is left with it.
-    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: async () => {
-      const archive = !chat.archived;
-      const id = chat.id;
+    const archive = !chat.archived;
+    list.push({ label: chat.archived ? $t("msg_chat_unarchive") : $t("msg_chat_archive"), icon: "archive", onselect: () => chatAct(archive ? "msg_chat_archive_failed" : "msg_chat_unarchive_failed", async () => {
       await chatStore.setArchived(id, archive);
       if (!archive) return;
-      toast.undo($t('msg_chat_archived_toast'), { icon: 'archive', onAction: () => void chatStore.setArchived(id, false) });
+      toast.undo($t('msg_chat_archived_toast'), { icon: 'archive', onAction: () => chatAct('msg_chat_unarchive_failed', () => chatStore.setArchived(id, false)) });
       onback?.();
-    } });
+    }) });
     // A group is left, not deleted: its own entries say how.
-    if (!isGroup) danger.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("msg_chat_delete"), true)) { await chatStore.deleteChat(chat.id); onback?.(); } } });
+    if (!isGroup) danger.push({ label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: chat.title }), $t("common_delete"), true, "trash-2", $t("msg_chat_delete_title"))) { await chatStore.deleteChat(chat.id); onback?.(); } } });
     if (danger.length) list.push({ type: "separator" }, ...danger);
     return list;
   });
@@ -801,11 +805,11 @@
       // An album goes, and is ticked, whole.
       const fit = fitOf(m, menu.album);
       if (fit.length) list.push({ label: $t('msg_fwd_forward'), icon: 'forward', onselect: () => openForward(fit) });
-      list.push({ label: $t('msg_fwd_select'), icon: 'check-circle', onselect: () => startChoosing(fit) });
-      if (m.text) list.push({ label: $t('msg_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
+      list.push({ label: $t('msg_fwd_select'), icon: 'check', onselect: () => startChoosing(fit) });
+      if (m.text) list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
       const caption = menu.caption ?? m;
-      if (canEdit(caption, chat.can_send)) list.push({ label: $t('msg_message_edit'), icon: 'pencil', shortcut: !phone && lastEditable()?.id === caption.id ? '↑' : undefined, onselect: () => { replyTo = null; editing = caption; } });
-      if (own && m.status === 'failed') list.push({ label: $t('msg_message_retry'), icon: 'refresh-cw', onselect: () => guard(() => chatStore.retry(m.id)) });
+      if (canEdit(caption, chat.can_send)) list.push({ label: $t('common_edit'), icon: 'pencil', shortcut: !phone && lastEditable()?.id === caption.id ? '↑' : undefined, onselect: () => { replyTo = null; editing = caption; } });
+      if (own && m.status === 'failed') list.push({ label: $t('common_retry'), icon: 'arrow-forward-up', onselect: () => guard(() => chatStore.retry(m.id)) });
       if (own && isGroup && m.seen_by?.length) {
         const { x, y } = menu;
         list.push({ label: $t('msg_seen_by', { n: String(m.seen_by.length) }), icon: 'eye', onselect: () => (seen = { open: true, x, y, who: [...m.seen_by] }) });
@@ -911,15 +915,15 @@
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
   <header class="head" class:phone class:on-glass={phone}>
     {#if choosing}
-      <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={phone ? 22 : 16} /></button>
+      <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={18} /></button>
       <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
-      <button class="icon" disabled={!chosenWords} onclick={copyChosen} title={$t('msg_copy')} aria-label={$t('msg_copy')}><Icon name="copy" size={phone ? 20 : 16} /></button>
-      <button class="icon" disabled={!chosen.length} onclick={deleteChosen} title={$t('msg_fwd_delete')} aria-label={$t('msg_fwd_delete')}><Icon name="trash-2" size={phone ? 20 : 16} /></button>
-      <button class="icon go" disabled={!chosen.length} onclick={() => openForward(chosen)} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={phone ? 22 : 18} /></button>
+      <button class="icon" disabled={!chosenWords} onclick={copyChosen} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
+      <button class="icon" disabled={!chosen.length} onclick={deleteChosen} title={$t('common_delete')} aria-label={$t('common_delete')}><Icon name="trash-2" size={18} /></button>
+      <button class="icon go" disabled={!chosen.length} onclick={() => openForward(chosen)} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={18} /></button>
     {:else}
     {#if onback}
-      {#if phone}<button class="icon back" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
-      {:else}<button class="icon back narrow-only" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={18} /></button>{/if}
+      {#if phone}<button class="icon back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+      {:else}<button class="icon back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
     {/if}
     {#snippet identity()}
       <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={40} online={presence === 'online'} />
@@ -960,6 +964,7 @@
 
   <div class="scroll" class:phone bind:this={scroller} {onscroll}>
     <div class="content" bind:this={content}>
+    <ArchiveEarlier chatId={chat.id} />
     {#if earlierBusy}
       <!-- The past is being asked of the relays: it may take a few seconds. -->
       <div class="loading" role="status"><Icon name="loader" size={14} />{$t('msg_history_loading')}</div>
@@ -1037,7 +1042,7 @@
      Over the conversation's own layers, under the info panel that lies over it (WithInfo): the base's plus two. */
   .head.phone {
     position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box;
-    margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4);
   }
   /* The chip of transfers stands at the right of the name and the line under it, in the middle of the head, a place of its own in the row. */
@@ -1059,9 +1064,9 @@
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
   .sub .online { color: var(--success-text); }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon:disabled { opacity: 0.4; cursor: default; background: none; }
+  .icon:disabled { opacity: 0.45; cursor: default; background: none; }
   .icon.go:not(:disabled) { color: var(--accent-text); }
   /* The header while choosing: how many, and what to do with them. */
   .chosen { flex: 1; min-width: 0; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1086,7 +1091,6 @@
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
   /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
   @media (pointer: coarse) {
-    .icon { padding: 10px; }
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
     .to-bottom { height: 44px; min-width: 44px; }
   }
@@ -1104,7 +1108,7 @@
   .content:has(> .placeholder) { margin-bottom: auto; }
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
   .placeholder p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: 1.5; }
+  .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: var(--lh-base); }
   .loading { display: flex; justify-content: center; align-items: center; gap: var(--sp-2); color: var(--text-3); padding: var(--sp-2); font-size: var(--fs-xs); }
   .loading :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .earlier { display: flex; justify-content: center; padding: var(--sp-2); }
@@ -1131,10 +1135,10 @@
   }
   .pick.picture { padding: 0; }
   .pick img { width: 100%; height: 100%; object-fit: cover; }
-  .pick-name { max-width: 100%; font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick-name { max-width: 100%; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick-size {
     position: absolute; left: 3px; bottom: 3px; max-width: calc(100% - 6px); padding: 0 4px; border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: var(--fs-xs); line-height: var(--lh-snug); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     background: rgba(0, 0, 0, 0.55); color: #fff; pointer-events: none;
   }
   .pick:not(.picture) .pick-name { margin-bottom: 12px; }

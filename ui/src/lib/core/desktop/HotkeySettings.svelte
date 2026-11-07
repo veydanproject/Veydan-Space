@@ -31,7 +31,7 @@
     'editor.italic': 'hotkey_editor_italic',
     'editor.link': 'hotkey_editor_link',
     'editor.find': 'hotkey_editor_find',
-    'editor.save': 'hotkey_editor_save',
+    'editor.save': 'common_save',
     'app.palette': 'hotkey_app_palette',
     'app.inspector': 'hotkey_app_inspector',
   };
@@ -141,7 +141,7 @@
     min-width: 0;
     container-type: inline-size;
   }
-  .hint { margin: 0; font-size: var(--fs-base); }
+  .hint { margin: 0; }
   .group { display: flex; flex-direction: column; gap: var(--sp-2); }
   .caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
   .card.list { padding: var(--sp-1); display: flex; flex-direction: column; }

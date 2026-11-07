@@ -29,7 +29,7 @@
   import { connectCloudVault, loadVaultState, type VaultState } from '$lib/cloud/vault';
   import Actions from '$lib/cloud/Actions.svelte';
   import NavRow from '$lib/core/ui/NavRow.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
 
   let {
@@ -181,7 +181,7 @@
             <input id="cloud-recovery-secret" type="password" bind:value={secret} autocomplete="current-password" disabled={busy} autofocus />
           </div>
         {/if}
-        {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+        {#if error}<Notice tone="danger">{error}</Notice>{/if}
         <Actions>
           <button class="btn btn-ghost" type="button" disabled={busy} onclick={() => (asking = null)}>{$t('common_cancel')}</button>
           {#if asking === 'setup' && vault === 'own'}
@@ -200,7 +200,7 @@
 
     <NavRow variant="list" icon="users" title={$t('cloud_trustees_entry')} sub={trusteesLine} href="/cloud/trustees" disabled={!issued} />
   {/if}
-  <NavRow variant="list" icon="shield" title={$t('cloud_trustees_help_entry')} sub={$t('cloud_help_sub')} href="/cloud/help" />
+  <NavRow variant="list" icon="heart" title={$t('cloud_trustees_help_entry')} sub={$t('cloud_help_sub')} href="/cloud/help" />
 </RowList>
 
 {#if hasAccount}
@@ -214,7 +214,7 @@
   .panel { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5); border-bottom: 1px solid var(--border); background: var(--surface-2); }
   .panel.m { padding: var(--sp-4); }
   h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: 1.5; }
+  .text { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-base); }
   .how { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-1); }
   .link {
     display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--sp-1); border: 0; background: none; cursor: pointer;

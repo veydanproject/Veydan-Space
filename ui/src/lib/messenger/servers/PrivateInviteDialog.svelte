@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
@@ -53,7 +54,7 @@
     void run(async () => {
       await invitePeer(p, s);
       privateInvite.close();
-      toast.success($t('msg_srv_invite_sent'));
+      toast.success($t('msg_group_invite_sent'));
     });
   }
 
@@ -89,7 +90,7 @@
       {:else if serverStore.list}
         <p class="lead">{$t('msg_srv_list_empty')}</p>
       {/if}
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
       <p class="note">{$t('msg_srv_invite_link_hint')}</p>
     </div>
   {/if}
@@ -120,7 +121,7 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-body); line-height: 1.5; }
+  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-body); line-height: var(--lh-base); }
   /* The server as one card of rows, a line between them (design book, «Пригласить в частный чат»). */
   .srv :global(.srv-box) { gap: 0; padding: var(--sp-1) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); }
   .srv :global(.head), .srv :global(.row) { align-items: center; padding: var(--sp-2) 0; font-size: var(--fs-sm); }
@@ -131,5 +132,5 @@
   /* The ways side by side where their words fit, else one under the other, the whole width. */
   .ways { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   .ways .btn { flex: 1 1 auto; justify-content: center; }
-  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-base); }
 </style>

@@ -95,7 +95,7 @@
       </button>
     {/if}
     <button type="button" class="btn btn-primary" disabled={notesDirSaving} onclick={saveNotesDir}>
-      {notesDirSaving ? $t('settings_notes_saving') : $t('settings_notes_save')}
+      {notesDirSaving ? $t('settings_notes_saving') : $t('common_save')}
     </button>
   </div>
 </div>
@@ -108,7 +108,7 @@
   .muted.own { margin: 0; font-size: var(--fs-sm); }
   .fail {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
     overflow-wrap: anywhere;
   }
   .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }

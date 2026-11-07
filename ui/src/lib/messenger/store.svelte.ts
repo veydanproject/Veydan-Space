@@ -30,6 +30,7 @@ import { nameStore } from "./groups/names.svelte";
 import { linkStore } from "./content/linkStore.svelte";
 import { sharedStore } from "./content/shared/sharedStore.svelte";
 import { netStore } from "./net/netStore.svelte";
+import { archiveStore } from "./archive/archiveStore.svelte";
 import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
 import { uiPrefs } from "./shared/uiPrefs.svelte";
@@ -140,6 +141,8 @@ class MessengerStore {
           serverStore.load().catch(() => {});
           // Whether a bridge is offered shows above the chats, not only in settings.
           netStore.load().catch(() => {});
+          // The restore of the archive under way, its size and months: the banner, the card.
+          archiveStore.load().catch(() => {});
           // Popular emoji come from every device of mine: reactions and the picker start from them.
           usageStore.load().catch(() => {});
           // How wide I made the panes, the same on every computer of mine.
@@ -174,6 +177,7 @@ class MessengerStore {
         linkStore.reset();
         sharedStore.reset();
         netStore.reset();
+        archiveStore.reset();
         callNodesStore.reset();
         usageStore.reset();
         uiPrefs.reset();
@@ -244,6 +248,7 @@ class MessengerStore {
         requestStore.handleEvent(ev);
         inviteStore.handleEvent(ev);
         groupStore.handleEvent(ev);
+        archiveStore.handleEvent(ev);
       }));
       return;
     }
@@ -260,6 +265,7 @@ class MessengerStore {
         linkStore.handleEvent(e.payload);
         sharedStore.handleEvent(e.payload);
         netStore.handleEvent(e.payload);
+        archiveStore.handleEvent(e.payload);
         usageStore.handleEvent(e.payload);
         uiPrefs.handleEvent(e.payload);
         presenceStore.handleEvent(e.payload);
@@ -274,7 +280,7 @@ class MessengerStore {
         callLog.handleEvent(e.payload);
         this.handleProfileEvent(e.payload);
         // Many a second while a file moves or a peer speaks, again and again while a bot writes: not for the feed.
-        if (e.payload.name === 'transfer.progress' || e.payload.name === 'call.level' || e.payload.name === 'group_call.level') return;
+        if (e.payload.name === 'transfer.progress' || e.payload.name === 'archive.progress' || e.payload.name === 'call.level' || e.payload.name === 'group_call.level') return;
         if (e.payload.name === 'dm.typing' || e.payload.name === 'group.typing') return;
         this.feed = [{ ...e.payload, at: Date.now() }, ...this.feed].slice(0, FEED_LIMIT);
         if (e.payload.name === 'dm.message' || e.payload.name === 'history.synced') this.scheduleStatusRefresh();

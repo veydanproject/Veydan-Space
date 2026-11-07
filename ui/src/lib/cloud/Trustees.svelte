@@ -14,7 +14,7 @@
   import { dateOf } from '$lib/cloud/account';
   import Actions from '$lib/cloud/Actions.svelte';
   import Avatar from '$lib/cloud/Avatar.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { daysBetween, healthKey, MAX_PEOPLE, MIN_PEOPLE, socialErrorKey, TrusteesStore } from '$lib/cloud/social.svelte';
 
   const store = new TrusteesStore();
@@ -99,10 +99,10 @@
     </div>
     <Notice tone="warn">{$t('cloud_trustees_warning', { k: String(store.k), n: String(n) })}</Notice>
   {/if}
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
   <Actions>
     {#if store.status.configured}
-      <button class="btn btn-ghost" type="button" disabled={store.busy} onclick={() => (picking = false)}>{$t('cloud_link_back')}</button>
+      <button class="btn btn-ghost" type="button" disabled={store.busy} onclick={() => (picking = false)}>{$t('common_back')}</button>
     {/if}
     <button class="btn btn-primary" type="button" disabled={store.busy || !store.ready} onclick={save}>
       {store.busy ? $t('cloud_trustees_saving') : $t('cloud_trustees_save')}
@@ -143,11 +143,11 @@
       </li>
     {/each}
   </ul>
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
   {#if confirmingOff}
     <Notice tone="danger">{$t('cloud_trustees_disable_confirm')}</Notice>
     <Actions>
-      <button class="btn btn-ghost" type="button" onclick={() => (confirmingOff = false)}>{$t('cloud_delete_cancel')}</button>
+      <button class="btn btn-ghost" type="button" onclick={() => (confirmingOff = false)}>{$t('common_cancel')}</button>
       <button class="btn btn-danger" type="button" disabled={store.busy} onclick={turnOff}>{$t('cloud_trustees_disable')}</button>
     </Actions>
   {:else}
@@ -163,7 +163,7 @@
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
   .count { font-size: var(--fs-xs); color: var(--text-3); }
   .count.ok { color: var(--success-text); }
@@ -182,6 +182,6 @@
   .stat { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
   .value { font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text); }
   .value.bad { color: var(--danger-text); }
-  .label { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; }
+  .label { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .off { color: var(--danger-text); }
 </style>

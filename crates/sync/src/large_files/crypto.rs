@@ -62,7 +62,8 @@ pub fn open_chunk(
     expected_size: u64,
     data: &[u8],
 ) -> Result<Vec<u8>> {
-    let plain = envelope::open(&keys.lf_chunk, vault_id, Kind::LfChunk, id, data)?;
+    let max = usize::try_from(expected_size.min(super::MAX_CHUNK_SIZE)).unwrap_or(usize::MAX);
+    let plain = envelope::open_limited(&keys.lf_chunk, vault_id, Kind::LfChunk, id, data, max)?;
     if plain.len() as u64 != expected_size {
         return Err(SyncError::Integrity(format!(
             "chunk {id}: size {} != {expected_size}",
@@ -97,7 +98,14 @@ pub fn seal_manifest(
 
 /// Decrypt, re-derive the manifest id and check the chunk list against `file_id`.
 pub fn open_manifest(keys: &Keys, vault_id: &str, id: &str, data: &[u8]) -> Result<ManifestV2> {
-    let canonical = envelope::open(&keys.lf_manifest, vault_id, Kind::LfManifest, id, data)?;
+    let canonical = envelope::open_limited(
+        &keys.lf_manifest,
+        vault_id,
+        Kind::LfManifest,
+        id,
+        data,
+        super::MAX_MANIFEST_SIZE,
+    )?;
     if manifest_id(keys, &canonical) != id {
         return Err(SyncError::Integrity(format!("manifest {id}: id mismatch")));
     }

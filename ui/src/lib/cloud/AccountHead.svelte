@@ -12,7 +12,6 @@
 
   let { profile, actions }: { profile: AccountProfile | null; actions?: Snippet } = $props();
 
-  let copied = $state(false);
   const letter = $derived(profile ? ([...accountName(profile).trim()][0] ?? '?').toUpperCase() : '');
 
   async function copy() {
@@ -20,8 +19,6 @@
     try {
       await navigator.clipboard.writeText(profile.npub);
       copiedToast();
-      copied = true;
-      setTimeout(() => (copied = false), 1500);
     } catch {
       // No clipboard here: the address stays on the screen.
     }
@@ -35,7 +32,7 @@
       <strong>{accountName(profile)}</strong>
       <button type="button" class="npub" onclick={copy} aria-label={$t('cloud_account_copy')} title={$t('cloud_account_copy')}>
         <span class="mono">{shortNpub(profile.npub)}</span>
-        <Icon name={copied ? 'check' : 'copy'} size={14} />
+        <Icon name="copy" size={14} />
       </button>
     </span>
     {#if actions}{@render actions()}{/if}
@@ -45,7 +42,7 @@
     <span class="ava ghost" aria-hidden="true"><Icon name="user" size={36} /></span>
     <strong>{$t('cloud_account_none')}</strong>
     <p>{$t('cloud_account_invite')}</p>
-    <a class="btn btn-primary" href={accountSource()?.createHref ?? '/'}>{$t('cloud_account_create')}</a>
+    <a class="btn btn-primary" href={accountSource()?.createHref ?? '/'}>{$t('common_create')}</a>
   </div>
 {/if}
 
@@ -56,7 +53,7 @@
     background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
   }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
-  .who strong { max-width: 100%; font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.3; overflow-wrap: anywhere; }
+  .who strong { max-width: 100%; font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); overflow-wrap: anywhere; }
   .npub {
     display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-h-sm); margin-left: calc(-1 * var(--sp-2)); padding: 0 var(--sp-2);
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-2); font-size: var(--fs-sm); cursor: pointer;

@@ -111,7 +111,7 @@
   {/if}
   {#snippet footer()}
     {#if done}
-      <button class="btn btn-primary" type="button" onclick={() => (open = false)}>{$t('cloud_done')}</button>
+      <button class="btn btn-primary" type="button" onclick={() => (open = false)}>{$t('common_done')}</button>
     {:else}
       <button class="btn btn-ghost" type="button" onclick={() => (open = false)}>{$t('common_cancel')}</button>
       <button class="btn btn-primary" type="submit" form="cloud-redeem" disabled={busy || sending || !key.trim()}>
@@ -123,7 +123,6 @@
 
 <style>
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
-  .key { width: 100%; height: var(--control-h-lg); text-align: center; font-size: var(--fs-md); letter-spacing: 0.06em; }
-  .key::placeholder { letter-spacing: 0.06em; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
+  .key { width: 100%; height: var(--control-h-lg); text-align: center; font-size: var(--fs-md); }
 </style>

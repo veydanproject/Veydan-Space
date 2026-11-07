@@ -12,7 +12,6 @@
   import { chatStore } from '../chats/chatStore.svelte';
   import { groupStore } from '../groups/groupStore.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { peopleIn } from './group';
   import { groupCallStore } from './groupCallStore.svelte';
 
@@ -40,13 +39,13 @@
       <span class="status">
         <span class="phase" class:clock={call.phase === 'in_room'}>{status}</span>
         <span class="people"><Icon name="users" size={11} />{$t(countKey('msg_gcall_people', people, $locale), { n: String(people) })}</span>
-        {#if call.muted}<span class="muted-mark"><CallIcon name="mic-off" size={11} /></span>{/if}
+        {#if call.muted}<span class="muted-mark"><Icon name="mic-off" size={11} /></span>{/if}
       </span>
     </button>
     <div class="controls">
       <button class="ctl" class:on={call.muted} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleMute()}
         title={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-pressed={call.muted}>
-        <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={15} />
+        <Icon name={call.muted ? 'mic-off' : 'mic'} size={15} />
       </button>
       <button class="ctl" onclick={() => (groupCallStore.shown = true)} title={$t('msg_gcall_unfold')} aria-label={$t('msg_gcall_unfold')}>
         <Icon name="layout-grid" size={15} />
@@ -55,7 +54,7 @@
         <Icon name="message-circle" size={15} />
       </button>
       <button class="ctl end" disabled={groupCallStore.ending} onclick={() => groupCallStore.leave()} title={$t('msg_gcall_leave')} aria-label={$t('msg_gcall_leave')}>
-        <CallIcon name="hangup" size={16} />
+        <Icon name="phone-hangup" size={16} />
       </button>
     </div>
   </div>
@@ -91,8 +90,8 @@
   .ctl.on { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); }
   .ctl.end { width: 40px; border-radius: var(--radius-pill); background: var(--danger); border-color: transparent; color: #fff; }
   .ctl.end:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
-  .ctl:disabled { opacity: 0.6; cursor: default; }
-  .ctl:focus-visible, .who:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .ctl:focus-visible, .who:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @keyframes drop {
     from { opacity: 0; transform: translate(-50%, -10px) scale(0.96); }
     to { opacity: 1; transform: translate(-50%, 0) scale(1); }

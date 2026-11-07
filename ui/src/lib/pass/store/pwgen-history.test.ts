@@ -168,7 +168,7 @@ describe('the question before the history is cleared', () => {
     expect(confirmState.current).toMatchObject({
       title: '«pwgen_history_clear_title»',
       message: '«pwgen_history_clear_message»',
-      confirmLabel: '«pwgen_btn_clear»',
+      confirmLabel: '«common_clear»',
     });
     // A deletion: the danger button (the default of `ask()`).
     expect(confirmState.current?.variant).toBeUndefined();

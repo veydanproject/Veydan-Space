@@ -66,20 +66,20 @@ export function itemEntries(item: FeedItemView, d: ChannelDetail, me: string | n
   // What a moderator does to the author from their message, as from the team (and as a group's chat does).
   const below = others && canModerate(d, item.author, me);
   if (a.hide && !item.hidden && below) mod.push({ label: tr('chan_menu_hide'), icon: 'eye-off', onselect: a.hide });
-  if (below && a.hideAuthor) mod.push({ label: tr('chan_mod_hide_author'), icon: 'eye-off', onselect: a.hideAuthor });
-  if (below && a.mute && !mutedNow(staffOf(d, item.author))) mod.push({ label: tr('chan_member_mute'), icon: 'bell-off', onselect: a.mute });
-  if (a.edit && canEdit(item, me)) author.push({ label: tr('chan_menu_edit'), icon: 'pencil', onselect: a.edit });
+  if (below && a.hideAuthor) mod.push({ label: tr('chan_mod_hide_author'), icon: 'user-off', onselect: a.hideAuthor });
+  if (below && a.mute && !mutedNow(staffOf(d, item.author))) mod.push({ label: tr('chan_member_mute'), icon: 'message-circle-off', onselect: a.mute });
+  if (a.edit && canEdit(item, me)) author.push({ label: tr('common_edit'), icon: 'pencil', onselect: a.edit });
   // «Написать автору» is a message, not the comments: an icon of its own.
   if (others) author.push({ label: tr('chan_menu_write'), icon: 'send', onselect: a.write });
   const danger: MenuItem[] = [];
-  if (canDelete(d, item, me)) danger.push({ label: tr('chan_menu_delete'), icon: 'trash-2', danger: true, onselect: a.remove });
+  if (canDelete(d, item, me)) danger.push({ label: tr('common_remove'), icon: 'trash-2', danger: true, onselect: a.remove });
   if (below && item.review === 'pending' && a.spam) danger.push({ label: tr('chan_mod_spam'), icon: 'ban', danger: true, onselect: a.spam });
   else if (below && a.ban) danger.push({ label: tr('chan_member_ban'), icon: 'user-cancel', danger: true, onselect: a.ban });
   if (others) danger.push({ label: tr('chan_menu_report'), icon: 'alert-triangle', danger: true, onselect: a.report });
   // The moderator's group: its title, the verdict a pair of buttons (one alone stays a row), then the rest.
   const moderation: MenuEntry[] = [];
   if (review.length || mod.length) {
-    moderation.push({ type: 'heading', label: tr('chan_mod_title'), icon: 'shield' });
+    moderation.push({ type: 'heading', label: tr('chan_mod_title'), icon: 'shield-check' });
     if (review.length === 2) moderation.push({ type: 'pair', items: [review[0], review[1]] });
     else moderation.push(...review);
     moderation.push(...mod);

@@ -22,6 +22,7 @@
   import { tick, untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { AttachButton, onKeyboard, onPhone, myKey, type MdBlock } from '$lib/messenger/seams/shared';
   import FeedPost from './FeedPost.svelte';
   import PickedNotes from './PickedNotes.svelte';
@@ -230,8 +231,8 @@
 
 {#snippet head()}
   <header class="head" class:narrow>
-    <button class="icon back" onclick={close} aria-label={$t(narrow ? 'chan_close' : 'chan_back')} title={$t(narrow ? 'chan_close' : 'chan_back')}>
-      <Icon name={narrow ? 'x' : 'chevron-left'} size={narrow ? 22 : 20} />
+    <button class="icon back" onclick={close} aria-label={$t(narrow ? 'common_close' : 'common_back')} title={$t(narrow ? 'common_close' : 'common_back')}>
+      <Icon name={narrow ? 'x' : 'chevron-left'} size={18} />
     </button>
     <div class="h-title">
       <span class="h-name">{editing ? $t('chan_edit_title') : $t('chan_editor_new')}</span>
@@ -250,7 +251,7 @@
     {/if}
     <button class="btn btn-primary publish" disabled={!canPublish} onclick={publish}>
       {#if !narrow}<Icon name={busy ? 'loader' : editing ? 'check' : 'send'} size={15} />{/if}
-      {editing ? $t('chan_save') : $t('chan_editor_publish')}
+      {editing ? $t('common_save') : $t('chan_editor_publish')}
     </button>
   </header>
 {/snippet}
@@ -305,9 +306,9 @@
         </div>
       {/each}
       {#if canAttach && !(narrow && touch)}
-        <div class="thumb add" title={$t('chan_add')}>
+        <div class="thumb add" title={$t('common_add')}>
           <AttachButton onfiles={(p, o) => picked?.add(p, o)} surface="post" {chatId} />
-          <span class="add-label" aria-hidden="true"><Icon name="plus" size={18} />{$t('chan_add')}</span>
+          <span class="add-label" aria-hidden="true"><Icon name="plus" size={18} />{$t('common_add')}</span>
         </div>
       {/if}
     </div>
@@ -358,7 +359,7 @@
 <div class="editor" class:narrow class:phone role="dialog" aria-modal={phone ? 'true' : undefined} tabindex="-1" aria-label={editing ? $t('chan_edit_title') : $t('chan_editor_new')}
   bind:clientWidth={width} use:toBody {onkeydown}>
   {@render head()}
-  {#if error}<div class="err" role="alert"><Icon name="alert-triangle" size={13} />{error}</div>{/if}
+  {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
 
   {#if narrow}
     <div class="tabs">
@@ -401,7 +402,7 @@
 
   .head { display: flex; align-items: center; gap: var(--sp-3); min-height: 64px; padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; }
   .head.narrow { gap: var(--sp-2); padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1); border-bottom: none; background: none; min-height: 60px; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 8px; border-radius: var(--radius-sm); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .h-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
   .h-name { font-size: var(--fs-lg, 18px); font-weight: var(--fw-bold); white-space: nowrap; }
@@ -410,7 +411,7 @@
   .narrow .h-name { font-size: var(--fs-md, 17px); }
   .h-where { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .narrow .h-where { gap: 4px; max-width: 100%; }
-  .narrow .h-in { font-size: var(--fs-2xs); }
+  .narrow .h-in { font-size: var(--fs-xs); }
   /* The section the post goes to, in its colour when it has one. */
   .sec {
     --tag: var(--sec, var(--accent));
@@ -420,11 +421,11 @@
   }
   .sec-icon { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--tag); color: #fff; flex-shrink: 0; }
   .sec-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .narrow .sec { height: auto; padding: 0; border: none; background: none; gap: 4px; font-size: var(--fs-2xs); font-weight: var(--fw-medium, 500); color: color-mix(in srgb, var(--tag) 70%, var(--text)); }
+  .narrow .sec { height: auto; padding: 0; border: none; background: none; gap: 4px; font-size: var(--fs-xs); font-weight: var(--fw-medium, 500); color: color-mix(in srgb, var(--tag) 70%, var(--text)); }
   .narrow .sec-icon { width: auto; height: auto; background: none; color: inherit; }
-  .saved { font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; }
+  .saved { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
   .publish { flex-shrink: 0; gap: 6px; }
-  .err { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-4); font-size: var(--fs-xs); color: var(--danger-text); background: var(--danger-bg); border-bottom: 1px solid var(--danger-border); }
+  .err { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
 
   /* A computer: the fields on the left, the preview on the right. */
   .split { flex: 1; min-height: 0; display: flex; }
@@ -434,19 +435,19 @@
   .p-lbl { flex: 1; }
   .p-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-1) var(--sp-6) var(--sp-6); display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); }
   .p-card { width: min(520px, 100%); display: flex; flex-direction: column; }
-  .p-card.whole { width: min(680px, 100%); padding: var(--sp-4); border-radius: 18px; background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
-  .p-note { margin: 0; text-align: center; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  .p-empty { margin: auto; text-align: center; font-size: var(--fs-sm); color: var(--text-3); max-width: 300px; line-height: 1.5; }
+  .p-card.whole { width: min(680px, 100%); padding: var(--sp-4); border-radius: var(--radius-card); background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
+  .p-note { margin: 0; text-align: center; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
+  .p-empty { margin: auto; text-align: center; font-size: var(--fs-sm); color: var(--text-3); max-width: 300px; line-height: var(--lh-base); }
 
-  .lbl { font-size: var(--fs-2xs); font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+  .lbl { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
   .lbl-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .lbl-note { font-size: var(--fs-2xs); color: var(--text-3); }
+  .lbl-note { font-size: var(--fs-xs); color: var(--text-3); }
   .title-field, .body-field {
-    width: 100%; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field, 12px);
+    width: 100%; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
   }
   .title-field { height: 48px; padding: 0 14px; font-size: var(--fs-lg, 18px); font-weight: var(--fw-bold); }
-  .body-field { flex: 1; min-height: 180px; resize: none; padding: 12px 14px; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-body); }
-  .body-field.mono { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.7; }
+  .body-field { flex: 1; min-height: 180px; resize: none; padding: 12px 14px; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-body); }
+  .body-field.mono { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-base); }
   .title-field:focus, .body-field:focus { outline: none; border-color: var(--accent-border); }
 
   /* The bar of Markdown. */
@@ -459,7 +460,7 @@
     color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold);
   }
   .tb:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
-  .tb:disabled { opacity: 0.35; cursor: default; }
+  .tb:disabled { opacity: 0.45; cursor: default; }
   /* The phone: docked at the bottom, over the keyboard, a row that scrolls sideways. */
   .bar.docked {
     position: fixed; left: 0; right: 0; z-index: 1;
@@ -478,7 +479,7 @@
   }
   .thumb.picture, .thumb.locked:has(img) { padding: 0; }
   .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
-  .t-name { max-width: 100%; font-size: var(--fs-2xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-name { max-width: 100%; font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .unpick, .lock {
     position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border: none; border-radius: 50%; padding: 0;
     display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
@@ -489,8 +490,8 @@
   .thumb.add:hover { border-color: var(--border-2); color: var(--text); }
   /* The attach button fills the tile; the words over it let the click through. */
   .thumb.add :global(.attach) { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; opacity: 0; }
-  .add-label { pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: var(--fw-medium, 500); }
-  .hint { margin: 0; display: flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.45; }
+  .add-label { pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: var(--fw-medium, 500); }
+  .hint { margin: 0; display: flex; align-items: center; gap: 6px; line-height: var(--lh-snug); }
 
   /* Narrow: tabs, one column. */
   .tabs { padding: var(--sp-1) var(--sp-3) var(--sp-2); flex-shrink: 0; }

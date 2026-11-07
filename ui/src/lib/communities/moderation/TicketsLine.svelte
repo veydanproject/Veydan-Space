@@ -49,7 +49,7 @@
     <span class="sep">/</span>
     <button type="button" class="link" disabled={asked} onclick={ask}>{asked ? $t('chan_tickets_asked') : $t('chan_tickets_ask')}</button>
   {/if}
-  {#if error}<span class="error" role="alert">{error}</span>{/if}
+  {#if error}<span class="error-msg" role="alert">{error}</span>{/if}
 </div>
 
 <style>
@@ -58,5 +58,5 @@
   .sep { color: var(--text-3); }
   .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
   .link:disabled { color: var(--text-3); cursor: default; }
-  .error { color: var(--danger-text, var(--danger)); width: 100%; }
+  .error-msg { width: 100%; }
 </style>

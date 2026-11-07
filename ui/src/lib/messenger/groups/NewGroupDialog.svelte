@@ -4,6 +4,7 @@
 <!-- Start a group, or come into one by its link. -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { groupError } from './errors';
   import Icon from '$lib/core/Icon.svelte';
@@ -112,7 +113,7 @@
 <Dialog bind:open title={$t('msg_group_new_title')} width="min(460px, calc(100vw - 24px))">
   <div class="body">
     <div class="seg tabs" role="tablist">
-      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('msg_group_new_create')}</button>
+      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
       <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('msg_group_new_join')}</button>
     </div>
 
@@ -141,7 +142,7 @@
       {:else}
         <p class="hint">{$t('msg_group_note_public')}</p>
       {/if}
-      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+      {#if error}<Notice tone="danger" role="alert">{error}</Notice>{/if}
     {:else}
       <textarea class="field mono" rows="3" bind:value={url} placeholder="veydan://group/…" aria-label={$t('msg_group_new_join')} spellcheck="false" disabled={busy}></textarea>
       {#if parsed}
@@ -163,7 +164,7 @@
       {:else}
         <p class="hint">{$t('msg_group_join_hint')}</p>
       {/if}
-      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+      {#if error}<Notice tone="danger" role="alert">{error}</Notice>{/if}
     {/if}
   </div>
 
@@ -204,7 +205,7 @@
 
   .found { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-3); border: 1px solid var(--border); overflow-wrap: anywhere; }
   .found :global(svg) { flex-shrink: 0; }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  .hint { margin: 0; }
   .hint.bad { color: var(--danger-text); }
   @media (pointer: coarse) {
     .field { font-size: var(--fs-md); }

@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import dialogSource from './ServerAcceptDialog.svelte?raw';
+import listSource from './PrivateServers.svelte?raw';
 import { messengerTranslations } from '../i18n';
 import type { ServerPreview } from '../api';
 
@@ -42,25 +43,52 @@ const S1: ServerPreview = {
   push: 'veydan',
   known: false,
   is_veydan: false,
+  access: 'open',
+  invite: null,
 };
 const VEYDAN: ServerPreview = {
   ...S1, link: 'veydan://server/0123456789abcdef?u=wss%3A%2F%2Fnode-1.veydan.net&k=&p=off&n=', id: '0123456789abcdef', name: '',
-  relay: 'wss://node-1.veydan.net', media: null, call_node: null, push_url: null, push: 'off', is_veydan: true,
+  relay: 'wss://node-1.veydan.net', media: null, call_node: null, push_url: null, push: 'off', is_veydan: true, access: 'open',
 };
 
 describe('what the dialog says of a server', () => {
   it('lists every server a chat on it goes through, a line each', () => {
     expect(serverRows(S1, tr('ru')).map((r) => `${r.label}: ${r.value}`)).toEqual([
-      'Сообщения: relay.s1.example', 'Файлы: media.s1.example', 'Звонки: 203.0.113.7:8443', 'Уведомления: через Veydan',
+      'Доступ: открытый: любой с картой', 'Сообщения: relay.s1.example', 'Файлы: media.s1.example', 'Звонки: 203.0.113.7:8443', 'Уведомления: через Veydan',
     ]);
-    expect(serverRows(S1, tr('en')).map((r) => r.label)).toEqual(['Messages', 'Files', 'Calls', 'Notifications']);
+    expect(serverRows(S1, tr('en')).map((r) => r.label)).toEqual(['Access', 'Messages', 'Files', 'Calls', 'Notifications']);
   });
 
   it('says what a server has not, as not there', () => {
     const rows = serverRows(VEYDAN, tr('ru'));
     expect(rows.map((r) => [r.value, !!r.none])).toEqual([
-      ['node-1.veydan.net', false], ['нет', true], ['напрямую', true], ['нет', true],
+      ['открытый: любой с картой', false], ['node-1.veydan.net', false], ['нет', true], ['напрямую', true], ['нет', true],
     ]);
+  });
+
+  it('says the access mode of every server in the first row', () => {
+    const access = (a: ServerPreview['access'] | undefined) => serverRows({ ...S1, access: a as ServerPreview['access'] }, tr('ru'))[0];
+    expect(access('open')).toEqual({ label: 'Доступ', value: 'открытый: любой с картой' });
+    expect(access('team').value).toBe('по приглашению: только участники');
+    expect(access('channel').value).toBe('канал: читать могут все, пишут авторы');
+    expect(access(undefined).value).toBe('открытый: любой с картой');
+    expect(serverRows({ ...S1, access: 'team' }, tr('en'))[0].value).toBe('by invitation: members only');
+  });
+
+  it('notes the invitation of a card only when it carries one', () => {
+    expect(dialogSource).toMatch(/some\(\(x\) => x\.invite\)/);
+    expect(dialogSource).toContain("$t('msg_srv_invite_note')");
+    expect(tr('en')('msg_srv_invite_note')).toContain('invitation');
+  });
+
+  it('shows «Нет доступа» and the code prompt for a denied server of the list', () => {
+    expect(listSource).toContain('{#if s.denied}');
+    expect(listSource).toContain("$t('msg_srv_no_access')");
+    expect(listSource).toContain('messengerApi.servers.join(');
+    for (const code of ['msg_srv_invite_invalid', 'msg_srv_invite_used', 'msg_srv_invite_expired', 'msg_srv_join_failed']) {
+      expect(listSource).toMatch(new RegExp(code === 'msg_srv_join_failed' ? code : `server_${code.slice(8)}`));
+      expect(tr('ru')(code)).not.toBe('');
+    }
   });
 
   it('opens «Частный сервер» for a server and shuts it', () => {
@@ -76,9 +104,9 @@ describe('what the dialog says of a server', () => {
 
   it('is a dialog with «Добавить» and «Отмена», its texts in the dictionary', () => {
     expect(dialogSource).toContain("$t('msg_srv_accept_title')");
-    expect(dialogSource).toContain("$t('msg_srv_accept_yes')");
+    expect(dialogSource).toContain("$t('common_add')");
     expect(dialogSource).toContain("$t('common_cancel')");
-    for (const key of ['msg_srv_accept_title', 'msg_srv_accept_lead', 'msg_srv_accept_note', 'msg_srv_accept_yes']) {
+    for (const key of ['msg_srv_accept_title', 'msg_srv_accept_lead', 'msg_srv_accept_note']) {
       expect(tr('ru')(key)).not.toBe('');
       expect(tr('en')(key)).not.toBe('');
     }

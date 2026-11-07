@@ -23,14 +23,13 @@
   import { emptySecretState, restoreSecretOf } from '$lib/cloud/restoreSecret';
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
   import { RecoverStore, shortKey, socialErrorKey } from '$lib/cloud/social.svelte';
 
   const store = new RecoverStore();
   let npub = $state('');
   let secret = $state(emptySecretState());
-  let copied = $state(false);
   let wordsDone = $state(false);
   let now = $state(Math.floor(Date.now() / 1000));
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -80,8 +79,6 @@
     try {
       await navigator.clipboard.writeText(view.link);
       copiedToast();
-      copied = true;
-      setTimeout(() => (copied = false), 1600);
     } catch {
       // No clipboard here: the link is on the screen.
     }
@@ -105,7 +102,7 @@
       {#if !store.recovered.restored.vault_joined}<p>{$t('cloud_link_done_vault')}</p>{/if}
       {#if !store.recovered.closed}<p>{$t('cloud_recover_not_closed')}</p>{/if}
       {#snippet actions()}
-        <Actions><button class="btn btn-primary" type="button" onclick={() => goto('/messenger')}>{$t('cloud_restore_open')}</button></Actions>
+        <Actions><button class="btn btn-primary" type="button" onclick={() => goto('/messenger')}>{$t('common_open')}</button></Actions>
       {/snippet}
     </StateView>
   {:else}
@@ -119,12 +116,12 @@
   {:else if needsSecret}
     <RestoreSecret bind:state={secret} disabled={store.busy} />
   {/if}
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
   <Actions>
     {#if vaultAway}
       <button class="btn btn-ghost" type="button" disabled={store.busy || !ready} onclick={() => finish(true)}>{$t('cloud_vault_skip')}</button>
     {/if}
-    <button class="btn btn-primary" type="button" disabled={store.busy || !ready} onclick={() => finish()}>{$t('cloud_recover_finish')}</button>
+    <button class="btn btn-primary" type="button" disabled={store.busy || !ready} onclick={() => finish()}>{$t('common_restore')}</button>
   </Actions>
 {:else if view.phase === 'expired'}
   <StateView tone="info" title={$t('cloud_recover_expired_title')}>
@@ -156,12 +153,12 @@
   {#each view.confirmed.filter((c) => c.forged) as c (c.npub)}
     <Notice tone="danger">{$t('cloud_recover_forged', { who: shortKey(c.npub) })}</Notice>
   {/each}
-  {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
   <Actions>
     <button class="btn btn-ghost" type="button" onclick={() => store.cancel()}>{$t('cloud_recover_cancel')}</button>
     {#if view.link}
       <button class="btn btn-primary" type="button" onclick={share}>
-        <Icon name={copied ? 'check' : 'copy'} size={14} />{copied ? $t('cloud_recover_link_copied') : $t('cloud_recover_share_link')}
+        <Icon name="copy" size={14} />{$t('cloud_recover_share_link')}
       </button>
     {/if}
   </Actions>
@@ -177,7 +174,7 @@
     {/if}
     {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
     <Actions>
-      <a class="btn btn-ghost" href="/messenger">{$t('cloud_restore_back')}</a>
+      <a class="btn btn-ghost" href="/messenger">{$t('common_back')}</a>
       <button class="btn btn-primary" type="submit" disabled={store.busy || !npub.trim()}>{$t('cloud_recover_go')}</button>
     </Actions>
   </form>
@@ -186,14 +183,14 @@
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-1); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
   input::placeholder { font-family: var(--font-ui); }
   /* The code is said by voice: large, apart, never broken inside a group. */
   .code {
     margin: 0; padding: var(--sp-4); text-align: center; border-radius: var(--radius-md);
     background: var(--accent-tint); border: 1px solid var(--accent-tint-border); color: var(--text);
-    font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: 0.06em; white-space: nowrap;
+    font-size: var(--fs-xl); font-weight: var(--fw-bold); white-space: nowrap;
     user-select: text; -webkit-user-select: text;
   }
   .confirmed { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); }

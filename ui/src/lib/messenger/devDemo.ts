@@ -581,13 +581,14 @@ export function buildDemo(): DemoData {
   // she sent) says that nothing was written yet.
   const corp: PrivateServerView = {
     id: 'dc0e5a17b2c94f60', name: 'Demo Corp', relay: 'wss://relay.demo-corp.example', media: 'https://media.demo-corp.example',
-    call_node: 'call.demo-corp.example:3478#n1', push: 'veydan', added_at: now - day * 3, chats: 0, groups: 0,
+    call_node: 'call.demo-corp.example:3478#n1', push: 'veydan', added_at: now - day * 3, chats: 0, groups: 0, access: 'open', denied: null,
   };
   // A second one with nothing but a relay, whose push names a gateway the
   // network does not know: the settings show both states.
   const lab: PrivateServerView = {
     id: '5eb7a1c0d3e24f98', name: 'Лаборатория', relay: 'wss://lab.example.org', media: null,
-    call_node: null, push: 'veydan', added_at: now - day, chats: 0, groups: 0,
+    call_node: null, push: 'veydan', added_at: now - day, chats: 0, groups: 0, access: 'team',
+    denied: 'restricted: not a member of this server; ask its admin for an invite',
   };
   const bc = `dm:${boris}@${corp.id}`;
   const ac = `dm:${alice}@${corp.id}`;

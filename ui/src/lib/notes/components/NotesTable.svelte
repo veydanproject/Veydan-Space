@@ -270,8 +270,8 @@
   .th {
     display: inline-flex; align-items: center; gap: 0.25rem;
     background: none; border: 0; padding: 0; cursor: pointer;
-    font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--text-3); font-weight: 600;
+    font-size: var(--fs-xs);
+    color: var(--text-3); font-weight: var(--fw-semibold);
   }
   .th.on { color: var(--text); }
   td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--divider); vertical-align: middle; }
@@ -281,12 +281,12 @@
   /* Flex only on wrappers: a flex `td` drops out of the table layout */
   .title { display: flex; align-items: center; gap: 0.35rem; min-width: 0; max-width: 320px; }
   .title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .muted { font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; }
+  .muted { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
   .draft { color: var(--warn-text); }
   .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .chip {
     display: inline-block; padding: 0.1rem 0.45rem; border-width: 1px; border-style: solid; border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); white-space: nowrap;
+    font-size: var(--fs-xs); white-space: nowrap;
   }
   .entity { display: inline-flex; align-items: center; color: var(--text-2); }
   .empty { padding: var(--sp-4); text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
@@ -310,20 +310,19 @@
   .touch th:last-child .th { justify-content: flex-end; }
   .touch .title { max-width: none; }
   .touch .muted { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; }
-  .touch .th { font-size: var(--fs-2xs); }
+  .touch .th { font-size: var(--fs-xs); }
   .cols-menu {
     position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
     min-width: 200px; max-height: 60vh; overflow-y: auto; padding: 0.4rem;
-    background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     display: flex; flex-direction: column; gap: 0.15rem;
-    text-transform: none; letter-spacing: 0;
   }
   .cols-group {
-    padding: 0.3rem 0.3rem 0.1rem; font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--text-3); font-weight: 600;
+    padding: 0.3rem 0.3rem 0.1rem; font-size: var(--fs-xs);
+    color: var(--text-3); font-weight: var(--fw-semibold);
   }
-  .cols-hint { font-size: var(--fs-2xs); color: var(--text-3); padding: 0 0.3rem 0.2rem; white-space: normal; font-weight: 400; }
-  .cols-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem; font-size: var(--fs-sm); color: var(--text); cursor: pointer; font-weight: 400; }
+  .cols-hint { font-size: var(--fs-xs); color: var(--text-3); padding: 0 0.3rem 0.2rem; white-space: normal; font-weight: var(--fw-normal); }
+  .cols-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem; font-size: var(--fs-sm); color: var(--text); cursor: pointer; font-weight: var(--fw-normal); }
   .cols-item input[type="checkbox"] { margin: 0; }
 </style>

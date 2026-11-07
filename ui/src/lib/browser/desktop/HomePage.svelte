@@ -9,6 +9,7 @@
   import type { Workspace, WorkspaceStats, CreateWorkspaceRequest } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { workspacesStore } from '$lib/browser/store/workspaces.svelte';
   import { profilesStore } from '$lib/browser/store/profiles.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
@@ -244,7 +245,7 @@
   </div>
 
   {#if error}
-    <div class="error-msg" style="margin-bottom:1rem">{error}</div>
+    <div style="margin-bottom:1rem"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
   {#if loading}
@@ -273,10 +274,10 @@
         >
           {#if !ws.is_default}
             <div class="card-menu">
-              <button class="menu-btn" onclick={(e) => { e.stopPropagation(); openEdit(ws); }} title={$t('workspaces_btn_edit')}>
+              <button class="menu-btn" onclick={(e) => { e.stopPropagation(); openEdit(ws); }} title={$t('common_edit')}>
                 <Icon name="pencil" size={13} />
               </button>
-              <button class="menu-btn danger" onclick={(e) => { e.stopPropagation(); openDelete(ws); }} title={$t('workspaces_btn_delete')}>
+              <button class="menu-btn danger" onclick={(e) => { e.stopPropagation(); openDelete(ws); }} title={$t('common_delete')}>
                 <Icon name="trash-2" size={13} />
               </button>
             </div>
@@ -318,7 +319,7 @@
 
           <div class="card-footer">
             <a href="/workspace/{ws.id}" class="open-btn" onclick={(e) => { e.preventDefault(); e.stopPropagation(); void goto(`/workspace/${ws.id}`); }}>
-              {$t('workspaces_open')}
+              {$t('common_open')}
               <Icon name="arrow-right" size={16} />
             </a>
           </div>
@@ -389,15 +390,15 @@
   </div>
   </div>
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={() => (createModal = false)}>{$t('workspaces_btn_cancel')}</button>
+    <button class="btn btn-ghost" onclick={() => (createModal = false)}>{$t('common_cancel')}</button>
     <button class="btn btn-primary" disabled={saving || !createForm.name.trim()} onclick={createWorkspace}>
-      {saving ? '…' : $t('workspaces_btn_create')}
+      {saving ? '…' : $t('common_create')}
     </button>
   {/snippet}
 </Dialog>
 
 <!-- Edit Workspace Modal -->
-<Dialog open={editModal.open} title={$t('workspaces_btn_edit')} onclose={() => (editModal = { ...editModal, open: false })}>
+<Dialog open={editModal.open} title={$t('common_edit')} onclose={() => (editModal = { ...editModal, open: false })}>
   <div class="ws-form">
   <div class="form-group">
     <label for="edit-name">{$t('workspaces_form_name')}</label>
@@ -435,15 +436,15 @@
   </div>
   </div>
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={() => (editModal = { ...editModal, open: false })}>{$t('workspaces_btn_cancel')}</button>
+    <button class="btn btn-ghost" onclick={() => (editModal = { ...editModal, open: false })}>{$t('common_cancel')}</button>
     <button class="btn btn-primary" disabled={saving} onclick={saveEdit}>
-      {saving ? '…' : $t('workspaces_btn_save')}
+      {saving ? '…' : $t('common_save')}
     </button>
   {/snippet}
 </Dialog>
 
 <!-- Delete Workspace Modal -->
-<Dialog open={deleteModal.open} title={$t('workspaces_btn_delete')} onclose={() => (deleteModal = { ...deleteModal, open: false })}>
+<Dialog open={deleteModal.open} title={$t('common_delete')} onclose={() => (deleteModal = { ...deleteModal, open: false })}>
   <p class="delete-warning">
     <Icon name="alert-triangle" size={16} />
     <!-- one flex item: the gap of the row stays between the icon and the text -->
@@ -451,7 +452,7 @@
   </p>
   <div class="delete-options">
     <button class="delete-option" onclick={() => confirmDelete('move_to_default')}>
-      <Icon name="arrow-left" size={14} />
+      <Icon name="chevron-left" size={14} />
       <div>
         <div class="option-title">{$t('workspaces_delete_move')}</div>
         <div class="option-desc">{$t('workspaces_delete_move_hint')}</div>
@@ -466,7 +467,7 @@
     </button>
   </div>
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={() => (deleteModal = { ...deleteModal, open: false })}>{$t('workspaces_btn_cancel')}</button>
+    <button class="btn btn-ghost" onclick={() => (deleteModal = { ...deleteModal, open: false })}>{$t('common_cancel')}</button>
   {/snippet}
 </Dialog>
 
@@ -520,7 +521,7 @@
   .ghost-name {
     padding: 0.625rem 0.875rem;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -594,7 +595,7 @@
   .card-stats { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
   .stat { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--text-soft); }
   .stat :global(svg) { color: var(--text-dim); }
-  .stat.active { color: var(--success-text); font-weight: 500; }
+  .stat.active { color: var(--success-text); font-weight: var(--fw-medium); }
   .stat.active :global(svg) { color: var(--success); }
   .active-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 
@@ -668,7 +669,7 @@
     display: flex; align-items: center; gap: var(--sp-2);
     color: var(--warn-text); font-size: var(--fs-sm);
     background: var(--warn-bg); padding: 0.625rem 0.875rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     margin-bottom: var(--sp-3);
   }
 
@@ -682,6 +683,6 @@
   .delete-option:hover { border-color: var(--border-2); background: var(--surface); }
   .delete-option.danger { color: var(--danger-text); }
   .delete-option.danger:hover { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }
-  .option-title { font-size: var(--fs-sm); font-weight: 600; margin-bottom: 0.15rem; }
+  .option-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin-bottom: 0.15rem; }
   .option-desc { font-size: var(--fs-xs); color: var(--text-2); }
 </style>

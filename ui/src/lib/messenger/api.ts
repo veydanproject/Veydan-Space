@@ -6,7 +6,7 @@
 // that knows command names (internal/messenger-spec.md §4.6).
 
 // Types the runtime writes for itself (`make msg-types`); never by hand.
-export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
+export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView, PrivateServerView, ServerAccess, ServerPreview } from './generated/links';
 export type { DmHistoryPage, SharedCounts, SharedSection } from './generated/shared';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
@@ -14,6 +14,8 @@ import type { MdBlock } from './generated/markdown';
 import type { NoticeBody } from './push/wording';
 export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
 import type { NetCheck, NetMode, NetStatus } from './generated/net';
+export type { ArchivePhase, ArchiveProgress, ArchiveStatus, PauseReason } from './archive/types';
+import type { ArchiveProgress, ArchiveStatus } from './archive/types';
 export type {
   CallDirection, CallEnded, CallLimits, CallLogEntry, CallLogKind, CallMedia, CallNodeInput, CallNodeView, CallOutcome, CallPhase, CallState, CallStats, CallView, CallVia, RelayPolicy,
   CameraInfo, ScreenInfo, VideoInput, VideoQuality, VideoSize, VideoTrack,
@@ -976,6 +978,32 @@ let mockSilent = false;
 let mockRegion = 'default';
 // `messenger.demo.net=restricted`: the direct way does not carry, a bridge does.
 const mockRestricted = typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.net') === 'restricted';
+// `messenger.demo.archive=<state>`: the archive of chats in a state of the card and the screens of its restore.
+// restoring-10 | restoring-63 | restoring-90 | writing | idle | read_only | read_only_until | quota | offline | no_storage.
+function mockArchiveStatus(): ArchiveStatus {
+  const state = (typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.archive')) || 'writing';
+  const MB = 1024 * 1024;
+  const base = { available: true, size_bytes: 48 * MB, from_month: '2024-03', to_month: '2026-10', paused: null as ArchiveStatus['paused'], restoring_scopes: [] as string[], too_large: [] as string[], not_backed_up: [] as string[] };
+  const idle: ArchiveProgress = { phase: 'idle', done: 0, total: 0, bytes_done: 0, bytes_total: 0 };
+  const restoring = (percent: number): ArchiveStatus => ({
+    ...base, size_bytes: Math.round(48 * MB * percent / 100), restoring_scopes: ['dm'],
+    progress: { phase: 'restoring', done: Math.round(percent * 0.4), total: 40, bytes_done: Math.round(48 * MB * percent / 100), bytes_total: 48 * MB, month: percent < 50 ? '2026-10' : '2025-07' },
+  });
+  const paused = (reason: NonNullable<ArchiveStatus['paused']>): ArchiveStatus => ({ ...base, paused: reason, progress: { ...idle, phase: 'paused', reason } });
+  switch (state) {
+    case 'restoring-10': return restoring(10);
+    case 'restoring-63': return restoring(63);
+    case 'restoring-90': return restoring(90);
+    case 'idle': return { ...base, progress: idle };
+    case 'read_only': return paused({ why: 'read_only' });
+    case 'read_only_until': return paused({ why: 'read_only', until: Math.floor(Date.now() / 1000) + 6 * 86400 });
+    case 'quota': return paused({ why: 'quota' });
+    case 'offline': return paused({ why: 'offline' });
+    case 'too_large': return { ...base, progress: idle, too_large: ['2025-02', '2025-03'], not_backed_up: ['2026-10'] };
+    case 'no_storage': return { ...paused({ why: 'no_storage' }), available: false, size_bytes: 0, from_month: null, to_month: null };
+    default: return { ...base, progress: { ...idle, phase: 'writing', done: 1, total: 1, bytes_done: 1, bytes_total: 1 } };
+  }
+}
 let mockNet: NetStatus = {
   mode: 'off', active: false, bridge: null, bridges: 2, private: [], list_checked_at: null, offer: mockRestricted, available: true,
 };
@@ -1458,6 +1486,7 @@ function mockServerOf(link: string): ServerPreview | null {
   if (push !== 'off' && push !== 'veydan') return null;
   return {
     link: link.trim(), id, name: p.get('n') ?? '', relay, media: p.get('m') || null, call_node: p.get('c') || null, push_url: p.get('pu') || null, push,
+    access: 'open', invite: null,
     known: mockPrivateServers.some((s) => s.id === id) || mockRelays.some((r) => r.url === relay),
     // As the runtime: a relay of the signed list, not a name that looks like ours.
     is_veydan: mockRelays.some((r) => r.source === 'manifest' && r.url === relay),
@@ -2035,7 +2064,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     if (mockRelays.some((r) => r.url === s.relay)) return s.id;
     const row: PrivateServerView = {
       id: s.id, name: s.is_veydan ? 'Veydan' : s.name || null, relay: s.relay, media: s.media, call_node: s.call_node, push: s.push,
-      added_at: Math.floor(Date.now() / 1000), chats: 0, groups: 0,
+      added_at: Math.floor(Date.now() / 1000), chats: 0, groups: 0, access: s.access, denied: null,
     };
     mockPrivateServers = [...mockPrivateServers.filter((x) => x.id !== s.id), row];
     return s.id;
@@ -2045,6 +2074,12 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     chats: mockChats.filter((c) => c.kind === 'dm' && c.id.endsWith(`@${s.id}`)).length,
     groups: mockGroups.filter((g) => g.relay === s.relay).length,
   })),
+  messenger_server_join: (a) => {
+    const code = String(a?.code ?? '').trim();
+    if (!code) throw new Error('server_invite_invalid');
+    if (!mockPrivateServers.some((s) => s.id === a?.id)) throw new Error('server_unknown');
+    mockPrivateServers = mockPrivateServers.map((s) => (s.id === a?.id ? { ...s, denied: null } : s));
+  },
   messenger_server_remove: (a) => {
     if (!mockPrivateServers.some((s) => s.id === a?.id)) throw new Error('server_unknown');
     mockPrivateServers = mockPrivateServers.filter((s) => s.id !== a?.id);
@@ -2065,6 +2100,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   },
   messenger_manifest_refresh: () => (mockServersMode === 'veydan' ? mockManifestCheck() : null),
   messenger_manifest_set_region: (a) => { mockRegion = String(a?.region); },
+  messenger_archive_status: () => mockArchiveStatus(),
   messenger_net_status: () => mockNetApply(),
   messenger_net_set_mode: (a) => {
     mockNet = { ...mockNet, mode: a?.mode as NetMode, offer: false, list_checked_at: Math.floor(Date.now() / 1000) };
@@ -2412,6 +2448,8 @@ export const messengerApi = {
     accept: (link: string) => invoke<string>('messenger_server_accept', { link }),
     /** My private servers, without their keys. */
     list: () => invoke<PrivateServerView[]>('messenger_servers_private'),
+    /** Joins a `team` server by an invitation code of its admin (the code of a card is used by the runtime itself). Errors: `server_invite_invalid`, `server_invite_used`, `server_invite_expired`, `server_join_failed`. */
+    join: (id: string, code: string) => invoke<void>('messenger_server_join', { id, code }),
     /** Removes a private server here and on every device of mine, with its chats. */
     remove: (id: string) => invoke<void>('messenger_server_remove', { id }),
     /** The private chat with a person on a private server of mine, approved and told at once. */
@@ -2419,6 +2457,11 @@ export const messengerApi = {
       invoke<MessengerChat>('messenger_contact_open_private', { peer, serverId, invite: invite ?? null }),
     /** My link of the private chat on `server`, with its invitation, as a QR code (SVG text): «Мой QR» for that server. */
     privateLinkQr: (server: string) => invoke<string>('messenger_private_link_qr', { server }),
+  },
+
+  /** The archive of chats in the sync storage: its size, its months and the state of the restore (events `archive.progress`, `archive.synced`). */
+  archive: {
+    status: () => invoke<ArchiveStatus>('messenger_archive_status'),
   },
 
   /** The way to the project's servers: directly, or through a bridge. */

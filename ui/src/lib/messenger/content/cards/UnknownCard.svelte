@@ -19,14 +19,9 @@
   }
   let { view, text }: Props = $props();
 
-  let copied = $state(false);
-
+  /** «Скопировано» is the toast of the copy; the button stays as it is. */
   async function copy() {
-    try {
-      await linkActions.copy(text);
-      copied = true;
-      setTimeout(() => (copied = false), 1600);
-    } catch { /* nothing to copy to */ }
+    try { await linkActions.copy(text); } catch { /* nothing to copy to */ }
   }
 </script>
 
@@ -40,7 +35,7 @@
         {:else}{$t('msg_card_invalid_text')}{/if}
       </span>
     </div>
-    <button class="copy" onclick={copy} aria-label={copied ? $t('msg_group_link_copied') : $t('msg_copy')} title={copied ? $t('msg_group_link_copied') : $t('msg_copy')}><Icon name={copied ? 'check' : 'copy'} size={18} /></button>
+    <button class="copy" onclick={copy} aria-label={$t('common_copy')} title={$t('common_copy')}><Icon name="copy" size={18} /></button>
   </div>
 </div>
 
@@ -60,5 +55,5 @@
   .ico.bad { color: var(--warn-text); background: var(--warn-bg); }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); }
-  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; overflow-wrap: anywhere; }
+  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; }
 </style>

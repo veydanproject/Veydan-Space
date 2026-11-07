@@ -37,6 +37,10 @@ pub struct PrivateServerInput {
     /// How its phones are woken: `veydan` (through the push of the Veydan
     /// network) or `off`, the default.
     pub push_mode: Option<String>,
+    /// Who may use it: `open`, `team` or `channel`, as its card says
+    /// (`a=`). `None` keeps what a server this device has says, `open`
+    /// for a new one.
+    pub access: Option<String>,
 }
 
 impl MessengerRuntime {
@@ -57,16 +61,23 @@ impl MessengerRuntime {
         }
         // A relay of my home set stays home (as a card and the snapshot
         // leave it): one relay is one server.
-        if servers::by_relay_url(self.store(), &input.relay_url)
-            .await?
-            .is_some_and(|s| !s.is_private())
-        {
+        let have = servers::by_relay_url(self.store(), &input.relay_url).await?;
+        if have.as_ref().is_some_and(|s| !s.is_private()) {
             return Err(MessengerError::Invalid(format!(
                 "{}: {} is a relay of the home set",
                 servers::ERR_SERVER_IS_HOME,
                 input.relay_url.trim()
             )));
         }
+        let access = match input.access.as_deref().map(str::trim).filter(|a| !a.is_empty()) {
+            Some(mode) if servers::is_access(mode) => mode.to_string(),
+            Some(mode) => {
+                return Err(MessengerError::Invalid(format!(
+                    "access mode must be open, team or channel, not {mode}"
+                )))
+            }
+            None => have.map_or_else(|| servers::ACCESS_OPEN.to_string(), |s| s.access),
+        };
         let id = servers::put_private(
             self.store(),
             &servers::ServerRow {
@@ -80,6 +91,7 @@ impl MessengerRuntime {
                 push_mode: input.push_mode.clone().unwrap_or_else(|| servers::PUSH_OFF.into()),
                 source: Some(servers::SOURCE_HAND.into()),
                 added_at: 0,
+                access,
             },
         )
         .await?;
@@ -275,6 +287,13 @@ impl Listening {
         }
     }
 
+    /// Server `id` let this device in (a join): its inbox is listened to
+    /// anew at the next `follow`, and its history caught up, since its
+    /// relay refused the subscription before.
+    pub(crate) fn forget(&mut self, id: &str) {
+        self.heard.remove(id);
+    }
+
     /// The private servers as they stand now, and the pool after them: the
     /// inbox of each new one subscribed, the one of each gone closed. The
     /// servers newly listened to, whose history the caller catches up
@@ -347,6 +366,7 @@ impl Listening {
     }
 }
 
+pub mod access;
 pub mod card;
 
 #[cfg(test)]

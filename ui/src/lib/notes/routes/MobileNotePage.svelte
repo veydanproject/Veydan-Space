@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -1091,9 +1092,9 @@
         class:busy={status === 'saving' || status === 'dirty'}
         class:bad={status === 'failed'}
         class:spin={status === 'saving'}
-        title={status === 'saved' ? $t('notes_saved') : status === 'failed' ? error : $t('notes_saving')}
+        title={status === 'saved' ? $t('common_saved') : status === 'failed' ? error : $t('notes_saving')}
       >
-        <Icon name={status === 'saved' ? 'check-circle' : status === 'failed' ? 'alert-triangle' : status === 'saving' ? 'loader' : 'circle'} size={16} />
+        <Icon name={status === 'saved' ? 'check' : status === 'failed' ? 'alert-triangle' : status === 'saving' ? 'loader' : 'circle'} size={16} />
       </span>
     {/if}
     <button type="button" class="m-ibtn" class:on={pinned} disabled={isNew} onclick={() => setFlags({ pinned: !pinned })} aria-label={pinned ? $t('notes_unpin') : $t('notes_pin')}>
@@ -1146,19 +1147,26 @@
         <button type="button" class="btn btn-ghost" onclick={closeLink}>{$t('common_cancel')}</button>
       </form>
     {/if}
+    <!-- The plates of the page, as on a computer (NoteEditor): the same tone, the main button last. -->
     {#if externalChange}
-      <div class="conflict-banner">
-        <Icon name="alert-triangle" size={16} />
-        <span>{$t('note_external_change')}</span>
-        <button type="button" class="btn btn-ghost" onclick={acceptExternal}>{$t('note_external_accept')}</button>
-        <button type="button" class="btn btn-primary" onclick={keepMine}>{$t('note_external_keep')}</button>
+      <div class="plate">
+        <Notice tone="info">
+          {$t('note_external_change')}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" onclick={keepMine}>{$t('note_external_keep')}</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick={acceptExternal}>{$t('note_external_accept')}</button>
+          {/snippet}
+        </Notice>
       </div>
     {/if}
     {#if hasConflict}
-      <div class="conflict-banner">
-        <Icon name="alert-triangle" size={16} />
-        <span>{$t('note_sync_conflict')}</span>
-        <button type="button" class="btn btn-primary" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
+      <div class="plate">
+        <Notice tone="warn">
+          {$t('note_sync_conflict')}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
+          {/snippet}
+        </Notice>
       </div>
     {/if}
     {#if fetchOffer.length}
@@ -1166,7 +1174,7 @@
         <span class="m-doc"><Icon name="download" size={16} /></span>
         <span class="fetch-text">{$t('note_att_fetch_prompt', { n: String(fetchOffer.length), size: fmtSize(fetchOfferBytes) })}</span>
         <div class="fetch-actions">
-          <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('note_att_fetch_later')}</button>
+          <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('common_later')}</button>
           <button type="button" class="btn btn-primary" onclick={fetchOffered}>{$t('note_att_fetch_yes')}</button>
         </div>
       </div>
@@ -1362,20 +1370,7 @@
     padding: var(--sp-2) var(--sp-4) var(--sp-2);
     background: transparent;
   }
-  .conflict-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    margin-top: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
-    border: 1px solid var(--warn-border, var(--border));
-    border-radius: var(--m-radius, 12px);
-    background: var(--warn-bg, var(--surface-2));
-    color: var(--warn-text, var(--text));
-    font-size: var(--fs-sm);
-  }
-  .conflict-banner span { flex: 1; min-width: 0; }
-  .conflict-banner .btn { min-height: 36px; padding: 0 var(--sp-3); flex-shrink: 0; }
+  .plate { margin-top: var(--sp-2); }
   .fetch-card {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -1384,13 +1379,13 @@
     margin-top: var(--sp-2);
     padding: var(--sp-3);
     border: 1px solid var(--accent-border, var(--m-card-border));
-    border-radius: var(--m-radius, 12px);
+    border-radius: var(--radius-lg);
     background: var(--accent-bg);
     font-size: var(--fs-sm);
     color: var(--text);
   }
   .fetch-card .m-doc { color: var(--accent-text); }
-  .fetch-text { min-width: 0; line-height: 1.35; }
+  .fetch-text { min-width: 0; line-height: var(--lh-snug); }
   .fetch-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: var(--sp-2); }
   .fetch-actions .btn { min-height: 36px; padding: 0 var(--sp-3); }
   .scroll {
@@ -1413,7 +1408,7 @@
     font: inherit;
     text-align: left;
   }
-  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 700; }
+  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-bold); }
   .crumb :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .crumb-edit {
     flex: 1;
@@ -1423,12 +1418,12 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: var(--m-field);
-    font-size: 17px;
-    font-weight: 700;
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
   }
   .crumb-edit:focus { box-shadow: none; }
   .m-header .m-ibtn { flex-shrink: 0; }
-  .m-header .m-ibtn:disabled { opacity: 0.35; }
+  .m-header .m-ibtn:disabled { opacity: 0.45; }
   .save { display: inline-flex; align-items: center; flex-shrink: 0; padding: 0 var(--sp-1); color: var(--text-3); }
   .save.ok { color: var(--success-text); }
   .save.busy { color: var(--warn-text); }
@@ -1449,7 +1444,7 @@
   }
   .chip-x { justify-content: center; width: 30px; opacity: var(--chip-fade); }
   .link-form { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
-  .link-form input { flex: 1; min-width: 0; min-height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--m-field); }
+  .link-form input { flex: 1; min-width: 0; min-height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--m-field); }
   .link-form .btn { min-height: 36px; padding: 0 var(--sp-3); flex-shrink: 0; }
   .body {
     border: 0;
@@ -1460,11 +1455,11 @@
     field-sizing: content;
     font-family: var(--font-mono);
     font-size: var(--fs-body);
-    line-height: 1.55;
+    line-height: var(--lh-base);
   }
   .body:focus { box-shadow: none; }
   .editor :global(.rich) { flex: none; }
-  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; font-size: var(--fs-md); line-height: 1.55; }
+  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; font-size: var(--fs-md); line-height: var(--lh-base); }
 
   .tags { margin-bottom: var(--sp-2); }
 
@@ -1496,13 +1491,14 @@
   }
   .toolbar button.on { color: var(--accent-text); }
   .toolbar button:active { background: var(--m-seg); }
-  .toolbar button:disabled { opacity: 0.35; }
+  .toolbar button:disabled { opacity: 0.45; }
   .toolbar.hide { display: none; }
   .ctx-btn { position: relative; }
   .ctx-count {
     position: absolute; top: 6px; right: 6px;
     min-width: 16px; height: 16px; padding: 0 4px;
-    border-radius: var(--radius-sm); background: var(--accent); color: #fff;
-    font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+    border-radius: var(--radius-pill); background: var(--accent); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon);
   }
 </style>

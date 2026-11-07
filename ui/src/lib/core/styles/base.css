@@ -122,7 +122,7 @@ input[type="radio"]:checked {
   background-size: 100%;
 }
 input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--accent-border); }
-input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.5; cursor: not-allowed; }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.45; cursor: not-allowed; }
 input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
 input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 /* The ring of every other control that draws none of its own (zero specificity: any local rule or `outline: none` wins). */
@@ -171,7 +171,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent); }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:active:not(:disabled) { background: var(--accent-active); }
 .btn-ghost { background: var(--pane-strong); color: var(--text-body); border: 1px solid var(--border); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); border-color: var(--border-2); }
 /* A quiet button is the same glass wherever it lies (a page, a card, a bar, a bubble, a dialog): its fill is the
@@ -179,12 +180,17 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
    are the glass's own; in the light they stay --border, or a white button on a white card has no edge. */
 [data-theme='dark'] .btn-ghost { border-color: var(--pane-strong-border); }
 [data-theme='dark'] .btn-ghost:hover:not(:disabled) { background: var(--pane-strong-border); border-color: var(--border-2); }
-.btn-success { background: var(--success-grad); color: #fff; box-shadow: 0 5px 16px rgba(52, 211, 153, 0.28); }
-.btn-success:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-success { background: var(--success-grad); color: #fff; box-shadow: var(--shadow-success); }
+.btn-success:hover:not(:disabled) { background: var(--success-hover); }
+.btn-success:active:not(:disabled) { background: var(--success-active); }
 .btn-success-soft { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
-.btn-success-soft:hover:not(:disabled) { background: var(--success-bg); filter: brightness(1.2); }
+.btn-success-soft:hover:not(:disabled) { background: var(--success-bg-hover); }
+/* The second, quiet «Delete» of a card or a panel; the red fill (.btn-danger) stays for the main button of a dangerous dialog. */
+.btn-danger-soft { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); }
+.btn-danger-soft:hover:not(:disabled) { background: var(--danger-bg-hover); }
 .btn-danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-danger); }
-.btn-danger:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+.btn-danger:active:not(:disabled) { background: var(--danger-active); }
 /* A press (design kit, M01): the button sinks to .97 in 100 ms and comes back in 150. */
 .btn:active:not(:disabled), .icon-btn:active:not(:disabled) { transform: scale(0.97); transition-duration: var(--dur-press); }
 @media (prefers-reduced-motion: reduce) {
@@ -206,25 +212,54 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn > .icon { width: 18px; height: 18px; }
 .icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
 .icon-btn.accent-soft:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
-.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.success { color: var(--success-text); background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, var(--border)); }
 .icon-btn.success:hover:not(:disabled) { filter: brightness(1.1); }
 .icon-btn.danger { color: var(--danger-text); background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
 .icon-btn.danger:hover:not(:disabled) { filter: brightness(1.1); }
+/* The delete of a row: grey at rest (the plain .icon-btn), red on hover. */
 .icon-btn.danger-soft:hover:not(:disabled) { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); color: var(--danger-text); }
+/* «Create / Add» in the header of a module: 36, accent fill, white icon 18; the label lives in title and aria-label. */
+.icon-btn.create { width: 36px; height: 36px; flex-shrink: 0; background: var(--accent); color: #fff; border-radius: var(--radius); border: 0; }
+.icon-btn.create:hover:not(:disabled) { background: var(--accent); color: #fff; filter: brightness(1.08); }
+.icon-btn.create:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Forms ── */
 .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-.form-group label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
+.form-group label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
 
-.error-msg {
+/* The error of a field: a line of 12 in the danger ink with the Tabler
+   alert-circle before it, under the field it is about; no frame, no fill.
+   The same on a computer and a phone (.m-error is the same rule). The icon is
+   an inline mask, so any markup with the class gets it (a centred line too).
+   An error of the whole form is a plate (core/ui/Notice, tone danger). */
+.error-msg, .m-error {
+  padding: 0;
   color: var(--danger-text);
-  font-size: var(--fs-sm);
-  padding: 0.5rem 0.75rem;
-  background: var(--danger-bg);
-  border-radius: var(--radius-sm);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+.error-msg::before, .m-error::before {
+  content: '';
+  display: inline-block;
+  vertical-align: -2px;
+  margin-inline-end: var(--sp-1);
+  width: 14px; height: 14px;
+  background: currentColor;
+  -webkit-mask: var(--icon-alert-circle) center / 14px 14px no-repeat;
+  mask: var(--icon-alert-circle) center / 14px 14px no-repeat;
+}
+:root {
+  --icon-alert-circle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E");
+}
+/* A field in error: its frame is the danger colour (focus keeps the ring). */
+:is(input, select, textarea)[aria-invalid='true'],
+:is(input, select, textarea):is(.invalid, .bad, .error) {
+  border-color: var(--danger);
 }
 
 /* ── Page shell ── (unifies max-width / gap / header spacing across routes) */
@@ -246,7 +281,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .page-header h1 {
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
-  line-height: 1.4;
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
 }
 .page-header .spacer { margin-left: auto; }
 .page-sub { font-size: var(--fs-xs); color: var(--text-2); }
@@ -288,16 +324,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 [data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) :is(input, textarea)::placeholder { color: var(--text-2); }
 [data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
 .card--hover:hover { border-color: var(--border-2); transform: translateY(-2px); }
-.card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); }
+.card-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 
 .section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .section-label,
 .section-title {
   font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-weight: var(--fw-semibold);
+  color: var(--text-2);
 }
 
 .muted { color: var(--text-2); }
@@ -308,10 +342,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: center;
   gap: var(--sp-1);
   padding: 0.25rem 0.65rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
-  line-height: 1.4;
+  line-height: var(--lh-snug);
   white-space: nowrap;
   background: var(--surface-2);
   color: var(--text-2);
@@ -448,13 +482,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .search-clear:hover { color: var(--text); }
 
-/* Компактный select для панели фильтров (фон/граница/стрелка — из глобального select) */
+/* Место списка (CustomSelect, поле 40) в панели фильтров: шириной по подписи, не сжимается */
 .filter-select {
-  width: auto;
-  height: var(--control-h);
-  padding-top: 0;
-  padding-bottom: 0;
-  font-size: var(--fs-base);
   flex-shrink: 0;
 }
 
@@ -504,8 +533,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   text-align: center;
 }
 .empty-state svg { opacity: 0.5; }
-.empty-state p { color: var(--text-body); font-weight: var(--fw-semibold); }
-.empty-state span { font-size: var(--fs-sm); color: var(--text-faint); max-width: 260px; line-height: 1.5; }
+.empty-state p { font-size: var(--fs-body); color: var(--text-2); font-weight: var(--fw-semibold); }
+.empty-state span { font-size: var(--fs-sm); color: var(--text-2); max-width: 260px; line-height: var(--lh-base); }
+
+/* A hint under a field or a block: one size and one colour everywhere; a place sets only its spacing. */
+.hint { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-base); }
 /* Icon tile for empty states (56×56, radius 16) */
 .empty-icon {
   width: 56px;
@@ -541,7 +573,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius) - 4px);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
@@ -552,7 +584,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--text); background: var(--surface-hover); }
 .tab-count {
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   background: var(--surface-2);
   border-radius: var(--radius-pill);
   padding: 0.05rem 0.4rem;
@@ -623,9 +655,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-pill);
   background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold);
-  font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap;
+  font-variant-numeric: tabular-nums; line-height: var(--lh-icon); white-space: nowrap;
 }
-.count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 5px; font-size: var(--fs-2xs); }
+.count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 5px; font-size: var(--fs-xs); }
 .count-pill.lg { min-width: 22px; height: 22px; padding: 0 7px; }
 .count-pill.quiet, .list-cover-corner.muted { background: var(--surface-3); color: var(--text-2); }
 .count-pill.danger, .list-cover-corner.missed { background: var(--danger); color: #fff; }
@@ -653,7 +685,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   height: 32px;
   padding: 0 var(--sp-3);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius) - 4px);
   background: transparent;
   color: var(--text-2);
   font-size: var(--fs-sm);
@@ -665,11 +697,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
 .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
 .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-.seg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* `.seg-fill`: the control across its card, the options of one width, their words wrapped on a narrow screen. */
 .seg.seg-fill { display: flex; width: 100%; box-sizing: border-box; }
 .seg.seg-fill .seg-btn {
-  flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: 1.25;
+  flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: var(--lh-tight);
   height: auto; min-height: max(32px, var(--touch, 0px)); padding-block: 6px;
 }
 /* Standalone segment buttons (Settings language/theme: 44px, own borders) */
@@ -690,7 +722,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .seg-btn-lg:hover:not(.active):not(:disabled) { border-color: var(--border-2); color: var(--text); }
 .seg-btn-lg.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-.seg-btn-lg:disabled { opacity: 0.4; cursor: not-allowed; }
+.seg-btn-lg:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Toggle (тумблер) ── track 40×24, knob 18; on = accent */
 .toggle {
@@ -849,7 +881,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg), var(--glass-highlight);
-  color: var(--text); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.35;
+  color: var(--text); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
   overflow-wrap: anywhere; pointer-events: none;
 }
 .vtip[hidden] { display: none; }

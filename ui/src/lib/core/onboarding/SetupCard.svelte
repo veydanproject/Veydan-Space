@@ -75,7 +75,7 @@
       {#each lines as line (line.item.id)}
         <li>
           {#if line.done}
-            <span class="line done"><Icon name="check-circle" size={18} /><span>{$t(line.item.title as TranslationKey)}</span></span>
+            <span class="line done"><Icon name="check" size={18} /><span>{$t(line.item.title as TranslationKey)}</span></span>
           {:else if line.item.step && onboarding.has(line.item.step)}
             <!-- Set up where it was passed by: the wizard opens again at its step. -->
             <button type="button" class="line" onclick={() => onboarding.resume(line.item.step ?? '')}>
@@ -94,7 +94,7 @@
 
 <style>
   .setup {
-    background: var(--m-card, var(--surface)); border: 1px solid var(--m-card-border, var(--border)); border-radius: var(--m-radius, var(--radius-md));
+    background: var(--m-card, var(--surface)); border: 1px solid var(--m-card-border, var(--border)); border-radius: var(--radius-lg);
     box-shadow: var(--m-card-shadow, none); padding: var(--sp-3) var(--sp-4) var(--sp-1); margin-bottom: var(--sp-5); color: var(--text);
   }
   .setup.floating {

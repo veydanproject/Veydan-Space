@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api as shared } from '$lib/notes/api';
   import { api, formatError, type NoteListFilter, type NoteNav, type NavChild } from '$lib/notes/mobile/api';
   import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
@@ -139,7 +140,7 @@
     }
     editName = menu.name;
     editColor = menu.color || NAV_COLORS[0];
-    edit = { id: menu.id, title: $t('notes_item_edit') };
+    edit = { id: menu.id, title: $t('common_edit') };
     menu = null;
   }
 
@@ -184,13 +185,13 @@
   <div class="drawer" role="dialog" aria-modal="true" aria-label={$t('app_notes')}>
     <div class="drawer-head">
       <span class="drawer-title">{$t('app_notes')}</span>
-      <button class="m-ibtn" onclick={onclose} aria-label={$t('notes_nav_close')}>
+      <button class="m-ibtn" onclick={onclose} aria-label={$t('common_close')}>
         <Icon name="x" size={22} />
       </button>
     </div>
 
     {#if error}
-      <div class="m-error pad">{error}</div>
+      <div class="err pad"><Notice tone="danger">{error}</Notice></div>
     {/if}
 
     {#if nav}
@@ -357,11 +358,11 @@
 
 <BottomSheet open={!!menu} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={startEditFromMenu}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('notes_item_edit')}</span></button>
+    <button type="button" class="m-row" onclick={startEditFromMenu}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span></button>
     {#if menu?.kind === 'folder' && !nav?.folders.find((f) => f.id === menu?.id)?.parent_id}
       <button type="button" class="m-row" onclick={() => { const id = menu!.id; menu = null; openNewFolder(id); }}><Icon name="folder-plus" size={20} /><span class="m-row-label">{$t('notes_folder_sub')}</span></button>
     {/if}
-    <button type="button" class="m-row" onclick={removeCurrent}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('notes_tag_delete')}</span></button>
+    <button type="button" class="m-row" onclick={removeCurrent}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span></button>
   </div>
 </BottomSheet>
 
@@ -466,6 +467,7 @@
 {/snippet}
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .drawer {
     position: fixed;
     top: 0;
@@ -491,7 +493,7 @@
     padding: var(--sp-3) var(--sp-2) var(--sp-2) var(--sp-4);
     flex-shrink: 0;
   }
-  .drawer-title { font-weight: 800; font-size: var(--fs-xl); letter-spacing: -0.02em; }
+  .drawer-title { font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
   .body {
     flex: 1;
     min-height: 0;
@@ -511,7 +513,7 @@
     color: var(--text);
     font: inherit;
     font-size: var(--fs-body);
-    font-weight: 500;
+    font-weight: var(--fw-medium);
     text-align: left;
     width: 100%;
     border-radius: var(--radius-md);
@@ -521,8 +523,8 @@
   .item.on { background: var(--accent-bg); color: var(--accent-text); }
   .item.on > :global(svg) { color: var(--accent-text); }
   .item.child { padding-left: 40px; }
-  .space-row { font-weight: 700; }
-  .folder-row { font-weight: 500; }
+  .space-row { font-weight: var(--fw-bold); }
+  .folder-row { font-weight: var(--fw-medium); }
   .folder-ico {
     display: inline-flex;
     color: color-mix(in srgb, var(--c) 70%, var(--text-2));
@@ -538,7 +540,7 @@
     margin-left: auto;
     color: var(--text-3);
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     flex-shrink: 0;
   }
   .item.on .n { color: inherit; }
@@ -615,12 +617,11 @@
   .brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .brand-name {
     font-size: var(--fs-sm);
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    font-weight: var(--fw-bold);
     color: var(--text-2);
   }
   .brand-ver {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     color: var(--text-3);
   }

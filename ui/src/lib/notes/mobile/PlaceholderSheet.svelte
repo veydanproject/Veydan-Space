@@ -4,6 +4,7 @@
 <!-- Picker for `{{placeholder}}` typed in the editor; shows the current value unless the note is a template. -->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api, formatError } from '$lib/notes/mobile/api';
   import { onKeyboard } from '$lib/core/mobile/keyboard';
   import { t } from '$lib/core/mobile/i18n';
@@ -73,7 +74,7 @@
 {/if}
 
 <BottomSheet open={open && expanded} title={$t('notes_placeholder_title')} onclose={close}>
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="m-list">
     {#each rows as name (name)}
       <button type="button" class="m-row" onclick={() => pick(name)}>

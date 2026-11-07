@@ -223,7 +223,7 @@
   </button>
 {/snippet}
 {#snippet saveBtn()}
-  <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={16} /></button>
+  <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={18} /></button>
 {/snippet}
 
 {#snippet foreignNote()}
@@ -324,7 +324,7 @@
   .media.kind-circle, .media.kind-voice { min-width: 0; }
   /* A file in an album: a line of its list, as a file alone. */
   .card-file { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .card-fail { display: flex; align-items: flex-start; gap: 3px; font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.3; overflow-wrap: anywhere; }
+  .card-fail { display: flex; align-items: flex-start; gap: 3px; font-size: var(--fs-xs); color: var(--danger-text); line-height: var(--lh-snug); overflow-wrap: anywhere; }
   /* The mark of a file that is here: it opens the file. */
   .file-mark {
     width: 44px; height: 44px; border: none; padding: 0; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
@@ -348,7 +348,7 @@
   .tile.natural.sized { aspect-ratio: var(--ar); max-height: 360px; }
   .tile.natural.sized img:not(.blur), .tile.natural.sized video { height: 100%; max-height: none; }
   .placeholder-name {
-    position: absolute; left: 8px; bottom: 7px; right: 8px; font-family: var(--font-mono); font-size: 10px;
+    position: absolute; left: 8px; bottom: 7px; right: 8px; font-family: var(--font-mono); font-size: var(--fs-xs);
     color: rgba(0, 0, 0, 0.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .hit { position: absolute; inset: 0; border: none; padding: 0; margin: 0; background: none; cursor: pointer; }
@@ -361,8 +361,8 @@
     position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center;
     justify-content: center; background: var(--danger-bg); color: var(--danger-text); pointer-events: none;
   }
-  .thumb { border: none; padding: 0; background: none; cursor: zoom-in; border-radius: var(--radius); overflow: hidden; display: block; }
-  .thumb img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: var(--radius); background: var(--surface-3); }
+  .thumb { border: none; padding: 0; background: none; cursor: zoom-in; border-radius: calc(var(--radius-bubble) - 3px); overflow: hidden; display: block; }
+  .thumb img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; border-radius: calc(var(--radius-bubble) - 3px); background: var(--surface-3); }
   .voice-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   /* The player gives up width to the status beside it: a narrow screen holds both. */
   .voice-row.with-status :global(.voice) { min-width: 0; flex: 1 1 auto; }
@@ -370,10 +370,10 @@
   .circle { position: relative; width: 220px; height: 220px; max-width: 100%; border: none; padding: 0; border-radius: 50%; overflow: hidden; background: #000; cursor: pointer; }
   .circle video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .circle-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
-  .player { max-width: 100%; max-height: 320px; border-radius: var(--radius); background: #000; }
+  .player { max-width: 100%; max-height: 320px; border-radius: calc(var(--radius-bubble) - 3px); background: #000; }
   .audio { width: 100%; height: 36px; }
-  .act { position: relative; border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px 0 4px 8px; border-radius: var(--radius-sm); }
+  .act { position: relative; border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .act::before { content: ''; position: absolute; inset: -10px -8px; }
   .act:hover:not(:disabled) { color: var(--text); }
-  .fail { font-size: var(--fs-2xs); color: var(--danger-text); }
+  .fail { font-size: var(--fs-xs); color: var(--danger-text); }
 </style>

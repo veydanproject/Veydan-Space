@@ -113,7 +113,7 @@
   .link :global(.row .btn-primary) { flex: 1 1 auto; }
   .link :global(.row .btn-primary + .btn-ghost) { flex: 0 0 auto; }
   .link :global(.known) { white-space: nowrap; flex: none; font-size: var(--fs-sm); color: var(--success-text, var(--success)); }
-  .wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wait :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .channel { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .ico {
@@ -124,6 +124,6 @@
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .channel .btn { flex-shrink: 0; }
-  .sub.wrap { white-space: normal; line-height: 1.35; }
+  .sub.wrap { white-space: normal; line-height: var(--lh-snug); }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -101,7 +101,7 @@
   >
     <Icon name={showHidden ? 'eye' : 'eye-off'} size={13} />
   </button>
-  <button class="icon-btn" title={$t('files_refresh')} onclick={onrefresh}>
+  <button class="icon-btn" title={$t('common_refresh')} onclick={onrefresh}>
     <Icon name="refresh-cw" size={13} />
   </button>
 </div>

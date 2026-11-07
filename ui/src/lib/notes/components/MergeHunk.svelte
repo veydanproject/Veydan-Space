@@ -153,7 +153,7 @@
     padding: 0.35rem 0.6rem;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     border-bottom: 1px solid var(--border);
     background: var(--surface-2);
   }
@@ -170,7 +170,7 @@
     overflow: auto;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    line-height: 1.35;
+    line-height: var(--lh-snug);
   }
 
   .git li {
@@ -215,7 +215,7 @@
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--fs-base);
-    line-height: 1;
+    line-height: var(--lh-icon);
   }
 
   .line-plus.on {

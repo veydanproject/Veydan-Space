@@ -124,7 +124,7 @@
   /* A compact card (c11): who, their words as a paragraph, one line of facts, «Отказать | Принять». */
   .req {
     list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0;
     transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
   .req.selected { background: var(--accent-bg); border-color: var(--accent-border); }
@@ -138,13 +138,13 @@
   .nip05-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .npub {
     align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%;
-    border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-2xs); color: var(--text-3); border-radius: var(--radius-xs);
+    border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); border-radius: var(--radius-xs);
   }
   .npub:hover { color: var(--accent-text); }
   .npub:focus-visible, .note-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .more { flex-shrink: 0; align-self: flex-start; width: var(--control-h-sm); height: var(--control-h-sm); color: var(--text-3); }
   /* Their words: a plain paragraph, five lines, the rest on «ещё». */
-  .note { margin: 0; padding: 0; border: none; background: none; font-size: var(--fs-sm); line-height: 1.45; color: var(--text); }
+  .note { margin: 0; padding: 0; border: none; background: none; font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text); }
   .note-text {
     display: block; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
     max-height: calc(5 * 1.45em); overflow: hidden;
@@ -160,7 +160,7 @@
   .facts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); min-width: 0; }
   .fact {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-2); background: var(--surface-3); border: 1px solid var(--border);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); background: var(--surface-3); border: 1px solid var(--border);
   }
   .fact.ok { color: var(--success-text, var(--success)); }
   .fact.warn { color: var(--warn-text); }
@@ -170,7 +170,7 @@
   .claimed { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
   /* The verb filled and a little wider; both 34 high. */
   .acts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--sp-2); }
-  .acts .btn { justify-content: center; min-width: 0; min-height: calc(var(--control-h-sm) + 2px); padding-inline: var(--sp-3); gap: var(--sp-1); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
+  .acts .btn { justify-content: center; min-width: 0; min-height: calc(var(--control-h-sm) + 2px); padding-inline: var(--sp-3); gap: var(--sp-1); white-space: normal; text-wrap: balance; text-align: center; line-height: var(--lh-tight); }
   @media (pointer: coarse) {
     .npub { padding: 4px 0; font-size: var(--fs-xs); }
     .acts .btn { min-height: var(--control-h); }

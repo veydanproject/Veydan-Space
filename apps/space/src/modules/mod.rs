@@ -330,7 +330,8 @@ mod tests {
     /// of `SPECS`, then the tombstones in reverse; `note_meta` takes none.
     /// A handler takes both in the order of the pull. The labels of stage 6
     /// come after the rows they name; a phone takes no workspace and no
-    /// profile since.
+    /// profile since. The archive of the messenger (9.6) comes after the
+    /// labels, its secrets before its segments.
     #[test]
     fn space_applies_a_pull_in_the_order_of_stage_3() {
         #[cfg(desktop)]
@@ -355,6 +356,8 @@ mod tests {
                 "pw_history",
                 "setting",
                 "label",
+                "messenger_secret",
+                "messenger_segment",
                 "profile_lease",
                 "profile_snapshot",
             ],
@@ -377,6 +380,8 @@ mod tests {
                 "workspace_column",
                 "workspace",
                 "label",
+                "messenger_secret",
+                "messenger_segment",
                 "profile_lease",
                 "profile_snapshot",
             ],
@@ -396,6 +401,8 @@ mod tests {
                 "password_vault",
                 "password",
                 "label",
+                "messenger_secret",
+                "messenger_segment",
             ],
             [
                 "note_attachment",
@@ -408,6 +415,8 @@ mod tests {
                 "password_vault",
                 "totp",
                 "label",
+                "messenger_secret",
+                "messenger_segment",
             ],
         );
         let (registry_puts, registry_deletes) = sync_registry().apply_order();
@@ -467,7 +476,8 @@ mod tests {
     /// keys of `SETTING_FILTER`. A phone took `MOBILE_ENTITIES` and the notes
     /// with their attachments, and published no workspace and no profile.
     /// Stage 6 adds the labels everywhere, in place of the workspaces and
-    /// profiles a phone mirrored.
+    /// profiles a phone mirrored; the archive of the messenger (9.6) adds its
+    /// segments and the secrets of groups.
     #[test]
     fn space_syncs_the_entities_and_settings_of_stage_3() {
         let registry = sync_registry();
@@ -509,6 +519,8 @@ mod tests {
                 "note_attachment_v2",
                 "profile_lease",
                 "profile_snapshot",
+                "messenger_secret",
+                "messenger_segment",
             ];
             synced.sort_unstable();
             assert_eq!(entities, synced);
@@ -540,6 +552,8 @@ mod tests {
                 "note",
                 "note_attachment",
                 "note_attachment_v2",
+                "messenger_secret",
+                "messenger_segment",
             ];
             synced.sort_unstable();
             assert_eq!(entities, synced);
@@ -624,7 +638,7 @@ mod tests {
         names.sort_unstable();
         assert_eq!(
             names,
-            ["browser", "core", "lock", "notes", "pass", "ssh", "sync"]
+            ["browser", "core", "lock", "messenger", "notes", "pass", "ssh", "sync"]
         );
     }
 

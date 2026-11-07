@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { untrack } from 'svelte';
   import { t, locale, localeTag } from '$lib/core/i18n';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
@@ -138,9 +139,9 @@
 
   <!-- The verb stays at the foot of the panel while the rules scroll under it (the owner's rule, 2026-10-25; as the channels' rules). -->
   <div class="actions">
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="actions-row">
-      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('msg_mod_save')}</button>
+      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('common_save')}</button>
       {#if saved}<span class="saved">{$t('msg_mod_saved')}</span>{/if}
     </div>
   </div>
@@ -152,12 +153,12 @@
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .bad-text { color: var(--danger-text); }
   .option { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   /* A phone is narrower than three choices in one line: each wraps its words. */
   .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
+  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: var(--lh-tight); }
   .days { display: flex; flex-wrap: wrap; gap: 6px; }
   .times { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
   .time { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); flex: 1; min-width: 110px; }

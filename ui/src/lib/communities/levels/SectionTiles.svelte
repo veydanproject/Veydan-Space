@@ -125,7 +125,7 @@
         <span class="top">
           <SectionBadge {scope} {communityId} size={34} noPhoto />
           <span class="marks">
-            {#if tile.kind === 'locked'}<span class="lock"><Icon name="lock" size={14} /></span>
+            {#if tile.kind === 'locked'}<span class="lock"><Icon name="lock-square-rounded" size={14} /></span>
             {:else if scope?.hidden}<span class="hidden-mark"><Icon name="eye-off" size={14} />{$t('chan_scope_hidden_mark')}</span>
             {:else if count > 0}<span class="count-pill lg">{count > 99 ? '99+' : count}</span>{/if}
           </span>
@@ -199,11 +199,11 @@
   .words { position: relative; align-self: stretch; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub {
-    font-size: var(--fs-xs); line-height: 1.35; color: var(--text-2); overflow: hidden;
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text-2); overflow: hidden;
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
   }
   .photo .sub { color: rgba(255, 255, 255, 0.8); }
-  .hint { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--divider); font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--divider); line-height: var(--lh-snug); }
   .hint :global(svg) { flex-shrink: 0; margin-top: 2px; }
   /* A tablet: three columns in the sheet. */
   @media (min-width: 600px) { .sheet .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

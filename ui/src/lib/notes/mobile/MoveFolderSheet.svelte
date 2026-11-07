@@ -139,7 +139,7 @@
   }
   .pick.on { background: var(--accent-bg); }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .name.bold { font-weight: 700; }
+  .name.bold { font-weight: var(--fw-bold); }
   .radio {
     width: 20px;
     height: 20px;

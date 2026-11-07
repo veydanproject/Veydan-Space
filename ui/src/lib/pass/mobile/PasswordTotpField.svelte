@@ -91,7 +91,7 @@
       <input bind:value={totpName} placeholder={$t('totp_field_name')} autocomplete="off" />
       <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} autocomplete="off" />
       <input bind:value={totpSecret} placeholder={$t('totp_field_secret')} autocomplete="off" />
-      <button type="button" class="m-link cancel" onclick={cancelCreate}>{$t('pw_btn_cancel')}</button>
+      <button type="button" class="m-link cancel" onclick={cancelCreate}>{$t('common_cancel')}</button>
     </div>
   {:else}
     <button type="button" class="m-link add" onclick={() => (open = true)}>
@@ -122,7 +122,7 @@
         {/each}
       </div>
     {:else}
-      <p class="none">{q ? $t('pass_nothing_found') : $t('totp_empty')}</p>
+      <p class="none">{q ? $t('common_nothing_found') : $t('totp_empty')}</p>
     {/if}
   {/if}
 </BottomSheet>
@@ -131,10 +131,8 @@
   /* Like the labels of the other fields (.m-field label). */
   .caption {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .add { align-self: flex-start; padding: 0; }
   .none { margin: var(--sp-3) 0; color: var(--text-3); text-align: center; font-size: var(--fs-sm); }
@@ -145,10 +143,10 @@
     min-height: 64px;
     padding: var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: var(--m-radius, 12px);
+    border-radius: var(--radius-lg);
   }
   .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .draft { display: flex; flex-direction: column; gap: var(--sp-2); }
   .cancel { align-self: flex-start; padding: 0; color: var(--text-2); }

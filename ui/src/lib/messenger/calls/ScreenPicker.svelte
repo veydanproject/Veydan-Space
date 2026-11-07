@@ -76,17 +76,17 @@
   .menu {
     position: absolute; z-index: 10; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
     width: max-content; min-width: 220px; max-width: min(360px, 80vw); max-height: 260px; overflow-y: auto;
-    padding: 6px; border-radius: var(--radius); background: var(--surface); color: var(--text);
+    padding: 6px; border-radius: var(--radius-md); background: var(--surface); color: var(--text);
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); cursor: default;
   }
   .menu.below { bottom: auto; top: calc(100% + 10px); }
   .menu.note { padding: 8px 12px; font-size: var(--fs-xs); color: var(--text-2); min-width: 0; }
-  .menu-title { padding: 4px 8px 6px; font-size: var(--fs-2xs); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.4px; }
+  .menu-title { padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--text-3); }
   .item {
     width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: none; border-radius: var(--radius-sm);
     background: none; color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left;
   }
   .item:hover, .item:focus-visible { background: var(--surface-2); outline: none; }
   .item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item-kind { font-size: var(--fs-2xs); color: var(--text-3); }
+  .item-kind { font-size: var(--fs-xs); color: var(--text-3); }
 </style>

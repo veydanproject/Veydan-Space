@@ -1,9 +1,9 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- The pill of a state at the end of a row or a head (22, `--fs-xs`): `ok` on its way, `warn` waiting, `bad` gone wrong. -->
+<!-- The pill of a state at the end of a row or a head (22, `--fs-xs`): `ok` on its way, `warn` waiting, `bad` gone wrong, `neutral` not known yet. -->
 <script module lang="ts">
-  export type PillTone = 'ok' | 'warn' | 'bad';
+  export type PillTone = 'ok' | 'warn' | 'bad' | 'neutral';
 </script>
 
 <script lang="ts">
@@ -24,4 +24,5 @@
   }
   .warn { background: var(--warn-bg); color: var(--warn-text); }
   .bad { background: var(--danger-bg); color: var(--danger-text); }
+  .neutral { background: var(--surface-2); color: var(--text-2); }
 </style>

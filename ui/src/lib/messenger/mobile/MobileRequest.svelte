@@ -73,5 +73,5 @@
 {/if}
 
 <style>
-  .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-base); }
 </style>

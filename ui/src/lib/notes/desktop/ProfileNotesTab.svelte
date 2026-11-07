@@ -137,7 +137,7 @@
   }
   .note-title-inline {
     font-size: var(--fs-sm);
-    font-weight: 500;
+    font-weight: var(--fw-medium);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
@@ -145,11 +145,11 @@
     flex: 1;
   }
   .note-badge {
-    font-size: var(--fs-2xs);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
     background: var(--surface-2);
-    border-radius: 3px;
+    border-radius: var(--radius-pill);
     padding: 0.1rem 0.3rem;
     flex-shrink: 0;
   }
@@ -161,7 +161,7 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    line-height: 1.4;
+    line-height: var(--lh-snug);
   }
   .note-card-bottom {
     display: flex;
@@ -170,7 +170,7 @@
     gap: 0.4rem;
   }
   .note-time-inline {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3, var(--text-2));
   }
   .note-flags {
@@ -179,15 +179,15 @@
     align-items: center;
   }
   .note-flag {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
   }
   .draft-flag {
     background: var(--warn-text);
     color: #fff;
     border-radius: 3px;
     padding: 0.05rem 0.25rem;
-    font-size: var(--fs-2xs);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
   }
   .note-tags-inline {
     display: flex;
@@ -196,13 +196,13 @@
     margin-top: 0.1rem;
   }
   .note-tag-chip {
-    font-size: var(--fs-2xs);
-    border-radius: 3px;
+    font-size: var(--fs-xs);
+    border-radius: var(--radius-pill);
     padding: 0.05rem 0.3rem;
-    font-weight: 500;
+    font-weight: var(--fw-medium);
   }
   .note-tag-more {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-2);
   }
   .btn-open-notes {

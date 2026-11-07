@@ -92,7 +92,7 @@
     gap: var(--sp-1);
     max-width: 100%;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
     padding: 2px 2px 2px var(--sp-2);
     color: var(--text-2);
     font-size: var(--fs-xs);
@@ -106,7 +106,7 @@
     background: transparent;
     color: inherit;
     font-size: var(--fs-md);
-    line-height: 1;
+    line-height: var(--lh-icon);
   }
   .m-field .x { min-width: 32px; min-height: 32px; }
   .pick {
@@ -118,7 +118,7 @@
     margin-top: var(--sp-1);
     padding: var(--sp-1);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     background: var(--surface-drawer);
     box-shadow: var(--shadow-lg);
   }

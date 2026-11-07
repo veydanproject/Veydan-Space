@@ -40,6 +40,6 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text-2); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .text { margin: 0; font-size: var(--fs-sm); color: var(--text-body); line-height: 1.5; }
+  .text { margin: 0; font-size: var(--fs-sm); color: var(--text-body); line-height: var(--lh-base); }
   .box { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
 </style>

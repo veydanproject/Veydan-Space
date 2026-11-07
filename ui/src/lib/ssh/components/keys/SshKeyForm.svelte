@@ -7,8 +7,11 @@
   import { api } from '$lib/ssh/api';
   import type { SshKey } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import Drawer from '$lib/core/ui/Drawer.svelte';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     mode?: 'import' | 'generate';
@@ -21,6 +24,8 @@
   let activeMode = $state<'import' | 'generate'>(untrack(() => mode));
   let saving = $state(false);
   let error = $state('');
+  /** The field a validation error is about: its line sits under that field; none: a failure of the save itself. */
+  let errorField = $state<'name' | 'key' | 'passphrase' | 'confirm' | null>(null);
 
   let name = $state('');
   // import
@@ -33,7 +38,6 @@
   let genPassphraseConfirm = $state('');
   // after successful generation: show the public key before closing
   let createdKey = $state<SshKey | null>(null);
-  let copied = $state(false);
 
   const ALGO_OPTIONS = [
     { value: 'ed25519', label: 'Ed25519' },
@@ -55,18 +59,22 @@
   async function save() {
     if (!name.trim()) {
       error = $t('ssh_key_error_name_required');
+      errorField = 'name';
       return;
     }
     if (activeMode === 'import' && !privateKey.trim()) {
       error = $t('ssh_key_error_key_required');
+      errorField = 'key';
       return;
     }
     if (activeMode === 'generate' && genPassphrase !== genPassphraseConfirm) {
       error = $t('ssh_key_error_passphrase_mismatch');
+      errorField = 'confirm';
       return;
     }
     saving = true;
     error = '';
+    errorField = null;
     try {
       if (activeMode === 'import') {
         const key = await api.sshKeys.import({
@@ -89,6 +97,8 @@
       }
     } catch (e: unknown) {
       error = mapError(e);
+      const msg = formatError(e);
+      errorField = activeMode === 'import' && (msg.includes('key_encrypted') || msg.includes('key_wrong_passphrase')) ? 'passphrase' : null;
     } finally {
       saving = false;
     }
@@ -99,30 +109,21 @@
     try {
       await navigator.clipboard.writeText(createdKey.public_key);
       copiedToast();
-      copied = true;
-      setTimeout(() => (copied = false), 2000);
     } catch {}
   }
 </script>
 
+<!-- The window of a key (import / generate, its title by the tab chosen): the fields scroll, «Cancel» and the main button are the drawer's footer. -->
+<Drawer open width="440px" title={activeMode === 'generate' ? $t('ssh_keys_generate') : $t('ssh_key_form_import')} onclose={onCancel}>
 <div class="form">
   {#if createdKey}
     <div class="created-hint">
-      <Icon name="check-circle" size={15} />
+      <Icon name="check" size={18} />
       {$t('ssh_key_created_hint')}
     </div>
     <div class="form-group">
-      <span class="field-label">{$t('ssh_key_public_label')}</span>
-      <textarea class="mono" readonly rows="4" value={createdKey.public_key}></textarea>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick={copyPublic}>
-        <Icon name={copied ? 'check' : 'copy'} size={13} />
-        {copied ? $t('ssh_key_copied') : $t('ssh_key_btn_copy_public')}
-      </button>
-      <button class="btn btn-primary" onclick={() => onSave(createdKey!)}>
-        {$t('ssh_key_btn_done')}
-      </button>
+      <label for="ssh-key-created-public">{$t('ssh_key_public_label')}</label>
+      <textarea id="ssh-key-created-public" class="mono" readonly rows="4" value={createdKey.public_key}></textarea>
     </div>
   {:else}
     <div class="seg">
@@ -132,7 +133,7 @@
         class:active={activeMode === 'import'}
         onclick={() => { activeMode = 'import'; error = ''; }}
       >
-        <Icon name="download" size={13} /> {$t('ssh_key_form_import')}
+        <Icon name="file-import" size={18} /> {$t('ssh_key_form_import')}
       </button>
       <button
         type="button"
@@ -140,12 +141,12 @@
         class:active={activeMode === 'generate'}
         onclick={() => { activeMode = 'generate'; error = ''; }}
       >
-        <Icon name="plus" size={13} /> {$t('ssh_key_form_generate')}
+        <Icon name="plus" size={18} /> {$t('ssh_key_form_generate')}
       </button>
     </div>
 
-    {#if error}
-      <div class="error-msg">{error}</div>
+    {#if error && !errorField}
+      <Notice tone="danger">{error}</Notice>
     {/if}
 
     <div class="form-group">
@@ -155,7 +156,9 @@
         type="text"
         bind:value={name}
         placeholder={$t('ssh_key_field_name_placeholder')}
+        aria-invalid={errorField === 'name'}
       />
+      {#if error && errorField === 'name'}<div class="error-msg">{error}</div>{/if}
     </div>
 
     {#if activeMode === 'import'}
@@ -167,7 +170,9 @@
           bind:value={privateKey}
           rows="7"
           placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."
+          aria-invalid={errorField === 'key'}
         ></textarea>
+        {#if error && errorField === 'key'}<div class="error-msg">{error}</div>{/if}
       </div>
       <div class="form-group">
         <label for="ssh-key-import-pass">{$t('ssh_key_field_passphrase')}</label>
@@ -177,17 +182,15 @@
           bind:value={importPassphrase}
           placeholder="••••••••"
           autocomplete="new-password"
+          aria-invalid={errorField === 'passphrase'}
         />
+        {#if error && errorField === 'passphrase'}<div class="error-msg">{error}</div>{/if}
         <span class="hint">{$t('ssh_key_field_passphrase_hint_import')}</span>
       </div>
     {:else}
       <div class="form-group">
         <label for="ssh-key-algo">{$t('ssh_key_field_algorithm')}</label>
-        <select id="ssh-key-algo" bind:value={algoChoice}>
-          {#each ALGO_OPTIONS as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
+        <CustomSelect id="ssh-key-algo" options={ALGO_OPTIONS} bind:value={algoChoice} />
       </div>
       <div class="form-group">
         <label for="ssh-key-comment">{$t('ssh_key_field_comment')}</label>
@@ -217,54 +220,44 @@
             bind:value={genPassphraseConfirm}
             placeholder="••••••••"
             autocomplete="new-password"
+            aria-invalid={errorField === 'confirm'}
           />
+          {#if error && errorField === 'confirm'}<div class="error-msg">{error}</div>{/if}
         </div>
       </div>
       <span class="hint">{$t('ssh_key_field_passphrase_hint_generate')}</span>
     {/if}
-
-    <div class="form-actions">
-      <button class="btn btn-ghost" onclick={onCancel}>{$t('ssh_btn_cancel')}</button>
+  {/if}
+</div>
+  {#snippet footer()}
+    {#if createdKey}
+      <button class="btn btn-ghost" onclick={copyPublic}>
+        <Icon name="copy" size={18} />
+        {$t('ssh_key_btn_copy_public')}
+      </button>
+      <button class="btn btn-primary" onclick={() => onSave(createdKey!)}>
+        {$t('common_done')}
+      </button>
+    {:else}
+      <button class="btn btn-ghost" onclick={onCancel}>{$t('common_cancel')}</button>
       <button class="btn btn-primary" onclick={save} disabled={saving}>
-        {#if saving}<Icon name="loader" size={13} />{/if}
+        {#if saving}<Icon name="loader" size={18} />{/if}
         {#if saving && activeMode === 'generate'}
           {$t('ssh_key_generating')}
         {:else}
           {activeMode === 'import' ? $t('ssh_key_btn_import') : $t('ssh_key_btn_generate')}
         {/if}
       </button>
-    </div>
-  {/if}
-</div>
+    {/if}
+  {/snippet}
+</Drawer>
 
 <style>
   .form { display: flex; flex-direction: column; gap: var(--sp-4); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .form-group { display: flex; flex-direction: column; gap: 8px; }
-  label, .field-label {
-    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
-    font-weight: var(--fw-bold); letter-spacing: 0.5px;
-  }
-  input, select, textarea {
-    /* background-color only: a select keeps the chevron of base.css */
-    background-color: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    color: var(--text);
-    padding: 0 14px;
-    height: var(--control-h-lg);
-    font-size: var(--fs-base);
-    font-family: inherit;
-    resize: vertical;
-  }
-  select { padding-right: 2.2rem; }
-  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: var(--fs-sm); }
-  input:focus, select:focus, textarea:focus {
-    outline: none;
-    border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
-  }
-  .hint { font-size: var(--fs-xs); color: var(--text-faint); }
+  /* The common captions and fields on the panel's glass, 40 high. */
+  input { height: var(--control-h); }
+  textarea { resize: vertical; }
   .seg { align-self: flex-start; }
   .created-hint {
     display: flex; align-items: center; gap: var(--sp-2);
@@ -274,6 +267,4 @@
     border-radius: var(--radius-md);
     font-size: var(--fs-sm);
   }
-  .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

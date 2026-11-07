@@ -13,6 +13,7 @@
   import { get } from 'svelte/store';
   import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { confirmStore } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
@@ -83,7 +84,7 @@
     if (!level || base) return;
     const n = level.members;
     const text = $t(countKey('chan_level_delete_confirm', n, $locale), { name: level.name, n: String(n) });
-    if (!(await confirmStore.ask(text, $t('chan_level_delete'), true))) return;
+    if (!(await confirmStore.ask(text, $t('chan_level_delete'), true, 'trash-2'))) return;
     busy = true; error = '';
     try {
       await channelStore.delLevel(cid, level.id);
@@ -142,16 +143,16 @@
 
     {#if level && !base && isModerator(detail)}<LevelPeople {detail} {level} />{/if}
 
-    {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
     <!-- The dangerous one at the left of the foot, apart from «Отмена | Сохранить». -->
     {#if level && !base}
-      <button type="button" class="btn btn-ghost danger" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('chan_level_delete')}</button>
+      <button type="button" class="btn btn-danger-soft lead" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('chan_level_delete')}</button>
     {/if}
-    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('chan_cancel')}</button>
+    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" disabled={busy || (tried && !!problem)} aria-busy={busy} onclick={save}>
-      {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('chan_save')}
+      {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('common_save')}
     </button>
   {/snippet}
 </Dialog>
@@ -171,13 +172,13 @@
     border: 1px solid var(--border); border-radius: var(--radius-field); padding: 0 52px 0 var(--sp-3);
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
-  .field[aria-invalid='true'] { border-color: var(--danger-border); }
+  .field[aria-invalid='true'] { border-color: var(--danger); }
   .count { position: absolute; right: var(--sp-3); bottom: 14px; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .count.over { color: var(--danger-text); }
   .group { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .group legend, .group .term { margin-bottom: var(--sp-1); }
   /* A legend stands outside the fieldset's gap: its own margin and the height of the «?» give it the same distance as the «?» row, so the two cards line up. */
-  .group legend { margin-bottom: var(--sp-3); line-height: 24px; }
+  .group legend { margin-bottom: var(--sp-3); padding: 3px 0; line-height: var(--lh-snug); }
   /* The words of a group with its «?»: the row its note opens under. */
   .term { position: relative; display: flex; align-items: center; width: 100%; min-height: 24px; }
   /* Its note keeps the width of the whole body, also from the narrow column of the sections. */
@@ -188,16 +189,16 @@
   .check input { margin-top: 2px; flex-shrink: 0; }
   .right { display: flex; flex-direction: column; gap: 2px; }
   .right .hint { font-weight: var(--fw-normal); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .hint.base { display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); }
   .hint.base :global(svg) { flex-shrink: 0; margin-top: 2px; }
-  /* «Удалить уровень»: a ghost in the danger colour, 40 high, pushed to the left of the foot. */
-  .danger { color: var(--danger-text); gap: var(--sp-2); margin-right: auto; }
+  /* «Удалить уровень» (.btn-danger-soft), pushed to the left of the foot. */
+  .lead { margin-right: auto; }
   @media (pointer: coarse) {
     .field { font-size: var(--fs-md); height: 48px; }
     .count { bottom: 16px; }
     .check { padding: var(--sp-1) 0; }
     .term { min-height: 32px; }
-    .group legend { line-height: 32px; }
+    .group legend { padding: 7px 0; }
   }
 </style>

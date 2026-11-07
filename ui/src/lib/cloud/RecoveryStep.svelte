@@ -28,7 +28,7 @@
   import { ensureAccount } from '$lib/cloud/ensure';
   import { recoveryRefusal } from '$lib/cloud/recoveryKey';
   import { connectCloudVault, loadVaultState, type VaultState } from '$lib/cloud/vault';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let { next, detour }: OnboardingStepProps = $props();
 
@@ -106,14 +106,14 @@
   </div>
 {:else if issued}
   <div class="ob-main">
-    <span class="ob-tile"><Icon name="check-circle" size={28} /></span>
+    <span class="ob-tile"><Icon name="check" size={28} /></span>
     <h1 class="ob-title">{$t('cloud_recovery_key')}</h1>
     <p class="ob-text">
       {status?.escrow_written_at ? $t('cloud_recovery_issued', { date: dateOf(status.escrow_written_at, $locale) }) : $t('cloud_recovery_already')}
     </p>
   </div>
   <div class="ob-foot">
-    <button type="button" class="btn btn-primary" onclick={next}>{$t('ob_done')}</button>
+    <button type="button" class="btn btn-primary" onclick={next}>{$t('common_done')}</button>
   </div>
 {:else}
   <form class="ob-main" id="cloud-ob-recovery" onsubmit={(e) => { e.preventDefault(); void issue(); }}>
@@ -140,16 +140,16 @@
     {:else}
       <button type="submit" form="cloud-ob-recovery" class="btn btn-primary" disabled={busy || (lockOn && !secret)}>{$t('cloud_recovery_show_words')}</button>
     {/if}
-    <button type="button" class="ob-skip" disabled={busy} onclick={next}>{$t('ob_later')}</button>
+    <button type="button" class="ob-skip" disabled={busy} onclick={next}>{$t('common_later')}</button>
   </div>
 {/if}
 
 <style>
   .field { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-4); font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input {
     font: inherit; color: var(--text); min-height: 44px;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
     padding: 8px 10px;
   }
   .field input:focus { outline: none; border-color: var(--accent-border); }

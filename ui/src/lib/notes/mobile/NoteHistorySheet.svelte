@@ -5,6 +5,7 @@
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api, formatError, type Note, type NoteHistoryEntry } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
   import { AttachmentUrls, renderMarkdown } from '$lib/notes/mobile/markdown';
@@ -83,7 +84,7 @@
   {onclose}
   onback={selected ? () => (selected = null) : undefined}
 >
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   {#if selected}
     <div class="meta">
@@ -138,14 +139,14 @@
     overflow-y: auto;
     padding: var(--sp-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--radius-md);
     font-size: var(--fs-base);
-    line-height: 1.55;
+    line-height: var(--lh-base);
     word-break: break-word;
     user-select: text;
     -webkit-user-select: text;
   }
-  .preview :global(img) { max-width: 100%; border-radius: var(--radius-md, 8px); }
+  .preview :global(img) { max-width: 100%; border-radius: var(--radius-md); }
   .preview :global(pre) { overflow-x: auto; padding: var(--sp-2); background: var(--surface-2); border-radius: var(--radius-badge); font-size: var(--fs-xs); }
   .preview :global(code) { font-family: var(--font-mono); }
   .preview :global(a) { color: var(--accent-text); }

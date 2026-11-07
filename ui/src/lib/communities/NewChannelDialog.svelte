@@ -17,6 +17,7 @@
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
   import { Avatar, ServerPicker, accountServers, homeServersLabel, isTauriHost, nameOfServer, serverStore } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelPreview } from './api';
@@ -186,7 +187,7 @@
   <div class="body">
     {#if !fromCard}
     <div class="seg tabs" role="tablist">
-      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('chan_new_create')}</button>
+      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
       <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('chan_new_join')}</button>
     </div>
     {/if}
@@ -238,7 +239,7 @@
       </section>
 
       <p class="note"><Icon name="info" size={18} /><span>{$t('chan_keeper_note')}</span></p>
-      {#if error}<div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {:else}
       {#if fromCard && !showLink}
         <button type="button" class="link-toggle" aria-expanded="false" onclick={() => (showLink = true)}><Icon name="link" size={18} />{$t('chan_join_show_link')}</button>
@@ -249,7 +250,7 @@
         </label>
       {/if}
       {#if url.trim() && !linkLooksRight}
-        <p class="hint bad"><Icon name="alert-triangle" size={16} /><span>{$t('chan_link_bad')}</span></p>
+        <p class="hint bad"><Icon name="alert-triangle" size={16} /><span>{$t('chan_err_bad_link')}</span></p>
       {:else if linkLooksRight}
         {#if preview}
           {@const c = coverOf(preview.picture)}
@@ -267,12 +268,12 @@
           {#if way === 'request'}
             <input class="field tall" type="text" bind:value={note} maxlength="300" placeholder={$t('chan_join_note')} aria-label={$t('chan_join_note')} disabled={busy} />
           {:else if way === 'closed'}
-            <p class="note"><Icon name="lock-square-rounded" size={18} /><span>{$t('chan_preview_invite_only')}</span></p>
+            <p class="note"><Icon name="lock-square-rounded" size={18} /><span>{$t('chan_err_invite_only')}</span></p>
           {/if}
         {:else if previewError}
-          <div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{previewError}</span></div>
+          <Notice tone="danger">{previewError}</Notice>
           <button class="btn btn-ghost btn-sm retry" onclick={() => { previewedFor = url.trim(); void loadPreview(url.trim()); }}>
-            <Icon name="refresh-cw" size={16} />{$t('chan_retry')}
+            <Icon name="arrow-forward-up" size={16} />{$t('common_retry')}
           </button>
         {:else}
           <div class="found" role="status"><span class="spinner" aria-hidden="true"></span><span>{$t('chan_preview_loading')}</span></div>
@@ -280,7 +281,7 @@
       {:else}
         <p class="hint">{$t('chan_join_hint')}</p>
       {/if}
-      {#if error}<div class="error-msg" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {/if}
   </div>
 
@@ -334,29 +335,27 @@
     font: inherit; color: var(--text); text-align: left;
     border: 1px solid var(--pane-strong-border); border-radius: var(--radius-lg); background: var(--pane-strong);
   }
-  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-base); line-height: 1.4; }
+  .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-base); line-height: var(--lh-snug); }
   .option-title { font-weight: var(--fw-semibold); }
-  .option-hint { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .option-hint { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .where :global(.chip) { min-height: 36px; padding-inline: var(--sp-3); font-size: var(--fs-sm); gap: var(--sp-2); }
 
-  .note { display: flex; gap: var(--sp-2); align-items: flex-start; margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+  .note { display: flex; gap: var(--sp-2); align-items: flex-start; margin: 0; font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .note :global(svg) { flex-shrink: 0; color: var(--text-3); margin-top: 1px; }
-  .error-msg { display: flex; gap: var(--sp-2); align-items: flex-start; line-height: 1.45; }
-  .error-msg :global(svg) { flex-shrink: 0; margin-top: 1px; }
 
   .found { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--surface-3); border: 1px solid var(--border); }
   .ch-card { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); }
   .ch-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .ch-card-name { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ch-card-sub { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-3); }
-  .ch-card-about { font-size: var(--fs-base); color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .ch-card-about { font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .retry { align-self: flex-start; }
   .link-toggle {
     align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) 0; border: none; background: none; cursor: pointer;
     font: inherit; font-size: var(--fs-sm); color: var(--text-3);
   }
   .link-toggle:hover { color: var(--text-2); }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.5; }
+  .hint { margin: 0; }
   .hint.bad { display: flex; gap: var(--sp-2); align-items: center; color: var(--danger-text); }
   .hint.bad :global(svg) { flex-shrink: 0; }
   @media (pointer: coarse) { .field { font-size: var(--fs-md); } .field.tall { height: 48px; } }

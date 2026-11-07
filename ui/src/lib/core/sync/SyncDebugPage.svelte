@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api, type SyncDebugEntry } from '$lib/core/api';
@@ -15,11 +16,9 @@
   let enabled = $state(false);
   let entries = $state<SyncDebugEntry[]>([]);
   let error = $state('');
-  let copied = $state(false);
   let busy = $state(false);
   let logEl = $state<HTMLDivElement | null>(null);
   let stick = true;
-  let copyTimer: ReturnType<typeof setTimeout>;
 
   function append(row: SyncDebugEntry) {
     if (entries.some((item) => item.seq === row.seq)) return;
@@ -77,7 +76,6 @@
     return () => {
       stop = true;
       unlisten?.();
-      clearTimeout(copyTimer);
     };
   });
 
@@ -109,9 +107,6 @@
     try {
       await navigator.clipboard.writeText(entries.map(lineText).join('\n'));
       copiedToast();
-      copied = true;
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => (copied = false), 1500);
     } catch (e) {
       error = formatError(e);
     }
@@ -154,13 +149,13 @@
       </div>
       <div class="actions">
         <button type="button" class="btn btn-ghost btn-sm" disabled={!isTauri || entries.length === 0} onclick={clearLog}>
-          {$t('dev_sync_clear')}
+          {$t('common_clear')}
         </button>
         <button type="button" class="btn btn-ghost btn-sm" disabled={entries.length === 0} onclick={copyLog}>
-          {copied ? $t('dev_sync_copied') : $t('dev_sync_copy')}
+          {$t('common_copy')}
         </button>
       </div>
-      {#if error}<p class="err">{error}</p>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
 
     <div class="log" bind:this={logEl} onscroll={onScroll}>
@@ -188,13 +183,11 @@
   .panel { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
   .toggle-info { display: flex; flex-direction: column; gap: 0.2rem; }
-  .hint { font-size: var(--fs-sm); color: var(--text-dim); }
   .actions { display: flex; gap: var(--sp-2); }
-  .err { margin: 0; font-size: var(--fs-sm); color: var(--danger-text); }
   .log {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    line-height: 1.45;
+    line-height: var(--lh-snug);
     min-height: 12rem;
     flex-shrink: 0;
     max-height: min(70vh, 640px);

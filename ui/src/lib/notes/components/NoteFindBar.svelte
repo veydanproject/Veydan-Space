@@ -105,7 +105,7 @@
       <button class="fb-text" onclick={replaceAll} disabled={!matches.length}>{$t('note_replace_all')}</button>
     </div>
   {/if}
-  <button class="fb-btn" title={$t('notes_btn_cancel')} onclick={onclose}><Icon name="x" size={13} /></button>
+  <button class="fb-btn" title={$t('common_cancel')} onclick={onclose}><Icon name="x" size={13} /></button>
 </div>
 
 <style>
@@ -125,14 +125,14 @@
     gap: 0.3rem;
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-field);
     padding: 0 0.4rem;
     height: 28px;
     color: var(--text-3);
     flex: 1;
     min-width: 200px;
   }
-  .find-field:focus-within { border-color: var(--accent-border); }
+  .find-field:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   /* Reset the global input chrome from base.css: the field draws the border */
   .find-field input {
     flex: 1 1 0;
@@ -149,7 +149,7 @@
   }
   .find-field input:focus { box-shadow: none; }
   .find-count {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     color: var(--text-3);
     white-space: nowrap;
@@ -159,13 +159,13 @@
     border: none;
     color: var(--text-2);
     cursor: pointer;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
     padding: 0.15rem 0.3rem;
   }
-  .fb-text { font-size: var(--fs-2xs); white-space: nowrap; }
+  .fb-text { font-size: var(--fs-xs); white-space: nowrap; }
   .fb-btn:hover:not(:disabled), .fb-text:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-  .fb-btn:disabled, .fb-text:disabled { opacity: 0.4; cursor: default; }
+  .fb-btn:disabled, .fb-text:disabled { opacity: 0.45; cursor: default; }
   .fb-btn.active { color: var(--accent-text); }
 </style>

@@ -17,6 +17,7 @@
   import { page } from '$app/state';
   import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import { Avatar, MessageContent, PanelHead, confirmStore, isTauriHost, listStamp, longpress, myKey, onPhone, reportStore, serverStore, stamp, writeTo } from '$lib/messenger/seams/shared';
   import ChannelLink from './ChannelLink.svelte';
@@ -108,8 +109,8 @@
 
   const act = (a: ChannelAction) => run(() => channelStore.act(cid, a));
 
-  async function sure(text: string, cta: string, a: ChannelAction): Promise<boolean> {
-    return (await confirmStore.ask(text, cta, true)) && (await act(a));
+  async function sure(text: string, cta: string, a: ChannelAction, icon?: string): Promise<boolean> {
+    return (await confirmStore.ask(text, cta, true, icon)) && (await act(a));
   }
 
   const now = () => Math.floor(Date.now() / 1000);
@@ -170,7 +171,7 @@
   /** «Сделать хранителем это устройство», or the recovery when the device that keeps it is lost. */
   async function take(emergency: boolean) {
     const text = tr(emergency ? 'chan_keeper_emergency_confirm' : 'chan_keeper_take_confirm');
-    if (!(await confirmStore.ask(text, tr(emergency ? 'chan_keeper_emergency_cta' : 'chan_keeper_take_cta'), emergency))) return;
+    if (!(await confirmStore.ask(text, tr(emergency ? 'chan_keeper_emergency_cta' : 'chan_keeper_take_cta'), emergency, 'key'))) return;
     await run(async () => { keeper = await channelsApi.keeper.take(cid, emergency); });
   }
 
@@ -178,7 +179,7 @@
 
   /** «Передать канал»: the journal names the new owner, he is offered the channel; nothing changes until he accepts. */
   async function transferTo(who: string) {
-    if (!(await confirmStore.ask(tr('chan_transfer_confirm', { name: nameStore.label(who) }), tr('chan_transfer_cta'), true))) return;
+    if (!(await confirmStore.ask(tr('chan_transfer_confirm', { name: nameStore.label(who) }), tr('chan_transfer_cta'), true, 'key'))) return;
     await run(async () => { await channelsApi.transfer.offer(cid, who); await channelStore.refresh(cid); });
   }
 
@@ -280,12 +281,12 @@
     const who = nameStore.label(s.pubkey);
     const list: MenuEntry[] = [];
     const other = s.pubkey !== me;
-    if (other) list.push({ label: $t('chan_member_write'), icon: 'send', onselect: () => { writeTo(s.pubkey).catch(() => {}); onclose(); } });
+    if (other) list.push({ label: $t('chan_member_write'), icon: 'message-circle', onselect: () => { writeTo(s.pubkey).catch(() => {}); onclose(); } });
     if (other) list.push({ label: $t('chan_menu_report'), icon: 'alert-triangle', danger: true,
       // A person met in the channel: the channel is named, no post.
       onselect: () => reportStore.open({ accused: s.pubkey, name: who, context: { t: 'channel', community_id: detail.channel.id }, canBlock: false }) });
     for (const role of rolesFor(detail, s.pubkey, me)) {
-      list.push({ label: $t(`chan_member_make_${role}` as 'chan_member_make_author'), icon: role === 'author' ? 'pencil' : 'shield',
+      list.push({ label: $t(`chan_member_make_${role}` as 'chan_member_make_author'), icon: role === 'author' ? 'pencil' : 'shield-check',
         onselect: () => acts?.demoting(s.pubkey, role, () => act({ op: 'set_role', who: s.pubkey, role })) });
     }
     // The owner hands the channel to one of the team (communities-wire §16); one handover at a time.
@@ -297,17 +298,17 @@
     }
     if (canMute(detail, s.pubkey, me)) {
       if (mutedNow(s)) list.push({ label: $t('chan_member_unmute'), icon: 'bell', onselect: () => run(() => channelsApi.moderation.mod(cid, { t: 'unmute', who: s.pubkey }).then(() => channelStore.refresh(cid))) });
-      else list.push({ label: $t('chan_member_mute'), icon: 'bell-off', onselect: () => acts?.askMute(s.pubkey) });
+      else list.push({ label: $t('chan_member_mute'), icon: 'message-circle-off', onselect: () => acts?.askMute(s.pubkey) });
     }
     if (canTrust(detail, s.pubkey, me) && checksMessages(detail)) {
       list.push(s.trusted
-        ? { label: $t('chan_member_untrust'), icon: 'shield', onselect: () => run(() => channelsApi.moderation.mod(cid, { t: 'trust', who: s.pubkey, trusted: false }).then(() => channelStore.refresh(cid))) }
+        ? { label: $t('chan_member_untrust'), icon: 'eye', onselect: () => run(() => channelsApi.moderation.mod(cid, { t: 'trust', who: s.pubkey, trusted: false }).then(() => channelStore.refresh(cid))) }
         : { label: $t('chan_member_trust'), icon: 'shield-check', onselect: () => run(() => channelsApi.moderation.mod(cid, { t: 'trust', who: s.pubkey, trusted: true }).then(() => channelStore.refresh(cid))) });
     }
     if (canRemove(detail, s.pubkey, me)) {
       list.push({ type: 'separator' });
-      list.push({ label: $t('chan_member_remove'), icon: 'x', danger: true,
-        onselect: () => acts?.demoting(s.pubkey, null, () => sure($t('chan_remove_confirm', { name: who }), $t('chan_member_remove'), { op: 'remove', who: s.pubkey })) });
+      list.push({ label: $t('chan_member_remove'), icon: 'user-minus', danger: true,
+        onselect: () => acts?.demoting(s.pubkey, null, () => sure($t('chan_remove_confirm', { name: who }), $t('chan_member_remove'), { op: 'remove', who: s.pubkey }, 'user-minus')) });
     }
     if (canBan(detail, s.pubkey, me)) list.push({ label: $t('chan_member_ban'), icon: 'user-cancel', danger: true, onselect: () => acts?.askBan(s.pubkey) });
     return list;
@@ -322,15 +323,15 @@
   const rules = $derived.by(() => { void $locale; return rulesLines(detail, tr, days); });
 
   async function leave() {
-    if (await confirmStore.ask($t('chan_leave_confirm', { name: view.name }), $t('chan_leave'), true)) await act({ op: 'leave' });
+    if (await confirmStore.ask($t('chan_leave_confirm', { name: view.name }), $t('chan_leave'), true, 'logout')) await act({ op: 'leave' });
   }
 
   async function disband() {
-    if (await confirmStore.ask($t('chan_disband_confirm', { name: view.name }), $t('chan_disband'), true)) await act({ op: 'disband' });
+    if (await confirmStore.ask($t('chan_disband_confirm', { name: view.name }), $t('chan_disband'), true, 'trash-2')) await act({ op: 'disband' });
   }
 
   async function forget() {
-    if (!(await confirmStore.ask($t('chan_forget_confirm', { name: view.name }), $t('chan_forget'), true))) return;
+    if (!(await confirmStore.ask($t('chan_forget_confirm', { name: view.name }), $t('chan_forget'), true, 'trash-2'))) return;
     if (await run(() => channelStore.forget(cid))) onforgotten?.();
   }
 
@@ -340,7 +341,7 @@
   }
 
   async function cancelJoin() {
-    if (!(await confirmStore.ask($t('chan_cancel_join_confirm', { name: view.name }), $t('chan_cancel_join'), true))) return;
+    if (!(await confirmStore.ask($t('chan_cancel_join_confirm', { name: view.name }), $t('chan_cancel_join'), true, 'x'))) return;
     if (await run(() => channelStore.cancelJoin(cid))) onforgotten?.();
   }
 
@@ -409,7 +410,7 @@
    * rulesLines — the comments, the check when it is on, the hours when they are set, in that order.
    */
   const ruleFacts = $derived.by(() => {
-    const icons = ['message-circle', ...(detail.premod !== 'off' ? ['shield'] : []), ...(detail.schedule?.days.length ? ['calendar'] : [])];
+    const icons = ['message-circle', ...(detail.premod !== 'off' ? ['shield-check'] : []), ...(detail.schedule?.days.length ? ['calendar'] : [])];
     return [
       { icon: 'user-question', text: word('chan_join_', JOINS, view.join) },
       { icon: 'clock', text: word('chan_history_', HISTORIES, detail.history) },
@@ -439,7 +440,7 @@
       <button class="btn btn-ghost btn-sm wrap" disabled={busy} onclick={() => take(false)}><Icon name="smartphone" size={18} />{$t('chan_keeper_take')}</button>
     {/if}
     {#if move.emergency}
-      <button class="btn btn-ghost btn-sm danger wrap" disabled={busy} onclick={() => take(true)}><Icon name="alert-triangle" size={18} />{$t('chan_keeper_emergency')}</button>
+      <button class="btn btn-danger-soft btn-sm wrap" disabled={busy} onclick={() => take(true)}><Icon name="alert-triangle" size={18} />{$t('chan_keeper_emergency')}</button>
     {/if}
     {#if background.asleep}<p class="text warn">{$t('chan_keeper_phone')}</p>{/if}
     {#if background.switch}
@@ -470,7 +471,7 @@
         {:else}<span></span>{/if}
         {#if canRotateKey(detail)}
           <button class="btn btn-ghost btn-sm" disabled={busy || !!keeper?.rotate_asked} onclick={rotateNow}>
-            <Icon name="refresh-cw" size={18} />{keeper?.rotate_asked ? $t('chan_keeper_rotate_asked') : $t('chan_keeper_rotate')}</button>
+            <Icon name="key" size={18} />{keeper?.rotate_asked ? $t('chan_keeper_rotate_asked') : $t('chan_keeper_rotate')}</button>
         {/if}
       </div>
     {/if}
@@ -484,7 +485,7 @@
     {#if isManager(detail) || canInvite(detail)}
       <div class="two fit">
         {#if isManager(detail)}<button class="btn btn-ghost" onclick={() => (addingAuthor = true)}><Icon name="pencil" size={18} />{$t('chan_add_author')}</button>{/if}
-        {#if canInvite(detail)}<button class="btn btn-ghost" onclick={() => (inviting = true)}><Icon name="user-plus" size={18} />{$t('chan_invite')}</button>{/if}
+        {#if canInvite(detail)}<button class="btn btn-ghost" onclick={() => (inviting = true)}><Icon name="mail" size={18} />{$t('chan_invite')}</button>{/if}
       </div>
     {/if}
     {#if offered}
@@ -505,12 +506,12 @@
                 <span class="who-name">{nm}{#if s.pubkey === me} <span class="me">({$t('chan_you')})</span>{/if}</span>
                 <code>{shortKey(s.pubkey)}</code>
                 {#if levelChips(s.pubkey).length}
-                  <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
+                  <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="star" size={14} />{n}</span>{/each}</span>
                 {/if}
               </span>
               {#if s.trusted && checksMessages(detail)}<span class="dim" title={$t('chan_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
               {#if mutedNow(s)}
-                <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="bell-off" size={16} /></span>
+                <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>
               {/if}
               {#if staffOf(detail, s.pubkey).role !== 'member'}<span class="role {s.role}">{$t(`chan_role_${s.role}` as 'chan_role_admin')}</span>{/if}
             </button>
@@ -548,7 +549,7 @@
   {:else if shown}
   <PanelHead title={$t(PAGE_TITLE[shown] as 'chan_link')} onback={closePage} onclose={close} />
   <div class="scroll">
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if shown === 'link'}<ChannelLink {detail} heading={false} />
     {:else if shown === 'keeper'}{@render keeperCard()}
     {:else if shown === 'levels'}<LevelsEditor {detail} part="levels" />
@@ -567,7 +568,7 @@
           <Avatar {...cover(view.picture, cid)} label={view.name} seed={cid} size={72} />
           <div class="two fit">
             <button class="btn btn-ghost" disabled={busy} onclick={pickCover}><Icon name="camera" size={18} />{$t('chan_cover_set')}</button>
-            {#if view.picture}<button class="btn btn-ghost danger" disabled={busy} onclick={() => run(() => channelStore.removeAvatar(cid))}><Icon name="trash-2" size={18} />{$t('chan_cover_remove')}</button>{/if}
+            {#if view.picture}<button class="btn btn-danger-soft" disabled={busy} onclick={() => run(() => channelStore.removeAvatar(cid))}><Icon name="trash-2" size={18} />{$t('chan_cover_remove')}</button>{/if}
           </div>
         </div>
         <input class="field" type="text" bind:value={name} maxlength="64" placeholder={$t('chan_name')} aria-label={$t('chan_name')} disabled={busy} />
@@ -611,14 +612,14 @@
             {#if view.kept_here}<span class="here" title={$t('chan_keeper_here_hint')}><Icon name="key" size={14} />{$t('chan_keeper_here')}</span>{/if}
           </div>
           {#if isManager(detail)}
-            <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('chan_edit')} title={$t('chan_edit')}><Icon name="pencil" size={18} /></button>
+            <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
           {/if}
         </div>
         {#if view.about}<div class="about"><MessageContent text={view.about} cards={false} /></div>{/if}
         <ul class="facts-list">{#each ruleFacts as f, i (i)}<li class="fact"><Icon name={f.icon} size={14} /><span>{f.text}</span></li>{/each}</ul>
       </section>
 
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
       {#if !joined(detail)}
         <div class="state"><Icon name="clock" size={16} />{view.membership === 'out' ? $t(outKey(view, 'chan_out_text') as 'chan_out_text') : $t(`chan_state_${view.membership}` as 'chan_state_out')}</div>
@@ -626,7 +627,7 @@
 
       {#if isModerator(detail)}
         <button class="mod-row" class:waits={!!waiting} onclick={openModeration}>
-          <Tile icon="shield" tone={waiting ? 'accent' : 'plain'} />
+          <Tile icon="shield-check" tone={waiting ? 'accent' : 'plain'} />
           <span class="mod-text">
             <span class="mod-name">{$t('chan_mod_title')}</span>
             {#if waiting}<span class="mod-waiting">{waiting}</span>{:else}<span class="mod-hint">{$t('chan_mod_row_hint')}</span>{/if}
@@ -653,7 +654,7 @@
         {/if}
         {#if pages.levels}
           <Box fromText>
-            <NavRow icon="layers" page="levels" title={$t('chan_levels')} onclick={() => openPage('levels')} count={lv.levels.length}>
+            <NavRow icon="star" page="levels" title={$t('chan_levels')} onclick={() => openPage('levels')} count={lv.levels.length}>
               {#snippet sub()}{levelList}{/snippet}
             </NavRow>
             <!-- `chan-sections`: the feed's «Настроить» brings an admin here. -->
@@ -667,7 +668,7 @@
             {#snippet sub()}<span class="stack">{#each team.slice(0, 5) as s (s.pubkey)}<span class="stack-av"><Avatar url={nameStore.picture(s.pubkey)} label={nameStore.label(s.pubkey)} seed={s.pubkey} size={22} /></span>{/each}</span>{/snippet}
           </NavRow>
           {#if pages.banned}
-            <NavRow icon="lock" page="banned" title={$t('chan_banned')} onclick={() => openPage('banned')} count={banned.length}>
+            <NavRow icon="user-cancel" page="banned" title={$t('chan_banned')} onclick={() => openPage('banned')} count={banned.length}>
               {#snippet sub()}{banned.map((b) => nameStore.label(b)).join(', ')}{/snippet}
             </NavRow>
           {/if}
@@ -691,18 +692,18 @@
         {#if isOwner(detail)}<p class="hint">{$t('chan_owner_hint')}</p>{/if}
         <div class="zone-btns">
           {#if joined(detail) && detail.has_key && !isOwner(detail)}
-            <button class="btn btn-ghost danger" disabled={busy} onclick={leave}><Icon name="x" size={18} />{$t('chan_leave')}</button>
+            <button class="btn btn-danger-soft" disabled={busy} onclick={leave}><Icon name="x" size={18} />{$t('chan_leave')}</button>
           {/if}
           {#if isOwner(detail)}
-            <button class="btn btn-ghost danger" disabled={busy} onclick={disband}><Icon name="trash-2" size={18} />{$t('chan_disband')}</button>
+            <button class="btn btn-danger-soft" disabled={busy} onclick={disband}><Icon name="trash-2" size={18} />{$t('chan_disband')}</button>
           {/if}
           {#if (view.membership === 'joining' || (joined(detail) && !detail.has_key)) && !isOwner(detail)}
-            <button class="btn btn-ghost danger" disabled={busy} onclick={cancelJoin}><Icon name="x" size={18} />{$t('chan_cancel_join')}</button>
+            <button class="btn btn-danger-soft" disabled={busy} onclick={cancelJoin}><Icon name="x" size={18} />{$t('chan_cancel_join')}</button>
           {:else if !joined(detail)}
-            <button class="btn btn-ghost danger" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('chan_forget')}</button>
+            <button class="btn btn-danger-soft" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('chan_forget')}</button>
           {/if}
           <!-- Anyone reports a channel, its owner and team too (Play, 2026-10-22; channelMenu.ts). -->
-          <button class="btn btn-ghost danger" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>
+          <button class="btn btn-danger-soft" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>
         </div>
         <span class="since">{$t('chan_created', { date: stamp(view.created_at) })}</span>
       </section>
@@ -711,10 +712,10 @@
   {#if editing}
     <!-- The verbs of the form stay at the foot of the panel, the form scrolls above them (the owner's rule of 2026-10-25). -->
     <footer class="foot">
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
       <div class="two">
-        <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('chan_cancel')}</button>
-        <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('chan_save')}</button>
+        <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('common_cancel')}</button>
+        <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('common_save')}</button>
       </div>
     </footer>
   {/if}
@@ -735,14 +736,13 @@
   .scroll > :global(*), .foot > * { width: 100%; max-width: 560px; align-self: center; flex-shrink: 0; }
   .cap { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   /* A block's total is the .count-pill of base.css, .quiet. */
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); width: 100%; }
-  .two .btn { min-height: var(--control-h); min-width: 0; gap: var(--sp-1); padding-inline: var(--sp-3); font-size: var(--fs-sm); line-height: 1.25; white-space: normal; text-wrap: balance; text-align: center; }
+  .two .btn { min-height: var(--control-h); min-width: 0; gap: var(--sp-1); padding-inline: var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-tight); white-space: normal; text-wrap: balance; text-align: center; }
   .two .btn:only-child { grid-column: 1 / -1; }
   /* A pair with icons: side by side, sharing the width, while both fit on a line; else each on a row of its own. */
   .two.fit { display: flex; flex-wrap: wrap; }
   .two.fit .btn { flex: 1 1 auto; }
-  .danger { color: var(--danger-text); }
 
   /* Who: the cover beside the name, the description, the rules as short facts two by two. */
   .hero { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -760,7 +760,7 @@
   }
   .cover-btn:hover:not(:disabled) .cam { border-color: var(--accent-border); }
   .hero-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: 1.25; overflow-wrap: anywhere; word-break: break-word; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow-wrap: anywhere; word-break: break-word; }
   .kind-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-3); }
   /* The pencil of the mockup (ci.js, heroC): a square of the surface, no border. */
   .edit-btn {
@@ -773,9 +773,9 @@
     display: inline-flex; align-items: center; gap: var(--sp-1); height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text, var(--success)); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
-  .about { font-size: var(--fs-base); line-height: 1.5; color: var(--text); }
+  .about { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text); }
   .facts-list { list-style: none; margin: 0; padding: var(--sp-3) 0 0; border-top: 1px solid var(--border-2); display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-3); }
-  .fact { display: flex; align-items: flex-start; gap: var(--sp-1); min-width: 0; font-size: var(--fs-xs); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+  .fact { display: flex; align-items: flex-start; gap: var(--sp-1); min-width: 0; font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text-2); overflow-wrap: anywhere; }
   .fact :global(svg) { flex: none; margin-top: 1px; color: var(--text-3); }
 
   /* Editing the card; its verbs are the foot of the panel. */
@@ -799,7 +799,7 @@
 
   .state {
     display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md);
-    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: 1.45;
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
   }
   .state :global(svg) { flex: none; }
 
@@ -811,12 +811,12 @@
   .mod-row:hover { background: var(--surface-row-hover); }
   .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .mod-name { font-size: var(--fs-body); font-weight: var(--fw-bold); }
-  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .mod-row.waits { border-color: var(--accent-border); background: var(--accent-bg); }
-  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: 1.4; }
+  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: var(--lh-snug); }
 
   /* The contents: what stands in its rows. */
-  .key { font-size: var(--fs-2xs); color: var(--text-3); }
+  .key { font-size: var(--fs-xs); color: var(--text-3); }
   .end { flex: none; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .stack { display: inline-flex; padding-left: var(--sp-2); margin-top: 2px; }
   .stack-av { display: inline-flex; margin-left: calc(-1 * var(--sp-2)); border-radius: 50%; box-shadow: 0 0 0 2px var(--surface-2); }
@@ -824,7 +824,7 @@
   /* The keeper. */
   .keeper-head { position: relative; display: flex; align-items: center; gap: var(--sp-3); }
   .keeper-name { flex: 1; min-width: 0; font-size: var(--fs-body); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-2); }
+  .text { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); }
   .text.dim { color: var(--text-3); }
   .text.warn { color: var(--warn-text); }
   .text.running { display: flex; align-items: center; gap: var(--sp-1); color: var(--success-text, var(--success)); }
@@ -860,18 +860,18 @@
   .as-button.still:hover { background: none; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who code { font-size: var(--fs-2xs); color: var(--text-3); }
+  .who code { font-size: var(--fs-xs); color: var(--text-3); }
   .me { color: var(--text-3); font-weight: var(--fw-medium); }
   .lvls { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: 2px; }
   .lvl {
     display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--accent-text); background: var(--accent-bg);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text); background: var(--accent-bg);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .dim { flex: none; color: var(--text-3); display: inline-flex; }
   .role {
     flex-shrink: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); background: var(--surface-3); color: var(--text-2);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--surface-3); color: var(--text-2);
   }
   .role.owner { background: var(--accent-bg); color: var(--accent-text); }
   .role.admin { background: var(--success-bg); color: var(--success-text, var(--success)); }

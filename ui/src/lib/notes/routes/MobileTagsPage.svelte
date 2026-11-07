@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
   import { api, formatError, type NoteTag } from '$lib/notes/mobile/api';
@@ -48,7 +49,7 @@
     if (!menu) return;
     editName = menu.name;
     editColor = menu.color || NAV_COLORS[0];
-    edit = { id: menu.id, title: $t('notes_item_edit') };
+    edit = { id: menu.id, title: $t('common_edit') };
     menu = null;
   }
 
@@ -102,7 +103,7 @@
   </div>
 
   <div class="m-body">
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
 
   {#if shown.length}
     <div class="m-list">
@@ -130,8 +131,8 @@
 
 <BottomSheet open={!!menu} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={openEdit}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('notes_item_edit')}</span></button>
-    <button type="button" class="m-row" onclick={remove}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('notes_tag_delete')}</span></button>
+    <button type="button" class="m-row" onclick={openEdit}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span></button>
+    <button type="button" class="m-row" onclick={remove}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span></button>
   </div>
 </BottomSheet>
 
@@ -147,5 +148,6 @@
 />
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .danger { color: var(--danger-text); }
 </style>

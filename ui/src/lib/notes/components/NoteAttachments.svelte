@@ -259,11 +259,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .att-actions { display: flex; gap: 0.2rem; }
   .att-btn {
@@ -271,14 +269,14 @@
     border: none;
     color: var(--text-3);
     cursor: pointer;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
     padding: 0.15rem 0.3rem;
     display: inline-flex;
     align-items: center;
   }
   .att-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
   .att-btn.att-danger:hover { color: var(--danger); }
-  .att-btn:disabled { opacity: 0.4; }
+  .att-btn:disabled { opacity: 0.45; }
   .att-hint { margin: 0.2rem 0; font-size: var(--fs-xs); color: var(--text-3); }
   .att-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .att-item {
@@ -306,7 +304,7 @@
     padding: 0;
   }
   .att-name:hover { text-decoration: underline; }
-  .att-size { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+  .att-size { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
   .att-player { padding: 0.2rem 0.2rem 0.4rem; }
   .att-player audio { width: 100%; height: 32px; }
   .att-player video { width: 100%; max-height: 150px; border-radius: var(--radius-badge); background: #000; }

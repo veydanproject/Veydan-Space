@@ -14,6 +14,7 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { Avatar, fold, longpress, matchesQuery, stamp } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
@@ -126,7 +127,7 @@
       <input type="search" bind:value={query} placeholder={$t('chan_readers_search')} aria-label={$t('chan_readers_search')} spellcheck="false" autocomplete="off" />
     </label>
   {/if}
-  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   {#snippet moreButton()}
     <button class="more" disabled={loading} aria-busy={loading} onclick={more}>
@@ -152,7 +153,7 @@
                   <span class="lvls" title={$t('chan_levels')}>{#each chips(r) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
                 {/if}
               </span>
-              {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="bell-off" size={16} /></span>{/if}
+              {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>{/if}
             </button>
           </li>
         {/each}
@@ -197,11 +198,11 @@
   .person.still:hover { background: none; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who code { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-3); }
+  .who code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
   .lvls { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: 2px; }
   .lvl {
     display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--accent-text); background: var(--accent-bg);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text); background: var(--accent-bg);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .dim { flex: none; color: var(--text-3); display: inline-flex; }
@@ -215,7 +216,7 @@
   .more:hover:not(:disabled) { background: var(--surface-row-hover); }
   .more:disabled { color: var(--text-3); cursor: default; }
   .more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .hint.with-icon { display: flex; align-items: center; gap: var(--sp-1); }
   /* On the desktop a long list scrolls inside its card, the field and the foot stay in reach; on the phone it takes the page. */
   @media (pointer: fine) {

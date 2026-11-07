@@ -26,8 +26,6 @@
   let { entries, showProfileBadge = false, onrequestAdd, emptyText, query = '' }: Props = $props();
 
   let codes = $state<Map<string, TotpCode>>(new Map());
-  let copiedId = $state('');
-  let copyTimer: ReturnType<typeof setTimeout>;
   let editing = $state<TotpEntry | null>(null);
 
   // Countdown ring
@@ -65,7 +63,6 @@
 
   onDestroy(() => {
     clearInterval(interval);
-    clearTimeout(copyTimer);
   });
 
   $effect(() => {
@@ -79,10 +76,6 @@
     if (!code) return;
     try {
       await copySecret(code.code);
-      copiedId = '';
-      requestAnimationFrame(() => (copiedId = entry.id));
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => (copiedId = ''), 2000);
     } catch {}
   }
 
@@ -114,7 +107,7 @@
   <div class="empty-state">
     {#if query}
       <span class="empty-icon"><Icon name="search" size={22} /></span>
-      <p>{$t('pass_nothing_found')}</p>
+      <p>{$t('common_nothing_found')}</p>
       <span>{$t('pass_nothing_found_hint', { q: query })}</span>
     {:else}
       <span class="empty-icon"><Icon name="shield-off" size={22} /></span>
@@ -168,8 +161,7 @@
           </svg>
           <span
             class="code-value"
-            class:copied={copiedId === entry.id}
-            style:color={copiedId === entry.id ? 'var(--success-text)' : code ? ringColor(code.seconds_left) : undefined}
+            style:color={code ? ringColor(code.seconds_left) : undefined}
           >
             {code ? formatCode(code.code) : '••• •••'}
           </span>
@@ -178,15 +170,14 @@
         <div class="entry-actions">
           <button
             class="icon-btn"
-            class:success={copiedId === entry.id}
             onclick={() => copy(entry)}
             title={$t('totp_copy')}
             aria-label={$t('totp_copy')}
             disabled={!code}
           >
-            <Icon name={copiedId === entry.id ? 'check' : 'copy'} size={13} />
+            <Icon name="copy" size={13} />
           </button>
-          <button class="icon-btn" onclick={() => (editing = entry)} title={$t('totp_edit')} aria-label={$t('totp_edit')}>
+          <button class="icon-btn" onclick={() => (editing = entry)} title={$t('common_edit')} aria-label={$t('common_edit')}>
             <Icon name="pencil" size={13} />
           </button>
           <button
@@ -195,7 +186,7 @@
             title={$t('common_delete')}
             aria-label={$t('common_delete')}
           >
-            <Icon name="trash" size={13} />
+            <Icon name="trash-2" size={13} />
           </button>
         </div>
       </div>
@@ -263,9 +254,9 @@
 
   .label-badge {
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
     color: var(--text-2);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     padding: 0.05rem 0.35rem;
   }
 
@@ -274,7 +265,7 @@
     border: 1px solid var(--accent-tint-border);
     color: var(--accent-text-2);
     border-radius: var(--radius-sm);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     padding: 0.1rem 0.4rem;
     font-weight: var(--fw-medium);
   }
@@ -294,19 +285,9 @@
     font-family: var(--font-mono);
     font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
-    letter-spacing: 0.08em;
     min-width: 5.5ch;
     text-align: center;
     white-space: nowrap;
-  }
-
-  .code-value.copied { animation: code-pop 0.4s ease; }
-  .icon-btn.success { animation: code-pop 0.35s ease; }
-
-  @keyframes code-pop {
-    0% { transform: scale(1); }
-    40% { transform: scale(1.14); }
-    100% { transform: scale(1); }
   }
 
   .entry-actions {

@@ -22,6 +22,8 @@
 //! - `progress`: stages, counts, speed and the events the host sees.
 //! - `runs`: a run as another process with the same data folder sees it.
 //! - `service`: configured servers, the transfer table, scheduling.
+//! - `webm`: the `AlphaMode` of a WebM without alpha put to 0 (a circle
+//!   of Android on Linux).
 //!
 //! Shared by chats, groups and the channels of communities; nothing here
 //! knows about chats.
@@ -38,6 +40,7 @@ pub mod runs;
 pub mod service;
 pub mod sigv4;
 pub mod upload;
+pub mod webm;
 
 pub use backend::{BlobBackend, BlossomBackend, MemoryBackend, S3Backend, S3Config};
 pub use descriptor::{ChunkRef, MediaDescriptor, MediaKind};

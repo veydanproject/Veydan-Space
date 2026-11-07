@@ -82,7 +82,7 @@
     <div class="lock-card" role="alert">
       <span class="lock-tile"><Icon name="alert-triangle" size={24} /></span>
       <h3>{$t('lock_status_failed')}</h3>
-      <button class="btn btn-primary" type="button" onclick={() => void appLock.refresh()}>{$t('start_error_retry')}</button>
+      <button class="btn btn-primary" type="button" onclick={() => void appLock.refresh()}>{$t('common_try_again')}</button>
     </div>
   </div>
 {:else if screen === 'recover'}
@@ -100,6 +100,7 @@
         bind:this={input}
         class:pin={kind === 'pin'}
         class:invalid={error}
+        aria-invalid={!!error}
         type={kind === 'pin' ? 'text' : 'password'}
         inputmode={attrs.inputmode}
         pattern={attrs.pattern}
@@ -110,7 +111,7 @@
         spellcheck="false"
       />
       {#if error}
-        <span class="err">{$t('lock_wrong')}</span>
+        <span class="error-msg">{$t('lock_wrong')}</span>
         {#if hint}<span class="hint">{$t('lock_hint_prefix', { hint })}</span>{/if}
       {/if}
       <button class="btn btn-primary" type="submit" disabled={!password || busy}>{$t('lock_unlock')}</button>
@@ -170,8 +171,7 @@
   .lock-card input.invalid { border-color: var(--danger); }
   .lock-card input.pin { -webkit-text-security: disc; }
   .lock-card .btn { width: 100%; justify-content: center; }
-  .err { font-size: var(--fs-xs); color: var(--danger); }
-  .hint { font-size: var(--fs-sm); color: var(--text); text-align: center; }
+  .hint { text-align: center; }
   .forgot {
     border: none;
     background: transparent;

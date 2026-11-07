@@ -22,6 +22,17 @@ pub const KIND_PRIVATE: &str = "private";
 pub const PUSH_OFF: &str = "off";
 pub const PUSH_VEYDAN: &str = "veydan";
 
+/// The access modes of a server (migration 046; internal/messenger-wire.md,
+/// «Режимы доступа сервера»).
+pub const ACCESS_OPEN: &str = "open";
+pub const ACCESS_TEAM: &str = "team";
+pub const ACCESS_CHANNEL: &str = "channel";
+
+/// Whether `mode` is an access mode this build knows.
+pub fn is_access(mode: &str) -> bool {
+    matches!(mode, ACCESS_OPEN | ACCESS_TEAM | ACCESS_CHANNEL)
+}
+
 /// How many hex characters of the SHA-256 make a server id: 64 bits, far
 /// more than the servers one person will ever add.
 const ID_LEN: usize = 16;
@@ -42,6 +53,8 @@ pub struct ServerRow {
     pub push_mode: String,
     pub source: Option<String>,
     pub added_at: i64,
+    /// `open` | `team` | `channel`: who may use it, as its card said.
+    pub access: String,
 }
 
 impl ServerRow {
@@ -72,7 +85,7 @@ pub fn is_id(id: &str) -> bool {
 }
 
 const COLS: &str =
-    "id, kind, name, relay_url, relay_key, media_url, call_node, push_mode, source, added_at";
+    "id, kind, name, relay_url, relay_key, media_url, call_node, push_mode, source, added_at, access";
 
 /// Insert or update the server of `row.relay_url`. The id and the url are
 /// taken from the url whatever the row says, and `added_at` stays that of
@@ -90,6 +103,12 @@ pub async fn put(store: &Store, row: &ServerRow) -> Result<String> {
             row.push_mode
         )));
     }
+    if !is_access(&row.access) {
+        return Err(MessengerError::Invalid(format!(
+            "access mode must be open, team or channel, not {}",
+            row.access
+        )));
+    }
     let url = normalize(&row.relay_url);
     if url.is_empty() {
         return Err(MessengerError::Invalid("a server needs a relay url".into()));
@@ -101,12 +120,12 @@ pub async fn put(store: &Store, row: &ServerRow) -> Result<String> {
         crate::now()
     };
     sqlx::query(
-        "INSERT INTO msg_servers (id, kind, name, relay_url, relay_key, media_url, call_node, push_mode, source, added_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO msg_servers (id, kind, name, relay_url, relay_key, media_url, call_node, push_mode, source, added_at, access)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            kind = excluded.kind, name = excluded.name, relay_url = excluded.relay_url, relay_key = excluded.relay_key,
            media_url = excluded.media_url, call_node = excluded.call_node, push_mode = excluded.push_mode,
-           source = excluded.source",
+           source = excluded.source, access = excluded.access",
     )
     .bind(&id)
     .bind(&row.kind)
@@ -118,6 +137,7 @@ pub async fn put(store: &Store, row: &ServerRow) -> Result<String> {
     .bind(&row.push_mode)
     .bind(&row.source)
     .bind(added_at)
+    .bind(&row.access)
     .execute(store.pool())
     .await
     .map_err(storage)?;
@@ -243,15 +263,20 @@ pub async fn group_closed(store: &Store, group_id: &str) -> Result<bool> {
     }
 }
 
-/// Whether an event of group `group_id` that came by `relay_url` (`None`:
-/// by no relay, a push) came from the group's server: a group of a
-/// private server is heard from that server's relays alone, a group of
-/// the home set from any relay that is no private server's. The same
-/// rule for the ingress, which then leaves the event unseen, and for the
-/// group service. A closed group (`group_closed`), or a relay of a
+/// Whether an event of group `group_id` that came by `source` came from
+/// the group's server: a group of a private server is heard from that
+/// server's relays alone, a group of the home set from any relay that is
+/// no private server's; by no relay (a push) only a group of the home set.
+/// An event of the archive of the conversation was heard on the group's
+/// own server by the device that kept it, and counts as heard there now.
+/// The same rule for the ingress, which then leaves the event unseen, and
+/// for the group service. A closed group (`group_closed`), or a relay of a
 /// removed server, hears nothing.
-pub async fn group_heard_on(store: &Store, group_id: &str, relay_url: Option<&str>) -> Result<bool> {
-    let came_by = match relay_url {
+pub async fn group_heard_on(store: &Store, group_id: &str, source: &messenger_core::EventSource) -> Result<bool> {
+    if matches!(source, messenger_core::EventSource::Archive) {
+        return Ok(!group_closed(store, group_id).await?);
+    }
+    let came_by = match source.relay_url().map(|u| u.as_str()) {
         Some(url) => match private_of_relay(store, url).await {
             Ok(s) => s,
             Err(e) if is_unknown(&e) => return Ok(false),
@@ -460,6 +485,7 @@ pub async fn put_private(store: &Store, row: &ServerRow) -> Result<String> {
             push_mode: row.push_mode.clone(),
             source: row.source.clone(),
             added_at,
+            access: row.access.clone(),
         },
     )
     .await?;
@@ -535,6 +561,67 @@ async fn forget_removed(store: &Store, id: &str) -> Result<()> {
     crate::settings::delete(store, &removed_key(id)).await
 }
 
+/// The settings key the refusal of private server `id` is kept under: what
+/// its relay said when it would not let this device in (`restricted: …`,
+/// `auth-required: …`). Of this device alone: never in the snapshot.
+pub fn denied_key(id: &str) -> String {
+    format!("servers.denied@{id}")
+}
+
+/// How much of a refusal is kept: a relay's word, not a page.
+const DENIED_MAX_CHARS: usize = 200;
+
+/// What the relay of server `id` said when it refused this device, while
+/// nothing has let it in since; `None` when it has not refused.
+pub async fn denied(store: &Store, id: &str) -> Result<Option<String>> {
+    crate::settings::get(store, &denied_key(id)).await
+}
+
+/// Keep the refusal `text` of server `id` (cut to a line). Whether it
+/// changed: the same refusal again tells nobody anything.
+pub async fn set_denied(store: &Store, id: &str, text: &str) -> Result<bool> {
+    let text: String = text
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(DENIED_MAX_CHARS)
+        .collect();
+    if denied(store, id).await?.as_deref() == Some(text.as_str()) {
+        return Ok(false);
+    }
+    crate::settings::set(store, &denied_key(id), &text).await?;
+    Ok(true)
+}
+
+/// Server `id` let this device in (an event taken, a join): the refusal
+/// is forgotten. Whether there was one.
+pub async fn clear_denied(store: &Store, id: &str) -> Result<bool> {
+    if denied(store, id).await?.is_none() {
+        return Ok(false);
+    }
+    crate::settings::delete(store, &denied_key(id)).await?;
+    Ok(true)
+}
+
+/// Set the access mode of private server `id`, as the server itself said
+/// it (`/.well-known/veydan-access/v1/info`) or a newer card. Whether it
+/// changed; a mode this build does not know is refused.
+pub async fn set_access(store: &Store, id: &str, mode: &str) -> Result<bool> {
+    if !is_access(mode) {
+        return Err(MessengerError::Invalid(format!(
+            "access mode must be open, team or channel, not {mode}"
+        )));
+    }
+    let done = sqlx::query(
+        "UPDATE msg_servers SET access = ?1 WHERE id = ?2 AND kind = 'private' AND access != ?1",
+    )
+    .bind(mode)
+    .bind(id)
+    .execute(store.pool())
+    .await
+    .map_err(storage)?;
+    Ok(done.rows_affected() > 0)
+}
+
 /// Every removal remembered, `(id, removed_at)`, the newest first.
 pub async fn removed(store: &Store) -> Result<Vec<(String, i64)>> {
     let rows = sqlx::query_as::<_, (String, String)>(
@@ -608,7 +695,7 @@ pub async fn forget_group_of_removed(store: &Store, group_id: &str) -> Result<bo
     if here.is_some() || removed.and_then(|v| v.parse::<i64>().ok()).unwrap_or(0) <= 0 {
         return Ok(false);
     }
-    forget_group(&mut tx, group_id).await?;
+    forget_group_in(&mut tx, group_id).await?;
     tx.commit().await.map_err(storage)?;
     Ok(true)
 }
@@ -661,18 +748,21 @@ async fn delete_chat_rows(tx: &mut sqlx::SqliteConnection, condition: &str, boun
 /// (log, keys list, pending, invitations, requests, marks of moderation,
 /// picture), its events, its settings (`group.<id>.…`), its chat with
 /// every row of it, and what the outbox still had to send to it. The ids
-/// of its keys are put in `groups::SECRETS_OWED`: the keys themselves are
+/// of its keys and its link secrets are put in `groups::SECRETS_OWED`: the
+/// secrets themselves are
 /// in the secret store, which the group service empties
 /// (`GroupService::forget_gone`).
-async fn forget_group(tx: &mut sqlx::SqliteConnection, group_id: &str) -> Result<()> {
+pub(crate) async fn forget_group_in(tx: &mut sqlx::SqliteConnection, group_id: &str) -> Result<()> {
     let keys: Vec<String> = sqlx::query_scalar("SELECT key_id FROM msg_group_keys WHERE group_id = ? ORDER BY key_id")
         .bind(group_id)
         .fetch_all(&mut *tx)
         .await
         .map_err(storage)?;
-    if !keys.is_empty() {
-        let mut owed = crate::groups::secrets_owed_in(&mut *tx).await?;
-        owed.extend(keys.into_iter().map(|k| (group_id.to_string(), k)));
+    let mut owed = crate::groups::secrets_owed_in(&mut *tx).await?;
+    let before = owed.len();
+    owed.extend(keys.into_iter().map(|k| (group_id.to_string(), k)));
+    crate::groups::owe_links_in(&mut *tx, Some(group_id), &mut owed).await?;
+    if owed.len() != before {
         crate::groups::set_secrets_owed_in(&mut *tx, &owed).await?;
     }
     for sql in [
@@ -733,8 +823,20 @@ async fn invites_on(tx: &mut sqlx::SqliteConnection, id: &str) -> Result<Vec<Str
 }
 
 /// The events of `msg_events_raw` that came by the relay of server `id`
-/// (live or as history; the relay in any spelling of it), forgotten.
+/// (live or as history; the relay in any spelling of it), forgotten; so
+/// are the rows that stand for the wraps of its private chats replayed
+/// from the archive (`EventSource::Server`, `ingress::stub_of_opened`),
+/// which the reconciliation of the server put in again would otherwise
+/// list as known.
 async fn forget_events_of(tx: &mut sqlx::SqliteConnection, id: &str) -> Result<()> {
+    sqlx::query(
+        "DELETE FROM msg_events_raw
+          WHERE json_extract(source_json, '$.kind') = 'server' AND json_extract(source_json, '$.id') = ?",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(storage)?;
     let relays: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT json_extract(source_json, '$.url') FROM msg_events_raw
          WHERE json_extract(source_json, '$.url') IS NOT NULL",
@@ -758,7 +860,7 @@ async fn forget_events_of(tx: &mut sqlx::SqliteConnection, id: &str) -> Result<(
 /// marks and calls, the relations and inbox lists of its peers, its
 /// cursors and its settings (`…@<id>`), and what the outbox still had to
 /// send there (nothing else can carry it). Its groups go too, each as a
-/// group I left is forgotten (`forget_group`), whatever my membership:
+/// group I left is forgotten (`forget_group_in`), whatever my membership:
 /// their relay is no server of mine any more, and a group of it must not
 /// become a group of the home set; nothing is published, and the other
 /// members keep the group. So do the invitations to a group of it. No
@@ -792,7 +894,7 @@ pub async fn remove_private(store: &Store, id: &str) -> Result<Option<Removed>> 
     .map_err(storage)?;
     let groups = groups_on(&mut *tx, id).await?;
     for g in &groups {
-        forget_group(&mut tx, g).await?;
+        forget_group_in(&mut tx, g).await?;
     }
     for invite in invites_on(&mut tx, id).await? {
         sqlx::query("DELETE FROM msg_group_invites WHERE invite_id = ?")
@@ -806,6 +908,10 @@ pub async fn remove_private(store: &Store, id: &str) -> Result<Option<Removed>> 
     // the server's history comes back whole, its wraps not skipped as
     // known by the ingress nor left out of a reconciliation.
     forget_events_of(&mut tx, id).await?;
+    // The archive's scope of its private chats goes the same way here
+    // (the tombstones of compaction stay): the storage keeps the segments,
+    // and the server put in again merges and replays them anew.
+    crate::archive::remove_scope_in(&mut tx, &format!("dm@{id}")).await?;
     for sql in [
         "DELETE FROM msg_chats WHERE server_id = ?1",
         "DELETE FROM msg_dm_relations WHERE server_id = ?1",
@@ -849,6 +955,7 @@ mod tests {
             push_mode: PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         }
     }
 
@@ -1304,8 +1411,10 @@ mod tests {
         assert_eq!(count(&s, "SELECT COUNT(*) FROM msg_group_invites WHERE invite_id = ?", "i-mine").await, 0);
         let mut owed = crate::groups::secrets_owed(&s).await.unwrap();
         owed.sort();
-        assert_eq!(owed, vec![(g1.clone(), "k1".to_string()), (g1.clone(), "k2".to_string())]);
+        let link = |g: &String| (g.clone(), "link.0".to_string());
+        assert_eq!(owed, vec![(g1.clone(), "k1".to_string()), (g1.clone(), "k2".to_string()), link(&g1), link(&g2)], "the keys and the links");
         crate::groups::secrets_forgotten(&s, &owed[..1]).await.unwrap();
+        crate::groups::secrets_forgotten(&s, &owed[2..]).await.unwrap();
         assert_eq!(crate::groups::secrets_owed(&s).await.unwrap(), vec![(g1.clone(), "k2".to_string())]);
 
         // The home group and all of it stay.
@@ -1325,10 +1434,15 @@ mod tests {
         assert!(is_unknown(&private_of_relay(&s, "wss://MINE.example/").await.unwrap_err()));
         assert!(group_closed(&s, &g1).await.unwrap());
         assert!(!group_closed(&s, &home_g).await.unwrap());
-        assert!(!group_heard_on(&s, &g1, None).await.unwrap());
-        assert!(!group_heard_on(&s, &g1, Some("wss://home.example")).await.unwrap());
-        assert!(!group_heard_on(&s, &home_g, Some("wss://mine.example")).await.unwrap(), "nor by its relay");
-        assert!(group_heard_on(&s, &home_g, Some("wss://home.example")).await.unwrap());
+        let by = |u: &str| messenger_core::EventSource::Relay { url: messenger_core::RelayUrl::parse(u).unwrap() };
+        let push = messenger_core::EventSource::Server { id: "push".into() };
+        let archive = messenger_core::EventSource::Archive;
+        assert!(!group_heard_on(&s, &g1, &push).await.unwrap());
+        assert!(!group_heard_on(&s, &g1, &by("wss://home.example")).await.unwrap());
+        assert!(!group_heard_on(&s, &g1, &archive).await.unwrap(), "closed: not even from the archive");
+        assert!(!group_heard_on(&s, &home_g, &by("wss://mine.example")).await.unwrap(), "nor by its relay");
+        assert!(group_heard_on(&s, &home_g, &by("wss://home.example")).await.unwrap());
+        assert!(group_heard_on(&s, &home_g, &archive).await.unwrap());
         // A relay that never was a server of mine is still the home set's.
         assert_eq!(private_of_relay(&s, "wss://never.example").await.unwrap(), None);
         // The sweep takes it, and only it.
@@ -1358,7 +1472,59 @@ mod tests {
         r.push_mode = "fcm".into();
         assert!(put(&s, &r).await.is_err());
         assert!(put(&s, &row("  ", KIND_HOME)).await.is_err());
+        let mut r = row("wss://a.example", KIND_PRIVATE);
+        r.access = "closed".into();
+        assert!(put(&s, &r).await.is_err());
         assert!(list(&s).await.unwrap().is_empty());
+    }
+
+    /// The access mode of a server is kept with it and changed in place; a
+    /// row of before the modes is `open` (migration 046).
+    #[tokio::test]
+    async fn the_access_mode_of_a_server_is_kept() {
+        let s = Store::open_in_memory().await.unwrap();
+        let open = put_private(&s, &row("wss://open.example", KIND_PRIVATE)).await.unwrap();
+        let team = put_private(&s, &ServerRow { access: ACCESS_TEAM.into(), ..row("wss://team.example", KIND_PRIVATE) })
+            .await
+            .unwrap();
+        assert_eq!(get(&s, &open).await.unwrap().unwrap().access, ACCESS_OPEN);
+        assert_eq!(get(&s, &team).await.unwrap().unwrap().access, ACCESS_TEAM);
+        assert!(set_access(&s, &open, ACCESS_CHANNEL).await.unwrap());
+        assert!(!set_access(&s, &open, ACCESS_CHANNEL).await.unwrap(), "the same mode changes nothing");
+        assert_eq!(get(&s, &open).await.unwrap().unwrap().access, ACCESS_CHANNEL);
+        assert!(set_access(&s, &open, "x").await.is_err());
+        // A row written without the column, as a build before 046 did.
+        sqlx::query(
+            "INSERT INTO msg_servers (id, kind, relay_url, push_mode, added_at) VALUES (?, 'private', 'wss://old.example', 'off', 1)",
+        )
+        .bind(id_of("wss://old.example"))
+        .execute(s.pool())
+        .await
+        .unwrap();
+        assert_eq!(by_relay_url(&s, "wss://old.example").await.unwrap().unwrap().access, ACCESS_OPEN);
+    }
+
+    /// The refusal of a server is this device's: kept, cut to a line,
+    /// told once, cleared, and gone with the server.
+    #[tokio::test]
+    async fn the_refusal_of_a_server_is_kept_until_it_lets_me_in() {
+        let s = Store::open_in_memory().await.unwrap();
+        let id = put_private(&s, &row("wss://team.example", KIND_PRIVATE)).await.unwrap();
+        assert_eq!(denied(&s, &id).await.unwrap(), None);
+        assert!(!clear_denied(&s, &id).await.unwrap());
+        let said = "restricted: not a member of this server; ask its admin for an invite";
+        assert!(set_denied(&s, &id, said).await.unwrap());
+        assert!(!set_denied(&s, &id, said).await.unwrap(), "the same refusal again");
+        assert_eq!(denied(&s, &id).await.unwrap().as_deref(), Some(said));
+        assert_eq!(crate::settings::get(&s, &denied_key(&id)).await.unwrap().as_deref(), Some(said));
+        set_denied(&s, &id, &format!("restricted:\n{}", "x".repeat(500))).await.unwrap();
+        let kept = denied(&s, &id).await.unwrap().unwrap();
+        assert!(kept.chars().count() == DENIED_MAX_CHARS && !kept.contains('\n'), "{kept}");
+        assert!(clear_denied(&s, &id).await.unwrap());
+        assert_eq!(denied(&s, &id).await.unwrap(), None);
+        set_denied(&s, &id, said).await.unwrap();
+        remove_private(&s, &id).await.unwrap();
+        assert_eq!(denied(&s, &id).await.unwrap(), None, "the server's settings go with it");
     }
 
     /// A removed server's events are seen no more, so the server put in
@@ -1388,11 +1554,48 @@ mod tests {
         ] {
             assert!(crate::events_raw::insert_if_new(&s, &seen(n, source)).await.unwrap());
         }
+        // The row that stands for a wrap of a private chat of S1 replayed
+        // from the archive, and the archive's own rows of that scope.
+        assert!(crate::events_raw::insert_if_new(&s, &seen(6, EventSource::Server { id: id.clone() })).await.unwrap());
+        let scope = format!("dm@{id}");
+        let event = |n: &str, scope: &str, dropped: bool| crate::archive::EventRow {
+            id: n.into(),
+            scope: scope.into(),
+            month: "2026-11".into(),
+            at: 1_000,
+            received_at: 1_000,
+            kind: 1059,
+            msg_id: None,
+            event_json: if dropped { String::new() } else { "{}".into() },
+        };
+        crate::archive::record(&s, &event("a", &scope, false)).await.unwrap();
+        crate::archive::record(&s, &event("b", "dm", false)).await.unwrap();
+        crate::archive::absorb(&s, &scope, "2026-11", &[event("a", &scope, false), event("t", &scope, false)], "h").await.unwrap();
+        sqlx::query("UPDATE msg_archive_events SET dropped = 1, event_json = '' WHERE id = 't'").execute(s.pool()).await.unwrap();
         remove_by_me(&s, &id, 10).await.unwrap().unwrap();
         let mut known = Vec::new();
-        for n in 1..=5u64 {
+        for n in 1..=6u64 {
             known.push(crate::events_raw::contains(&s, &EventId::parse(&format!("{n:064x}")).unwrap()).await.unwrap());
         }
-        assert_eq!(known, vec![false, false, true, true, true], "what S1 sent, in any spelling of it, and nothing else");
+        assert_eq!(known, vec![false, false, true, true, true, false], "what S1 sent, in any spelling of it, its stubs of the archive, and nothing else");
+        let left = crate::archive::ids(&s, &scope, "2026-11").await.unwrap();
+        assert_eq!(left, vec![("t".to_string(), true)], "the tombstone of compaction stays, the live event goes");
+        assert!(crate::archive::state(&s, &scope, "2026-11").await.unwrap().is_none());
+        assert_eq!(crate::archive::ids(&s, "dm", "2026-11").await.unwrap().len(), 1, "the home scope is left alone");
+    }
+
+    /// A group of a private server replayed from the archive is heard: the
+    /// device that kept the event heard it on the group's own server.
+    #[tokio::test]
+    async fn an_event_of_the_archive_is_heard_on_the_groups_own_server() {
+        let s = Store::open_in_memory().await.unwrap();
+        put_private(&s, &row("wss://mine.example", KIND_PRIVATE)).await.unwrap();
+        let g = "g".repeat(64);
+        crate::groups::upsert(&s, &group_row(&g, "wss://mine.example", "joined")).await.unwrap();
+        let by = |u: &str| messenger_core::EventSource::Relay { url: messenger_core::RelayUrl::parse(u).unwrap() };
+        assert!(group_heard_on(&s, &g, &by("wss://mine.example")).await.unwrap());
+        assert!(!group_heard_on(&s, &g, &by("wss://home.example")).await.unwrap());
+        assert!(!group_heard_on(&s, &g, &messenger_core::EventSource::Server { id: "push".into() }).await.unwrap(), "by no relay: the home set's alone");
+        assert!(group_heard_on(&s, &g, &messenger_core::EventSource::Archive).await.unwrap(), "from the archive: its own server's");
     }
 }

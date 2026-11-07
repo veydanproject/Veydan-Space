@@ -8,6 +8,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
@@ -49,13 +50,11 @@
   $effect(() => {
     if (appLock.locked) { revealed = ''; hide.stop(); }
   });
-  let copiedKey = $state('');
   let unlockOpen = $state(false);
   let afterUnlock = $state<'reveal' | 'copy' | 'edit' | 'delete' | 'tags' | 'primary' | null>(null);
   let pendingTags = $state<string[] | null>(null);
   let pendingPrimary = $state<string | null>(null);
   let shownNote = $state('');
-  let copyTimer: ReturnType<typeof setTimeout>;
   let totp = $state<TotpEntry[]>([]);
   let error = $state('');
   let saving = $state(false);
@@ -166,8 +165,7 @@
       const value = (await api.passwords.reveal(id, 'password')).value;
       revealed = value;
       hide.start();
-      await copySecret(value, { toast: $t('pw_copied') });
-      markCopied('password');
+      await copySecret(value, { toast: $t('toast_copied') });
     } catch (e) {
       if (hasErrorCode(e, 'vault_locked') || hasErrorCode(e, 'vault_mismatch') || hasErrorCode(e, 'decrypt_failed')) {
         return askUnlock('copy');
@@ -176,16 +174,9 @@
     }
   }
 
-  function markCopied(key: string) {
-    copiedKey = key;
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copiedKey = ''), 1600);
-  }
-
-  async function copyField(key: string, value: string) {
+  async function copyField(value: string) {
     try {
       await writeClipboard(value);
-      markCopied(key);
       copiedToast();
     } catch (e) {
       fail(e);
@@ -349,10 +340,10 @@
     {/if}
     <h1 class="m-title">{editing ? $t('pw_edit_title') : (entry?.title ?? $t('pw_title'))}</h1>
     {#if entry && !editing}
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('edit') : (editing = true))} aria-label={$t('pw_btn_edit')}>
+      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('edit') : (editing = true))} aria-label={$t('common_edit')}>
         <Icon name="pencil" size={22} />
       </button>
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('pw_btn_delete')}>
+      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('common_delete')}>
         <Icon name="trash-2" size={22} />
       </button>
     {/if}
@@ -381,7 +372,7 @@
         onsave={save}
       />
     {:else if entry}
-      {#if error}<div class="m-error">{error}</div>{/if}
+      {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
       <!-- The fields as one grouped card, like every list of the phone; an empty field is left out. -->
       <div class="m-list fields">
         {#if entry.username}
@@ -390,8 +381,8 @@
               <span class="m-label">{$t('pw_field_username')}</span>
               <span class="val">{entry.username}</span>
             </span>
-            <button type="button" class="m-ibtn" class:ok={copiedKey === 'user'} onclick={() => copyField('user', entry?.username ?? '')} aria-label={$t('pw_btn_copy')}>
-              <Icon name={copiedKey === 'user' ? 'check' : 'copy'} size={20} />
+            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.username ?? '')} aria-label={$t('common_copy')}>
+              <Icon name="id" size={20} />
             </button>
           </div>
         {/if}
@@ -401,8 +392,8 @@
               <span class="m-label">{$t('pw_field_url')}</span>
               <span class="val">{entry.url}</span>
             </span>
-            <button type="button" class="m-ibtn" class:ok={copiedKey === 'url'} onclick={() => copyField('url', entry?.url ?? '')} aria-label={$t('pw_btn_copy')}>
-              <Icon name={copiedKey === 'url' ? 'check' : 'copy'} size={20} />
+            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.url ?? '')} aria-label={$t('common_copy')}>
+              <Icon name="copy" size={20} />
             </button>
           </div>
         {/if}
@@ -415,8 +406,8 @@
           <button type="button" class="m-ibtn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
             <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
           </button>
-          <button type="button" class="m-ibtn" class:ok={copiedKey === 'password'} onclick={copyPassword} aria-label={$t('pw_btn_copy')}>
-            <Icon name={copiedKey === 'password' ? 'check' : 'copy'} size={20} />
+          <button type="button" class="m-ibtn" onclick={copyPassword} aria-label={$t('common_copy')}>
+            <Icon name="lock-password" size={20} />
           </button>
         </div>
         {#if shownNote}
@@ -457,14 +448,14 @@
 <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .fields { margin-bottom: var(--sp-3); }
   .field { gap: var(--sp-1); padding-right: var(--sp-2); }
   .field-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) 0; }
   .field-text .m-label { padding: 0; }
-  .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; user-select: text; -webkit-user-select: text; }
+  .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); user-select: text; -webkit-user-select: text; }
   .note-text { white-space: pre-wrap; user-select: text; -webkit-user-select: text; }
   .field .m-ibtn, .totp-card .m-ibtn { flex-shrink: 0; width: var(--touch); height: var(--touch); color: var(--text-2); }
-  .field .m-ibtn.ok { color: var(--success-text); }
   .totp-card {
     display: flex;
     align-items: center;
@@ -474,7 +465,7 @@
     padding: var(--sp-3) var(--sp-4);
   }
   .totp-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .totp-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .totp-name { font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .totp-account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .primary { display: inline-flex; color: var(--accent-text); }
   .autohide { font-size: var(--fs-xs); color: var(--text-2); }

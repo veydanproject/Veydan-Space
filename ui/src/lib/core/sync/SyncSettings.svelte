@@ -3,18 +3,20 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { api, LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import type { SyncConfig, SyncStatus } from '$lib/core/api';
   import { syncStore } from '$lib/core/store/sync.svelte';
   import { formatBytes, formatDateTime, formatError } from '$lib/core/utils';
-  import { joinErrorKey, storageErrorKey } from '$lib/core/join-error';
+  import { isNoVault, joinErrorKey, storageErrorKey } from '$lib/core/join-error';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { directory } from '$lib/core/directory';
   import { registry } from '$lib/core/registry';
   import { goto } from '$app/navigation';
   import { ask } from '$lib/core/ui/confirm.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { storageOf } from '$lib/core/sync/storage';
   import { CLOUD_BACKEND, asksForProfileFiles, filesLimit, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
@@ -41,7 +43,6 @@
   let oldPassphrase = $state('');
   let newPassphrase = $state('');
   let busy = $state(false);
-  let saved = $state(false);
   let error = $state('');
   let info = $state('');
   let confirmLeave = $state(false);
@@ -157,6 +158,7 @@
 
   /** The last error of the cycle, in words where the storage itself is refused. */
   function lastErrorText(message: string): string {
+    if (isNoVault(message)) return $t('settings_sync_no_vault');
     const key = storageErrorKey(message);
     return key ? $t(key) : message;
   }
@@ -182,8 +184,11 @@
     try {
       await task();
     } catch (e) {
-      const key = joinErrorKey(e);
-      error = key ? $t(key) : formatError(e);
+      // A joined device whose storage holds no vault: the banner of the status says it, once, with the way out.
+      if (!(status?.joined && isNoVault(e))) {
+        const key = joinErrorKey(e);
+        error = key ? $t(key) : formatError(e);
+      }
     } finally {
       busy = false;
       await refreshStatus();
@@ -191,8 +196,7 @@
   }
 
   function showSaved() {
-    saved = true;
-    setTimeout(() => (saved = false), 2000);
+    toast.success($t('common_saved'));
   }
 
   /** Saves the form. False where the device still syncs as before, or has only now got its vault: no sync is to follow. */
@@ -241,6 +245,14 @@
   }
 
   const save = () => run(saveConfig);
+
+  /**
+   * The storage of a joined device holds no vault (another account of Veydan
+   * Cloud, an emptied folder): the device takes the vault of the storage it
+   * is set to now, as a change of storage does — it leaves the old vault and
+   * joins the one there, or creates it where there is none.
+   */
+  const fixNoVault = () => run(changeStorage);
 
   const probe = () =>
     run(async () => {
@@ -351,25 +363,29 @@
       {/if}
 
       {#if confirmLeave}
-        <div class="banner danger" role="alert">
-          <Icon name="alert-triangle" size={18} />
-          <span class="banner-words">
-            <span>{$t('settings_sync_leave_confirm')}</span>
-            <span class="btns">
-              <button type="button" class="btn btn-danger btn-sm" disabled={busy} onclick={leave}>{$t('settings_sync_leave')}</button>
-              <button type="button" class="btn btn-ghost btn-sm" onclick={() => (confirmLeave = false)}>{$t('settings_backup_cancel')}</button>
-            </span>
-          </span>
-        </div>
+        <Notice tone="danger">
+          {$t('settings_sync_leave_confirm')}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" onclick={() => (confirmLeave = false)}>{$t('common_cancel')}</button>
+            <button type="button" class="btn btn-danger-soft btn-sm" disabled={busy} onclick={leave}>{$t('settings_sync_leave')}</button>
+          {/snippet}
+        </Notice>
       {/if}
-      {#if status.last_error}
-        <div class="banner danger" role="alert"><Icon name="alert-triangle" size={18} /><span><b>{$t('settings_sync_last_error')}</b> · {lastErrorText(status.last_error)}</span></div>
+      {#if status.last_error && isNoVault(status.last_error)}
+        <Notice tone="danger">
+          {lastErrorText(status.last_error)}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" disabled={busy || !!status?.running} onclick={fixNoVault}>{$t('settings_sync_no_vault_fix')}</button>
+          {/snippet}
+        </Notice>
+      {:else if status.last_error}
+        <Notice tone="danger"><b>{$t('settings_sync_last_error')}</b> · {lastErrorText(status.last_error)}</Notice>
       {/if}
       {#if status.last_warning}
-        <div class="banner warn"><Icon name="alert-triangle" size={18} /><span><b>{$t('settings_sync_last_warning')}</b> · {status.last_warning}</span></div>
+        <Notice tone="warn"><b>{$t('settings_sync_last_warning')}</b> · {status.last_warning}</Notice>
       {/if}
       {#if status.first_read_pending}
-        <div class="banner warn"><Icon name="info" size={18} /><span>{$t('settings_sync_first_read')}</span></div>
+        <Notice tone="warn" icon="info">{$t('settings_sync_first_read')}</Notice>
       {/if}
 
       <div class="facts">
@@ -551,7 +567,7 @@
           {/each}
         </div>
         {#if remoteFastWarn}
-          <div class="banner warn"><Icon name="alert-triangle" size={18} /><span>{$t('settings_sync_interval_remote_warn')}</span></div>
+          <Notice tone="warn">{$t('settings_sync_interval_remote_warn')}</Notice>
         {/if}
       </div>
     </div>
@@ -620,15 +636,14 @@
     </details>
   {/if}
 
-  {#if info}<div class="banner ok" role="status"><span>{info}</span></div>{/if}
-  {#if error}<div class="banner danger" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>{/if}
+  {#if info}<Notice tone="ok" role="status">{info}</Notice>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   <div class="foot">
-    {#if saved}<span class="saved" role="status">{$t('settings_sync_saved')}</span>{/if}
     {#if !status?.joined}
       <button type="button" class="btn btn-ghost" disabled={busy || !isTauri} onclick={probe}>{$t('settings_sync_probe')}</button>
     {/if}
-    <button type="button" class="btn btn-primary" disabled={busy} onclick={save}>{$t('settings_backup_save')}</button>
+    <button type="button" class="btn btn-primary" disabled={busy} onclick={save}>{$t('common_save')}</button>
   </div>
 </div>
 
@@ -671,7 +686,7 @@
   .chip.on { color: var(--accent-text); background: var(--accent-bg); border-color: var(--accent-border); }
   .warn { font-size: var(--fs-sm); color: var(--warn-text); margin: 0; }
   .input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); outline: none; }
-  .hint { font-size: var(--fs-sm); line-height: 1.45; color: var(--text-dim); margin: 0; }
+  .hint { line-height: var(--lh-snug); margin: 0; }
 
   .group { display: flex; flex-direction: column; gap: var(--sp-2); }
   .caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
@@ -712,16 +727,6 @@
   .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .progress-label { font-size: var(--fs-sm); color: var(--text-body); }
   .progress-detail { display: block; font-family: var(--font-mono); color: var(--text-dim); word-break: break-all; }
-  .banner {
-    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: 1.5; overflow-wrap: anywhere;
-  }
-  .banner :global(svg) { flex-shrink: 0; margin-top: 1px; }
-  .banner.danger { background: var(--danger-bg); color: var(--text); }
-  .banner.danger :global(svg) { color: var(--danger-text); }
-  .banner.warn { background: var(--warn-bg, var(--surface-2)); color: var(--warn-text); }
-  .banner.ok { background: var(--success-bg); color: var(--success-text); }
-  .banner-words { display: flex; flex-direction: column; gap: var(--sp-2); }
   .facts { margin: 0 calc(-1 * var(--sp-4)); padding: var(--sp-1); border-top: 1px solid var(--divider); display: flex; flex-direction: column; }
   .fact { position: relative; display: flex; align-items: baseline; gap: var(--sp-4); min-height: 40px; padding: 10px var(--sp-4); }
   .fact-key { flex: 0 0 220px; font-size: var(--fs-sm); color: var(--text-dim); }
@@ -748,7 +753,6 @@
   .passphrase .pad { border-top: 1px solid var(--divider); }
 
   .foot { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
-  .saved { margin-right: var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--success-text); }
 
   /* A narrow window: a fact's name over its value, the devices under it. */
   @container (max-width: 600px) {

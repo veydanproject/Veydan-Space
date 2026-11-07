@@ -7,6 +7,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { locale, t, type TranslationKey } from '$lib/core/i18n';
   import { relTime } from '$lib/core/utils';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     noteId: string;
@@ -216,10 +217,10 @@
         onclick={() => { compareMode = !compareMode; selectedB = null; }}
         title={$t('notes_history_compare')}
       >
-        <Icon name="columns" size={13} />
+        <Icon name="columns" size={18} />
       </button>
       <button class="btn-close" onclick={onclose} title={$t('common_close')}>
-        <Icon name="x" size={14} />
+        <Icon name="x" size={18} />
       </button>
     </div>
   </div>
@@ -228,12 +229,13 @@
   <!-- The type on a row of its own with the buttons, the two dates under it: a narrow panel cuts nothing -->
   <div class="hist-filter">
     <div class="filter-row">
-      <select bind:value={filterType} class="filter-select" aria-label={$t('notes_history_all_types')}>
-        <option value="">{$t('notes_history_all_types')}</option>
-        {#each VERSION_TYPES as kind (kind)}
-          <option value={kind}>{$t(versionTypeLabel[kind])}</option>
-        {/each}
-      </select>
+      <div class="filter-select">
+        <CustomSelect
+          options={[{ value: '', label: $t('notes_history_all_types') }, ...VERSION_TYPES.map((kind) => ({ value: kind, label: $t(versionTypeLabel[kind]) }))]}
+          bind:value={filterType}
+          ariaLabel={$t('notes_history_all_types')}
+        />
+      </div>
       <button class="btn-filter" onclick={applyFilter} title={$t('notes_history_apply')} aria-label={$t('notes_history_apply')}>
         <Icon name="filter" size={12} />
       </button>
@@ -267,7 +269,7 @@
   {#if viewMode === 'diff'}
     <div class="diff-header">
       <button class="btn-back" onclick={backToList} title={$t('notes_history_back')}>
-        <Icon name="arrow-left" size={12} /> {$t('notes_history_versions')}
+        <Icon name="chevron-left" size={12} /> {$t('notes_history_versions')}
       </button>
       <div class="diff-header-right">
         {#if diffLines.length > 0}
@@ -371,7 +373,7 @@
     align-items: center;
     gap: 0.4rem;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
   }
 
@@ -385,10 +387,14 @@
     border: none;
     cursor: pointer;
     color: var(--text-3);
-    padding: 0.2rem;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    flex-shrink: 0;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
+    justify-content: center;
     transition: color 0.15s, background 0.15s;
   }
 
@@ -412,21 +418,12 @@
   }
 
   .filter-select {
-    font-size: var(--fs-xs);
-    /* background-color only: the shorthand would drop the chevron of base.css */
-    background-color: var(--surface-3);
-    background-position: right 0.4rem center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    padding: 0 1.4rem 0 0.4rem;
-    height: 26px;
     flex: 1;
     min-width: 0;
   }
 
   .filter-date {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     background: var(--surface-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -453,7 +450,7 @@
   .btn-clear { color: var(--danger-text); }
 
   .compare-hint {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--accent-text);
     background: var(--accent-tint);
     padding: 0.3rem var(--sp-3);
@@ -478,7 +475,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 0.15rem var(--sp-2);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-2);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
@@ -487,7 +484,7 @@
   .btn-action:hover { background: var(--surface-hover); color: var(--text); }
   .btn-restore { border-color: var(--accent-border); color: var(--accent-text); }
   .btn-restore:hover { background: var(--accent-tint); }
-  .btn-restore:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-restore:disabled { opacity: 0.45; cursor: not-allowed; }
 
   .diff-header {
     display: flex;
@@ -535,7 +532,7 @@
     overflow-y: auto;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    line-height: 1.5;
+    line-height: var(--lh-base);
   }
 
   .diff-line {
@@ -581,11 +578,9 @@
   .day-group { padding-bottom: var(--sp-1); }
 
   .day-label {
-    font-size: var(--fs-2xs);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
     color: var(--text-3);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     padding: 0.4rem var(--sp-3) 0.2rem;
     position: sticky;
     top: 0;
@@ -636,12 +631,12 @@
   }
 
   .entry-time {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
   }
 
   .entry-rev {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
     font-family: var(--font-mono);
     flex-shrink: 0;

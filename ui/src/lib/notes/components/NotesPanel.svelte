@@ -397,8 +397,8 @@
               {#if isTrash}
                 <ListBulkActions {isTrash} notes={displayList} />
               {:else}
-                <button class="btn-new" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
-                  <Icon name="plus" size={16} />
+                <button class="icon-btn create" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
+                  <Icon name="plus" size={18} />
                 </button>
               {/if}
             </div>
@@ -409,6 +409,7 @@
               activeId={notesStore.activeNoteId}
               onselect={handleSelectNote}
               oncreate={() => (showCreate = true)}
+              search={searchQuery}
               {workspaceName}
               {workspaceColor}
               {profileName}
@@ -447,9 +448,9 @@
               <TemplateSelect class="create-title" bind:value={createTemplate} />
             {/if}
             <div class="create-actions">
-              <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('notes_btn_cancel')}</button>
+              <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('common_cancel')}</button>
               <button class="btn btn-primary" onclick={createNote} disabled={!createTitle.trim()}>
-                {$t('notes_btn_create')}
+                {$t('common_create')}
               </button>
             </div>
           </div>
@@ -535,7 +536,7 @@
     margin: 0;
     font-size: var(--fs-lg);
     font-weight: var(--fw-extrabold);
-    letter-spacing: -0.3px;
+    letter-spacing: var(--ls-tight);
   }
 
   .header-actions {
@@ -571,7 +572,7 @@
 
   .search-icon {
     position: absolute;
-    left: 0.75rem;
+    left: 0.85rem;
     color: var(--text-3);
     pointer-events: none;
     display: flex;
@@ -580,10 +581,11 @@
   .search-input {
     width: 100%;
     box-sizing: border-box;
-    padding: 0.42rem 0.6rem 0.42rem var(--sp-8);
+    height: var(--control-h);
+    padding: 0 0.6rem 0 var(--sp-8);
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-pill);
     color: var(--text);
     font-size: var(--fs-sm);
   }
@@ -667,31 +669,15 @@
   .list-title {
     margin: 0;
     font-size: var(--fs-xl);
-    font-weight: var(--fw-extrabold);
-    letter-spacing: -0.3px;
+    font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .list-sub { margin: 0; font-size: var(--fs-sm); color: var(--text-faint); }
 
   .list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .list-actions .icon-btn { width: 32px; height: 32px; }
-
-  .btn-new {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: var(--accent-grad);
-    color: #fff;
-    box-shadow: var(--shadow-accent);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .btn-new:hover { filter: brightness(1.08); }
+  .list-actions .icon-btn { width: 36px; height: 36px; }
 
   .list-scroll {
     flex: 1;
@@ -733,7 +719,7 @@
   .create-card h4 {
     margin: 0;
     font-size: var(--fs-md);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
 
   .create-title {

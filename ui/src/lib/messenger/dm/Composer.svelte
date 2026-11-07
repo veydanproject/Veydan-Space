@@ -14,7 +14,7 @@
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import { usageStore } from '../shared/emoji/usageStore.svelte';
   import { onKeyboard } from '../shared/keyboard';
-  import { holdBack } from '../attach/sheetBack';
+  import { holdBack } from '$lib/core/ui/sheetBack';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
   import TouchRecorder from '../media/TouchRecorder.svelte';
@@ -326,8 +326,10 @@
       }
       showHint();
     } else if (r.action === "start") {
-      recError = "";
       hint = "";
+      // A computer records in its own windows (RecorderBar, CircleRecorder); the button leaves with the row.
+      if (!touch) { gesture = IDLE; startRecording(mode); return; }
+      recError = "";
       emojiOpen = false;
       closeDock();
       heldLocked = false;
@@ -347,6 +349,8 @@
 
   function recDown(e: PointerEvent) {
     e.preventDefault();
+    // A computer: the right or the middle button neither switches nor records.
+    if (e.button !== 0) return;
     // Locked or under review: the tap sends, on the lift.
     if (held) return;
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
@@ -367,6 +371,21 @@
     if (holdTimer) clearTimeout(holdTimer);
     holdTimer = null;
     act({ type: "cancel" });
+  }
+  // The keyboard on the button of a computer, as the mouse: a short Enter or Space switches, a held one records.
+  const recKey = (e: KeyboardEvent) => e.key === "Enter" || e.key === " ";
+  function recKeyDown(e: KeyboardEvent) {
+    if (!recKey(e)) return;
+    e.preventDefault();
+    if (e.repeat || gesture.phase !== "idle") return;
+    act({ type: "down", x: 0, y: 0 });
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { holdTimer = null; act({ type: "hold" }); }, HOLD_MS);
+  }
+  function recKeyUp(e: KeyboardEvent) {
+    if (!recKey(e)) return;
+    e.preventDefault();
+    recUp();
   }
 
   const MAX_BYTES = 32 * 1024;
@@ -661,7 +680,7 @@
     })),
     { type: 'separator' },
     { label: $t('msg_edit_cut'), shortcut: `${MOD}+X`, onselect: () => onSelection(() => document.execCommand('cut')) },
-    { label: $t('msg_copy'), icon: 'copy', shortcut: `${MOD}+C`, onselect: () => onSelection(() => document.execCommand('copy')) },
+    { label: $t('common_copy'), icon: 'copy', shortcut: `${MOD}+C`, onselect: () => onSelection(() => document.execCommand('copy')) },
     { label: $t('msg_edit_paste'), icon: 'clipboard-paste', shortcut: `${MOD}+V`, onselect: () => void pasteText() },
   ]);
 </script>
@@ -708,6 +727,32 @@
   </div>
 {/snippet}
 
+{#snippet mainButton()}
+  <!-- One button right of the field on every device (ui-unify 02): with nothing to send a tap switches voice and circle,
+       a hold records the chosen one; words or a file make it the send. A computer reaches it with Tab. -->
+  {#if canRecordNow}
+    {@const sends = !!held && (heldLocked || heldPhase === "preview")}
+    {#if hint && !held}<div class="hint" role="status">{$t(`msg_rec_hint_${hint}` as "msg_rec_hint_voice")}</div>{/if}
+    <button class="send record" use:edgeHold class:holding={gesture.phase === "holding"} tabindex={touch ? -1 : undefined}
+      style:transform={gesture.phase === "holding" ? `translate(${gesture.dx}px, ${gesture.dy}px) scale(1.45)` : undefined}
+      onpointerdown={recDown} onpointermove={recMove} onpointerup={recUp} onpointercancel={recLost}
+      onkeydown={recKeyDown} onkeyup={recKeyUp} onblur={touch ? undefined : recLost}
+      onmousedown={keepFocus} oncontextmenu={keepFocus}
+      title={touch || sends ? undefined : $t(mode === "circle" ? "msg_rec_hint_circle" : "msg_rec_hint_voice")}
+      aria-label={sends ? $t('msg_composer_send') : $t(mode === "circle" ? "msg_rec_circle" : "msg_rec_voice")}>
+      {#key sends ? "send" : mode}
+        <span class="glyph"><Icon name={sends ? "send" : mode === "circle" ? "circle-video" : "mic"} size={18} /></span>
+      {/key}
+    </button>
+  {:else}
+    <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex={touch ? -1 : undefined}
+      onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit}
+      title={touch ? undefined : editing ? $t('common_save') : $t('msg_composer_send')} aria-label={editing ? $t('common_save') : $t('msg_composer_send')}>
+      <Icon name={editing ? 'check' : 'send'} size={18} />
+    </button>
+  {/if}
+{/snippet}
+
 <div class="composer" class:docked={touch && !!dock} bind:this={root}>
   {#if editing || replyTo}
     <div class="context">
@@ -720,7 +765,7 @@
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
         <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: readingOf(replyTo!), deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
       </span>
-      <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('msg_back')}><Icon name="x" size={14} /></button>
+      <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('common_back')}><Icon name="x" size={18} /></button>
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
@@ -764,28 +809,11 @@
           {@render emojiToggle()}
           {#if onexpand}{@render expandButton()}{/if}
         </div>
-      {#if canRecordNow}
-        {@const sends = !!held && (heldLocked || heldPhase === "preview")}
-        {#if hint && !held}<div class="hint" role="status">{$t(`msg_rec_hint_${hint}` as "msg_rec_hint_voice")}</div>{/if}
-        <button class="send record" use:edgeHold class:holding={gesture.phase === "holding"} tabindex="-1"
-          style:transform={gesture.phase === "holding" ? `translate(${gesture.dx}px, ${gesture.dy}px) scale(1.45)` : undefined}
-          onpointerdown={recDown} onpointermove={recMove} onpointerup={recUp} onpointercancel={recLost}
-          onmousedown={keepFocus} oncontextmenu={keepFocus}
-          aria-label={sends ? $t('msg_composer_send') : $t(mode === "circle" ? "msg_rec_circle" : "msg_rec_voice")}>
-          {#key sends ? "send" : mode}
-            <span class="glyph"><Icon name={sends ? "send" : mode === "circle" ? "circle-video" : "mic"} size={18} /></span>
-          {/key}
-        </button>
-      {:else}
-        <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
-          onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} aria-label={$t('msg_composer_send')}>
-          <Icon name={editing ? 'check' : 'send'} size={18} />
-        </button>
-      {/if}
+      {@render mainButton()}
     {:else if recording === "voice"}
       <RecorderBar oncancel={() => (recording = null)} ondone={(c) => recorded("voice", c)} onerror={recordingFailed} />
     {:else}
-    <!-- The order of the design kit: attach · the field with the smile at its end · circle · voice · send (with nothing to send it waits, dimmed, beside the voice; typing hides the recording buttons). -->
+    <!-- The order of the design kit: attach · the field with the smile at its end · the main button (voice or circle, send once there is something to send). -->
     {#if tools}{@render tools()}{/if}
     <div class="dfield">
       {#if emojiOpen}
@@ -807,22 +835,7 @@
         onclick={() => (md = !md)} title={$t(md ? 'msg_fmt_md_off' : 'msg_fmt_md_on')}>MD</button>
     {/if}
     {#if onexpand}{@render expandButton()}{/if}
-    {#if canRecordNow}
-      {#if circleOk}
-        <button class="tool" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("circle")} title={$t("msg_rec_circle")}>
-          <Icon name="video" size={18} />
-        </button>
-      {/if}
-      {#if voiceOk}
-        <button class="tool voice" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => startRecording("voice")} title={$t("msg_rec_voice")}>
-          <Icon name="mic" size={18} />
-        </button>
-      {/if}
-    {/if}
-    <button class="send" class:off={!canSend} aria-disabled={!canSend} tabindex="-1"
-      onpointerdown={keepFocus} onmousedown={keepFocus} onclick={submit} title={editing ? $t('msg_composer_save') : $t('msg_composer_send')}>
-      <Icon name={editing ? 'check' : 'send'} size={18} />
-    </button>
+    {@render mainButton()}
     {/if}
   </div>
   <!-- The phone: the menu and the chip at the top of the chat, under its head, over the conversation: clear of the
@@ -833,8 +846,8 @@
       {#if chip}{@render mdChip()}{/if}
     </div>
   {/if}
-  {#if tooLong}<div class="warn">{$t('msg_composer_too_long')}</div>{/if}
-  {#if recError}<div class="warn">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
+  {#if tooLong}<div class="error-msg">{$t('msg_composer_too_long')}</div>{/if}
+  {#if recError}<div class="error-msg">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
   {#if touch && dock}
     <div class="dock" class:glide style:height={dockCss}>
       <div class="dock-panel">
@@ -873,7 +886,7 @@
   .dfield textarea { flex: 1; min-width: 0; }
   .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
   /* «/» beside the smile in a chat with a bot: the glyph itself, the weight of the icons beside it. */
-  .tool.slash { font: inherit; font-size: 19px; font-weight: var(--fw-semibold); line-height: 1; }
+  .tool.slash { font: inherit; font-size: 19px; font-weight: var(--fw-semibold); line-height: var(--lh-icon); }
   /* The commands of the bot: a menu over the composer, framed as the context menus. Opaque: inside the
      composer no backdrop filter reaches the conversation (the glass of the composer is its backdrop root),
      and the lines of a bubble would show through the words. */
@@ -897,12 +910,12 @@
   @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
   @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
-  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: 0.04em; color: var(--text-3); border: 1px solid var(--border-2); }
+  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); border: 1px solid var(--border-2); }
   .tool.mdtag.on { color: var(--accent-text-2); background: var(--accent-tint); border-color: transparent; }
   .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-xs); color: var(--accent-text-2); }
   .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
   .ctx-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-  .ctx-title { font-size: var(--fs-2xs); font-weight: var(--fw-bold); }
+  .ctx-title { font-size: var(--fs-xs); font-weight: var(--fw-bold); }
   .ctx-text { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row { display: flex; align-items: flex-end; gap: var(--sp-2); }
   textarea {
@@ -911,7 +924,7 @@
     max-height: 180px; min-height: 40px;
   }
   textarea:focus { outline: none; box-shadow: none; }
-  textarea:disabled { opacity: 0.6; }
+  textarea:disabled { opacity: 0.45; }
   .send {
     width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
     background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
@@ -919,20 +932,32 @@
   }
   .send:hover:not(.off) { filter: brightness(1.1); }
   .send.off { opacity: 0.35; cursor: default; }
+  /* The keyboard's ring outside the button: its size and place stay. */
+  .send:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* The main button with nothing to send, phone and computer alike (ui-unify 02). */
+  .record { position: relative; z-index: 3; touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease); }
+  .record.holding { transition: none; }
+  .record.holding::after { content: ""; position: absolute; inset: -8px; z-index: -1; border-radius: 50%; background: var(--accent); opacity: 0.22; animation: halo 1.3s ease-in-out infinite; }
+  .glyph { display: inline-flex; animation: swap var(--dur-base) var(--ease); }
+  /* Its right edge on the button's: the row has no padding on the right. */
+  .hint {
+    position: absolute; right: 0; bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
+    padding: 7px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .tool { width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
   .tool.on { color: var(--accent-text-2); background: var(--accent-tint); }
-  .tool:disabled { opacity: 0.4; cursor: default; }
-  .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; border-radius: var(--radius-sm); }
+  .tool:disabled { opacity: 0.45; cursor: default; }
+  .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  .warn { font-size: var(--fs-2xs); color: var(--danger-text); }
   /* Over the field: the chip of Markdown, and on a computer the format menu of a selection. */
   .above { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: 28px; }
   .mdchip {
     display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
     background: var(--accent-tint); color: var(--accent-text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
-  .mdchip .icon { padding: 3px; border-radius: 50%; color: inherit; }
+  .mdchip .icon { width: 18px; height: 18px; border-radius: 50%; color: inherit; }
   .fmt {
     display: inline-flex; align-items: center; gap: 2px; padding: 3px; align-self: flex-start;
     border-radius: var(--radius); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
@@ -981,21 +1006,21 @@
     .row:focus-within { border-color: var(--pane-strong-border); }
     .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
     .field {
-      flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: 20px;
+      flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: var(--radius-pill);
       background: none;
       border: 1px solid transparent;
-      --attach-w: 40px; --attach-h: 38px;
+      --attach-w: 40px; --attach-h: 40px;
     }
     .field:focus-within { border-color: transparent; }
     /* The attach of a chat, left of the field (c7.js), the size it had inside it. */
-    .side-tools { flex: none; display: flex; align-items: flex-end; min-height: 40px; --attach-w: 40px; --attach-h: 38px; }
+    .side-tools { flex: none; display: flex; align-items: flex-end; min-height: 40px; --attach-w: 40px; --attach-h: 40px; }
     .field.away { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; border: none; }
-    .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: var(--fs-md); line-height: 22px; padding: 8px 2px; min-height: 38px; max-height: 82px; }
+    .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: var(--fs-md); line-height: var(--lh-snug); padding: 8px 2px; min-height: 38px; max-height: 82px; }
     /* The field shows the focus, not the text inside it. */
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
-    .field .tool { width: 40px; height: 38px; margin-left: 2px; }
-    .field .tool.slash { width: 32px; margin-left: 0; }
+    .field .tool { width: 40px; height: 40px; margin-left: 2px; }
+    .field .tool.slash { margin-left: 0; }
     /* A finger's rows, the width of the bar. */
     .cmds { left: var(--sp-2); right: var(--sp-2); }
     .cmd { min-height: 44px; align-items: center; }
@@ -1011,22 +1036,13 @@
       background: color-mix(in srgb, var(--accent-tint) 55%, var(--pane-strong)); box-shadow: var(--pane-highlight), var(--pane-shadow);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    .fmt-top .mdchip .icon { padding: 6px; }
+    .fmt-top .mdchip .icon { width: 24px; height: 24px; }
     .fmt { align-self: center; border-radius: var(--radius-bar); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
     .fb { height: 36px; min-width: 40px; }
     .fb:hover { color: var(--text-soft); background: none; }
     .fb:active { color: var(--text); background: var(--surface-hover); }
     .fb.on, .fb.on:hover { color: var(--accent-text-2); background: var(--accent-tint); }
     .send { width: 40px; height: 40px; }
-    .record { position: relative; z-index: 3; touch-action: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease); }
-    .record.holding { transition: none; }
-    .record.holding::after { content: ""; position: absolute; inset: -8px; z-index: -1; border-radius: 50%; background: var(--accent); opacity: 0.22; animation: halo 1.3s ease-in-out infinite; }
-    .glyph { display: inline-flex; animation: swap var(--dur-base) var(--ease); }
-    .hint {
-      position: absolute; right: var(--sp-3); bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
-      padding: 7px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
-      font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
   }
   @keyframes halo { 50% { transform: scale(1.18); opacity: 0.1; } }
   @keyframes drop { from { opacity: 0; margin-top: -6px; } }
@@ -1034,7 +1050,7 @@
   @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after, .fmt-top { animation: none; } }
   /*
    * A computer, a narrow pane (the page of a post beside a channel's feed): with its buttons in one row (attach,
-   * Markdown, the bigger editor, circle, voice, send) the field would be left a few letters wide. It takes the
+   * Markdown, the bigger editor, the main button) the field would be left a few letters wide. It takes the
    * whole first line, the buttons go under it, send at the right.
    */
   @media not (pointer: coarse) {
@@ -1046,8 +1062,8 @@
     }
   }
   /*
-   * A chat, a channel and the comments of a post (ROO-297) alike, mockups c7.js: one pill 48 — attach, the words, the smile, circle, voice
-   * (on a phone the field's own order) — and beside it the round send 48. The pill is drawn under the row's buttons,
+   * A chat, a channel and the comments of a post (ROO-297) alike, mockups c7.js: one pill 48 — attach, the words, the smile
+   * (on a phone the field's own order) — and beside it the round main button 48. The pill is drawn under the row's buttons,
    * up to the send; the send keeps its states.
    */
   .composer .row {
@@ -1056,7 +1072,7 @@
   }
   .composer .row::before {
     content: ''; position: absolute; z-index: -1; inset: 0 calc(48px + var(--sp-2)) 0 0; pointer-events: none;
-    border-radius: calc(48px / 2); background: var(--pane-strong); border: 1px solid var(--pane-strong-border);
+    border-radius: var(--radius-bar); background: var(--pane-strong); border: 1px solid var(--pane-strong-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .composer .row:focus-within::before { border-color: var(--accent-border); }

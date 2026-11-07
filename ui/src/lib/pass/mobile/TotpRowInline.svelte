@@ -12,4 +12,4 @@
   const period = $derived(totpStore.list.find((e) => e.id === id)?.period ?? 30);
 </script>
 
-<TotpLiveCode entryId={id} {period} copiedLabel={$t('notes_context_copied')} compact />
+<TotpLiveCode entryId={id} {period} copiedLabel={$t('totp_copy')} compact />

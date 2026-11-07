@@ -28,7 +28,7 @@
   const items = $derived<MenuEntry[]>([
     { label: $t('notes_btn_open_folder'), icon: 'folder-open', onselect: () => void api.notes.openFolder() },
     { label: $t('notes_btn_import'), icon: 'file-import', onselect: onimport },
-    { label: $t('notes_btn_export'), icon: 'download', onselect: onexport },
+    { label: $t('notes_btn_export'), icon: 'file-export', onselect: onexport },
     ...(windowItem
       ? [
           { type: 'separator' } as const,

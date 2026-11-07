@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import type { SshConnection } from '$lib/ssh/types';
   import { api } from '$lib/ssh/api';
@@ -31,6 +32,9 @@
 
   let editConn = $state<SshConnection | null>(null);
   let showForm = $state(false);
+  // The form's buttons are the drawer's footer.
+  let connForm = $state<ReturnType<typeof SSHConnectionForm>>();
+  let connSaving = $state(false);
   let showAll = $state(false);
   let connecting = $state<string | null>(null);
   let connectError = $state('');
@@ -117,7 +121,7 @@
   );
 </script>
 
-<Drawer open={open} width="480px" title={$t('ssh_title')} onclose={close}>
+<Drawer open={open} width="480px" title={$t('ssh_title')} onclose={close} footer={showForm ? formFooter : undefined}>
   {#snippet actions()}
     {#if context !== 'global'}
       <div class="tab-bar">
@@ -134,21 +138,19 @@
   <div class="ssh-body">
   {#if showForm}
     <div class="form-header">
-      <button class="btn btn-ghost btn-sm" onclick={() => { showForm = false; editConn = null; }}>
-        <Icon name="arrow-left" size={13} /> {$t('ssh_btn_cancel')}
-      </button>
       <span class="form-title">{editConn ? $t('ssh_form_edit') : $t('ssh_form_new')}</span>
     </div>
     <SSHConnectionForm
+      bind:this={connForm}
+      bind:saving={connSaving}
       connection={editConn}
       defaultWorkspaceId={workspaceId}
       defaultProfileId={profileId}
       onSave={handleFormSave}
-      onCancel={() => { showForm = false; editConn = null; }}
     />
   {:else}
     {#if connectError}
-      <div class="error-msg">{connectError}</div>
+      <Notice tone="danger">{connectError}</Notice>
     {/if}
 
     <div class="list-header">
@@ -168,6 +170,14 @@
   {/if}
   </div>
 </Drawer>
+
+{#snippet formFooter()}
+  <button class="btn btn-ghost" onclick={() => { showForm = false; editConn = null; }}>{$t('common_cancel')}</button>
+  <button class="btn btn-primary" onclick={() => connForm?.submit()} disabled={connSaving}>
+    {#if connSaving}<Icon name="loader" size={18} />{/if}
+    {editConn ? $t('common_save') : $t('common_create')}
+  </button>
+{/snippet}
 
 <style>
   .ssh-body { display: flex; flex-direction: column; gap: var(--sp-3); }

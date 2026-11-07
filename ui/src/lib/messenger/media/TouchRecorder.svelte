@@ -272,15 +272,16 @@
   .nudge { display: inline-flex; animation: nudge 1.2s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: translateX(-5px); } }
   .stop { width: 36px; height: 36px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--danger-bg); color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-  .stop:disabled { opacity: 0.4; }
-  .pill { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 14px 0 4px; border-radius: 20px; background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+  .stop:disabled { opacity: 0.45; }
+  .pill { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 14px 0 4px; border-radius: var(--radius-pill); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
   .play { width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 
-  /* Above the composer, over the conversation. */
+  /* Above the composer, over the conversation, centred over the send (48 at the row's right edge). */
   .lock {
-    position: absolute; right: var(--sp-3); bottom: calc(100% + 64px); z-index: 2; width: 40px; padding: 10px 0 6px;
+    --send: 48px; --w: 40px;
+    position: absolute; right: calc((var(--send) - var(--w)) / 2); bottom: calc(100% + 64px); z-index: 2; width: var(--w); padding: 10px 0 6px;
     display: flex; flex-direction: column; align-items: center; gap: 4px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); color: var(--text-2);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); box-shadow: var(--shadow); color: var(--text-2);
   }
   .up { display: inline-flex; color: var(--text-3); animation: rise 1.2s ease-in-out infinite; }
   @keyframes rise { 50% { transform: translateY(-4px); } }
@@ -297,6 +298,6 @@
   .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
   .over { position: absolute; inset: 8px; border: none; border-radius: 50%; background: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .flip { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow); cursor: pointer; }
-  .flip:disabled { opacity: 0.4; }
+  .flip:disabled { opacity: 0.45; }
   @media (prefers-reduced-motion: reduce) { .dot.on, .nudge, .up { animation: none; } }
 </style>

@@ -13,6 +13,7 @@
   import { TIMEZONES, getExpectedRegion, getTimezoneRegion } from '$lib/core/timezones';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   interface Props {
     profile: Profile;
@@ -41,6 +42,8 @@
   let presets = $state<PresetInfo[]>([]);
   let saving = $state(false);
   let error = $state('');
+  // The missing name shows under the name; a refusal of the save is the form's plate.
+  const nameErr = $derived(!!error && error === $t('profile_error_name'));
 
   let form = $state<UpdateProfileRequest>(untrack(() => ({
     name: profile.name,
@@ -117,18 +120,19 @@
 </script>
 
 <Drawer open title={`${$t('profile_edit_title')} — ${profile.name}`} width="var(--drawer-w-md)" {onclose}>
-      {#if error}
-        <div class="error-msg" style="margin-bottom:0.75rem">{error}</div>
+      {#if error && !nameErr}
+        <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>
       {/if}
 
-      <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
+      <form id="ep-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
         <!-- General -->
         <div class="section">
           <div class="section-label">{$t('profile_section_general')}</div>
 
           <div class="form-group">
             <label for="ep-name">{$t('profile_field_name')} *</label>
-            <input id="ep-name" type="text" bind:value={form.name} />
+            <input id="ep-name" type="text" bind:value={form.name} aria-invalid={nameErr} />
+            {#if nameErr}<div class="error-msg">{error}</div>{/if}
           </div>
 
           <div class="form-group">
@@ -293,22 +297,20 @@
           <label for="ep-notes">{$t('profile_field_notes')}</label>
           <textarea id="ep-notes" bind:value={form.notes} rows="3"></textarea>
         </div>
-
-        <div class="form-actions">
-          <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('profile_btn_cancel')}</button>
-          <button type="submit" class="btn btn-primary" disabled={saving}>
-            {saving ? $t('profile_btn_saving') : $t('profile_btn_save')}
-          </button>
-        </div>
       </form>
+  {#snippet footer()}
+    <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+    <button type="submit" form="ep-form" class="btn btn-primary" disabled={saving}>
+      {saving ? $t('profile_btn_saving') : $t('profile_btn_save')}
+    </button>
+  {/snippet}
 </Drawer>
 
 <style>
   .section { display: flex; flex-direction: column; gap: 1rem; margin-bottom: var(--sp-4); }
 
   .section-label {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 0.9px;
+    font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-dim);
     margin-bottom: 0.25rem;
   }
 
@@ -328,18 +330,13 @@
   .warnings {
     background: var(--warn-bg);
     border: 1px solid var(--warn-border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     padding: 0.6rem var(--sp-3);
     margin-bottom: var(--sp-3);
     font-size: var(--fs-sm);
   }
-  .warning-title { font-weight: 700; margin-bottom: var(--sp-1); color: var(--warn-text); }
+  .warning-title { font-weight: var(--fw-bold); margin-bottom: var(--sp-1); color: var(--warn-text); }
   .warning-item { color: var(--text-2); }
-
-  .form-actions {
-    display: flex; gap: 10px; justify-content: flex-end; padding-top: var(--sp-3);
-  }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 
   /* History toggle row (design: bordered row + 54×30 toggle) */
   .toggle-row {
@@ -350,7 +347,7 @@
   }
   .toggle-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .toggle-label { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
-  .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: 1.5; max-width: 290px; }
+  .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: var(--lh-base); max-width: 290px; }
   .form-group > .toggle-hint { display: block; margin-top: 4px; max-width: none; }
 
   .toggle-btn {

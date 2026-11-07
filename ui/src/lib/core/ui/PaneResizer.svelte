@@ -163,8 +163,8 @@
     z-index: 3;
     white-space: nowrap;
     pointer-events: none;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
     font-variant-numeric: tabular-nums;
     color: #fff;
     background: var(--accent);

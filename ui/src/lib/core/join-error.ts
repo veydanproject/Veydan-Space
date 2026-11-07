@@ -31,6 +31,20 @@ export const ERR_VAULT_UNREAD = 'the vault could not be read in full, try again 
 /** Mirrors `ERR_SYNC_RUNNING` in crates/sync-host/src/join.rs: a join, a create or a leave while a cycle runs. */
 export const ERR_SYNC_RUNNING = 'a sync is running: wait until it ends, then try again';
 
+/**
+ * Mirrors `SyncError::NoVault` in crates/sync/src/lib.rs: the storage holds
+ * no vault. On a joined device it is the storage that changed under it — the
+ * account of Veydan Cloud is another one now, the folder was emptied — and
+ * the way out is the vault of that storage (`api.sync.changeStorage`).
+ */
+export const ERR_NO_VAULT = 'no vault in this storage';
+
+/** Whether an error of a command, or the last error of the cycle, is `ERR_NO_VAULT`. */
+export function isNoVault(e: unknown): boolean {
+  const message = typeof e === 'string' ? e : e != null && typeof e === 'object' ? (e as AppError).message : null;
+  return typeof message === 'string' && message.includes(ERR_NO_VAULT);
+}
+
 /** User-facing text for a storage the sync refuses, or null when the message is not one. */
 export function storageErrorKey(message: string | null | undefined): TranslationKey | null {
   if (!message) return null;

@@ -23,7 +23,7 @@
   import { t } from '$lib/core/i18n';
   import type { CallView } from '../api';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import type { CallPeer } from './peer';
   import VideoTile, { type TileInfo } from './VideoTile.svelte';
   import { mirrorsLocal } from './video';
@@ -89,7 +89,7 @@
         <span class="note">{main === 'local' ? $t('msg_call_video_you') + ' · ' : ''}{mainNote}</span>
       </div>
     {/if}
-    {#if mainLost}<span class="lost" role="status"><CallIcon name="video-off" size={15} />{$t('msg_call_video_lost')}</span>{/if}
+    {#if mainLost}<span class="lost" role="status"><Icon name="video-off" size={15} />{$t('msg_call_video_lost')}</span>{/if}
   </div>
 
   <!-- The two tiles move between the places; their canvases stay where they are drawn. -->
@@ -104,34 +104,34 @@
     <button class="pip" class:dark={!smallLive} onclick={() => (swapped = !swapped)} title={$t('msg_call_video_swap')} aria-label={$t('msg_call_video_swap')}>
       {#if !smallLive}
         {#if main === 'remote'}
-          <span class="pip-note"><CallIcon name="video-off" size={16} /></span>
+          <span class="pip-note"><Icon name="video-off" size={16} /></span>
         {:else}
           <CallFace {peer} size={phone ? 44 : 36} {level} />
         {/if}
       {/if}
-      {#if call.video_screen && main === 'remote'}<span class="pip-tag"><CallIcon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_sharing')}</span></span>{/if}
-      {#if call.video_remote_screen && main === 'local' && smallLive}<span class="pip-tag"><CallIcon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_screen_kind_screen')}</span></span>{/if}
+      {#if call.video_screen && main === 'remote'}<span class="pip-tag"><Icon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_sharing')}</span></span>{/if}
+      {#if call.video_remote_screen && main === 'local' && smallLive}<span class="pip-tag"><Icon name="screen-share" size={11} /><span class="pip-tag-text">{$t('msg_call_screen_kind_screen')}</span></span>{/if}
     </button>
   {/if}
 
   {#if via || (info && !phone) || (peerScreen && !phone)}
     <div class="badges">
-      {#if peerScreen && !phone}<span class="badge screen"><CallIcon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
+      {#if peerScreen && !phone}<span class="badge screen"><Icon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
       {#if via}
         <span class="badge" class:relay={via === 'relay'} title={$t(via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
-          <CallIcon name={via} size={11} />{$t(via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+          <Icon name={via === 'relay' ? 'route' : 'arrows-exchange'} size={11} />{$t(via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
           {#if rtt != null}<span class="rtt">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
         </span>
       {/if}
       {#if info && !phone}<span class="badge quiet">{info}</span>{/if}
     </div>
   {/if}
-  {#if peerScreen && phone}<span class="info screen-note"><CallIcon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
+  {#if peerScreen && phone}<span class="info screen-note"><Icon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
   {#if info && phone}<span class="info">{info}</span>{/if}
 </div>
 
 <style>
-  .stage { position: absolute; inset: 0; overflow: hidden; background: #0b0d10; color: #fff; }
+  .stage { position: absolute; inset: 0; overflow: hidden; background: var(--call-bg); color: #fff; }
   .slot.main { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; }
   .placeholder { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-4); text-align: center; }
   .note { font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.72); }
@@ -159,14 +159,14 @@
     display: flex; align-items: center; justify-content: center;
     transition: border-color var(--dur-fast) var(--ease);
   }
-  .pip.dark { background: #1c2026; }
+  .pip.dark { background: var(--call-surface-3); }
   @media (hover: hover) { .pip:hover { border-color: #fff; } }
-  .pip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .pip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .pip-note { color: rgba(255, 255, 255, 0.7); display: inline-flex; }
   .pip-tag {
     position: absolute; left: 4px; right: 4px; bottom: 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
     padding: 2px 6px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.6); color: #fff;
-    font-size: var(--fs-2xs); white-space: nowrap;
+    font-size: var(--fs-xs); white-space: nowrap;
   }
   .pip-tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
@@ -176,7 +176,7 @@
   }
   .badge, .info {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-2xs); white-space: nowrap;
+    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-xs); white-space: nowrap;
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   }
   /* The tooltip of the way, the one thing here a pointer reads. */

@@ -9,7 +9,7 @@ import { shownOf } from './incoming';
 
 const server = {
   link: 'veydan://server/abc', id: 'ab'.repeat(8), name: 'S1', relay: 'wss://r.example', media: null, call_node: null,
-  push_url: null, push: 'off', known: false, is_veydan: false,
+  push_url: null, push: 'off', known: false, is_veydan: false, access: 'open' as const, invite: null,
 };
 
 describe('a link from the system', () => {

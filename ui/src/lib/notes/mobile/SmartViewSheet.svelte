@@ -6,6 +6,8 @@
   import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
   import { t } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     open: boolean;
@@ -107,7 +109,7 @@
 </script>
 
 <BottomSheet {open} title={viewId ? $t('notes_smart_edit') : $t('notes_smart_new')} {onclose}>
-    {#if error}<div class="m-error">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <input class="input" type="text" bind:value={name} placeholder={$t('notes_smart_name')} />
     <div class="swatches">
       {#each NAV_COLORS as c}
@@ -134,12 +136,11 @@
     {/if}
 
     <input class="input" type="text" bind:value={domain} placeholder={$t('notes_smart_domain')} />
-    <select class="input" bind:value={folderId}>
-      <option value="">{$t('notes_smart_any_folder')}</option>
-      {#each nav.folders as f (f.id)}
-        <option value={f.id}>{f.name}</option>
-      {/each}
-    </select>
+    <CustomSelect
+      options={[{ value: '', label: $t('notes_smart_any_folder') }, ...nav.folders.map((f) => ({ value: f.id, label: f.name }))]}
+      bind:value={folderId}
+      ariaLabel={$t('notes_col_folder')}
+    />
 
     {#if nav.tags.length}
       <div class="group">
@@ -181,12 +182,12 @@
     </div>
 
     <button type="button" class="m-btn-grad" disabled={!name.trim() || saving} onclick={save}>
-      {viewId ? $t('notes_smart_save') : $t('notes_btn_create')}
+      {viewId ? $t('common_save') : $t('common_create')}
     </button>
 </BottomSheet>
 
 <style>
-  .input { width: 100%; border: 0; border-radius: var(--radius-md); background: var(--m-field); padding: 0 14px; }
+  .input { width: 100%; border: 0; border-radius: var(--radius-field); background: var(--m-field); padding: 0 14px; }
   .swatches { display: flex; gap: 12px; flex-wrap: wrap; padding: 3px; }
   .swatch {
     width: 32px;
@@ -197,7 +198,7 @@
     box-shadow: 0 0 0 2px var(--m-card-border);
   }
   .swatch.on { border-color: var(--m-sheet); box-shadow: 0 0 0 2px var(--text); }
-  .lbl { font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); text-transform: uppercase; }
+  .lbl { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
   .lbl-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .chip {
@@ -211,7 +212,7 @@
     color: var(--text);
     font: inherit;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .chip.on { background: var(--accent); color: #fff; }
   .dot { width: 8px; height: 8px; border-radius: 50%; }

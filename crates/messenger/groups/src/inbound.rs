@@ -270,6 +270,21 @@ fn head_time(log: &OpLog) -> i64 {
     log.ordered().filter(|o| log.rejection(&o.id()).is_none()).map(|o| o.created_at).max().unwrap_or(0)
 }
 
+/// When I was last put out of the group: the latest of my leave, my
+/// removal, my ban and its disbanding that the log took.
+fn out_since(log: &OpLog, me: &PubKey) -> Option<i64> {
+    log.ordered()
+        .filter(|o| log.rejection(&o.id()).is_none())
+        .filter(|o| match &o.body {
+            OpBody::Leave => &o.author == me,
+            OpBody::Remove { who } | OpBody::Ban { who } => who == me,
+            OpBody::Disband => true,
+            _ => false,
+        })
+        .map(|o| o.created_at)
+        .max()
+}
+
 /// How I stopped being a member, by the last operation about me.
 fn departure(log: &OpLog, me: &PubKey) -> &'static str {
     let mut how = MEMBERSHIP_REMOVED;
@@ -353,7 +368,8 @@ impl GroupService {
                 }));
             }
         }
-        let historical = msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
+        let historical = msg.created_at < ctx.session_started_at
+            || matches!(msg.envelope.source, EventSource::Sync { .. } | EventSource::Archive);
         let peer = if from_me { msg.recipients.iter().find(|p| *p != me).cloned() } else { Some(msg.sender.clone()) };
         let outcome = match envelope.t.as_str() {
             wire::T_INVITE => self.on_invite(wire::dm_body(&envelope)?, peer, from_me, historical).await,
@@ -768,6 +784,13 @@ impl GroupService {
     ) -> Result<Outcome> {
         let me = &ctx.my_pubkey;
         let group_id = body.group_id.clone();
+        // A group I forgot comes back only by a welcome after it: one of
+        // before (a personal message of the archive replayed, a relay's
+        // copy, my own welcome another device points to) is the entry I
+        // walked away from.
+        if repo::forgotten_at(&self.store, &group_id).await?.is_some_and(|at| created_at <= at) {
+            return Ok(Outcome { notes: vec!["group: a welcome of before the group was forgotten, dropped".into()], ..Default::default() });
+        }
         let row = repo::get(&self.store, &group_id).await?;
         let from_me = sender == me;
         if let Some(r) = &row {
@@ -1006,15 +1029,15 @@ impl GroupService {
         // server is not the group's word. The ingress drops it before it is
         // stored as seen (`servers::group_heard_on`); this is for whoever
         // calls here without the ingress.
-        let relay = msg.envelope.source.relay_url().map(|u| u.as_str());
-        if !servers::group_heard_on(&self.store, &msg.group_id, relay).await? {
+        if !servers::group_heard_on(&self.store, &msg.group_id, &msg.envelope.source).await? {
             out.notes.push("group: an event by a relay not of the group's server, dropped".into());
             return Ok(out);
         }
         let Some(key_id) = msg.key_id.clone().filter(|k| k.len() == 32 && k.bytes().all(|b| b.is_ascii_hexdigit())) else {
             return Ok(out);
         };
-        let historical = msg.created_at < ctx.session_started_at || matches!(msg.envelope.source, EventSource::Sync { .. });
+        let historical = msg.created_at < ctx.session_started_at
+            || matches!(msg.envelope.source, EventSource::Sync { .. } | EventSource::Archive);
         let item = Item {
             event_id: msg.envelope.wire_id.as_hex().to_string(),
             ciphertext: msg.ciphertext,
@@ -1220,6 +1243,29 @@ impl GroupService {
         Ok(key.map(|k| k.join_mac(group_id, &op.author, proof.epoch) == proof.mac))
     }
 
+    /// A key of `group_id` was put into the lock box by something other
+    /// than a welcome or the chain of the group: the archive of the
+    /// conversation brings the keys of groups back as `messenger_secret`
+    /// (`internal/messenger-archive-plan.md` §4.3). The key is registered
+    /// as the group's, and what waited for it (`hold`) is opened, as
+    /// history. Nothing when the box does not hold the key or the group is
+    /// not one of mine here. The caller holds the group's lock.
+    pub async fn key_arrived(&self, keys: &Keys, group_id: &str, key_id: &str) -> Result<Outcome> {
+        let mut out = Outcome::default();
+        if self.key(group_id, &KeyId(key_id.to_string())).await?.is_none() {
+            return Ok(out);
+        }
+        let Some(row) = repo::get(&self.store, group_id).await? else { return Ok(out) };
+        if !matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) {
+            return Ok(out);
+        }
+        repo::add_key(&self.store, group_id, key_id).await?;
+        let ctx = Context { my_pubkey: me_of(keys), session_started_at: self.clock.now(), clock: self.clock.clone() };
+        self.drain(keys, group_id, &ctx, &mut out).await?;
+        self.settle(keys, group_id, true, &ctx, &mut out).await?;
+        Ok(out)
+    }
+
     /// Try again everything that waited, until nothing more is learned.
     pub(crate) async fn drain(&self, keys: &Keys, group_id: &str, ctx: &Context, out: &mut Outcome) -> Result<()> {
         let oldest = self.now() - HELD_TTL_SECS;
@@ -1342,6 +1388,19 @@ impl GroupService {
         let gone = before.membership == MEMBERSHIP_JOINED && !log.state().is_member(me) && !log.state().disbanded;
         let row = self.refresh_row(group_id, me, gone.then(|| departure(&log, me))).await?;
         let Some(row) = row else { return Ok(()) };
+        let in_group = |m: &str| matches!(m, MEMBERSHIP_JOINED | MEMBERSHIP_JOINING);
+        if in_group(&before.membership) && !in_group(&row.membership) {
+            // Out of the group by what I forgot it after, on another device
+            // of mine whose mark came first: the mark holds here now. A way
+            // out after it (I came in again and left once more) is not.
+            let forgotten = repo::forgotten_at(&self.store, group_id).await?;
+            if forgotten.is_some_and(|at| out_since(&log, me).is_some_and(|t| t <= at)) {
+                self.let_go_forgotten(group_id).await?;
+                out.events.push(Self::updated(group_id));
+                out.resubscribe = true;
+                return Ok(());
+            }
+        }
         let mut changed =
             row.membership != before.membership || row.name != before.name || row.members != before.members || row.my_role != before.my_role;
         if row.membership == MEMBERSHIP_JOINED && log.state().role_of(me).is_some_and(Role::is_manager) {

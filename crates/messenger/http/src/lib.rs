@@ -29,7 +29,11 @@
 //! An address someone else wrote (a link, a picture, a NIP-05 domain, the
 //! server of an attachment) is asked only on the open internet: see
 //! [`target`] and [`public_builder`].
+//!
+//! How a request proves who is asking (NIP-98), for every server that asks
+//! it (a push server, the access API of a private server): [`nip98`].
 
+pub mod nip98;
 pub mod target;
 
 pub use target::{is_public, Target};

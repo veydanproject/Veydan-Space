@@ -6,7 +6,7 @@
   import { api } from '$lib/ssh/api';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { formatDate } from '$lib/core/utils';
 
@@ -22,10 +22,6 @@
   let { connections, workspaceNames = {}, onEdit, onConnect, onOpenTerminal, onUnlink }: Props = $props();
 
   let search = $state('');
-  let deleteModal = $state<{ open: boolean; id: string; name: string }>({
-    open: false, id: '', name: '',
-  });
-
   let filtered = $derived(
     search.trim()
       ? connections.filter((c) => {
@@ -49,12 +45,19 @@
     return 'var(--danger)';
   }
 
-  async function doDelete() {
+  async function doDelete(conn: { id: string; name: string }) {
+    const yes = await ask({
+      title: confirmTitle($t('ssh_delete_title')),
+      message: $t('ssh_delete_message', { name: conn.name }),
+      confirmLabel: $t('common_delete'),
+      variant: 'danger',
+      icon: 'trash-2',
+    });
+    if (!yes) return;
     try {
-      await api.ssh.connectionDelete(deleteModal.id);
-      sshStore.connections = sshStore.connections.filter((c) => c.id !== deleteModal.id);
+      await api.ssh.connectionDelete(conn.id);
+      sshStore.connections = sshStore.connections.filter((c) => c.id !== conn.id);
     } catch {}
-    deleteModal = { open: false, id: '', name: '' };
   }
 </script>
 
@@ -77,8 +80,14 @@
   <div class="list">
     {#if filtered.length === 0}
       <div class="empty-state">
-        <span class="empty-icon"><Icon name="terminal" size={22} /></span>
-        <p>{search ? $t('ssh_search_empty') : $t('ssh_list_empty')}</p>
+        {#if search}
+          <span class="empty-icon"><Icon name="search" size={22} /></span>
+          <p>{$t('common_nothing_found')}</p>
+          <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
+        {:else}
+          <span class="empty-icon"><Icon name="terminal" size={22} /></span>
+          <p>{$t('ssh_list_empty')}</p>
+        {/if}
       </div>
     {/if}
     {#each filtered as conn (conn.id)}
@@ -155,8 +164,8 @@
             </button>
           {/if}
           <button
-              class="icon-btn" title={$t('ssh_btn_edit')} aria-label={$t('ssh_btn_edit')} onclick={() => onEdit(conn)}>
-              <Icon name="edit" size={13} />
+              class="icon-btn" title={$t('common_edit')} aria-label={$t('common_edit')} onclick={() => onEdit(conn)}>
+              <Icon name="pencil" size={13} />
             </button>
             {#if onUnlink}
               <button
@@ -169,9 +178,9 @@
             {:else}
               <button
                 class="icon-btn danger-soft"
-                title={$t('ssh_btn_delete')}
-                aria-label={$t('ssh_btn_delete')}
-                onclick={() => (deleteModal = { open: true, id: conn.id, name: conn.name })}
+                title={$t('common_delete')}
+                aria-label={$t('common_delete')}
+                onclick={() => doDelete(conn)}
               >
                 <Icon name="trash-2" size={13} />
               </button>
@@ -182,17 +191,6 @@
   </div>
 </div>
 
-<Modal
-  open={deleteModal.open}
-  title={$t('ssh_delete_title')}
-  message={$t('ssh_delete_message', { name: deleteModal.name })}
-  confirmLabel={$t('ssh_btn_delete')}
-  cancelLabel={$t('ssh_btn_cancel')}
-  variant="danger"
-  onconfirm={doDelete}
-  oncancel={() => (deleteModal = { open: false, id: '', name: '' })}
-/>
-
 <style>
   .list-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
 
@@ -202,15 +200,18 @@
     gap: 0.4rem;
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 0.35rem var(--sp-3);
+    border-radius: var(--radius-pill);
+    height: var(--control-h);
+    padding: 0 var(--sp-3);
     color: var(--text-2);
   }
+  .search-row:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   .search-input {
     flex: 1;
     background: none;
     border: none;
     outline: none;
+    box-shadow: none;
     color: var(--text);
     font-size: var(--fs-sm);
     font-family: inherit;
@@ -259,7 +260,7 @@
   .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .item-sub { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
   .item-badges { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 3px; align-items: center; }
-  .item-badges .badge { font-family: var(--font-mono); font-size: var(--fs-2xs); padding: 0.15rem 0.45rem; }
-  .last { font-size: var(--fs-2xs); color: var(--text-3); }
+  .item-badges .badge { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 0.15rem 0.45rem; }
+  .last { font-size: var(--fs-xs); color: var(--text-3); }
   .item-actions { display: flex; gap: 0.2rem; flex-shrink: 0; }
 </style>

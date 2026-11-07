@@ -9,6 +9,7 @@
   import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { formatDateTime } from '$lib/core/utils';
   import { proxyChip, proxyTypeName } from '$lib/browser/proxy-label';
 
@@ -125,17 +126,22 @@
         <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
       {/if}
     </div>
-    <select class="filter-select" bind:value={filterStatus}>
-      <option value="">{$t('kanban_filter_runtime')}</option>
-      <option value="running">{$t('kanban_filter_running')}</option>
-      <option value="stopped">{$t('kanban_filter_stopped')}</option>
-    </select>
-    <select class="filter-select" bind:value={filterTag}>
-      <option value="">{$t('filter_all_tags')}</option>
-      {#each allTags() as tag}
-        <option value={tag}>{tag}</option>
-      {/each}
-    </select>
+    <div class="filter-select">
+      <CustomSelect
+        options={[
+          { value: '', label: $t('kanban_filter_runtime') },
+          { value: 'running', label: $t('kanban_filter_running') },
+          { value: 'stopped', label: $t('kanban_filter_stopped') },
+        ]}
+        bind:value={filterStatus}
+      />
+    </div>
+    <div class="filter-select">
+      <CustomSelect
+        options={[{ value: '', label: $t('filter_all_tags') }, ...allTags().map((tag) => ({ value: tag, label: tag }))]}
+        bind:value={filterTag}
+      />
+    </div>
     {#if hasFilter}
       <button class="filter-clear" onclick={clearFilters} title={$t('kanban_clear_filters')} aria-label={$t('kanban_clear_filters')}>
         <Icon name="x" size={12} />
@@ -239,7 +245,7 @@
               <button class="act-btn" onclick={(e) => { e.stopPropagation(); clone(e, profile); }} disabled={isLoading} title={$t('panel_btn_clone')} aria-label={$t('panel_btn_clone')}>
                 <Icon name="copy" size={12} />
               </button>
-              <button class="act-btn" onclick={(e) => { e.stopPropagation(); onEdit(profile); }} title={$t('panel_btn_edit')} aria-label={$t('panel_btn_edit')}>
+              <button class="act-btn" onclick={(e) => { e.stopPropagation(); onEdit(profile); }} title={$t('common_edit')} aria-label={$t('common_edit')}>
                 <Icon name="pencil" size={12} />
               </button>
             </td>
@@ -307,7 +313,7 @@
   .profile-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); }
   .running-pill {
     display: inline-flex; align-items: center; gap: 0.2rem;
-    margin-left: 0.4rem; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+    margin-left: 0.4rem; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     color: var(--success-text); background: var(--success-bg);
     padding: 0.1rem 0.45rem; border-radius: var(--radius-sm);
   }
@@ -329,16 +335,15 @@
   .td-proxy { white-space: nowrap; max-width: 200px; }
   .proxy-info { display: flex; align-items: center; gap: 0.35rem; }
   .country-chip {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold);
     font-family: var(--font-mono);
     background: var(--surface-2); border: 1px solid var(--border);
     padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); color: var(--text-2);
-    letter-spacing: 0.03em;
   }
   .proxy-name { color: var(--text); max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
   .proxy-type {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); letter-spacing: 0.04em;
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
     background: var(--surface-2); color: var(--text-2);
   }
@@ -349,8 +354,8 @@
   .tag-chip {
     display: inline-flex; align-items: center;
     border-width: 1px; border-style: solid;
-    border-radius: var(--radius-sm); padding: 0.1rem 0.4rem;
-    font-size: var(--fs-2xs); white-space: nowrap;
+    border-radius: var(--radius-pill); padding: 0.1rem 0.4rem;
+    font-size: var(--fs-xs); white-space: nowrap;
   }
 
   /* Date */
@@ -365,7 +370,7 @@
     color: var(--text-soft); cursor: pointer; padding: 0; transition: all var(--dur-fast);
   }
   .act-btn:hover { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }
-  .act-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .act-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .act-launch:hover { background: var(--success-bg) !important; border-color: color-mix(in srgb, var(--success) 40%, var(--border)) !important; color: var(--success-text) !important; }
   .act-stop:hover   { background: var(--danger-bg)  !important; border-color: color-mix(in srgb, var(--danger)  40%, var(--border)) !important; color: var(--danger-text)  !important; }
 

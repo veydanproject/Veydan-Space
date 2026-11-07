@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import type { LinkView } from '../../api';
@@ -57,7 +58,7 @@
     </div>
   </div>
   <p class="text">{$t(view.has_token ? 'msg_call_node_card_text' : 'msg_call_node_card_no_token')}</p>
-  {#if error}<div class="error">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="row">
     {#if known}
       <span class="known"><Icon name="check" size={12} />{$t('msg_call_node_card_added')}</span>
@@ -74,10 +75,9 @@
   .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
-  .text { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+  .text { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); padding: 0 4px; }
-  .error { font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.4; }
+  .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); padding: 0 4px; }
 </style>

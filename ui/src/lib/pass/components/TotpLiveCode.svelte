@@ -13,7 +13,7 @@
     entryId: string;
     /** Refresh window in seconds; learned from the first code when omitted */
     period?: number;
-    /** Copied-state label shown briefly after a tap */
+    /** The button's tooltip */
     copiedLabel?: string;
     /** Code and ring only, no border or copy icon; fits inside a list row */
     compact?: boolean;
@@ -25,8 +25,6 @@
   const CIRC = 2 * Math.PI * RADIUS;
 
   let code = $state<TotpCode | null>(null);
-  let copied = $state(false);
-  let copyTimer: ReturnType<typeof setTimeout>;
 
   const offset = $derived(code ? CIRC * (1 - Math.min(1, code.seconds_left / period)) : CIRC);
   const color = $derived(
@@ -49,10 +47,7 @@
   onMount(() => {
     void refresh();
     const tick = setInterval(refresh, 1000);
-    return () => {
-      clearInterval(tick);
-      clearTimeout(copyTimer);
-    };
+    return () => clearInterval(tick);
   });
 
   /** Synchronous clipboard write inside the tap keeps the user-gesture context on every platform. */
@@ -60,22 +55,18 @@
     e.stopPropagation();
     if (!code) return;
     void copySecret(code.code).catch(() => {});
-    copied = false;
-    requestAnimationFrame(() => (copied = true));
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = false), 1600);
   }
 </script>
 
-<button type="button" class="live" class:copied class:compact onclick={copy} title={copiedLabel}>
-  <span class="code" class:pop={copied} style:color={copied ? 'var(--success-text)' : color}>
+<button type="button" class="live" class:compact onclick={copy} title={copiedLabel}>
+  <span class="code" style:color={color}>
     {code ? formatCode(code.code) : '••• •••'}
   </span>
   <svg class="ring" viewBox="0 0 28 28" width="22" height="22" aria-hidden="true">
     <circle cx="14" cy="14" r={RADIUS} class="track" />
     <circle cx="14" cy="14" r={RADIUS} class="progress" style="stroke: {color}; stroke-dasharray: {CIRC}; stroke-dashoffset: {offset}" />
   </svg>
-  {#if !compact}<Icon name={copied ? 'check' : 'copy'} size={13} />{/if}
+  {#if !compact}<Icon name="copy" size={13} />{/if}
 </button>
 
 <style>
@@ -93,21 +84,13 @@
     cursor: pointer;
   }
   .live:hover { border-color: var(--border-2); }
-  .live.copied { border-color: var(--success-text); }
   .live.compact { border: 0; padding: 0 0.25rem; min-height: 44px; gap: 0.4rem; }
   .live.compact .code { font-size: var(--fs-md); }
   .code {
     font-family: var(--font-mono);
     font-size: var(--fs-body);
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    font-weight: var(--fw-bold);
     white-space: nowrap;
-  }
-  .code.pop { animation: code-pop 0.4s ease; }
-  @keyframes code-pop {
-    0% { transform: scale(1); }
-    40% { transform: scale(1.12); }
-    100% { transform: scale(1); }
   }
   .ring { transform: rotate(-90deg); flex-shrink: 0; }
   .ring circle { fill: none; stroke-width: 3; }

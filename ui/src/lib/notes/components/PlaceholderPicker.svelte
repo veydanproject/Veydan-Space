@@ -71,7 +71,7 @@
     padding: 0.25rem;
     background: var(--bg-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
   .row {
@@ -85,7 +85,7 @@
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .value {
     margin-left: auto; padding-left: 0.6rem; max-width: 180px;
-    font-family: inherit; font-size: var(--fs-2xs); color: var(--text-2);
+    font-family: inherit; font-size: var(--fs-xs); color: var(--text-2);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .value.missing { color: var(--text-3); }

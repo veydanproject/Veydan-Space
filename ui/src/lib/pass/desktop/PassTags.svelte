@@ -68,7 +68,7 @@
     border-style: solid;
     border-radius: var(--radius-pill);
     padding: 0 6px;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     white-space: nowrap;
   }
 </style>

@@ -6,6 +6,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
@@ -158,7 +159,6 @@
       <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{$t('app_totp')}</h1>
-    <a class="m-ibtn" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={24} /></a>
   </div>
 
   {#if entries.length > 0}
@@ -172,12 +172,12 @@
 
   <div class="m-body">
   {#if error}
-    <div class="m-error">{error}</div>
+    <div class="err"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
   {#if entries.length === 0}
     <div class="m-empty">
-      <Icon name="shield" size={40} />
+      <Icon name="shield-lock" size={40} />
       <p>{$t('totp_empty')}</p>
       <span>{$t('totp_empty_hint')}</span>
       <a class="m-btn-grad cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
@@ -185,7 +185,7 @@
   {:else if filtered.length === 0}
     <div class="m-empty">
       <Icon name="search" size={40} />
-      <p>{$t('pass_nothing_found')}</p>
+      <p>{$t('common_nothing_found')}</p>
       <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
@@ -222,23 +222,25 @@
   {/if}
 
   </div>
+  <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
 </div>
 
 <BottomSheet open={!!menu} title={menu ? label(menu) : ''} onclose={() => (menu = null)}>
   <div class="m-list">
     <button type="button" class="m-row" onclick={() => { if (menu) copy(menu); menu = null; }}>
-      <Icon name="copy" size={20} /><span class="m-row-label">{$t('pwgen_btn_copy')}</span>
+      <Icon name="copy" size={20} /><span class="m-row-label">{$t('common_copy')}</span>
     </button>
     <button type="button" class="m-row" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
-      <Icon name="pencil" size={20} /><span class="m-row-label">{$t('totp_edit')}</span>
+      <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
     </button>
     <button type="button" class="m-row" onclick={remove}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('totp_delete')}</span>
+      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
 </BottomSheet>
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .totp { display: flex; flex-direction: column; min-height: 100%; }
   .item {
     display: flex;
@@ -254,14 +256,13 @@
   .item { background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--radius-lg); }
   .item:active { background: var(--surface-hover); }
   .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-  .name { font-size: var(--fs-body); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   .code {
     font-family: var(--font-mono);
     font-size: var(--fs-xl);
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    font-weight: var(--fw-bold);
     color: var(--text);
     white-space: nowrap;
   }
@@ -269,7 +270,8 @@
   .ring circle { fill: none; stroke-width: 3; }
   .track { stroke: var(--border); }
   .progress { transition: stroke-dashoffset 0.9s linear; }
-  .m-cards { gap: 2px; --rows-gap: 2px; padding-bottom: var(--sp-6); }
+  /* Room under the last row for the floating «+» (.m-fab). */
+  .m-cards { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
   .danger { color: var(--danger-text); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
 </style>

@@ -388,6 +388,15 @@ fn link_ref(group_id: &str, epoch: u32) -> String {
     format!("group.{group_id}.link.{epoch}")
 }
 
+/// The name in the secret store of an owed entry (`repo::SECRETS_OWED`): a
+/// key by its id, a link secret as `link.<epoch>`.
+fn owed_ref(group_id: &str, entry: &str) -> String {
+    match entry.strip_prefix(repo::OWED_LINK_PREFIX) {
+        Some(epoch) => format!("group.{group_id}.link.{epoch}"),
+        None => key_ref(group_id, &KeyId(entry.to_string())),
+    }
+}
+
 pub(crate) fn me_of(keys: &Keys) -> PubKey {
     PubKey::parse(&keys.public_key().to_hex()).expect("valid pubkey")
 }
@@ -718,6 +727,15 @@ impl GroupService {
         }
     }
 
+    /// The link secrets of every epoch up to `epoch` leave the secret
+    /// store: a group I am out of, or forget, is joined by its link no more
+    /// from here, nor is its link published in my archive.
+    pub(crate) async fn forget_links(&self, group_id: &str, epoch: i64) {
+        for (_, entry) in repo::owed_links(group_id, epoch) {
+            let _ = self.secrets.delete(&owed_ref(group_id, &entry)).await;
+        }
+    }
+
     pub(crate) async fn keep_link_secret(&self, group_id: &str, epoch: u32, secret: &LinkSecret) -> Result<()> {
         self.secrets.put(&link_ref(group_id, epoch), secret.as_bytes()).await?;
         self.keep_key(group_id, &secret.group_key(group_id, epoch)).await?;
@@ -770,6 +788,7 @@ impl GroupService {
     /// Bring the cached row in line with the log.
     pub(crate) async fn refresh_row(&self, group_id: &str, me: &PubKey, membership: Option<&str>) -> Result<Option<GroupRow>> {
         let Some(mut row) = repo::get(&self.store, group_id).await? else { return Ok(None) };
+        let was_in = matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING);
         if let Some(log) = self.log(group_id).await? {
             let s = log.state();
             row.kind = if s.kind == GroupKind::Public { "public".into() } else { "private".into() };
@@ -798,6 +817,10 @@ impl GroupService {
             row.membership = m.to_string();
         }
         repo::upsert(&self.store, &row).await?;
+        if was_in && !matches!(row.membership.as_str(), MEMBERSHIP_JOINED | MEMBERSHIP_JOINING) {
+            // Left, removed, banned, disbanded: the link is not mine to hold.
+            self.forget_links(group_id, row.link_epoch).await;
+        }
         Ok(Some(row))
     }
 
@@ -1011,6 +1034,7 @@ impl GroupService {
             push_url.as_deref(),
             &s.push_mode,
             s.name.as_deref(),
+            &s.access,
         ))
     }
 
@@ -1819,7 +1843,8 @@ impl GroupService {
     }
 
     /// Remove a group from this device (after leaving it, or a request
-    /// that was never answered).
+    /// that was never answered), and from my other devices: the mark of
+    /// the forgetting (`repo::mark_forgotten`) goes with my relations.
     pub async fn forget(&self, group_id: &str) -> Result<Outcome> {
         if repo::get(&self.store, group_id).await?.is_some_and(|g| g.membership == MEMBERSHIP_JOINED) {
             return Err(MessengerError::Invalid("group_leave_first".into()));
@@ -1827,10 +1852,37 @@ impl GroupService {
         for id in repo::key_ids(&self.store, group_id).await? {
             let _ = self.secrets.delete(&key_ref(group_id, &KeyId(id))).await;
         }
+        if let Some(row) = repo::get(&self.store, group_id).await? {
+            self.forget_links(group_id, row.link_epoch).await;
+        }
+        // What came of the group before now brings it back no more — from
+        // the archive, a relay, a welcome to myself another device points
+        // to — here and, by the snapshot of my relations, on my other
+        // devices; a welcome after it is a new entry.
+        repo::mark_forgotten(&self.store, group_id, self.clock.now().secs()).await?;
+        self.dm.mark_relations_owed().await?;
         repo::delete(&self.store, group_id).await?;
         messenger_store::events_raw::forget_tagged(&self.store, wire::KIND_GROUP_EVENT, group_id).await?;
         self.forget_log(group_id).await;
         Ok(Outcome { events: vec![Self::updated(group_id)], resubscribe: true, ..Default::default() })
+    }
+
+    /// I forgot the group on another device of mine, and this one heard I
+    /// was out of it only after the mark came (the snapshot of my
+    /// relations before the leave): it goes here as there — its keys and
+    /// links, its rows and archive, what is held of it in memory. The mark
+    /// stays as it came.
+    pub(crate) async fn let_go_forgotten(&self, group_id: &str) -> Result<()> {
+        for id in repo::key_ids(&self.store, group_id).await? {
+            let _ = self.secrets.delete(&key_ref(group_id, &KeyId(id))).await;
+        }
+        if let Some(row) = repo::get(&self.store, group_id).await? {
+            self.forget_links(group_id, row.link_epoch).await;
+        }
+        repo::forget_copy(&self.store, group_id).await?;
+        messenger_store::events_raw::forget_tagged(&self.store, wire::KIND_GROUP_EVENT, group_id).await?;
+        self.forget_log(group_id).await;
+        Ok(())
     }
 
     /// What the groups that went with a removed private server
@@ -1854,9 +1906,9 @@ impl GroupService {
         }
         let owed = repo::secrets_owed(&self.store).await?;
         let mut done = Vec::new();
-        for (group_id, key_id) in owed {
-            if self.secrets.delete(&key_ref(&group_id, &KeyId(key_id.clone()))).await.is_ok() {
-                done.push((group_id, key_id));
+        for (group_id, entry) in owed {
+            if self.secrets.delete(&owed_ref(&group_id, &entry)).await.is_ok() {
+                done.push((group_id, entry));
             }
         }
         if !done.is_empty() {

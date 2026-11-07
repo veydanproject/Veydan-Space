@@ -24,7 +24,7 @@ use messenger_core::{Clock, MessengerError, Result};
 use messenger_store::{settings, Store};
 use messenger_transport::manifest::ManifestSource;
 use messenger_transport::Manifest;
-use messenger_vlink::proto::list::SignedList;
+use messenger_vlink::proto::list::{SignedBridges, SignedList};
 use messenger_vlink::{probe, trust, BridgeRef, Net, NetConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

@@ -23,7 +23,7 @@ declare namespace App {
     mediaViewer?: boolean;
     /** The info of a group is being edited (messenger/groups/GroupInfo.svelte). */
     groupEdit?: boolean;
-    /** The sheet of the paperclip is open (messenger/attach/sheetBack.ts). */
+    /** The sheet of the paperclip is open (core/ui/sheetBack.ts). */
     attachSheet?: boolean;
     /** The mode of choosing messages of a chat is on (messenger/dm/ChatWindow.svelte). */
     chooseMessages?: boolean;
@@ -31,6 +31,8 @@ declare namespace App {
     forwardSheet?: boolean;
     /** The emoji panel of a phone is open in the keyboard's place (messenger/dm/Composer.svelte). */
     emojiDock?: boolean;
+    /** The sheet of a dropdown list of a phone is open (core/ui/CustomSelect.svelte). */
+    selectSheet?: boolean;
     /** My profile is being edited (messenger/contacts/OwnProfileCard.svelte). */
     profileEdit?: boolean;
   }

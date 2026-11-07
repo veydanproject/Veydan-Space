@@ -59,12 +59,10 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    font-size: var(--fs-2xs);
-    text-transform: uppercase;
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     flex-shrink: 0;
-    letter-spacing: 0.05em;
   }
   .ssh-sessions { display: flex; gap: 0.35rem; align-items: center; }
   .ssh-chip {
@@ -90,5 +88,5 @@
   .ssh-chip.error { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
   .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .chip-name { font-weight: var(--fw-medium); }
-  .chip-host { color: var(--text-3); font-size: var(--fs-2xs); font-family: var(--font-mono); }
+  .chip-host { color: var(--text-3); font-size: var(--fs-xs); font-family: var(--font-mono); }
 </style>

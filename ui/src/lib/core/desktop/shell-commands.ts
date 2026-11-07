@@ -52,7 +52,7 @@ export function registerShellCommands(): void {
         id: 'app.updates',
         title: tr('settings_update_check'),
         keywords: 'update version release',
-        icon: 'download',
+        icon: 'circle-arrow-up',
         group,
         run: async () => {
           await goto('/settings#updates');

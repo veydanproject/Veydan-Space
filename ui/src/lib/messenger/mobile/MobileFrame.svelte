@@ -13,7 +13,6 @@
   import { t } from '$lib/core/i18n';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import ConfirmHost from '../shared/ConfirmHost.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
   import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
   import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
@@ -48,7 +47,7 @@
   {#if !bare}
     <header class="bar">
       {#if onback}
-        <button class="ibtn" onclick={onback} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>
+        <button class="ibtn" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
       {/if}
       {#if hubButton && !onback}<HubButton />{/if}
       <h1>{title}</h1>
@@ -61,7 +60,6 @@
     {@render children()}
   </div>
 </div>
-<ConfirmHost />
 <ReportHost />
 <ServerAcceptDialog />
 <ServerInfoDialog />
@@ -78,12 +76,12 @@
     padding: var(--sp-1) var(--sp-2); background: none; border-bottom: 0;
     --edge-l: var(--sp-2); --edge-r: var(--sp-2); --edge-t: var(--sp-1);
   }
-  h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   h1:first-child { padding-left: var(--sp-2); }
   .spacer { flex: 1; }
   .bar :global(.ibtn), .ibtn {
     display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0;
-    border: none; border-radius: var(--radius-md); background: none; color: var(--text); padding: 0;
+    border: none; border-radius: var(--radius); background: none; color: var(--text); padding: 0;
   }
   .bar :global(.ibtn:active), .ibtn:active { background: var(--surface-3); }
   .bar :global(.ibtn.accent) { color: var(--accent-text-2); }
@@ -96,6 +94,6 @@
   .content.scroll :global(.card) {
     max-width: none; width: 100%; padding: var(--sp-4);
     background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
-    border-radius: var(--m-radius, var(--radius-lg)); box-shadow: var(--m-card-shadow, none);
+    border-radius: var(--radius-card); box-shadow: var(--m-card-shadow, none);
   }
 </style>

@@ -42,7 +42,7 @@
     display: flex; flex-direction: column; gap: 3px;
     padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); background: var(--surface-2);
   }
-  .head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; font-size: var(--fs-xs); line-height: 1.4; }
+  .head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; font-size: var(--fs-xs); line-height: var(--lh-snug); }
   .label { flex-shrink: 0; color: var(--text-3); }
   .what {
     display: inline-flex; align-items: center; gap: 4px; min-width: 0; margin-inline-start: auto;

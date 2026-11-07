@@ -687,6 +687,7 @@ mod tests {
             push_mode: servers::PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         };
         let named = servers::put_private(&store, &row("wss://relay.s1.example", Some(" S1 "))).await.unwrap();
         let bare = servers::put_private(&store, &row("wss://relay.s2.example/", None)).await.unwrap();

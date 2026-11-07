@@ -7,6 +7,7 @@
   import { api } from '$lib/browser/api';
   import type { ExportOptions, Profile, Proxy } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { formatError } from '$lib/core/utils';
 
@@ -26,7 +27,6 @@
   let error = $state('');
   let successMsg = $state('');
   let previewJson = $state<string | null>(null);
-  let copied = $state(false);
 
   $effect(() => {
     if (open) {
@@ -36,7 +36,6 @@
       error = '';
       successMsg = '';
       previewJson = null;
-      copied = false;
     }
   });
 
@@ -65,8 +64,6 @@
     if (!previewJson) return;
     await navigator.clipboard.writeText(previewJson);
     copiedToast();
-    copied = true;
-    setTimeout(() => (copied = false), 2000);
   }
 
   async function saveJson() {
@@ -155,8 +152,8 @@
           <div class="json-preview-header">
             <span class="json-preview-label">JSON</span>
             <button class="copy-btn" onclick={copyJson}>
-              <Icon name={copied ? 'check' : 'copy'} size={12} />
-              {copied ? $t('export_btn_copied') : $t('export_btn_copy')}
+              <Icon name="copy" size={12} />
+              {$t('common_copy')}
             </button>
           </div>
           <textarea class="json-area mono" readonly value={previewJson} spellcheck="false"></textarea>
@@ -164,24 +161,24 @@
       {/if}
 
       {#if error}
-        <div class="error-msg">{error}</div>
+        <Notice tone="danger">{error}</Notice>
       {/if}
       {#if successMsg}
         <div class="success-msg">{successMsg}</div>
       {/if}
 
   {#snippet footer()}
-        <button class="btn btn-ghost btn-sm cancel-left" onclick={onclose}>{$t('profile_btn_cancel')}</button>
+        <button class="btn btn-ghost cancel-left" onclick={onclose}>{$t('common_cancel')}</button>
         <div class="footer-right">
-          <button class="btn btn-ghost btn-sm" disabled={loading !== null} onclick={togglePreview}>
+          <button class="btn btn-ghost" disabled={loading !== null} onclick={togglePreview}>
             <Icon name={loading === 'preview' ? 'loader' : previewJson !== null ? 'eye-off' : 'eye'} size={13} />
             {previewJson !== null ? 'JSON' : $t('export_btn_preview')}
           </button>
-          <button class="btn btn-ghost btn-sm" disabled={loading !== null} onclick={saveJson}>
+          <button class="btn btn-ghost" disabled={loading !== null} onclick={saveJson}>
             <Icon name={loading === 'json' ? 'loader' : 'file-json'} size={13} />
             JSON
           </button>
-          <button class="btn btn-primary btn-sm" disabled={loading !== null} onclick={saveZip}>
+          <button class="btn btn-primary" disabled={loading !== null} onclick={saveZip}>
             <Icon name={loading === 'zip' ? 'loader' : 'archive'} size={13} />
             ZIP
           </button>
@@ -222,11 +219,10 @@
     flex-shrink: 0;
   }
 
-  .hint { font-size: var(--fs-sm); color: var(--text-3); }
   .muted { color: var(--text-3); }
 
   .badge-sensitive {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     background: var(--danger-bg);
     color: var(--danger-text);
@@ -259,10 +255,8 @@
   }
 
   .json-preview-label {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
     color: var(--text-dim);
   }
 
@@ -276,7 +270,7 @@
     color: var(--accent-text-3);
     cursor: pointer;
     padding: 0.15rem 0.4rem;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
     transition: all var(--dur-fast);
   }
   .copy-btn:hover { background: var(--accent-bg); }
@@ -293,7 +287,7 @@
     box-sizing: border-box;
     display: block;
     outline: none;
-    line-height: 1.6;
+    line-height: var(--lh-base);
   }
 
   .success-msg {

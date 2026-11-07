@@ -13,6 +13,7 @@
   import { TIMEZONES, getExpectedRegion, getTimezoneRegion } from '$lib/core/timezones';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   interface Props {
     workspaceId: string;
@@ -40,6 +41,8 @@
   let presets = $state<PresetInfo[]>([]);
   let saving = $state(false);
   let error = $state('');
+  // The missing name shows under the name; a refusal of the save is the form's plate.
+  const nameErr = $derived(!!error && error === $t('profile_error_name'));
 
   let form = $state<CreateProfileRequest>(untrack(() => ({
     name: '',
@@ -109,9 +112,9 @@
 </script>
 
 <Drawer open title={$t('profile_create_title')} width="var(--drawer-w-md)" {onclose}>
-      <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
-        {#if error}
-          <div class="error-msg" style="margin-bottom:0.75rem">{error}</div>
+      <form id="cp-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
+        {#if error && !nameErr}
+          <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>
         {/if}
 
         <!-- General -->
@@ -126,8 +129,10 @@
               type="text"
               bind:value={form.name}
               placeholder={$t('profile_field_name_placeholder')}
+              aria-invalid={nameErr}
               autofocus
             />
+            {#if nameErr}<div class="error-msg">{error}</div>{/if}
           </div>
 
           <div class="form-group">
@@ -281,22 +286,20 @@
           <label for="cp-notes">{$t('profile_field_notes')}</label>
           <textarea id="cp-notes" bind:value={form.notes} rows="2" placeholder={$t('profile_field_notes_placeholder')}></textarea>
         </div>
-
-        <div class="form-actions">
-          <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('profile_btn_cancel')}</button>
-          <button type="submit" class="btn btn-primary" disabled={saving}>
-            {saving ? $t('profile_btn_creating') : $t('profile_btn_create')}
-          </button>
-        </div>
       </form>
+  {#snippet footer()}
+    <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+    <button type="submit" form="cp-form" class="btn btn-primary" disabled={saving}>
+      {saving ? $t('profile_btn_creating') : $t('profile_btn_create')}
+    </button>
+  {/snippet}
 </Drawer>
 
 <style>
   .section { display: flex; flex-direction: column; gap: 1rem; margin-bottom: var(--sp-4); }
 
   .section-label {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 0.9px;
+    font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-dim);
     margin-bottom: 0.25rem;
   }
 
@@ -314,19 +317,14 @@
   .warnings {
     background: var(--warn-bg);
     border: 1px solid var(--warn-border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     padding: 0.6rem var(--sp-3);
     margin-bottom: var(--sp-3);
     font-size: var(--fs-sm);
   }
-  .warning-title { font-weight: 700; margin-bottom: var(--sp-1); color: var(--warn-text); }
+  .warning-title { font-weight: var(--fw-bold); margin-bottom: var(--sp-1); color: var(--warn-text); }
   .warning-item { color: var(--text-2); }
 
-  .form-actions {
-    display: flex; gap: 10px; justify-content: flex-end;
-    padding-top: var(--sp-3);
-  }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 
   .toggle-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -336,7 +334,7 @@
   }
   .toggle-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .toggle-label { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
-  .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: 1.5; max-width: 290px; }
+  .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: var(--lh-base); max-width: 290px; }
 
   .toggle-btn {
     position: relative; flex-shrink: 0;

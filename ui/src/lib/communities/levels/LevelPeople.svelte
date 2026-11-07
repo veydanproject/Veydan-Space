@@ -12,6 +12,7 @@
   import { get } from 'svelte/store';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { Avatar, contactHaystacks, contacts as contactsOf, fold, matchesQuery, myKey } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
@@ -91,12 +92,12 @@
     <input type="search" bind:value={query} placeholder={$t('chan_level_people_search')} aria-label={$t('chan_level_people_search')} spellcheck="false" autocomplete="off"
       onkeydown={(e) => { if (e.key === 'Enter' && found.length === 1 && !busy) { e.preventDefault(); change(found[0], true); } }} />
   </div>
-  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   <div class="rows">
   {#snippet person(who: string)}
     {@const nm = nameStore.label(who)}
-    <Avatar url={nameStore.picture(who)} label={nm} seed={who} size={32} />
+    <Avatar url={nameStore.picture(who)} label={nm} seed={who} size={36} />
     <span class="who">
       <span class="name">{nm}{#if who === me} <span class="dim">({$t('chan_you')})</span>{/if}</span>
       <code>{shortKey(who)}</code>
@@ -110,7 +111,7 @@
         <li class="row">
           {@render person(who)}
           <button type="button" class="btn btn-ghost btn-sm" disabled={!!busy} aria-busy={busy === who} onclick={() => change(who, true)}>
-            {#if busy === who}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="plus" size={18} />{/if}{$t('chan_level_people_add')}
+            {#if busy === who}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="plus" size={18} />{/if}{$t('common_add')}
           </button>
         </li>
       {/each}
@@ -124,7 +125,7 @@
         <li class="row">
           {@render person(who)}
           {#if canSetLevels(detail, who, me)}
-            <button type="button" class="icon danger" disabled={!!busy} aria-busy={busy === who} onclick={() => change(who, false)}
+            <button type="button" class="icon-btn danger-soft" disabled={!!busy} aria-busy={busy === who} onclick={() => change(who, false)}
               title={$t('chan_level_people_remove')} aria-label={$t('chan_level_people_remove')}>
               {#if busy === who}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="x" size={16} />{/if}
             </button>
@@ -155,7 +156,7 @@
     border: 0; border-radius: 0; padding: 0 var(--sp-3) 0 36px;
   }
   .search input:focus { outline: none; box-shadow: none; }
-  .box .error-msg { margin: var(--sp-2) var(--sp-3) 0; }
+  .box > :global(.notice) { margin: var(--sp-2) var(--sp-3) 0; }
   .rows { display: flex; flex-direction: column; min-width: 0; }
   .rows .sub-label { padding: var(--sp-2) var(--sp-3) 0; }
   .empty { padding: var(--sp-3); }
@@ -165,20 +166,18 @@
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dim { color: var(--text-3); font-weight: var(--fw-normal); }
-  code { font-size: var(--fs-2xs); color: var(--text-3); }
+  code { font-size: var(--fs-xs); color: var(--text-3); }
   .btn { flex-shrink: 0; }
-  .icon { flex-shrink: 0; border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .icon:hover:not(:disabled) { background: var(--surface-3); }
-  .icon.danger { color: var(--danger-text); }
-  .icon:disabled, .btn:disabled { opacity: 0.55; cursor: default; }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .icon-btn { flex-shrink: 0; width: 36px; height: 36px; padding: 0; }
+  .icon-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   /* The desktop's dialog keeps its footer in sight: a long list scrolls in itself. */
   @media (pointer: fine) {
     .rows { max-height: 264px; overflow-y: auto; }
   }
   @media (pointer: coarse) {
     .search input { font-size: var(--fs-md); height: 44px; }
-    .icon { width: 44px; height: 44px; }
+    .icon-btn { width: 44px; height: 44px; }
   }
 </style>

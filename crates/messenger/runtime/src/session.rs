@@ -17,7 +17,9 @@ use messenger_core::Clock;
 use messenger_core::{Ack, Context, Outbound, PubKey, Result, SyncItem, Timestamp, Transport};
 use messenger_dm::DmService;
 use messenger_groups::GroupService;
-use messenger_ingress::{filters, Dispatcher, EffectSink, IngressLoop, Outbox};
+use crate::archive::ArchiveBridge;
+use messenger_archive::ArchiveScope;
+use messenger_ingress::{filters, Dispatcher, EffectSink, Ingress, IngressLoop, KeptSink, Outbox};
 use messenger_store::{cursors, events_raw, settings, Store};
 use messenger_transport::RelayPool;
 use nostr::key::Keys;
@@ -80,6 +82,14 @@ pub struct Session {
     meta: JoinHandle<()>,
     /// Keeps the queue of requests: its term and its size (`crate::moderation`).
     requests: JoinHandle<()>,
+    /// Keeps what the relays of private servers say of my access
+    /// («Нет доступа», `crate::private::access`).
+    access: JoinHandle<()>,
+    /// The archive of the conversation: hears what the ingress keeps,
+    /// replays into it while this session runs (`crate::archive`).
+    archive: Arc<ArchiveBridge>,
+    /// The steps of the ingress loop, which the archive replays through.
+    steps: Arc<Ingress>,
 }
 
 impl Session {
@@ -99,6 +109,7 @@ impl Session {
         presence: Arc<crate::presence::PresenceDriver>,
         avatars: crate::avatars::Avatars,
         meta: crate::meta::MetaFollow,
+        archive: Arc<ArchiveBridge>,
     ) -> Result<Self> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let started_at = clock.now();
@@ -118,7 +129,12 @@ impl Session {
         let ctx = Context { my_pubkey: me.clone(), session_started_at: started_at, clock };
         // Listening before ingress starts, so nothing it emits is missed.
         let meta = tokio::spawn(meta.follow_loop(me.clone(), ui.subscribe()));
-        let ingress = IngressLoop::spawn(pool.events(), store.clone(), Some(keys.clone()), dispatcher, ctx, sink);
+        // The archive hears of every event kept, and replays through the
+        // same steps while this session runs.
+        let kept: Arc<dyn KeptSink> = archive.clone();
+        let ingress = IngressLoop::spawn(pool.events(), store.clone(), Some(keys.clone()), dispatcher, ctx, sink, Some(kept));
+        let steps = ingress.ingress();
+        archive.attach(steps.clone(), me.clone());
 
         let receipts = tokio::spawn(crate::receipts::receipt_loop(dm.clone(), groups.clone(), outbox.clone(), keys.clone()));
         let presence = tokio::spawn(crate::presence::presence_loop(presence, pool.clone(), keys.clone()));
@@ -129,6 +145,7 @@ impl Session {
             crate::moderation::SWEEP_WAIT_FOR_HISTORY,
             crate::moderation::SWEEP_EVERY,
         ));
+        let access = tokio::spawn(crate::private::access::denied_loop(pool.access_signals(), store.clone(), ui.clone()));
         let pump = tokio::spawn(pump_loop(store.clone(), pool.clone(), outbox.clone(), dm.clone(), ui.clone()));
         let quiet = pool.clone();
         avatars.session_started();
@@ -139,8 +156,20 @@ impl Session {
         let ring = owed.clone();
         dm.set_relations_hook(Some(Arc::new(move || ring.notify_one())));
         let relations = tokio::spawn(crate::relations::publish_loop(dm.clone(), outbox.clone(), keys.clone(), owed));
-        let inbox = tokio::spawn(crate::relations::open_inbox(store, relays, pool, keys.clone(), dm, groups, outbox, me, started_at, ui));
-        Ok(Self { keys, started_at, ingress, pump, inbox, relations, receipts, presence, avatars, meta, requests })
+        let inbox = tokio::spawn(crate::relations::open_inbox(
+            store,
+            relays,
+            pool,
+            keys.clone(),
+            dm,
+            groups,
+            outbox,
+            me,
+            started_at,
+            ui,
+            archive.clone(),
+        ));
+        Ok(Self { keys, started_at, ingress, pump, inbox, relations, receipts, presence, avatars, meta, requests, access, archive, steps })
     }
 
     /// Whether the keeper of the queue of requests is still running.
@@ -154,6 +183,7 @@ impl Session {
     }
 
     pub fn stop(&self) {
+        self.archive.detach(&self.steps);
         self.ingress.abort();
         self.pump.abort();
         self.inbox.abort();
@@ -163,6 +193,7 @@ impl Session {
         self.avatars.abort();
         self.meta.abort();
         self.requests.abort();
+        self.access.abort();
     }
 }
 
@@ -212,15 +243,23 @@ async fn pump_loop(store: Store, pool: Arc<RelayPool>, outbox: Outbox, dm: DmSer
 /// left (the relay the push named, else none of a server: of the home set,
 /// as a push is). A wrap of the same id that came by both sides is listed
 /// on the side of the copy kept, the first that came; the other side then
-/// sends it once more, and the ingress drops it as seen.
+/// sends it once more, and the ingress drops it as seen. A wrap the
+/// archive replayed stands here by the row that stands in for it
+/// (`messenger_ingress::stub_of_opened`): on the side of its private
+/// server (`EventSource::Server`), or the home set's.
 pub(crate) async fn dm_local_set(store: &Store, server: Option<&str>, since: i64) -> Vec<SyncItem> {
+    use messenger_core::EventSource;
     let private: std::collections::HashSet<String> = crate::scopes::private_servers(store).await.into_iter().collect();
-    events_raw::items_since_with_relay(store, 1059, since)
+    events_raw::items_since_with_source(store, 1059, since)
         .await
         .unwrap_or_default()
         .into_iter()
-        .filter(|(_, _, relay)| {
-            let of = relay.as_deref().map(messenger_store::servers::id_of);
+        .filter(|(_, _, source)| {
+            let of = match source {
+                Some(EventSource::Relay { url } | EventSource::Sync { url }) => Some(messenger_store::servers::id_of(url.as_str())),
+                Some(EventSource::Server { id }) => Some(id.clone()),
+                Some(EventSource::Archive) | None => None,
+            };
             match server {
                 Some(id) => of.as_deref() == Some(id),
                 None => !of.is_some_and(|of| private.contains(&of)),
@@ -232,9 +271,13 @@ pub(crate) async fn dm_local_set(store: &Store, server: Option<&str>, since: i64
 
 /// One history reconciliation per session and server (`None`: the home
 /// set): everything addressed to us there since the last completed
-/// catch-up of that server (minus the gift-wrap time jitter), or from the
-/// beginning on a fresh database. After the list of my relations was read
-/// (`crate::relations::open_inbox`), so the history meets it.
+/// catch-up of that server (minus the gift-wrap time jitter), or, on a
+/// fresh database, since the archive of the conversation reaches (its
+/// high-water mark of the scope, minus the same margin; `crate::archive`,
+/// plan §4.4 step 3), or from the beginning without an archive. After the
+/// list of my relations was read (`crate::relations::open_inbox`), so the
+/// history meets it; and, on a fresh database with an archive, after the
+/// archive restored its newest months, so the mark is a real one.
 pub(crate) async fn history_catch_up(
     store: Store,
     pool: Arc<RelayPool>,
@@ -242,6 +285,7 @@ pub(crate) async fn history_catch_up(
     started_at: Timestamp,
     ui: broadcast::Sender<UiEvent>,
     server: Option<String>,
+    archive: Arc<ArchiveBridge>,
 ) {
     let scope = crate::scopes::of_server(server.as_deref());
     let deadline = tokio::time::Instant::now() + HISTORY_WAIT_FOR_RELAY;
@@ -256,7 +300,17 @@ pub(crate) async fn history_catch_up(
     }
     let cursor_key = cursors::of_server(server.as_deref());
     let cursor = cursors::get(&store, filters::CURSOR_DM_INBOX, cursor_key).await.ok().flatten();
-    let since = cursor.map(|c| c - filters::DM_LIVE_MARGIN_SECS).unwrap_or(0).max(0);
+    let since = match cursor {
+        Some(c) => (c - filters::DM_LIVE_MARGIN_SECS).max(0),
+        None => {
+            archive.wait_restored().await;
+            let scope = match &server {
+                Some(id) => ArchiveScope::DmServer { id: id.clone() },
+                None => ArchiveScope::Dm,
+            };
+            archive.since_without_cursor(&scope, filters::DM_LIVE_MARGIN_SECS, started_at).await
+        }
+    };
     let local = dm_local_set(&store, server.as_deref(), since).await;
     let result = pool.send(Outbound::Sync { scope, filter: filters::dm_history(&me, Timestamp(since)), local }).await;
     match result {
@@ -326,6 +380,7 @@ mod tests {
             push_mode: servers::PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         };
         servers::put(&store, &row(home, servers::KIND_HOME)).await.unwrap();
         let id1 = servers::put_private(&store, &row(s1, servers::KIND_PRIVATE)).await.unwrap();

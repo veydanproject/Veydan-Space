@@ -19,9 +19,7 @@
   <code>{torLabel(proxy.country, $t)}</code>
   {#if result?.checking}
     <div class="tor-line">{$t('proxy_tor_checking')}</div>
-  {:else if result?.err}
-    <div class="tor-line tor-line--error">{result.err}</div>
-  {:else if result?.ok && result.ip}
+  {:else if result?.ok && result.ip && !result.err}
     <div class="tor-line" title={$t('proxy_tor_ip_hint')}>
       {$t('proxy_tor_exit_ip', { ip: result.ip })}
       <span class="tor-hint">{$t('proxy_tor_ip_hint')}</span>
@@ -30,13 +28,17 @@
 {:else}
   <code>{proxy.host}:{proxy.port}</code>
 {/if}
+<!-- The reason a check failed, under the address of any proxy, not of Tor alone. -->
+{#if !result?.checking && result?.err}
+  <div class="tor-line tor-line--error">{result.err}</div>
+{/if}
 
 <style>
   code {
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
     background: var(--surface-2); padding: 5px 10px; border-radius: var(--radius-sm);
   }
-  .tor-line { margin-top: 2px; font-size: var(--fs-2xs); color: var(--text-dim); white-space: normal; }
+  .tor-line { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-dim); white-space: normal; }
   .tor-line--error { color: var(--danger-text); }
   .tor-hint { display: block; color: var(--text-faint); }
 </style>

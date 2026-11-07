@@ -134,7 +134,7 @@
   /* CSD (Linux): rounded, shadowed panel with a gutter for the drop shadow. */
   .app-frame.csd {
     inset: 9px;
-    border-radius: 11px;
+    border-radius: var(--radius-md);
     overflow: hidden;
     box-shadow:
       0 0 0 1px var(--border),

@@ -178,13 +178,13 @@
     overflow: hidden;
   }
   .tabs { display: flex; gap: 2px; padding: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
-  .tabs button { flex: 1 0 auto; display: grid; place-items: center; min-width: 36px; height: 36px; border: none; background: none; font-size: var(--fs-lg); line-height: 1; padding: 0 var(--sp-1); border-radius: var(--radius); cursor: pointer; filter: grayscale(0.4); opacity: 0.75; }
+  .tabs button { flex: 1 0 auto; display: grid; place-items: center; min-width: 36px; height: 36px; border: none; background: none; font-size: var(--fs-lg); line-height: var(--lh-icon); padding: 0 var(--sp-1); border-radius: var(--radius); cursor: pointer; filter: grayscale(0.4); opacity: 0.75; }
   .tabs button.active { background: var(--accent-bg); filter: none; opacity: 1; }
   .body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-1) var(--sp-3) var(--sp-2); }
   .label { position: sticky; top: 0; background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-2); padding: var(--sp-2) var(--sp-1) var(--sp-1); }
   .inline .label, .docked .label { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
-  .grid button { border: none; background: none; font-size: 22px; line-height: 1; padding: 7px 0; border-radius: var(--radius); cursor: pointer; font-family: inherit; }
+  .grid button { border: none; background: none; font-size: 22px; line-height: var(--lh-icon); padding: 7px 0; border-radius: var(--radius); cursor: pointer; font-family: inherit; }
   .grid button:hover, .grid button:focus { background: var(--surface-3); outline: none; }
   .tabs button:focus-visible, .grid button:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); outline: none; }
   /* In the flow of a menu or a sheet: as wide as it, no shadow of its own. */
@@ -194,7 +194,7 @@
   .tabs .erase { margin-left: auto; position: sticky; right: 0; filter: none; opacity: 1; color: var(--text-soft); background: var(--surface); display: inline-flex; align-items: center; }
   .tabs .erase:active { color: var(--text); background: var(--surface-hover); }
   @media (pointer: coarse) {
-    .picker:not(.inline):not(.docked) { left: 0; right: 0; width: 100%; border-radius: var(--radius-md) var(--radius-md) 0 0; border-inline: none; bottom: 100%; height: 280px; }
+    .picker:not(.inline):not(.docked) { left: 0; right: 0; width: 100%; border-radius: var(--radius-card) var(--radius-card) 0 0; border-inline: none; bottom: 100%; height: 280px; }
     /* A finger's zone of 44 for a tab: 40 and the 4 between them, inside the row's own padding. */
     .tabs { gap: 4px; }
     .tabs button { min-width: 40px; height: 40px; }

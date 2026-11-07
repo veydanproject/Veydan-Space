@@ -156,6 +156,7 @@
     const profileStoppedFill = tok('--border-2', '#2c2c38');
     const textColor = tok('--text', '#eaeaf0');
     const bgColor = tok('--bg', '#08080c');
+    const uiFont = tok('--font-ui', 'sans-serif');
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = bgColor;
@@ -198,7 +199,7 @@
 
       // Label
       ctx.fillStyle = textColor;
-      ctx.font = `${isHovered ? '600 ' : ''}11px -apple-system, sans-serif`;
+      ctx.font = `${isHovered ? '600 ' : ''}11px ${uiFont}`;
       ctx.textAlign = 'center';
       ctx.fillText(node.label.slice(0, 16), node.x, node.y + r + 13);
     }

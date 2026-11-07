@@ -11,6 +11,7 @@
   import { compareLabel } from '$lib/core/label-order';
   import { t } from '$lib/core/i18n';
   import { findTag } from '$lib/notes/tag-name';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   const TAG_COLORS = [
     // The kit's presets (N.colors); the colour is the user's, never the kind.
@@ -491,15 +492,15 @@
                 </button>
               {/if}
               <button onclick={(e) => { startEditFolder(f, e); openMenuKey = null; }}>
-                <Icon name="pencil" size={11} /><span>{$t('notes_item_edit')}</span>
+                <Icon name="pencil" size={11} /><span>{$t('common_edit')}</span>
               </button>
               {#if onexportfolder}
                 <button onclick={() => { onexportfolder(f.id); openMenuKey = null; }}>
-                  <Icon name="download" size={11} /><span>{$t('notes_folder_export')}</span>
+                  <Icon name="file-export" size={11} /><span>{$t('notes_folder_export')}</span>
                 </button>
               {/if}
               <button class="menu-del" onclick={(e) => { void deleteFolder(f, e); openMenuKey = null; }}>
-                <Icon name="trash-2" size={11} /><span>{$t('notes_tag_delete')}</span>
+                <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
               </button>
             </div>
           {/if}
@@ -564,10 +565,10 @@
             {#if openTagMenuPath === node.fullPath}
               <div class="folder-menu" style="left:{menuPos.x}px; top:{menuPos.y}px">
                 <button onclick={(e) => { startEdit(node.tag!, e); openMenuKey = null; }}>
-                  <Icon name="pencil" size={11} /><span>{$t('notes_item_edit')}</span>
+                  <Icon name="pencil" size={11} /><span>{$t('common_edit')}</span>
                 </button>
                 <button class="menu-del" onclick={(e) => { void deleteTag(node.tag!, e); openMenuKey = null; }}>
-                  <Icon name="trash-2" size={11} /><span>{$t('notes_tag_delete')}</span>
+                  <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
                 </button>
               </div>
             {/if}
@@ -718,7 +719,7 @@
                   <Icon name="pencil" size={11} /><span>{$t('notes_smart_edit')}</span>
                 </button>
                 <button class="menu-del" onclick={(e) => deleteSmartView(view, e)}>
-                  <Icon name="trash-2" size={11} /><span>{$t('notes_tag_delete')}</span>
+                  <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
                 </button>
               </div>
             {/if}
@@ -854,11 +855,14 @@
         </label>
       </div>
     {/if}
-    <!-- The same full-width button as New folder; Enter still creates -->
-    <button class="btn btn-primary btn-sm create-btn" onclick={createTag} disabled={creating || !popupIsNew}>
+  </div>
+  <!-- The same footer as New folder; Enter still creates -->
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={closePopup}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={createTag} disabled={creating || !popupIsNew}>
       {creating ? '…' : popupIsNew ? $t('notes_create_named', { name: popupInput.trim() }) : $t('notes_tag_add')}
     </button>
-  </div>
+  {/snippet}
 </Dialog>
 
 <!-- New folder dialog -->
@@ -875,12 +879,12 @@
 
     <div class="parent-select-row">
       <span class="parent-select-label">{$t('notes_folder_parent')}</span>
-      <select class="parent-select" bind:value={folderModalParentId}>
-        <option value="">{$t('notes_folder_root')}</option>
-        {#each folders as f (f.id)}
-          <option value={f.id}>{f.name}</option>
-        {/each}
-      </select>
+      <div class="parent-select">
+        <CustomSelect
+          options={[{ value: '', label: $t('notes_folder_root') }, ...folders.map((f) => ({ value: f.id, label: f.name }))]}
+          bind:value={folderModalParentId}
+        />
+      </div>
     </div>
 
     <div class="color-row">
@@ -894,11 +898,13 @@
         {/if}
       </label>
     </div>
-
-    <button class="btn btn-primary btn-sm create-btn" onclick={createFolder} disabled={!folderInput.trim() || creatingFolder}>
+  </div>
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={closeFolderModal}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={createFolder} disabled={!folderInput.trim() || creatingFolder}>
       {creatingFolder ? '…' : folderInput.trim() ? $t('notes_create_named', { name: folderInput.trim() }) : $t('notes_folder_create')}
     </button>
-  </div>
+  {/snippet}
 </Dialog>
 
 <!-- Edit tag dialog -->
@@ -924,11 +930,13 @@
         {/if}
       </label>
     </div>
-
-    <button class="btn btn-primary btn-sm create-btn" onclick={saveTagEdit} disabled={!tagEditName.trim() || tagEditSaving}>
-      {tagEditSaving ? '…' : $t('notes_btn_save')}
-    </button>
   </div>
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={closeTagEditModal}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={saveTagEdit} disabled={!tagEditName.trim() || tagEditSaving}>
+      {tagEditSaving ? '…' : $t('common_save')}
+    </button>
+  {/snippet}
 </Dialog>
 
 <style>
@@ -962,11 +970,9 @@
   }
 
   .section-label {
-    font-size: var(--fs-2xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
 
   .section-toggle {
@@ -1023,7 +1029,7 @@
 
   .count {
     margin-left: auto;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-faint);
     background: var(--surface-2);
@@ -1112,7 +1118,7 @@
     cursor: pointer;
     color: var(--text-3);
     padding: 0.15rem;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
   }
@@ -1166,7 +1172,7 @@
     z-index: var(--z-popover);
     background: var(--surface-drawer);
     border: 1px solid var(--border-2);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     padding: 4px;
     min-width: 150px;
     box-shadow: var(--shadow-lg);
@@ -1212,28 +1218,28 @@
     flex: 1;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-field);
     padding: var(--sp-1) 0.4rem;
     font-size: var(--fs-sm);
     color: var(--text);
     outline: none;
     min-width: 0;
   }
-  .edit-input:focus { border-color: var(--accent); }
+  .edit-input:focus { border-color: var(--accent-border); }
 
   .btn-icon-xs {
     background: none;
     border: none;
     cursor: pointer;
     padding: 0.2rem;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
     flex-shrink: 0;
   }
   .btn-save            { color: var(--accent-text); }
   .btn-save:hover      { background: var(--accent-bg); }
-  .btn-save:disabled   { opacity: 0.4; cursor: default; }
+  .btn-save:disabled   { opacity: 0.45; cursor: default; }
   .btn-cancel          { color: var(--text-3); }
   .btn-cancel:hover    { background: var(--surface-2); }
 
@@ -1282,16 +1288,16 @@
   }
 
   .popup-hint {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    line-height: 1.3;
+    line-height: var(--lh-snug);
     padding: 0 0.1rem;
   }
   .popup-hint code {
     background: var(--surface-2);
     border-radius: 3px;
     padding: 0.05rem var(--sp-1);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
   }
 
   /* .popup-input takes the global field of base.css: the same size as every other form */
@@ -1308,25 +1314,13 @@
     flex-shrink: 0;
   }
 
-  /* The colour alone: the chevron is the global select's background image. */
-  .parent-select {
-    flex: 1;
-    padding: var(--sp-1) 2rem var(--sp-1) 0.4rem;
-    font-size: var(--fs-sm);
-    background-color: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    outline: none;
-    cursor: pointer;
-  }
-  .parent-select:focus { border-color: var(--accent); }
+  .parent-select { flex: 1; min-width: 0; }
 
   .suggestions {
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     overflow: hidden;
   }
 
@@ -1378,7 +1372,4 @@
     border: 1.5px solid rgba(255,255,255,0.7);
     pointer-events: none;
   }
-
-  /* .btn.btn-primary covers colors/hover/disabled; a full-width button centres its label */
-  .create-btn { width: 100%; justify-content: center; }
 </style>

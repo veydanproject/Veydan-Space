@@ -48,9 +48,9 @@
 <style>
   .group { margin-bottom: var(--sp-4); }
   /* A sentence, not a name: it wraps instead of being cut. */
-  .wrap { white-space: normal; overflow: visible; line-height: 1.3; }
+  .wrap { white-space: normal; overflow: visible; line-height: var(--lh-snug); }
   .switch { min-height: 64px; }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .sub { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
+  .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .ask { margin: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--divider); }
 </style>

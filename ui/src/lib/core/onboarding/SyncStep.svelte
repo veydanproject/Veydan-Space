@@ -100,7 +100,7 @@
   </div>
 {:else if joined}
   <div class="ob-main">
-    <span class="ob-tile"><Icon name="check-circle" size={28} /></span>
+    <span class="ob-tile"><Icon name="check" size={28} /></span>
     <h1 class="ob-title">{$t('ob_sync_on')}</h1>
     <p class="ob-text">{$t('ob_sync_on_text')}</p>
   </div>
@@ -116,7 +116,7 @@
   </div>
   <div class="ob-foot">
     <button type="button" class="btn btn-primary" disabled={busy} onclick={enable}>{$t('ob_sync_connect')}</button>
-    <button type="button" class="ob-skip" disabled={busy} onclick={() => onboarding.next()}>{$t('ob_later')}</button>
+    <button type="button" class="ob-skip" disabled={busy} onclick={() => onboarding.next()}>{$t('common_later')}</button>
   </div>
 {:else if offered}
   <div class="ob-main">
@@ -160,7 +160,7 @@
       <div class="ob-note">
         <Icon name="cloud" size={18} />
         <span class="ob-note-b"><strong>{$t('ob_sync_promo')}</strong><small>{$t('ob_sync_promo_text')}</small></span>
-        <button type="button" onclick={() => onboarding.go('account')}>{$t('ob_sync_promo_go')}</button>
+        <button type="button" onclick={() => onboarding.go('account')}>{$t('common_create')}</button>
       </div>
     {/if}
   </div>

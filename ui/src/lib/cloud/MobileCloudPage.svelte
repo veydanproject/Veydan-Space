@@ -17,7 +17,7 @@
     <h1 class="m-title">{$t('cloud_account_title')}</h1>
     <span class="spacer"></span>
     {#if cloudPage.status?.account}
-      <button class="m-ibtn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('cloud_refresh')}>
+      <button class="m-ibtn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('common_refresh')}>
         <span class:spin={cloudPage.busy}><Icon name="refresh-cw" size={20} /></span>
       </button>
     {/if}

@@ -1,0 +1,11 @@
+-- SPDX-FileCopyrightText: 2026 Veydan Project
+-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+--
+-- The access mode of a server (internal/messenger-wire.md, «Режимы доступа
+-- сервера»), as its card names it (`a=`): `open` (anyone, every server
+-- before the modes), `team` (its members alone, one gets in by an invite)
+-- or `channel` (anyone reads, its authors write). The invite of a card is
+-- never stored. Whether the server refused this device (`restricted:`,
+-- `auth-required:`) is a settings key of this device alone,
+-- `servers.denied@<id>`.
+ALTER TABLE msg_servers ADD COLUMN access TEXT NOT NULL DEFAULT 'open';

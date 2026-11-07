@@ -35,12 +35,15 @@
           </li>
         {/each}
       </ul>
+      {#if s.current.servers.some((x) => x.invite)}
+        <p class="note">{$t('msg_srv_invite_note')}</p>
+      {/if}
       <p class="note">{$t('msg_srv_accept_note')}</p>
     </div>
   {/if}
   {#snippet footer()}
     <button type="button" class="btn btn-ghost" onclick={() => s.answer(false)}>{$t('common_cancel')}</button>
-    <button type="button" class="btn btn-primary" onclick={() => s.answer(true)}>{$t('msg_srv_accept_yes')}</button>
+    <button type="button" class="btn btn-primary" onclick={() => s.answer(true)}>{$t('common_add')}</button>
   {/snippet}
 </Dialog>
 
@@ -51,6 +54,6 @@
   .server { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
   .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text-2); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .whose { font-size: var(--fs-2xs); color: var(--text-3); white-space: nowrap; }
-  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .whose { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
+  .note { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
 </style>

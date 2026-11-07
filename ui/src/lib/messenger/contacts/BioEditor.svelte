@@ -121,7 +121,7 @@
     aria-invalid={over || !!error}
     onkeydown={onKey}
   ></textarea>
-  {#if error}<div class="field-error" role="alert">{error}</div>{:else if over}<div class="field-error">{$t('msg_err_bio_too_long')}</div>{/if}
+  {#if error}<div class="error-msg" role="alert">{error}</div>{:else if over}<div class="error-msg">{$t('msg_err_bio_too_long')}</div>{/if}
   <p class="hint">{$t('msg_profile_bio_markup_hint')}</p>
   {#if (value ?? '').trim()}
     <div class="preview">
@@ -139,8 +139,8 @@
     border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--text-2); cursor: pointer;
   }
   .tool:hover:not(:disabled), .tool.active { background: var(--surface-3); color: var(--text); border-color: var(--border); }
-  .tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .tool:disabled { opacity: 0.4; cursor: default; }
+  .tool:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  .tool:disabled { opacity: 0.45; cursor: default; }
   .sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
   .counter { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .counter.over { color: var(--danger-text); font-weight: var(--fw-semibold); }
@@ -153,17 +153,16 @@
     background: var(--sw); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border-2);
   }
   .swatch:hover { transform: scale(1.08); }
-  .swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  textarea { min-height: 6.5em; line-height: 1.45; }
+  .swatch:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  textarea { min-height: 6.5em; line-height: var(--lh-snug); }
   @media (pointer: fine) { textarea { resize: vertical; } }
-  .invalid textarea { border-color: var(--danger-border); }
-  .field-error { font-size: var(--fs-xs); color: var(--danger-text); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .invalid textarea { border-color: var(--danger); }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .preview {
     display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md);
     background: var(--surface-2); border: 1px dashed var(--border-2);
   }
-  .preview-label { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; }
+  .preview-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-dim); }
   @media (pointer: coarse) {
     .tool { width: 40px; height: 40px; }
     .swatch { width: 36px; height: 36px; }

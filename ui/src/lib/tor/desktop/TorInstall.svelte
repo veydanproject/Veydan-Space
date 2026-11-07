@@ -16,7 +16,7 @@
   import { torErrorText } from '$lib/tor/settings';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { clampPercent, isCancelled, progressLine, versionLine } from '$lib/tor/format';
-  import TorNote from '$lib/tor/desktop/TorNote.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let { onstatus }: { onstatus?: (status: TorStatus | null) => void } = $props();
 
@@ -150,7 +150,7 @@
     const yes = await ask({
       title: $t('tor_remove_title'),
       message: $t('tor_remove_message'),
-      confirmLabel: $t('tor_btn_remove'),
+      confirmLabel: $t('common_remove'),
     });
     if (!yes) return;
     error = '';
@@ -169,7 +169,7 @@
 
 <div class="card install">
   {#if status === null}
-    <div class="notes"><TorNote wait>{$t('tor_checking')}</TorNote></div>
+    <div class="notes"><Notice wait>{$t('tor_checking')}</Notice></div>
   {:else}
     <dl class="facts">
       {#if status.installed && (status.version || status.tor_version)}
@@ -194,22 +194,22 @@
     {/if}
 
     <div class="notes">
-      {#if extracting}<TorNote wait>{$t('tor_extracting')}</TorNote>{/if}
+      {#if extracting}<Notice wait>{$t('tor_extracting')}</Notice>{/if}
       {#if status.installed && status.update_available}
-        <TorNote tone="warn" icon="download">{$t('tor_update_available', { version: status.pinned_version })}</TorNote>
+        <Notice tone="warn" icon="download">{$t('tor_update_available', { version: status.pinned_version })}</Notice>
       {/if}
       {#if !status.installed}
-        <TorNote icon="download">{$t('tor_download_hint')}</TorNote>
+        <Notice icon="download">{$t('tor_download_hint')}</Notice>
       {/if}
-      {#if done}<TorNote tone="ok">{done}</TorNote>{/if}
-      {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
-      <TorNote icon="folder">{$t('tor_dir_hint')}</TorNote>
+      {#if done}<Notice tone="ok">{done}</Notice>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
+      <Notice icon="folder">{$t('tor_dir_hint')}</Notice>
     </div>
 
     <!-- The removal stands apart at the left; the way to install at the right, the primary one only when there is something to get. -->
     <div class="actions">
       {#if status.installed}
-        <button class="btn btn-ghost remove" type="button" disabled={busy} onclick={remove}>{$t('tor_btn_remove')}</button>
+        <button class="btn btn-danger-soft" type="button" disabled={busy} onclick={remove}>{$t('common_remove')}</button>
       {/if}
       <span class="spacer"></span>
       {#if downloading && !progress}
@@ -224,7 +224,7 @@
         </button>
       {:else if status.update_available || downloading}
         <button class="btn btn-primary" type="button" disabled={busy} onclick={download}>
-          {downloading ? $t('tor_btn_updating') : $t('tor_btn_update')}
+          {downloading ? $t('tor_btn_updating') : $t('common_update')}
         </button>
       {/if}
     </div>
@@ -251,5 +251,4 @@
   .notes { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5) var(--sp-4); border-top: 1px solid var(--divider); }
   .actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--divider); }
   .spacer { flex: 1; }
-  .remove { color: var(--danger-text); }
 </style>

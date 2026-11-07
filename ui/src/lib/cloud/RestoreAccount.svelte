@@ -14,12 +14,13 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Actions from '$lib/cloud/Actions.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { looksLikeWords } from '$lib/core/lock/words';
   import RestoreSecret from '$lib/cloud/RestoreSecret.svelte';
+  import { holdArchiveGate } from '$lib/core/ui/archiveGate';
   import { emptySecretState, restoreSecretOf } from '$lib/cloud/restoreSecret';
   import {
     asCloudError,
@@ -154,7 +155,8 @@
       {#if restored?.escrow_refreshed === false}
         <Notice tone="warn" role="alert">{$t('cloud_restore_escrow_stale')}</Notice>
       {/if}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => goto('/messenger')}>{$t('cloud_restore_open')}</button></Actions>
+      <!-- The chats come back from the archive: the first screen of the messenger waits for the newest months, from the moment it opens. -->
+      <Actions><button class="btn btn-primary" type="button" onclick={() => { holdArchiveGate(); goto('/messenger'); }}>{$t('common_open')}</button></Actions>
     {/snippet}
   </StateView>
 {:else}
@@ -175,28 +177,28 @@
   {#if busy && phase}
     <p class="wait"><span class="spinner" aria-hidden="true"></span>{$t(phaseKey(phase))}</p>
   {/if}
-  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <Actions>
     {#if needsSecret}
-      <button class="btn btn-ghost" type="button" disabled={busy} onclick={back}>{$t('cloud_restore_back')}</button>
+      <button class="btn btn-ghost" type="button" disabled={busy} onclick={back}>{$t('common_back')}</button>
     {:else}
-      <a class="btn btn-ghost" href="/messenger">{$t('cloud_restore_back')}</a>
+      <a class="btn btn-ghost" href="/messenger">{$t('common_back')}</a>
     {/if}
     {#if vaultAway}
       <button class="btn btn-ghost" type="button" disabled={busy || !ready} onclick={() => next(true)}>{$t('cloud_vault_skip')}</button>
     {/if}
-    <button class="btn btn-primary" type="button" disabled={busy || !ready} onclick={() => next()}>{needsSecret ? $t('cloud_restore_go') : $t('cloud_restore_next')}</button>
+    <button class="btn btn-primary" type="button" disabled={busy || !ready} onclick={() => next()}>{needsSecret ? $t('common_restore') : $t('cloud_restore_next')}</button>
   </Actions>
 {/if}
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-1); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; }
+  .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
   .count { font-size: var(--fs-xs); color: var(--text-3); }
   .count.ok { color: var(--success-text); }
-  textarea { resize: vertical; line-height: 1.5; }
+  textarea { resize: vertical; line-height: var(--lh-base); }
   .wait { margin: 0; display: flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-base); }
   .spinner { width: 14px; height: 14px; flex-shrink: 0; }
 </style>

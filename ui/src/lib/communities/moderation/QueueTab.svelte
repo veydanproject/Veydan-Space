@@ -14,6 +14,7 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { Avatar, listStamp, myKey, stamp } from '$lib/messenger/seams/shared';
   import { nameStore } from '../names.svelte';
   import { channelStore } from '../channelStore.svelte';
@@ -111,7 +112,7 @@
 {#if author}
   <AuthorQueue {detail} {author} onback={back} />
 {:else}
-{#if error}<div class="error-msg">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if items.length}
   <div class="bulk">
@@ -122,7 +123,7 @@
     {#if ticked.length}
       <div class="bulk-acts">
         <!-- One order on every tab: the danger first, the yes last, on the right (as the requests). -->
-        {#if ticked.every((r) => canBan(detail, r.author, me))}<button class="btn btn-ghost btn-sm danger" disabled={!!busy} onclick={() => decide(ticked, 'spam')}>{$t('chan_mod_spam')}</button>{/if}
+        {#if ticked.every((r) => canBan(detail, r.author, me))}<button class="btn btn-danger-soft btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'spam')}>{$t('chan_mod_spam')}</button>{/if}
         <button class="btn btn-ghost btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'reject')}>{$t('chan_mod_reject_all')}</button>
         <button class="btn btn-primary btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'approve')}>{$t('chan_mod_approve_all')}</button>
       </div>
@@ -181,7 +182,7 @@
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
   .bulk-acts { display: flex; gap: 6px; flex-wrap: wrap; }
   .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); container-type: inline-size; }
+  .card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-card); background: var(--surface-2); border: 1px solid var(--border); container-type: inline-size; }
   .card.busy { opacity: 0.6; }
   .top { display: flex; gap: var(--sp-2); align-items: flex-start; }
   .open {
@@ -193,16 +194,16 @@
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
-  .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
+  .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
+  .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .text { font-size: var(--fs-sm); color: var(--text-body); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .acts { display: flex; gap: var(--sp-2); }
-  .acts .btn { flex: 1 1 0; min-width: 0; padding-inline: var(--sp-3); white-space: normal; text-wrap: balance; text-align: center; line-height: 1.25; }
+  .acts .btn { flex: 1 1 0; min-width: 0; padding-inline: var(--sp-3); white-space: normal; text-wrap: balance; text-align: center; line-height: var(--lh-tight); }
   .acts .spam { flex: 0 0 auto; padding-inline: var(--sp-3); }
-  .danger, .spam { color: var(--danger-text); }
+  .spam { color: var(--danger-text); }
   @container (max-width: 360px) {
     .acts { gap: 6px; }
-    .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: 1.25; }
+    .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: var(--lh-tight); }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
   .empty-state { padding: var(--sp-8) var(--sp-4); }

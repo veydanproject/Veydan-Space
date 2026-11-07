@@ -72,7 +72,7 @@ pub struct RegistryNode {
 
 impl RegistryNode {
     pub fn is_active(&self) -> bool {
-        self.state == call_list::STATE_ACTIVE
+        self.state == call_list::State::Active.as_str()
     }
 }
 
@@ -262,7 +262,7 @@ fn nodes_of(list: CallList) -> Vec<RegistryNode> {
         .into_iter()
         .filter(|n| n.class == call_list::CLASS_VOLUNTEER)
         .map(|n| RegistryNode {
-            state: n.state().to_string(),
+            state: n.state.to_string(),
             load: n.load_percent(version),
             node: n.node,
             turn_port: n.turn_port,

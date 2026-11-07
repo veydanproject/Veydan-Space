@@ -13,6 +13,16 @@
 //! one byte range (`Range: bytes=…`), read from the disk a piece at a time.
 //! One request for each connection.
 //!
+//! A WebM whose video says it has alpha though it carries none (a circle
+//! or a video of Chrome's recorder, messenger-media `webm`) is sent with
+//! that mark put to 0, so WebKitGTK plays it; the file on the disk stays
+//! as it is. Its marks are found on the very file a request opened and
+//! kept with the version of that file (its length, times and, on Unix,
+//! its inode): another file put under the same path, or the same file
+//! changed, has them found anew, and when that fails or the file changes
+//! while read it goes as it is. They are first found when the file is
+//! named, so a request seldom waits for them.
+//!
 //! The small pictures of the phone's gallery in the sheet of the paperclip
 //! (`MediaServer::thumb_url`) take names of a pool of their own, with its
 //! own bound: scrolling through thousands of photos forgets only older
@@ -25,8 +35,10 @@
 //! the gallery anew (`forget_thumbs`, the app came back to the screen).
 
 use std::collections::{HashMap, VecDeque};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -38,11 +50,59 @@ const MAX_FILES: usize = 1024;
 const MAX_THUMBS: usize = 512;
 /// A request head longer than this is refused.
 const MAX_HEAD: usize = 16 * 1024;
+/// The type whose files go with their false alpha put to 0.
+const WEBM: &str = "video/webm";
 
 #[derive(Clone)]
 struct Served {
     path: PathBuf,
     mime: String,
+    /// The marks of a WebM found last and the version they were found of.
+    marks: Marks,
+}
+
+/// The bytes of a version of a file sent as 0 (`webm::alpha_marks_of_open`).
+type Marks = Arc<Mutex<Option<(Version, Arc<Vec<Range<u64>>>)>>>;
+
+/// What tells one state of a file from another: a file put under the same
+/// path is another inode, one written anew has other times.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Version {
+    len: u64,
+    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    node: (u64, u64, i64, i64),
+}
+
+impl Version {
+    fn of(file: &std::fs::File) -> Option<Version> {
+        let m = file.metadata().ok()?;
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Some(Version {
+            len: m.len(),
+            modified: m.modified().ok(),
+            #[cfg(unix)]
+            node: (m.dev(), m.ino(), m.ctime(), m.ctime_nsec()),
+        })
+    }
+}
+
+/// The marks of the open `file`, at `version`: those kept in `known`
+/// when they were found of that version, else found now on this very
+/// file and kept. None when it changed while read.
+fn marks_of(file: &std::fs::File, version: &Version, known: &Marks) -> Arc<Vec<Range<u64>>> {
+    if let Some((v, zero)) = &*known.lock().unwrap() {
+        if v == version {
+            return zero.clone();
+        }
+    }
+    let zero = Arc::new(messenger_media::webm::alpha_marks_of_open(file, version.len));
+    if Version::of(file).as_ref() != Some(version) {
+        return Arc::default();
+    }
+    *known.lock().unwrap() = Some((version.clone(), zero.clone()));
+    zero
 }
 
 #[derive(Default)]
@@ -69,7 +129,7 @@ impl Names {
             return Some(t);
         }
         let t = token()?;
-        self.by_token.insert(t.clone(), Served { path: path.to_path_buf(), mime: mime.to_string() });
+        self.by_token.insert(t.clone(), Served { path: path.to_path_buf(), mime: mime.to_string(), marks: Marks::default() });
         self.by_path.insert(path.to_path_buf(), t.clone());
         self.order.push_back(t.clone());
         while self.order.len() > max {
@@ -136,7 +196,22 @@ impl MediaServer {
     /// server starts with the first one. `None` when it cannot listen.
     pub async fn url(&self, path: &Path, mime: &str) -> Option<String> {
         let port = *self.port.get_or_try_init(|| self.listen()).await.ok()?;
-        let token = self.names.lock().unwrap().files.name(path, mime, MAX_FILES, false)?;
+        let (token, marks) = {
+            let mut names = self.names.lock().unwrap();
+            let token = names.files.name(path, mime, MAX_FILES, false)?;
+            let marks = names.files.by_token.get(&token).map(|s| s.marks.clone());
+            (token, marks)
+        };
+        if let (WEBM, Some(marks)) = (mime, marks) {
+            let path = path.to_path_buf();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                let Ok(file) = std::fs::File::open(&path) else { return };
+                if let Some(version) = Version::of(&file) {
+                    marks_of(&file, &version, &marks);
+                }
+            })
+            .await;
+        }
         Some(format!("http://127.0.0.1:{port}/{token}"))
     }
 
@@ -244,10 +319,19 @@ async fn serve(stream: TcpStream, names: Arc<Mutex<Pools>>) -> std::io::Result<(
     let Some(served) = served else {
         return reply(reader.get_mut(), "404 Not Found", &[], true).await;
     };
-    let Ok(mut file) = tokio::fs::File::open(&served.path).await else {
+    // The marks are of the file this request reads, whatever lay under its path before.
+    let (path, webm, marks) = (served.path.clone(), served.mime == WEBM, served.marks.clone());
+    let opened = tauri::async_runtime::spawn_blocking(move || {
+        let file = std::fs::File::open(&path).ok()?;
+        let version = Version::of(&file)?;
+        let zero = if webm { marks_of(&file, &version, &marks) } else { Arc::default() };
+        Some((file, version.len, zero))
+    })
+    .await;
+    let Ok(Some((file, len, zero))) = opened else {
         return reply(reader.get_mut(), "404 Not Found", &[], true).await;
     };
-    let len = file.metadata().await?.len();
+    let mut file = tokio::fs::File::from_std(file);
     let stream = reader.get_mut();
     let common = [
         ("Content-Type", served.mime.clone()),
@@ -274,8 +358,34 @@ async fn serve(stream: TcpStream, names: Arc<Mutex<Pools>>) -> std::io::Result<(
         return stream.shutdown().await;
     }
     file.seek(std::io::SeekFrom::Start(start)).await?;
-    tokio::io::copy(&mut file.take(count), stream).await?;
+    if zero.is_empty() {
+        tokio::io::copy(&mut file.take(count), stream).await?;
+        return stream.shutdown().await;
+    }
+    let mut piece = vec![0; 64 * 1024];
+    let (mut at, end) = (start, start + count);
+    while at < end {
+        let want = (end - at).min(piece.len() as u64) as usize;
+        let n = file.read(&mut piece[..want]).await?;
+        if n == 0 {
+            break;
+        }
+        put_zero(&mut piece[..n], at, &zero);
+        stream.write_all(&piece[..n]).await?;
+        at += n as u64;
+    }
     stream.shutdown().await
+}
+
+/// The bytes of `piece`, read at `at` of its file, that lie in `zero` put to 0.
+fn put_zero(piece: &mut [u8], at: u64, zero: &[Range<u64>]) {
+    let end = at + piece.len() as u64;
+    for z in zero {
+        let (a, b) = (z.start.max(at), z.end.min(end));
+        if a < b {
+            piece[(a - at) as usize..(b - at) as usize].fill(0);
+        }
+    }
 }
 
 /// The status line and the headers; `end`: no body follows.
@@ -351,6 +461,104 @@ mod tests {
         let other = format!("{}/{}", url.rsplit_once('/').unwrap().0, "0".repeat(64));
         let (head, got) = get(&other, "").await;
         assert!(head.starts_with("HTTP/1.1 404") && got.is_empty(), "{head}");
+    }
+
+    /// A WebM whose video says it has alpha and has none goes with that
+    /// mark as 0, whole and by a range; the file on the disk is not changed.
+    #[tokio::test]
+    async fn a_webm_goes_without_its_false_alpha() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.webm");
+        // Segment > Tracks > TrackEntry > Video > PixelWidth 480, AlphaMode 1 (the last byte).
+        let hex = "18538067911654ae6b8cae8ae088b08201e053c08101";
+        let body: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+        std::fs::write(&path, &body).unwrap();
+        let last = body.len() - 1;
+        let mut want = body.clone();
+        want[last] = 0;
+        let server = MediaServer::default();
+
+        let mp4 = server.url(&path, "video/mp4").await.unwrap();
+        assert_eq!(get(&mp4, "").await.1, body, "not a WebM, it goes as it is");
+        let url = server.url(&path, "video/webm").await.unwrap();
+        assert_eq!(url, mp4, "one name for a file");
+        let (head, got) = get(&url, "").await;
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        assert_eq!(got, want);
+        let (_, got) = get(&url, &format!("Range: bytes={}-\r\n", last - 3)).await;
+        assert_eq!(got, want[last - 3..]);
+        let (_, got) = get(&url, "Range: bytes=0-3\r\n").await;
+        assert_eq!(got, body[..4]);
+        assert_eq!(std::fs::read(&path).unwrap(), body, "the file stays");
+
+        // The file of a WebM with alpha (here: one not read through) goes as it is.
+        let other = dir.path().join("a.webm");
+        std::fs::write(&other, &body[..last]).unwrap();
+        let url = server.url(&other, "video/webm").await.unwrap();
+        assert_eq!(get(&url, "").await.1, body[..last]);
+    }
+
+    /// Another file put under the path of a WebM named before, or the
+    /// same file written anew, goes by its own marks: whether it is named
+    /// again or not, of the same length, and a WebM with alpha as it is.
+    #[tokio::test]
+    async fn a_file_put_under_the_same_path_goes_by_its_own_marks() {
+        let bytes = |hex: &str| -> Vec<u8> { (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect() };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.webm");
+        let put = |body: &[u8]| {
+            let tmp = dir.path().join("tmp");
+            std::fs::write(&tmp, body).unwrap();
+            std::fs::rename(&tmp, &path).unwrap();
+        };
+        // Segment > Tracks > TrackEntry > Video > PixelWidth 480, AlphaMode 1 (the last byte).
+        let body = bytes("18538067911654ae6b8cae8ae088b08201e053c08101");
+        let last = body.len() - 1;
+        let mut want = body.clone();
+        want[last] = 0;
+        put(&body);
+        let server = MediaServer::default();
+        let url = server.url(&path, WEBM).await.unwrap();
+        assert_eq!(get(&url, "").await.1, want);
+
+        // Put under the path after the name was given, before a request; of the same length.
+        let other: Vec<u8> = (0..body.len() as u8).map(|i| 0x40 + i).collect();
+        put(&other);
+        assert_eq!(get(&url, "").await.1, other, "not a mark of the file before");
+        assert_eq!(get(&url, &format!("Range: bytes={last}-\r\n")).await.1, other[last..]);
+        put(&body);
+        assert_eq!(get(&url, "").await.1, want, "found anew");
+
+        // Written anew in place, the same length, and named again.
+        std::fs::write(&path, &other).unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1)).unwrap();
+        drop(file);
+        assert_eq!(server.url(&path, WEBM).await.unwrap(), url, "one name for a path");
+        assert_eq!(get(&url, "").await.1, other);
+
+        // A WebM whose cluster carries alpha (BlockAddID 1), the same head as one without.
+        let head = "1853806701ffffffffffffff1654ae6b8cae8ae088b08201e053c08101";
+        let cluster = "1f43b67501ffffffffffffffe78100";
+        let plain = bytes(&format!("{head}{cluster}a386810000008000"));
+        let mark = bytes(head).len() - 1;
+        let mut cleared = plain.clone();
+        cleared[mark] = 0;
+        put(&plain);
+        assert_eq!(server.url(&path, WEBM).await.unwrap(), url);
+        assert_eq!(get(&url, "").await.1, cleared, "a false alpha");
+        let alpha = bytes(&format!("{head}{cluster}a096a185810000008075a18ca68aee8101a585616c706861"));
+        put(&alpha);
+        assert_eq!(get(&url, "").await.1, alpha, "its alpha stays");
+        assert_eq!(get(&url, &format!("Range: bytes={mark}-{mark}\r\n")).await.1, [1]);
+        assert_eq!(std::fs::read(&path).unwrap(), alpha, "the file stays");
+    }
+
+    #[test]
+    fn zeros_fall_on_their_bytes_only() {
+        let mut p = [9u8; 10];
+        put_zero(&mut p, 100, &[95..102, 105..106, 110..120, 50..60]);
+        assert_eq!(p, [0, 0, 9, 9, 9, 0, 9, 9, 9, 9]);
     }
 
     /// Scrolling through more thumbnails than their pool holds forgets

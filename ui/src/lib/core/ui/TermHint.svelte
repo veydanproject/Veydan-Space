@@ -47,7 +47,7 @@
     display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); box-sizing: border-box;
     border-radius: var(--radius-md); border: 1px solid var(--accent-border); background: var(--glass-bg-raised);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); box-shadow: var(--shadow-lg);
-    font-size: var(--fs-sm); font-weight: var(--fw-medium); line-height: 1.45; color: var(--text-2); text-align: left; white-space: normal;
+    font-size: var(--fs-sm); font-weight: var(--fw-medium); line-height: var(--lh-snug); color: var(--text-2); text-align: left; white-space: normal;
   }
   .note::before {
     content: ''; position: absolute; top: -6px; left: calc(var(--ax) - 5px); width: 10px; height: 10px; transform: rotate(45deg);

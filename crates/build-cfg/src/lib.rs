@@ -212,9 +212,48 @@ pub fn android_webrtc_jni_exports() {
     println!("cargo:rustc-link-arg=-Wl,--version-script={}", script.display());
 }
 
+/// Whether the linker of the target needs `-ObjC` for libwebrtc: the Apple
+/// targets, whose archive holds the Objective-C side of the engine.
+fn takes_objc(target_os: &str) -> bool {
+    matches!(target_os, "macos" | "ios")
+}
+
+/// Asks the linker of a product's binary on macOS and iOS for `-ObjC`.
+///
+/// libwebrtc.a of the Apple targets holds Objective-C categories (the one of
+/// `sdk/objc`, `NSString (StdString)`, among them). A category defines no
+/// symbol anyone refers to, so the linker leaves its object out of a static
+/// archive unless it is told `-ObjC`; the static initializers of libwebrtc
+/// then send `+[NSString stringForStdString:]` to a class that lacks it, and
+/// the process dies before `main` (ROO-869). `webrtc-sys` prints `-ObjC` from
+/// its own build script, which reaches nothing (see [`windows_test_manifest`]):
+/// the product's build script must say it, and a product with the messenger
+/// calls this from its `build.rs`. A `cargo:rustc-link-arg` of the product is
+/// not replaced by a `RUSTFLAGS` of the environment, as the `rustflags` of
+/// `.cargo/config.toml` would be.
+///
+/// Nothing is said off macOS and iOS.
+pub fn darwin_webrtc_objc() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo for build scripts");
+    // The answer depends on the target alone, never on the sources.
+    println!("cargo:rerun-if-changed=build.rs");
+    if takes_objc(&target_os) {
+        println!("cargo:rustc-link-arg=-ObjC");
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{platform, takes_manifest, webrtc_android_dir, webrtc_jni_symbols, WINDOWS_TEST_MANIFEST};
+    use super::{platform, takes_manifest, takes_objc, webrtc_android_dir, webrtc_jni_symbols, WINDOWS_TEST_MANIFEST};
+
+    #[test]
+    fn only_the_apple_linkers_are_asked_for_objc() {
+        assert!(takes_objc("macos"));
+        assert!(takes_objc("ios"));
+        for os in ["linux", "windows", "android", "freebsd"] {
+            assert!(!takes_objc(os), "{os}");
+        }
+    }
 
     #[test]
     fn the_jni_symbols_are_the_defined_ones_with_the_prefix_once() {

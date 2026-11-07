@@ -164,7 +164,7 @@
   {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
   {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}
     <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
-      <Icon name="refresh-cw" size={12} />{$t('msg_message_retry')}
+      <Icon name="arrow-forward-up" size={12} />{$t('common_retry')}
     </button>
   {/each}
 </div>
@@ -182,7 +182,7 @@
   .line.first { margin-top: calc(var(--sp-4) - 2px); }
   .line.highlighted { background: var(--accent-tint); }
   .bubble {
-    --r: var(--radius-head); --r-joined: var(--radius-badge); --r-tail: var(--radius-badge);
+    --r: var(--radius-bubble); --r-joined: var(--radius-badge); --r-tail: var(--radius-badge);
     max-width: min(420px, 78%); background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
     border-radius: var(--r); display: flex; flex-direction: column; gap: 4px; overflow: hidden;
   }
@@ -204,9 +204,9 @@
   .line.out:not(.first) .bubble { border-top-right-radius: var(--r-joined); }
   .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
-  .author { font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: 1.2; padding: var(--sp-1) var(--sp-2) 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .author { font-size: var(--fs-sm); font-weight: var(--fw-bold); line-height: var(--lh-tight); padding: var(--sp-1) var(--sp-2) 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Forwarded: whose it was, over the pictures. */
-  .fwd { font-size: var(--fs-2xs); font-style: italic; color: var(--text-2); line-height: 1.3; padding: var(--sp-1) var(--sp-2) 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fwd { font-size: var(--fs-xs); font-style: italic; color: var(--text-2); line-height: var(--lh-snug); padding: var(--sp-1) var(--sp-2) 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .line.out .fwd { color: var(--bubble-out-meta); }
   .author + .fwd { padding-top: 0; }
 
@@ -219,9 +219,9 @@
 
   .caption { padding: 0 var(--sp-2) var(--sp-1); }
   .caption::after { content: ''; display: block; clear: both; }
-  .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-2xs); color: var(--text-3); }
+  .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-xs); color: var(--text-3); }
   .reactions { margin-top: var(--sp-1); max-width: min(420px, 78%); }
-  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: 1; padding: 0 8px 5px; white-space: nowrap; }
+  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: var(--lh-icon); padding: 0 8px 5px; white-space: nowrap; }
   .line.out .meta:not(.on-picture) { color: var(--bubble-out-meta); }
   /* After the words: a float takes the room left on their last line, or a line of its own at the right. */
   .meta.inline { float: right; margin-left: var(--sp-3); padding: 0; box-sizing: border-box; height: calc(var(--fs-body) * var(--lh-body)); align-items: flex-end; padding-bottom: var(--sp-1); }
@@ -236,7 +236,7 @@
   .status.failed { color: var(--danger-text); }
   .retry {
     display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; border: none; background: none;
-    color: var(--danger-text); font: inherit; font-size: var(--fs-2xs); cursor: pointer; padding: 2px 4px;
+    color: var(--danger-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; padding: 2px 4px;
   }
   .retry:hover { text-decoration: underline; }
   @media (pointer: coarse) {

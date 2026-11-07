@@ -103,10 +103,10 @@ describe('the lines of a transfer', () => {
   it('never tells a busy or failing server as a lost connection', () => {
     const waiting = (failure_reason: string, retry_at_ms: number) =>
       transferLines(state({ status: 'waiting_retry', failure_reason, retry_at_ms }), ru).line1;
-    expect(waiting('err.server', NOW + 5000)).toBe('Не получилось, повтор через 5 с');
-    expect(waiting('err.rate_limited', NOW)).toBe('Не получилось, повторяем…');
+    expect(waiting('err.server', NOW + 5000)).toBe('Не удалось передать файл, повтор через 5 с');
+    expect(waiting('err.rate_limited', NOW)).toBe('Не удалось передать файл, повторяем…');
     expect(transferLines(state({ status: 'waiting_retry', failure_reason: 'err.server', retry_at_ms: NOW + 5000 }), words('en')).line1)
-      .toBe('Failed, retrying in 5 sec');
+      .toBe('Could not transfer the file, retrying in 5 sec');
   });
 
   it('says the parts in the right plural form', () => {

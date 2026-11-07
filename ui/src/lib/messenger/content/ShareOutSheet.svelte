@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { qrPicture } from '$lib/core/ui/qrPicture';
@@ -89,7 +90,7 @@
       <div class="qr">
         <img src={qrSrc} alt={$t('msg_share_out_qr')} />
         <button class="btn btn-ghost btn-sm" onclick={() => (showQr = false)}>
-          <Icon name="arrow-left" size={13} />{$t('msg_back')}
+          <Icon name="chevron-left" size={13} />{$t('common_back')}
         </button>
       </div>
     {:else}
@@ -104,7 +105,7 @@
         {/each}
       </ul>
     {/if}
-    {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {#if error}<Notice tone="danger" role="alert">{error}</Notice>{/if}
   {/if}
 </Dialog>
 
@@ -116,8 +117,8 @@
     font: inherit; font-size: var(--fs-sm); color: var(--text); text-align: left;
   }
   .way:hover:not(:disabled) { background: var(--surface-3); }
-  .way:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .way:disabled { opacity: 0.6; cursor: default; }
+  .way:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+  .way:disabled { opacity: 0.45; cursor: default; }
   .way-icon {
     width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--text-2);
     display: inline-flex; align-items: center; justify-content: center;

@@ -36,8 +36,8 @@
 </script>
 
 {#if isTrash}
-  <button class="btn btn-ghost btn-sm danger" disabled={!notes.length || busy} onclick={run}>
-    <Icon name="trash" size={14} /> {$t('notes_btn_empty_trash')}
+  <button class="btn btn-danger-soft btn-sm" disabled={!notes.length || busy} onclick={run}>
+    <Icon name="trash-2" size={14} /> {$t('notes_btn_empty_trash')}
   </button>
 {:else}
   <button
@@ -47,12 +47,10 @@
     aria-label={$t('notes_btn_delete_all')}
     onclick={run}
   >
-    <Icon name="trash" size={14} />
+    <Icon name="trash-2" size={14} />
   </button>
 {/if}
 
 <style>
-  .btn.danger { color: var(--danger-text); }
-  .btn.danger:hover:not(:disabled) { background: var(--danger-bg); }
   .icon-btn { width: 32px; height: 32px; }
 </style>

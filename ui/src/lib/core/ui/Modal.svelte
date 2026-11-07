@@ -1,7 +1,14 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
+<!--
+  The desktop's confirmation (core/ui/ConfirmHost.svelte, the only user):
+  the title, the text under it, «Отмена» on the left and the verb on the
+  right; a dangerous question has the red tile with its action's icon
+  beside the title.
+-->
 <script lang="ts">
+  import Icon from '$lib/core/Icon.svelte';
   import { portal } from '$lib/core/portal';
   import { backdropDismiss } from '$lib/core/backdrop';
   import { backdropIn, backdropOut, dialogIn, dialogOut } from './motion';
@@ -13,6 +20,8 @@
     confirmLabel?: string;
     cancelLabel?: string;
     variant?: 'danger' | 'primary';
+    /** The icon of a dangerous question's tile. */
+    icon?: string;
     onconfirm: () => void;
     oncancel: () => void;
   }
@@ -24,6 +33,7 @@
     confirmLabel = 'OK',
     cancelLabel = 'Cancel',
     variant = 'danger',
+    icon = 'alert-triangle',
     onconfirm,
     oncancel,
   }: Props = $props();
@@ -49,7 +59,10 @@
       aria-labelledby="modal-title"
       tabindex="-1"
     >
-      <p id="modal-title" class="modal-title">{title}</p>
+      <div class="modal-head">
+        {#if variant === 'danger'}<span class="confirm-tile" aria-hidden="true"><Icon name={icon} size={20} /></span>{/if}
+        <h2 id="modal-title" class="modal-title">{title}</h2>
+      </div>
       {#if message}<p class="modal-message">{message}</p>{/if}
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick={oncancel}>{cancelLabel}</button>
@@ -96,17 +109,41 @@
     backdrop-filter: var(--glass-filter);
   }
 
+  .modal-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  /* A dangerous question's tile: 40 × 40, red, the action's icon. */
+  .confirm-tile {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background: var(--danger-bg);
+    color: var(--danger-text);
+  }
+
   .modal-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
     font-size: var(--fs-lg);
     font-weight: var(--fw-bold);
-    letter-spacing: -0.3px;
+    line-height: var(--lh-tight);
+    letter-spacing: var(--ls-tight);
     color: var(--text);
   }
 
   .modal-message {
     font-size: var(--fs-base);
     color: var(--text-2);
-    line-height: 1.5;
+    line-height: var(--lh-base);
+    white-space: pre-line;
   }
 
   .modal-footer {

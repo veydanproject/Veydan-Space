@@ -5,7 +5,7 @@
 //! ingress loop and the local id set for reconciliation.
 
 use crate::{storage, Store};
-use messenger_core::{EventId, RawEvent, Result};
+use messenger_core::{EventId, EventSource, PubKey, RawEvent, Result, Timestamp};
 
 /// Insert the event; returns `false` when it was already known.
 pub async fn insert_if_new(store: &Store, raw: &RawEvent) -> Result<bool> {
@@ -78,11 +78,12 @@ pub async fn items_since(store: &Store, kind: u16, since: i64) -> Result<Vec<(Ev
     items_in_window(store, kind, since, i64::MAX).await
 }
 
-/// `(id, created_at, relay)` of every known event of `kind` since `since`,
-/// with the relay it came by (live or as history; `None` when its source
-/// names none or cannot be read): the local set of a reconciliation by
-/// cursor, which the caller keeps to the events of one server.
-pub async fn items_since_with_relay(store: &Store, kind: u16, since: i64) -> Result<Vec<(EventId, i64, Option<String>)>> {
+/// `(id, created_at, source)` of every known event of `kind` since
+/// `since`, with where it came from (a relay, live or as history; the
+/// server of a wrap the archive replayed; `None` when the source cannot be
+/// read): the local set of a reconciliation by cursor, which the caller
+/// keeps to the events of one server.
+pub async fn items_since_with_source(store: &Store, kind: u16, since: i64) -> Result<Vec<(EventId, i64, Option<EventSource>)>> {
     let rows = sqlx::query_as::<_, (String, i64, String)>(
         "SELECT event_id, created_at, source_json FROM msg_events_raw WHERE kind = ? AND created_at >= ?
          ORDER BY created_at DESC",
@@ -94,11 +95,42 @@ pub async fn items_since_with_relay(store: &Store, kind: u16, since: i64) -> Res
     .map_err(storage)?;
     Ok(rows
         .into_iter()
-        .filter_map(|(id, at, source)| {
-            let relay = serde_json::from_str::<messenger_core::EventSource>(&source)
-                .ok()
-                .and_then(|s| s.relay_url().map(|u| u.as_str().to_string()));
-            Some((EventId::parse(&id)?, at, relay))
+        .filter_map(|(id, at, source)| Some((EventId::parse(&id)?, at, serde_json::from_str::<EventSource>(&source).ok())))
+        .collect())
+}
+
+/// One page of the kept events of `kinds` after the row `after` (the
+/// rowid of the table; 0 for the start), the oldest rows first:
+/// `(rowid, event, received_at)`. How the archive of the conversation
+/// walks what this device kept before the archive existed (backfill),
+/// a page at a time. A row whose JSON or source cannot be read is left
+/// out.
+pub async fn page_after(store: &Store, kinds: &[u16], after: i64, limit: i64) -> Result<Vec<(i64, RawEvent, i64)>> {
+    if kinds.is_empty() {
+        return Ok(Vec::new());
+    }
+    let marks = kinds.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let mut q = sqlx::query_as::<_, (i64, String, i64, String, i64, i64, String, String)>(sqlx::AssertSqlSafe(format!(
+        "SELECT rowid, event_id, kind, pubkey, created_at, received_at, source_json, raw_json FROM msg_events_raw
+         WHERE rowid > ? AND kind IN ({marks}) ORDER BY rowid LIMIT ?"
+    )))
+    .bind(after);
+    for kind in kinds {
+        q = q.bind(*kind as i64);
+    }
+    let rows = q.bind(limit).fetch_all(store.pool()).await.map_err(storage)?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(rowid, id, kind, pubkey, created_at, received_at, source, json)| {
+            let raw = RawEvent {
+                id: EventId::parse(&id)?,
+                kind: u16::try_from(kind).ok()?,
+                pubkey: PubKey::parse(&pubkey)?,
+                created_at: Timestamp(created_at),
+                json: serde_json::from_str(&json).ok()?,
+                source: serde_json::from_str(&source).ok()?,
+            };
+            Some((rowid, raw, received_at))
         })
         .collect())
 }
@@ -198,7 +230,7 @@ pub async fn forget_tagged(store: &Store, kind: u16, value: &str) -> Result<u64>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use messenger_core::{EventSource, PubKey, RelayUrl, Timestamp};
+    use messenger_core::RelayUrl;
 
     fn raw(id: &str, kind: u16, ts: i64) -> RawEvent {
         RawEvent {
@@ -229,6 +261,30 @@ mod tests {
         let found = raw_in_window(&s, 1059, 100, 200, 10).await.unwrap();
         assert_eq!(found.iter().map(|(id, _)| &id[..1]).collect::<Vec<_>>(), vec!["2", "1"], "newest first, both bounds in");
         assert_eq!(raw_in_window(&s, 1059, 0, 1_000, 1).await.unwrap().len(), 1, "the limit holds");
+    }
+
+    /// The walk of the archive's backfill: pages by rowid, the oldest
+    /// rows first, of the kinds asked, each read back whole; a row of
+    /// another kind is left out; the source comes back as it was written.
+    #[tokio::test]
+    async fn pages_walk_the_kept_events_in_order() {
+        let s = Store::open_in_memory().await.unwrap();
+        for (id, kind, at) in [("1", 1059, 100), ("2", 9, 200), ("3", 0, 300), ("4", 30078, 400), ("5", 1059, 500)] {
+            assert!(insert_if_new(&s, &raw(id, kind, at)).await.unwrap());
+        }
+        let kinds = [1059, 9, 30078];
+        let first = page_after(&s, &kinds, 0, 2).await.unwrap();
+        assert_eq!(first.iter().map(|(_, r, _)| r.created_at.secs()).collect::<Vec<_>>(), vec![100, 200]);
+        assert_eq!(first[0].1.kind, 1059);
+        assert_eq!(first[0].1.json, serde_json::json!({ "id": "1" }));
+        assert!(matches!(first[0].1.source, EventSource::Relay { .. }));
+        let rest = page_after(&s, &kinds, first[1].0, 10).await.unwrap();
+        assert_eq!(rest.iter().map(|(_, r, _)| r.created_at.secs()).collect::<Vec<_>>(), vec![400, 500], "kind 0 is not walked");
+        assert!(page_after(&s, &kinds, rest[1].0, 10).await.unwrap().is_empty(), "the end");
+        assert!(page_after(&s, &[], 0, 10).await.unwrap().is_empty());
+        let with_source = items_since_with_source(&s, 1059, 0).await.unwrap();
+        assert_eq!(with_source.len(), 2);
+        assert!(with_source.iter().all(|(_, _, src)| matches!(src, Some(EventSource::Relay { .. }))));
     }
 
     /// `n` events of `kind`, one per second from `from`, with the given

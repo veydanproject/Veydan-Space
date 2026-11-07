@@ -80,7 +80,7 @@
 </div>
 
 <style>
-  .stage { position: absolute; inset: 0; padding: 8px; box-sizing: border-box; background: #0b0d10; display: flex; flex-direction: column; gap: 8px; }
+  .stage { position: absolute; inset: 0; padding: 8px; box-sizing: border-box; background: var(--call-bg); display: flex; flex-direction: column; gap: 8px; }
   .grid {
     flex: 1; min-height: 0; display: grid; gap: 8px;
     grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows), minmax(0, 1fr));

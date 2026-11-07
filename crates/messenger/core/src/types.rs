@@ -147,6 +147,9 @@ pub enum EventSource {
     Server { id: String },
     /// Fetched by a Negentropy reconciliation, i.e. history, not live.
     Sync { url: RelayUrl },
+    /// Replayed from the archive of the conversation in the user's sync
+    /// storage (`messenger-archive`): history like `Sync`, by no relay.
+    Archive,
 }
 
 impl EventSource {
@@ -155,7 +158,7 @@ impl EventSource {
     pub fn relay_url(&self) -> Option<&RelayUrl> {
         match self {
             EventSource::Relay { url } | EventSource::Sync { url } => Some(url),
-            EventSource::Server { .. } => None,
+            EventSource::Server { .. } | EventSource::Archive => None,
         }
     }
 }

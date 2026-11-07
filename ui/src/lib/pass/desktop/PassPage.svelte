@@ -20,8 +20,8 @@
 
   const SECTIONS: { id: Section; title: TranslationKey; icon: string; count?: () => number }[] = [
     { id: 'passwords', title: 'pw_title', icon: 'lock-password', count: () => passwordStore.list.length },
-    { id: 'totp', title: 'totp_title', icon: 'shield', count: () => totpStore.list.length },
-    { id: 'generator', title: 'pwgen_title', icon: 'key' },
+    { id: 'totp', title: 'totp_title', icon: 'shield-lock', count: () => totpStore.list.length },
+    { id: 'generator', title: 'pwgen_title', icon: 'dices' },
   ];
 
   /** Below this width the three panes do not fit and become tabs. */

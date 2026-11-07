@@ -13,6 +13,7 @@ import { startDesktopNotices } from '../push/desktop';
 import DesktopNotices from '../push/DesktopNotices.svelte';
 import CallOverlay from '../calls/CallOverlay.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
+import ArchiveGate from '../archive/ArchiveGate.svelte';
 import { chatSettingsSections } from '../pages/chatSettingsSections';
 import { messengerPalette } from '../palette.svelte';
 
@@ -36,6 +37,8 @@ export const module: ModuleDef = {
     { id: 'calls', component: CallOverlay, place: 'window' },
     // A link clicked outside the app: its card, once the app is unlocked.
     { id: 'incoming-link', component: IncomingLink, place: 'window' },
+    // The first screen after a restore or a linking, while the newest months of the archive come back.
+    { id: 'archive-gate', component: ArchiveGate, place: 'window' },
   ],
   // New chat, new group, contacts, settings and every chat by name in the palette.
   palette: messengerPalette,

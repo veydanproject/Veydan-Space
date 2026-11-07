@@ -19,6 +19,8 @@
     oncreate?: () => void;
     /** What an empty list says; "No notes yet." by default. */
     emptyText?: string;
+    /** The search the list is the result of: an empty one says «Nothing found» with it. */
+    search?: string;
     workspaceName?: (id: string) => string;
     workspaceColor?: (id: string) => string | undefined;
     profileName?: (id: string) => string;
@@ -26,7 +28,7 @@
     folderColor?: (id: string) => string | undefined;
   }
 
-  let { notes, activeId, onselect, oncreate, emptyText, workspaceName, workspaceColor, profileName, folderName, folderColor }: Props = $props();
+  let { notes, activeId, onselect, oncreate, emptyText, search, workspaceName, workspaceColor, profileName, folderName, folderColor }: Props = $props();
 
   const sources = $derived({ workspaceName, workspaceColor, profileName, folderName, folderColor });
 
@@ -90,7 +92,14 @@
 <div class="notes-list divided">
   {#if notes.length === 0}
     <div class="empty-state">
-      <p>{emptyText ?? $t('notes_list_empty')}</p>
+      {#if search?.trim()}
+        <span class="empty-icon"><Icon name="search" size={22} /></span>
+        <p>{$t('common_nothing_found')}</p>
+        <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
+      {:else}
+        <span class="empty-icon"><Icon name="file-text" size={22} /></span>
+        <p>{emptyText ?? $t('notes_list_empty')}</p>
+      {/if}
       {#if oncreate}
         <button class="btn btn-primary btn-sm" onclick={oncreate}>
           <Icon name="plus" size={13} /> {$t('notes_list_new')}
@@ -188,7 +197,7 @@
 
   .note-title {
     font-size: var(--fs-body);
-    font-weight: var(--fw-bold);
+    font-weight: var(--fw-semibold);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
@@ -208,10 +217,9 @@
   }
 
   .note-format {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-faint);
-    text-transform: uppercase;
     font-family: var(--font-mono);
     background: var(--border);
     padding: 2px 6px;
@@ -234,8 +242,8 @@
   }
 
   .scope-badge {
-    font-size: var(--fs-2xs);
-    font-weight: 500;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -245,7 +253,7 @@
   .scope-badge:not([style*='--chip']) { color: var(--text-2); }
 
   .note-time {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
     flex-shrink: 0;
   }
@@ -259,7 +267,7 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    line-height: 1.4;
+    line-height: var(--lh-snug);
   }
 
   .note-snippet :global(mark) {
@@ -281,7 +289,7 @@
     gap: 4px;
     font-size: var(--fs-xs);
     padding: 3px 9px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
     border-width: 1px;
     border-style: solid;
     font-weight: var(--fw-semibold);
@@ -289,7 +297,7 @@
   }
 
   .tag-more {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-2);
     padding: 0.1rem 0.2rem;
   }

@@ -9,6 +9,7 @@
   import { formatDateTime, formatError, formatBytes } from '$lib/core/utils';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { api, olderBackup } from '$lib/backup/api';
   import type { BackupConfig, BackupFileInfo, RestoreOutcome } from '$lib/backup/types';
 
@@ -32,7 +33,6 @@
   });
   let backupList = $state<BackupFileInfo[]>([]);
   let backupSaving = $state(false);
-  let backupSaved = $state(false);
   let backupError = $state('');
   let backupRunning = $state(false);
   let backupPhase = $state('');
@@ -103,12 +103,10 @@
 
   async function saveBackupConfig() {
     backupSaving = true;
-    backupSaved = false;
     backupError = '';
     try {
       await api.backup.setConfig($state.snapshot(backupCfg));
-      backupSaved = true;
-      setTimeout(() => (backupSaved = false), 2000);
+      toast.success($t('common_saved'));
       await refreshBackupList();
     } catch (e) {
       backupError = formatError(e);
@@ -312,7 +310,6 @@
   {/if}
 
   <div class="foot">
-    {#if backupSaved}<span class="saved" role="status">{$t('settings_backup_saved')}</span>{/if}
     <button
       type="button"
       class="btn btn-ghost"
@@ -322,7 +319,7 @@
       {backupRunning ? $t('settings_backup_running') : $t('settings_backup_run_now')}
     </button>
     <button type="button" class="btn btn-primary" disabled={backupSaving} onclick={saveBackupConfig}>
-      {backupSaving ? $t('settings_backup_saving') : $t('settings_backup_save')}
+      {backupSaving ? $t('settings_backup_saving') : $t('common_save')}
     </button>
   </div>
 
@@ -355,7 +352,7 @@
             </span>
             {#if isTauri}
               <button type="button" class="btn btn-ghost" onclick={() => openRestore(b)}>
-                {$t('settings_backup_restore')}
+                {$t('common_restore')}
               </button>
             {/if}
           </div>
@@ -405,7 +402,7 @@
     </div>
     {#snippet footer()}
       <button type="button" class="btn btn-ghost" disabled={restoring} onclick={closeRestore}>
-        {$t('settings_backup_cancel')}
+        {$t('common_cancel')}
       </button>
       <button type="button" class="btn btn-danger" disabled={(!restorePassword && !backupCfg.has_password) || restoring} onclick={confirmRestore}>
         {restoring
@@ -424,11 +421,11 @@
   .path-row { display: flex; align-items: center; gap: var(--sp-2); }
   .browse { height: var(--control-h-lg); flex-shrink: 0; }
   .field-input { height: var(--control-h-lg); }
-  .note { margin: 0; font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); }
+  .note { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .link-btn {
     align-self: flex-start; display: inline-flex; align-items: center; gap: 0.4rem;
     background: none; border: none; padding: 0; cursor: pointer;
-    color: var(--accent-text-3); font-size: var(--fs-sm); font-weight: 500; text-decoration: underline;
+    color: var(--accent-text-3); font-size: var(--fs-sm); font-weight: var(--fw-medium); text-decoration: underline;
   }
   .link-btn:hover { color: var(--accent-text); }
 
@@ -459,12 +456,11 @@
   }
   .fail {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
     overflow-wrap: anywhere;
   }
   .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
   .foot { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
-  .saved { margin-right: var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--success-text); }
 
   .group { display: flex; flex-direction: column; gap: var(--sp-2); }
   .caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
@@ -487,7 +483,7 @@
   .caution {
     display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4);
     border-radius: var(--radius-md); background: var(--warn-bg); color: var(--warn-text);
-    font-size: var(--fs-sm); line-height: 1.5;
+    font-size: var(--fs-sm); line-height: var(--lh-base);
   }
   .caution :global(svg) { flex-shrink: 0; margin-top: 1px; }
 

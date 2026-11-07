@@ -42,6 +42,9 @@ pub const LF_REFS_FIELD: &str = "lf_refs";
 pub const MIN_CHUNK_SIZE: u64 = 1024 * 1024;
 pub const MAX_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 pub const MAX_PARALLELISM: usize = 8;
+/// The canonical bytes of a manifest at most: about 600 000 chunks, a file
+/// of 600 GiB in the smallest chunks.
+pub const MAX_MANIFEST_SIZE: usize = 64 * 1024 * 1024;
 
 /// Handle to a stored file. Carries no domain data.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

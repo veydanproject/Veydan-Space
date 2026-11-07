@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { pushState } from '$app/navigation';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -41,7 +42,6 @@
   let shareError = $state('');
   let saved = $state(false);
   let savedTimer: ReturnType<typeof setTimeout> | null = null;
-  let copied = $state(false);
 
   const p = $derived(messengerStore.ownProfile);
   const own = $derived(messengerStore.ownPrivate);
@@ -101,10 +101,8 @@
   function copyPhone() {
     const v = own?.phone;
     if (!v) return;
-    linkActions.copy(v).then(() => {
-      copied = true;
-      setTimeout(() => (copied = false), 1500);
-    }).catch(() => {});
+    // «Скопировано» is the toast of the copy; the number stays as it is.
+    linkActions.copy(v).catch(() => {});
   }
 
   /**
@@ -139,7 +137,7 @@
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
         <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={startEdit}>
-          <Icon name="pencil" size={12} />{$t('msg_own_edit')}
+          <Icon name="pencil" size={12} />{$t('common_edit')}
         </button>
       </span>
     {/if}
@@ -171,7 +169,7 @@
           <li class="phone">
             <span class="fact-icon"><Icon name="phone" size={16} /></span>
             <div class="phone-text">
-              <button type="button" class="link plain" onclick={copyPhone} title={$t('msg_copy')}>{copied ? $t('msg_card_copied') : own.phone}</button>
+              <button type="button" class="link plain" onclick={copyPhone} title={$t('common_copy')}>{own.phone}</button>
               <span class="private-note">{$t('msg_profile_phone_view_hint')}</span>
             </div>
           </li>
@@ -183,10 +181,10 @@
 
     <div class="send">
       <button class="btn btn-primary" disabled={!canAct || shareBusy} onclick={share}>
-        <Icon name="upload" size={18} />{$t('msg_share_out')}
+        <Icon name="share" size={18} />{$t('msg_share_out')}
       </button>
       <p class="hint">{$t('msg_share_out_hint')}</p>
-      {#if shareError}<div class="error-msg">{shareError}</div>{/if}
+      {#if shareError}<Notice tone="danger">{shareError}</Notice>{/if}
     </div>
   {:else}
     <ProfileEditor onclose={closed} {onopenmedia} />
@@ -228,7 +226,7 @@
   .private-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
   .saved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--success-text); }
   .send { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-  .hint { margin: 0; flex: 1; min-width: 200px; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; flex: 1; min-width: 200px; line-height: var(--lh-snug); }
   @media (pointer: coarse) {
     .link { min-height: 40px; display: inline-flex; align-items: center; }
     .send .btn { width: 100%; }

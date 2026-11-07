@@ -1193,7 +1193,7 @@ impl FakeRegistry {
                 region: region.to_string(),
                 caps: vec!["stun".into(), "turn".into(), "sfu".into()],
                 class: call_list::CLASS_VOLUNTEER.into(),
-                state: Some(call_list::STATE_ACTIVE.into()),
+                state: call_list::State::Active,
                 load: f64::from(load) / 100.0,
             })
             .collect();
@@ -1203,7 +1203,7 @@ impl FakeRegistry {
     pub fn degrade(&self, node: &NodeRef) {
         let mut st = self.state.lock().unwrap();
         for n in st.nodes.iter_mut().filter(|n| n.node.id == node.id) {
-            n.state = Some(call_list::STATE_DEGRADED.into());
+            n.state = call_list::State::Degraded;
         }
     }
 

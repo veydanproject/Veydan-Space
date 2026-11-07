@@ -30,7 +30,7 @@
   <input type="text" bind:value={newUrl} placeholder="wss://relay.example.com" spellcheck="false" disabled={busy} />
   <input type="password" class="key" bind:value={newKey} placeholder={$t('msg_relay_key_placeholder')} autocomplete="off" disabled={busy} />
   <button class="btn btn-ghost" type="submit" disabled={busy || !newUrl.trim()}>
-    <Icon name="plus" size={18} />{$t('msg_relay_add')}
+    <Icon name="plus" size={18} />{$t('common_add')}
   </button>
 </form>
 {#if error}<div class="error-msg">{error}</div>{/if}

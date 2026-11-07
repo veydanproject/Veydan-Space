@@ -201,7 +201,7 @@ crates/sync-host                 veydan-sync-host          lib      yes  crates/
 crates/shell                     veydan-shell              lib      yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host
 crates/pass                      veydan-pass               module   yes  crates/build-cfg crates/core crates/lock crates/sync-host crates/shell
 crates/notes                     veydan-notes              module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell
-crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/messenger/core crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/messenger/store crates/messenger/media crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call crates/tauri-plugin-veydan-media
+crates/messenger-app             veydan-messenger-app      module   yes  crates/build-cfg crates/core crates/lock crates/sync crates/sync-host crates/shell crates/messenger/core crates/messenger/archive crates/messenger/runtime crates/messenger/notify crates/messenger/http crates/messenger/store crates/messenger/media crates/desktop-notify crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-call crates/tauri-plugin-veydan-media
 crates/communities               veydan-communities        module   yes  crates/build-cfg crates/core crates/lock crates/shell crates/communities/core crates/messenger/core crates/messenger/links crates/messenger/media crates/messenger/transport crates/tauri-plugin-veydan-push crates/tauri-plugin-veydan-media
 crates/tor                       veydan-tor                module   yes  crates/build-cfg crates/core crates/shell
 crates/cloud                     veydan-cloud              module   yes  crates/build-cfg crates/core crates/shell crates/sync crates/recovery crates/lock crates/sync-host
@@ -442,9 +442,10 @@ done <<<"$MATRIX"
 # 5. The messenger: its crates depend neither on Tauri nor on the platform.
 #    Two paths leave crates/messenger: the crate `vlink` is built on the
 #    client of VLink (services/link/crates/vlink-proto,
-#    services/link/crates/vlink-client), and the crates that hand out the
-#    keys of a scope (groups, communities, runtime) take the key
-#    distribution of the platform, crates/keydist (platform-spec.md 6.1,
+#    services/link/crates/vlink-client) and on what that client is built on
+#    (services/common/crates/veydan-node, registry-proto), and the crates
+#    that hand out the keys of a scope (groups, communities, runtime) take
+#    the key distribution of the platform, crates/keydist (platform-spec.md 6.1,
 #    communities-keydist.md). Nothing else of VLink, and no other crate,
 #    may follow.
 #    The crate in crates/messenger/<x> is the package messenger-<x>.
@@ -470,7 +471,11 @@ allowed() {
     presence)  echo "messenger-core messenger-store" ;;
     notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink" ;;
     calls)     echo "messenger-core messenger-store messenger-dm messenger-vlink" ;;
-    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc messenger-evidence" ;;
+    runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc messenger-evidence messenger-archive" ;;
+    # The archive of the conversation in the sync storage: types and pure
+    # logic; the handler of the sync entities is in messenger-app
+    # (messenger-spec.md 4.2, messenger-archive-plan.md).
+    archive)   echo "messenger-core messenger-store" ;;
     testkit)   echo "messenger-core messenger-store messenger-runtime messenger-notify messenger-dm messenger-groups messenger-vlink messenger-calls messenger-rtc" ;;
     rtc)       echo "messenger-core messenger-calls" ;;
     # The proofs of a report: built by the server of the project too, so
@@ -503,7 +508,7 @@ allowed() {
           *) say "$crate: 'messenger-${path#crates/messenger/}' is not an allowed dependency" ;;
         esac
       fi ;;
-    services/link/crates/vlink-proto|services/link/crates/vlink-client)
+    services/link/crates/vlink-proto|services/link/crates/vlink-client|services/common/crates/veydan-node|services/common/crates/registry-proto)
       [ "$crate" = vlink ] || say "$crate: path dependency outside crates/messenger ('$path')" ;;
     crates/keydist)
       case "$crate" in
@@ -526,7 +531,8 @@ fi
 # 6. The infrastructure (6.1, the last two rows; the targets of kind "infra"
 #    in products.json): the crates of a folder take by path only what is in
 #    the folder and what its "builtOn" names — the bridge stands alone, the
-#    hub is built on the crates of the bridge, the push server on nothing —
+#    hub is built on bridge and common crates; push and guard use common,
+#    registry uses common, and call uses bridge and common crates —
 #    and none of them knows Tauri. A folder that has moved to a repository
 #    of its own is not checked here.
 #

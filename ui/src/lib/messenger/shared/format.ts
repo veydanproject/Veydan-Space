@@ -96,7 +96,7 @@ export function fileIcon(name: string, mime: string): string {
   if (mime.startsWith('audio/')) return 'mic';
   if (ext === 'json' || mime === 'application/json') return 'file-json';
   if (ARCHIVES.has(ext) || /zip|compressed|x-tar|x-7z/.test(mime)) return 'archive';
-  if (TABLES.has(ext) || /spreadsheet|csv/.test(mime)) return 'table-2';
+  if (TABLES.has(ext) || /spreadsheet|csv/.test(mime)) return 'table';
   if (CODE.has(ext)) return 'file-code';
   if (DOCUMENTS.has(ext) || mime === 'application/pdf' || /word|document|text\//.test(mime)) return 'file-text';
   return 'file';

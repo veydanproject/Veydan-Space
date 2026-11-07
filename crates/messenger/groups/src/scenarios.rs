@@ -118,6 +118,7 @@ fn server_row(url: &str, kind: &str) -> servers::ServerRow {
         push_mode: servers::PUSH_OFF.into(),
         source: None,
         added_at: 0,
+        access: "open".into(),
     }
 }
 
@@ -491,6 +492,149 @@ async fn a_member_leaves_and_a_manager_brings_a_new_key() {
     assert_eq!(log.state().members.len(), 1);
     assert_ne!(log.state().current_key.clone().unwrap(), old, "alice's device rotated by itself");
     assert!(!log.state().key_stale);
+}
+
+/// Out of a public group, the link is not mine to hold (ROO-681): the
+/// secret of every epoch leaves the secret store, so neither a rejoin by
+/// it nor the archive of the next identity of the device has it. The keys
+/// of the group stay for what I read before.
+#[tokio::test]
+async fn who_leaves_a_public_group_keeps_no_link_secret() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let g = w.create(alice, GroupKind::Public, "Town square", true).await;
+    let link = w.devices[alice].group(&g).await.unwrap().link.unwrap();
+    w.open_link(bob, &link).await;
+    w.catch_up(bob).await;
+    assert!(w.devices[bob].svc.link_secret(&g, 0).await.unwrap().is_some());
+
+    w.act(bob, &g, OpBody::Leave).await.unwrap();
+
+    let b = &w.devices[bob];
+    assert_eq!(b.group(&g).await.unwrap().membership, "left");
+    assert!(b.svc.link_secret(&g, 0).await.unwrap().is_none(), "the link left with me");
+    assert!(!b.svc.all_keys(&g).await.unwrap().is_empty(), "the keys stay for the history");
+    assert!(w.devices[alice].svc.link_secret(&g, 0).await.unwrap().is_some(), "the owner keeps hers");
+}
+
+/// The personal messages `who`'s devices got (welcomes, keys, my own
+/// notes), as the archive of the conversation keeps them, in order.
+fn dms_to(w: &World, who: usize) -> Vec<Wire> {
+    let me = w.pk(who);
+    w.sent
+        .iter()
+        .filter_map(|(from, out)| match out {
+            Outbound::PublishToInbox { recipient, event, .. } if *recipient == me => Some(Wire::Dm(event.clone())),
+            Outbound::PublishOwn { event } if w.pk(*from) == me => Some(Wire::Dm(event.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The snapshot of `from`'s relations, applied on `to` (a device of the
+/// same person), as the relays or the archive's `meta` bring it.
+async fn relations(w: &World, from: usize, to: usize) {
+    let (a, b) = (&w.devices[from], &w.devices[to]);
+    let (_, events) = a.dm.build_relations_snapshot(&a.keys, w.clock.now().secs()).await.unwrap();
+    let pieces: Vec<_> =
+        events.iter().filter_map(|e| messenger_dm::snapshot::Piece::of_json(&e.json, &b.keys.public_key())).collect();
+    assert!(!pieces.is_empty());
+    b.dm.apply_relations_snapshot(&b.keys, &pieces).await.unwrap();
+    b.svc.forget_gone().await.unwrap();
+}
+
+/// A group I forgot does not come back (ROO-682): not on my other device,
+/// which still had it, not on a clean device that replays the archive of
+/// my personal messages without a relay — no row, no key — and a new
+/// invitation after it brings me in as any does.
+#[tokio::test]
+async fn a_forgotten_group_comes_back_only_by_a_new_welcome() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let bob2 = w.device(w.devices[bob].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.say(alice, &g, "hello").await;
+    assert_eq!(w.devices[bob2].group(&g).await.expect("my other device came in by my welcome").membership, "joined");
+    let kid = w.devices[bob].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+
+    w.act(bob, &g, OpBody::Leave).await.unwrap();
+    assert_eq!(w.devices[bob2].group(&g).await.unwrap().membership, "left");
+    w.tick();
+    w.devices[bob].svc.forget(&g).await.unwrap();
+    assert!(w.devices[bob].group(&g).await.is_none());
+    let archived = dms_to(&w, bob);
+    assert!(!archived.is_empty());
+
+    // My other device lets it go with my relations.
+    relations(&w, bob, bob2).await;
+    assert!(w.devices[bob2].group(&g).await.is_none(), "gone on my other device");
+    assert!(w.devices[bob2].svc.key(&g, &kid).await.unwrap().is_none(), "and its keys");
+
+    // A clean device: my relations, then the archive of my personal
+    // messages, the welcome to me and to myself among them.
+    w.tick();
+    let bob3 = w.device(w.devices[bob].keys.clone()).await;
+    relations(&w, bob, bob3).await;
+    for wire in &archived {
+        for d in [bob, bob2, bob3] {
+            let o = w.deliver(d, wire, true).await;
+            w.run(d, o).await;
+        }
+    }
+    for d in [bob, bob2, bob3] {
+        assert!(w.devices[d].group(&g).await.is_none(), "device {d}: the group stays forgotten");
+        assert!(w.devices[d].svc.key(&g, &kid).await.unwrap().is_none(), "device {d}: no key of it");
+    }
+
+    // Asked again: a new welcome, after the forgetting, brings me in.
+    w.tick();
+    w.bring(alice, &g, bob3).await;
+    let v = w.devices[bob3].group(&g).await.expect("in again");
+    assert_eq!(v.membership, "joined");
+    w.say(alice, &g, "welcome back").await;
+    assert!(w.devices[bob3].texts(&g).await.contains(&"welcome back".to_string()));
+}
+
+/// The mark of the forgetting reaches my other device before my leave does
+/// (ROO-692): the group stays there while I am in it by what that device
+/// knows, and goes with its keys once the leave comes. Had I come in again
+/// after the mark, a later leave would leave the group in place.
+#[tokio::test]
+async fn a_group_forgotten_before_my_other_device_heard_i_left_goes_with_the_leave() {
+    let mut w = World::new();
+    let alice = w.person().await;
+    let bob = w.person().await;
+    let bob2 = w.device(w.devices[bob].keys.clone()).await;
+    let g = w.create(alice, GroupKind::Private, "Team", true).await;
+    w.bring(alice, &g, bob).await;
+    w.say(alice, &g, "hello").await;
+    assert_eq!(w.devices[bob2].group(&g).await.unwrap().membership, "joined");
+    let kid = w.devices[bob].svc.need_log(&g).await.unwrap().state().current_key.clone().unwrap();
+
+    w.offline(bob2);
+    w.act(bob, &g, OpBody::Leave).await.unwrap();
+    w.tick();
+    w.devices[bob].svc.forget(&g).await.unwrap();
+
+    // My relations first: still in the group by what bob2 knows.
+    relations(&w, bob, bob2).await;
+    assert_eq!(w.devices[bob2].group(&g).await.expect("not gone while joined").membership, "joined");
+
+    // Then the leave: the mark that came before holds.
+    w.online(bob2).await;
+    assert!(w.devices[bob2].group(&g).await.is_none(), "gone with the leave");
+    assert!(w.devices[bob2].svc.key(&g, &kid).await.unwrap().is_none(), "and its keys");
+
+    // Asked in again after the mark and out again: the group stays, left.
+    w.tick();
+    w.bring(alice, &g, bob2).await;
+    assert_eq!(w.devices[bob2].group(&g).await.unwrap().membership, "joined");
+    w.tick();
+    w.act(bob2, &g, OpBody::Leave).await.unwrap();
+    assert_eq!(w.devices[bob2].group(&g).await.expect("a leave after the mark keeps the card").membership, "left");
 }
 
 /// The id of the key a group event is sealed with (its `k` tag).

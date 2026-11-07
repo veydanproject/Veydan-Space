@@ -55,6 +55,7 @@ fn server(url: &str) -> ServerRow {
         push_mode: servers::PUSH_OFF.into(),
         source: Some(servers::SOURCE_HAND.into()),
         added_at: 0,
+        access: "open".into(),
     }
 }
 
@@ -455,6 +456,55 @@ async fn entries_are_read_one_by_one_and_capped() {
         vec![good["relay_url"].as_str().unwrap()]
     );
     assert!(servers::removed(b.store()).await.unwrap().is_empty());
+}
+
+/// The access mode of a server travels with it (internal/messenger-wire.md,
+/// «Серверы на всех устройствах»), written only when it is not `open`;
+/// the refusal of its relay does not, and an entry of an older build (no
+/// `access`) or of a mode this build does not know is an open server.
+#[tokio::test]
+async fn the_access_mode_of_a_server_reaches_my_other_device() {
+    let keys = Keys::generate();
+    let me = keys.public_key();
+    let (a, b) = (device(&keys).await, device(&keys).await);
+    let team = servers::put_private(a.store(), &ServerRow { access: servers::ACCESS_TEAM.into(), ..server("wss://team.example") })
+        .await
+        .unwrap();
+    let open = servers::put_private(a.store(), &server("wss://open.example")).await.unwrap();
+    servers::set_denied(a.store(), &team, "restricted: not a member of this server").await.unwrap();
+
+    let (_, events) = a.build_relations_snapshot(&keys, now()).await.unwrap();
+    let plain = plain_header(&keys, &events);
+    assert!(!plain.contains("denied") && !plain.contains("restricted") && !plain.contains("\"inv\""), "{plain}");
+    let h: Header = serde_json::from_str(&plain).unwrap();
+    let list = h.servers.clone().unwrap();
+    let entry = |id: &str| list.iter().find(|e| e["id"] == id).unwrap().clone();
+    assert_eq!(entry(&team)["access"], "team");
+    assert!(entry(&open).get("access").is_none(), "open is not written");
+
+    b.apply_relations_snapshot(&keys, &pieces(&events, &me)).await.unwrap();
+    assert_eq!(servers::get(b.store(), &team).await.unwrap().unwrap().access, servers::ACCESS_TEAM);
+    assert_eq!(servers::get(b.store(), &open).await.unwrap().unwrap().access, servers::ACCESS_OPEN);
+    assert_eq!(servers::denied(b.store(), &team).await.unwrap(), None, "the refusal is of the device");
+
+    // An entry without `access` (an older build), and one of a mode of a
+    // newer build: open servers.
+    let mut h = h;
+    let mut old = entry(&team);
+    old.as_object_mut().unwrap().remove("access");
+    let mut newer = entry(&open);
+    newer["relay_url"] = "wss://newer.example".into();
+    newer["id"] = servers::id_of("wss://newer.example").into();
+    newer["access"] = "invite-only".into();
+    h.servers = Some(vec![old, newer]);
+    let content = nip44::encrypt(keys.secret_key(), &me, serde_json::to_string(&h).unwrap(), nip44::Version::V2).unwrap();
+    let c = device(&keys).await;
+    c.apply_relations_snapshot(&keys, &[Piece { id: None, page: 0, created_at: now(), content }])
+        .await
+        .unwrap();
+    assert_eq!(servers::get(c.store(), &team).await.unwrap().unwrap().access, servers::ACCESS_OPEN);
+    let newer = servers::by_relay_url(c.store(), "wss://newer.example").await.unwrap().unwrap();
+    assert_eq!(newer.access, servers::ACCESS_OPEN);
 }
 
 /// The push server of a server travels with it (internal/messenger-wire.md,

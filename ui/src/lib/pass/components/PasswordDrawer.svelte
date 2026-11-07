@@ -127,8 +127,8 @@
   {#snippet actions()}
     <span class="count">{filtered.length}</span>
     {#if canWrite && !selected}
-      <button class="icon-btn" title={$t('pw_btn_add')} onclick={() => (creating = true)}>
-        <Icon name="plus" size={14} />
+      <button class="icon-btn create" title={$t('common_add')} aria-label={$t('common_add')} onclick={() => (creating = true)}>
+        <Icon name="plus" size={18} />
       </button>
     {/if}
   {/snippet}
@@ -161,7 +161,7 @@
 
   {#if selected}
     <button type="button" class="btn btn-ghost btn-sm back" onclick={() => (selectedId = null)}>
-      <Icon name="chevron-left" size={14} /> {$t('pw_back')}
+      <Icon name="chevron-left" size={14} /> {$t('common_back')}
     </button>
     <PasswordCard entry={selected} onedit={() => (editingId = selected.id)} ondeleted={() => (selectedId = null)} />
   {:else if passwordStore.loading && !passwordStore.loaded}
@@ -170,7 +170,7 @@
     <div class="empty-state">
       {#if search.trim()}
         <span class="empty-icon"><Icon name="search" size={22} /></span>
-        <p>{$t('pass_nothing_found')}</p>
+        <p>{$t('common_nothing_found')}</p>
         <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       {:else}
         <span class="empty-icon"><Icon name="lock-password" size={22} /></span>
@@ -199,8 +199,8 @@
     background: var(--accent-tint);
     color: var(--accent-text-2);
     border: 1px solid var(--accent-tint-border);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-2xs);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     padding: 0.05rem 0.4rem;
     font-weight: var(--fw-semibold);
@@ -209,7 +209,7 @@
   .search-wrap { position: relative; }
   .search-icon {
     position: absolute;
-    left: 0.6rem;
+    left: 0.85rem;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-2);
@@ -219,10 +219,10 @@
   .search-input {
     width: 100%;
     box-sizing: border-box;
-    height: 34px;
-    padding: 0 10px 0 2rem;
+    height: var(--control-h);
+    padding: 0 10px 0 2.25rem;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-pill);
     background: var(--surface-3);
     color: var(--text);
     font: inherit;

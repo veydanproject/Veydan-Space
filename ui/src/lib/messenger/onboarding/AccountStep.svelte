@@ -113,7 +113,7 @@
   <div class="ob-main center"><span class="spinner" aria-hidden="true"></span></div>
 {:else if ready}
   <div class="ob-main">
-    <span class="ob-tile"><Icon name="check-circle" size={28} /></span>
+    <span class="ob-tile"><Icon name="check" size={28} /></span>
     <h1 class="ob-title">{wasReady ? $t('msg_ob_ready_title') : $t('msg_ob_created_title')}</h1>
     <p class="ob-text">{who}</p>
   </div>
@@ -177,7 +177,7 @@
     {#if error}<p class="ob-error" role="alert">{error}</p>{/if}
   </div>
   <div class="ob-foot">
-    <button type="button" class="btn btn-primary" disabled={busy || locked} onclick={create}>{$t('msg_id_create_confirm')}</button>
+    <button type="button" class="btn btn-primary" disabled={busy || locked} onclick={create}>{$t('common_create')}</button>
   </div>
 {:else if phase === 'key'}
   <div class="ob-main">
@@ -227,7 +227,7 @@
   </div>
   <div class="ob-foot">
     <button type="button" class="btn btn-primary" disabled={locked} onclick={() => { phase = 'create'; error = ''; }}>{$t('msg_ob_create')}</button>
-    <button type="button" class="btn btn-ghost" disabled={locked} onclick={() => { phase = 'have'; error = ''; }}>{$t('msg_ob_have')}</button>
+    <button type="button" class="btn btn-ghost" disabled={locked} onclick={() => { phase = 'have'; error = ''; }}>{$t('ob_have_account')}</button>
     {#if !only}
       <button type="button" class="ob-skip" onclick={next}>{$t('msg_ob_skip')}</button>
       <p class="ob-foot-hint">{$t('msg_ob_skip_hint')}</p>
@@ -243,7 +243,7 @@
   .field span { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .field input {
     font: inherit; color: var(--text); min-height: var(--control-h-lg);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
     padding: 8px 10px;
   }
   :global(.ob.m) .field input { min-height: var(--sp-12); font-size: var(--fs-md); }

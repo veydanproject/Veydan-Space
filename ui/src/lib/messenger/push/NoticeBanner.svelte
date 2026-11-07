@@ -16,11 +16,12 @@
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { zone } from '$lib/core/ui/zone';
   import Avatar from '../contacts/Avatar.svelte';
   import { messengerStore } from '../store.svelte';
   import { chatStore } from '../chats/chatStore.svelte';
   import { nameStore } from '../groups/names.svelte';
-  import { BASE, chatHref } from '../mobile/routes';
+  import { BASE, callHref, chatHref, groupCallHref } from '../mobile/routes';
   import { botCardLineKey } from '../content/botCard';
   import { botCards } from '../seams/cards.svelte';
   import { albumLine, albumOf, bodyLine, joinAlbum, type Album, type NoticeBody } from './wording';
@@ -61,6 +62,8 @@
   const MOVED = 8;
 
   let cards = $state<Card[]>([]);
+  // A phone's call is a screen of its own, the incoming one too: the cards go under it, not over its buttons.
+  const underCall = $derived(!desk && (page.url.pathname === callHref() || page.url.pathname === groupCallHref()));
   let seenAt = 0;
   let round = 0;
 
@@ -171,7 +174,8 @@
 </script>
 
 {#if cards.length}
-  <div class="stack" class:desk aria-live="polite">
+  <!-- On a phone the toast stands under this stack (--zone-notice), not on its cards; under a call there is nothing to stand under. -->
+  <div class="stack" class:desk class:under={underCall} aria-live="polite" use:zone={desk || underCall ? null : '--zone-notice'}>
     {#each cards as card (card.key)}
       {@const f = face(card)}
       <div
@@ -199,8 +203,8 @@
             {#if desk}
               <button
                 class="close"
-                aria-label={$t('msg_notice_close')}
-                title={$t('msg_notice_close')}
+                aria-label={$t('common_close')}
+                title={$t('common_close')}
                 onpointerdown={(e) => e.stopPropagation()}
                 onkeydown={(e) => e.stopPropagation()}
                 onclick={(e) => { e.stopPropagation(); leave(card); }}
@@ -227,11 +231,15 @@
 {/if}
 
 <style>
+  /* Over the panels and the phone's bars, under a call's strip and an incoming call. */
   .stack {
-    position: fixed; top: calc(var(--sat) + 8px); left: 12px; right: 12px; z-index: 70;
+    position: fixed; top: calc(var(--sat) + 8px); left: 12px; right: 12px; z-index: calc(var(--z-panel) + 20);
     display: flex; flex-direction: column; gap: 8px; align-items: center;
     pointer-events: none;
   }
+  /* A call's screen on a phone: under the screen, the page's background over the cards. */
+  .stack.under { z-index: calc(var(--z-base) - 1); }
+  .stack.under .card { pointer-events: none; }
   /* A desk: in the middle, under the navigation bar. */
   .stack.desk { top: 72px; }
   .close {
@@ -266,13 +274,13 @@
   .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
   .title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .more {
-    flex-shrink: 0; font-size: var(--fs-2xs); font-weight: var(--fw-semibold);
+    flex-shrink: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
     padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2);
   }
-  .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-2xs); color: var(--text-3); }
-  .label { font-size: var(--fs-2xs); color: var(--accent-text-2); }
+  .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
+  .label { font-size: var(--fs-xs); color: var(--accent-text-2); }
   .body {
-    font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35;
+    font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug);
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   }
   .who { color: var(--text); font-weight: var(--fw-medium, 500); }

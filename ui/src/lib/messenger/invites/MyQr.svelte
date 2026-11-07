@@ -16,6 +16,7 @@
   import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { contactLabel, messengerApi, messengerError, profileLabel, type InviteView } from '../api';
@@ -66,7 +67,6 @@
   /** After a failed draw the next try waits this long: a runtime that refuses is not asked every second. */
   const DRAW_RETRY_SECS = 15;
   let retryAt = 0;
-  let linkNote = $state(false);
   let sharing = $state(false);
   let shareItem = $state<ShareOutItem | null>(null);
   let shareId = '';
@@ -74,7 +74,6 @@
   let codeFor = $state<string | null>('');
   let code = $state<InviteView | null>(null);
   let codeBusy = $state(false);
-  let codeCopied = $state(false);
   let destroyed = false;
   let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -149,7 +148,7 @@
     if (on === permanent || drawing) return;
     if (!on) {
       const lasting = (inviteStore.list ?? []).filter((v) => isPermanentQr(v) && !v.revoked);
-      if (lasting.length && !(await confirmStore.ask($t('msg_inv_revoke_confirm'), $t('msg_inv_revoke'), true))) return;
+      if (lasting.length && !(await confirmStore.ask($t('msg_inv_revoke_confirm'), $t('msg_inv_revoke'), true, 'x'))) return;
       for (const v of lasting) {
         await inviteStore.revoke(v.id);
         if (inviteStore.error) { error = inviteStore.error; return; }
@@ -168,12 +167,10 @@
    */
   async function copyLink() {
     error = '';
-    linkNote = false;
     try {
       if (qrServer) {
         await navigator.clipboard.writeText(await privateLink(qrServer));
         copiedToast();
-        linkNote = true;
         return;
       }
       const v = await inviteStore.create({ kind: 'link', label: '' });
@@ -218,8 +215,6 @@
     try {
       await navigator.clipboard.writeText(code.secret);
       copiedToast();
-      codeCopied = true;
-      setTimeout(() => (codeCopied = false), 1600);
     } catch (e) {
       error = messengerError(e);
     }
@@ -242,7 +237,7 @@
 
 <div class="myqr">
   {#if paused}
-    <div class="strip warn" role="status"><Icon name="alert-triangle" size={14} />{$t('msg_inv_paused', { time: clock(paused) })}</div>
+    <Notice tone="warn" role="status">{$t('msg_inv_paused', { time: clock(paused) })}</Notice>
   {/if}
 
   <p class="hint">{$t('msg_inv_my_qr_hint')}</p>
@@ -273,7 +268,7 @@
     {#if permanent}
       <span class="muted">{$t('msg_inv_qr_permanent_hint')}</span>
       {#if current && isPermanentQr(current)}
-        <button class="btn btn-ghost btn-sm danger" disabled={!!inviteStore.revoking} onclick={() => void setPermanent(false)}>{$t('msg_inv_revoke')}</button>
+        <button class="btn btn-danger-soft btn-sm" disabled={!!inviteStore.revoking} onclick={() => void setPermanent(false)}>{$t('msg_inv_revoke')}</button>
       {/if}
     {:else if left !== null}
       <span class="muted" aria-live="off">{$t('msg_inv_qr_left', { time: countdown(left) })}</span>
@@ -303,7 +298,7 @@
         {#if code}
           <div class="code-row">
             <span class="code mono">{formatCode(code.secret)}</span>
-            <button class="btn btn-ghost btn-sm" onclick={copyCode}><Icon name={codeCopied ? 'check' : 'copy'} size={13} />{$t('msg_copy')}</button>
+            <button class="btn btn-ghost btn-sm" onclick={copyCode}><Icon name="copy" size={13} />{$t('common_copy')}</button>
           </div>
           {#if code.expires_at != null}<p class="muted small">{$t('msg_inv_code_until', { time: stamp(code.expires_at) })}</p>{/if}
           <p class="muted small">{$t('msg_inv_code_hint')}</p>
@@ -316,17 +311,16 @@
       </div>
     {/if}
 
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="actions">
-      <button class="btn btn-ghost" disabled={saving || !(qrServer ? serverQr : qrSrc)} onclick={save}><Icon name="download" size={18} />{$t('msg_qr_save')}</button>
-      <button class="btn btn-ghost" onclick={copyLink}><Icon name={qrServer ? (linkNote ? 'check' : 'link') : 'upload'} size={18} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
+      <button class="btn btn-ghost" disabled={saving || !(qrServer ? serverQr : qrSrc)} onclick={save}><Icon name="download" size={18} />{$t('common_save')}</button>
+      <button class="btn btn-ghost" onclick={copyLink}><Icon name={qrServer ? 'link' : 'upload'} size={18} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
       {#if !qrServer}
       <button class="btn btn-ghost" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>
         <Icon name="key" size={18} />{$t('msg_inv_code_24h')}
       </button>
       {/if}
     </div>
-    {#if linkNote}<p class="muted small" role="status">{$t(qrServer ? 'msg_srv_invite_copied' : 'msg_inv_link_copied')}</p>{/if}
 
     <ScanQr {onchat} {onmanual} autostart={scan} onclosed={onscanclosed} />
   </div>
@@ -334,16 +328,12 @@
 
 <style>
   .myqr { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
-  .hint { margin: 0; font-size: var(--fs-base); color: var(--text-body); line-height: 1.5; }
-  .muted { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+  .hint { margin: 0; }
+  .muted { color: var(--text-2); font-size: var(--fs-xs); line-height: var(--lh-snug); }
   .small { font-size: var(--fs-xs); }
   p.muted { margin: 0; }
   /* The caption over a part: «Куда пригласить», «Ваш ключ». */
   .cap { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
-  .strip {
-    display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm); font-size: var(--fs-xs);
-    color: var(--warn-text); background: var(--warn-bg); border: 1px solid var(--warn-border); line-height: 1.4;
-  }
   .for { display: flex; flex-direction: column; gap: var(--sp-2); }
   .center { text-align: center; }
   .qrbox { display: flex; justify-content: center; }
@@ -354,7 +344,7 @@
   .under .muted { color: var(--text-3); }
   .key { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .key code {
-    font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); background: var(--surface-2);
+    font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-2); background: var(--surface-2);
     border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); overflow-wrap: anywhere; user-select: all;
   }
   /* The foot: «Сохранить | Поделиться | Код на 24 ч» side by side; «Выбрать картинку» (ScanQr) the whole width under them. */
@@ -362,10 +352,9 @@
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   .actions .btn { flex: 1 1 auto; justify-content: center; }
   .btn.active { background: var(--surface-hover); border-color: var(--border-2); }
-  .danger { color: var(--danger-text); }
   .code-box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); }
   .code-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-  .code { font-size: var(--fs-2xl); font-weight: var(--fw-bold); letter-spacing: 2px; user-select: all; font-variant-numeric: tabular-nums; }
+  .code { font-size: var(--fs-2xl); font-weight: var(--fw-bold); user-select: all; font-variant-numeric: tabular-nums; }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
   .self-start { align-self: flex-start; }
 </style>

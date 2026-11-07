@@ -10,6 +10,9 @@ export type GroupMembership = "joined" | "joining" | "requested" | "rejected" | 
 /** Whether a group lets anyone in by its link. */
 export type LinkGroupKind = "public" | "private";
 
+/** Who may use a server: anyone, its members alone (an invite lets one in), or anyone reads and its authors write. */
+export type ServerAccess = "open" | "team" | "channel";
+
 /** A server as its card shows it, before it is added: what it has, whether it is Veydan's, whether it is mine already. */
 export type ServerPreview = { 
 /**
@@ -55,7 +58,18 @@ known: boolean,
  * Its relay is one of the Veydan network's (the manifest in use names
  * it): «серверы Veydan» rather than a server of somebody's own.
  */
-is_veydan: boolean, };
+is_veydan: boolean, 
+/**
+ * Who may use it, as the card says: `open` (anyone), `team` (its
+ * members alone: without an invite this device is let in only after
+ * its admin adds it) or `channel` (anyone reads, its authors write).
+ */
+access: ServerAccess, 
+/**
+ * The invite the card carries (`inv=`): accepting the card joins the
+ * server with it (`messenger_server_join`). Never stored.
+ */
+invite: string | null, };
 
 /** What a link inside leads to, as the runtime sees it. The UI never takes a link apart itself. */
 export type LinkView = { "kind": "group", 
@@ -176,7 +190,17 @@ chats: number,
 /**
  * The groups that live on it (their relay is its relay).
  */
-groups: number, };
+groups: number, 
+/**
+ * Who may use it.
+ */
+access: ServerAccess, 
+/**
+ * What its relay said when it last refused this device
+ * (`restricted: …`, `auth-required: …`): «Нет доступа». `None` once
+ * it let the device in (an event taken, a join).
+ */
+denied: string | null, };
 
 /** What a page outside says about itself. */
 export type LinkPreview = { 

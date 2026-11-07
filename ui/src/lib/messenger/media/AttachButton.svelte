@@ -70,11 +70,11 @@
 
 <style>
   .attach {
-    width: 38px; height: 38px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
-    background: none; color: var(--text-2); display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
+    background: none; color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center;
   }
   .attach:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
   /* Inside the field of the phone composer the field sets the size. */
   @media (pointer: coarse) { .attach { width: var(--attach-w, 44px); height: var(--attach-h, 44px); } }
-  .attach:disabled { opacity: 0.4; cursor: default; }
+  .attach:disabled { opacity: 0.45; cursor: default; }
 </style>

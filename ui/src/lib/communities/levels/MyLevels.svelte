@@ -81,14 +81,14 @@
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text); background: var(--accent-bg); border: 1px solid var(--accent-border);
   }
   .lvl.base { color: var(--text-2); background: var(--surface-3); border-color: var(--border); }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.5; }
+  .hint { margin: 0; }
   .sent {
     margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
-    font-size: var(--fs-xs); line-height: 1.45; color: var(--accent-text-2); background: var(--accent-bg); border: 1px solid var(--accent-border);
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--accent-text-2); background: var(--accent-bg); border: 1px solid var(--accent-border);
   }
   .refused {
     margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
-    font-size: var(--fs-xs); line-height: 1.45; color: var(--text); background: var(--warn-bg); border: 1px solid var(--warn-border); overflow-wrap: anywhere;
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text); background: var(--warn-bg); border: 1px solid var(--warn-border); overflow-wrap: anywhere;
   }
   .sent :global(svg), .refused :global(svg) { flex-shrink: 0; margin-top: 2px; }
   @media (pointer: coarse) { .btn { min-height: var(--control-h-lg); } }

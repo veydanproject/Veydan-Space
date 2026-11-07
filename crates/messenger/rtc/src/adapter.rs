@@ -936,7 +936,9 @@ mod tests {
         session.push_video_frame(pushed).expect("pushed");
         let seen = local.try_recv().expect("the pushed frame fans out");
         assert_eq!((seen.width, seen.height, seen.rotation), (320, 180, 90));
-        let turned = tokio::time::timeout(Duration::from_secs(2), async {
+        // Ten seconds, not two: on a loaded runner of CI the engine told the
+        // size later than two seconds (PR #117), on an idle machine at once.
+        let turned = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 if let Some(CoreEvent::VideoSize { track: VideoTrack::Local, width, height }) = events.recv().await {
                     return (width, height);

@@ -118,7 +118,7 @@
       <!-- The last: what cannot be undone, apart. -->
       {#if chat.peer_pubkey && !chat.bot}
         <section class="zone">
-          <button type="button" class="btn btn-ghost danger" onclick={report}><Icon name="alert-triangle" size={18} />{$t('msg_report')}</button>
+          <button type="button" class="btn btn-danger-soft" onclick={report}><Icon name="alert-triangle" size={18} />{$t('msg_report')}</button>
         </section>
       {/if}
     </div>
@@ -136,7 +136,7 @@
   .hero-row { display: flex; align-items: center; gap: var(--sp-3); }
   .hero-row > :global(.avatar), .hero-row > :global(.holder) { flex: none; }
   .hero-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: 1.25; overflow-wrap: anywhere; word-break: break-word; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow-wrap: anywhere; word-break: break-word; }
   .sub { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; word-break: break-word; }
   .sub.online { color: var(--success-text, var(--success)); }
   .nip05 { color: var(--text-2); }
@@ -164,12 +164,11 @@
   .keys > .field + .field { padding-top: var(--sp-3); border-top: 1px solid var(--border-2); }
   .keys :global(.copy-field .label) { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-2); }
   .keys :global(.copy-field code) { padding: var(--sp-2) var(--sp-3); background: var(--surface-3); border: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); }
-  .hint { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .hint { line-height: var(--lh-snug); }
 
   /* The last: what cannot be undone, apart. */
   .zone { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-4); border-top: 1px dashed var(--border-2); }
   .zone .btn { min-height: var(--control-h); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
-  .danger { color: var(--danger-text); }
 
   @media (pointer: coarse) {
     .zone .btn { min-height: var(--control-h-lg); }

@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { untrack } from 'svelte';
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -79,7 +80,7 @@
   }
 </script>
 
-{#if error}<div class="error-msg">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if !items.length && !loading && !error}
   <p class="empty">{$t('msg_mod_log_empty')}</p>
@@ -107,10 +108,10 @@
   }
   .entry { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3) 0; min-width: 0; }
   .entry + .entry { border-top: 1px solid var(--divider); }
-  .line { font-size: var(--fs-base); line-height: 1.4; color: var(--text); overflow-wrap: anywhere; }
+  .line { font-size: var(--fs-base); line-height: var(--lh-snug); color: var(--text); overflow-wrap: anywhere; }
   /* Markup drops the blank between the two; the gap is the style's. */
   .target { color: var(--text-2); margin-left: 0.35em; }
-  .meta { font-size: var(--fs-xs); line-height: 1.4; color: var(--text-3); overflow-wrap: anywhere; }
+  .meta { font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text-3); overflow-wrap: anywhere; }
   .lapsed .line { opacity: 0.6; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; margin-top: var(--sp-2); }

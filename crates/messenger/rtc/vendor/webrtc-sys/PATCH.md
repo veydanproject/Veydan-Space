@@ -63,6 +63,19 @@ the media is under DTLS whatever the TURN transport is, so the TLS of the
 relay adds nothing a check would protect. The crate's `IceServer` has no
 field for the policy; adding one would also mean patching `libwebrtc`.
 
+## Not a patch: `-ObjC` of `configure_darwin_sysroot`
+
+`build.rs` prints `cargo:rustc-link-arg=-ObjC` for macOS and iOS, and the
+line does nothing for a product: cargo gives a `rustc-link-arg` only to
+what the package of the build script links itself, never to a binary that
+depends on it. Without `-ObjC` the linker drops the Objective-C categories
+of libwebrtc.a (`NSString (StdString)` of `sdk/objc`), and the app dies
+before `main` on `+[NSString stringForStdString:]` (ROO-869). The binary's
+own build script says it: `veydan_build_cfg::darwin_webrtc_objc()`, called
+from `apps/*/build.rs` of every product with the messenger, as upstream
+advises an application to do; release.yml checks the category in the
+macOS bundle. The line is left as published.
+
 ## The diff
 
 ```diff

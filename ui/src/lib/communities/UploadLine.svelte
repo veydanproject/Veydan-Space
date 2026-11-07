@@ -47,5 +47,5 @@
   .upload.failed { border-color: var(--danger-border); color: var(--danger-text); }
   .up-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .up-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-body); font-weight: var(--fw-semibold); }
-  .up-why { color: var(--danger-text); line-height: 1.4; }
+  .up-why { color: var(--danger-text); line-height: var(--lh-snug); }
 </style>

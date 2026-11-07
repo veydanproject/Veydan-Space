@@ -1945,6 +1945,7 @@ async fn a_call_of_a_private_chat_goes_by_its_server_alone() {
             push_mode: messenger_store::servers::PUSH_OFF.into(),
             source: None,
             added_at: 0,
+            access: "open".into(),
         };
         ids.push(messenger_store::servers::put(&p.store, &row).await.unwrap());
     }

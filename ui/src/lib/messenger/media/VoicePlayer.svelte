@@ -98,7 +98,7 @@
     width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
     background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center;
   }
-  .play:disabled { opacity: 0.6; }
+  .play:disabled { opacity: 0.45; }
   .spin :global(svg) { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .body { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; }
@@ -106,10 +106,10 @@
   .wave i { display: block; flex: 0 1 3px; min-width: 2px; border-radius: 2px; background: var(--text-3); opacity: 0.55; }
   .wave i.done { background: var(--accent); opacity: 1; }
   .row { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
-  .time { font-size: var(--fs-2xs); color: var(--text-3); font-family: var(--font-mono); }
+  .time { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); }
   .rate {
     height: 18px; padding: 0 6px; border: none; border-radius: var(--radius-pill); background: var(--surface-hover);
-    color: var(--text-2); font: inherit; font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-bold); cursor: pointer;
+    color: var(--text-2); font: inherit; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold); cursor: pointer;
   }
   @media (pointer: coarse) { .play { width: 44px; height: 44px; } }
 </style>

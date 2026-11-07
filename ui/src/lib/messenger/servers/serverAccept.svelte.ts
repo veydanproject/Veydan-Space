@@ -10,7 +10,7 @@
 // «Добавить». What the dialog says is the server's name,
 // whether it is private or Veydan's, and its lines (`serverRows`).
 
-import { messengerApi, type ServerPreview } from '../api';
+import { messengerApi, type ServerAccess, type ServerPreview } from '../api';
 
 type Translate = (key: string, params?: Record<string, string>) => string;
 
@@ -69,6 +69,8 @@ export interface ServerParts {
   call_node: string | null;
   push: string;
   is_veydan?: boolean;
+  /** Who may use it; an old server without it reads as `open`. */
+  access?: ServerAccess;
 }
 
 /** One line of «what this server is»: what it carries, and where. */
@@ -82,10 +84,12 @@ export interface ServerRow {
 /**
  * Every server a chat on it goes through, a line each: the messages (its
  * relay), the files (its media), the calls (its node) and the
- * notifications (the Veydan gateway, or none).
+ * notifications (the Veydan gateway, or none), after who may use it.
  */
 export function serverRows(s: ServerParts, tr: Translate): ServerRow[] {
+  const access: ServerAccess = s.access ?? 'open';
   return [
+    { label: tr('msg_srv_row_access'), value: tr(`msg_srv_access_${access}`) },
     { label: tr('msg_srv_row_messages'), value: hostOf(s.relay) },
     s.media ? { label: tr('msg_srv_row_files'), value: hostOf(s.media) } : { label: tr('msg_srv_row_files'), value: tr('msg_srv_row_none'), none: true },
     s.call_node

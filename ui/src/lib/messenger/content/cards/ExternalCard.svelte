@@ -41,7 +41,7 @@
   {/if}
 
   <div class="top">
-    <span class="ico" class:risky><Icon name={risky ? 'alert-triangle' : info.secure ? 'world' : 'lock-open'} size={16} /></span>
+    <span class="ico" class:risky><Icon name={risky ? 'alert-triangle' : info.secure ? 'world' : 'alert-triangle'} size={16} /></span>
     <div class="about">
       <span class="host">{preview && preview.host !== info.host ? preview.host : info.host}</span>
       {#if info.path}<span class="path">{info.path}</span>{/if}
@@ -87,10 +87,10 @@
   .about { display: flex; flex-direction: column; min-width: 0; }
   .host { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .path { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: 1.35; overflow-wrap: anywhere; }
-  .text { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .risk { font-size: var(--fs-sm); color: var(--warn-text); line-height: 1.4; }
-  .note { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
+  .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-snug); overflow-wrap: anywhere; }
+  .text { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .risk { font-size: var(--fs-sm); color: var(--warn-text); line-height: var(--lh-snug); }
+  .note { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   /* The two ways as links in one row (mockups c7.js): the accent's words, no boxes. */
   .row { margin-top: 0; }
 </style>

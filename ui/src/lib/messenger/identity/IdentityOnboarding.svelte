@@ -111,8 +111,8 @@
     </label>
     {#if error}<div class="error-msg">{error}</div>{/if}
     <div class="actions">
-      <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('msg_back')}</button>
-      <button class="btn btn-primary" disabled={busy || locked} onclick={create}>{$t('msg_id_create_confirm')}</button>
+      <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('common_back')}</button>
+      <button class="btn btn-primary" disabled={busy || locked} onclick={create}>{$t('common_create')}</button>
     </div>
   {:else}
     <div class="card-title">{$t('msg_id_import_title')}</div>
@@ -140,7 +140,7 @@
     {/if}
     {#if error}<div class="error-msg">{error}</div>{/if}
     <div class="actions">
-      <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('msg_back')}</button>
+      <button class="btn btn-ghost" disabled={busy} onclick={back}>{$t('common_back')}</button>
       <button class="btn btn-primary" disabled={busy || locked} onclick={doImport}>{$t('msg_id_import_confirm')}</button>
     </div>
   {/if}
@@ -158,10 +158,10 @@
   .link-device { align-self: flex-start; font-size: var(--fs-sm); color: var(--accent-text); }
   .actions { justify-content: flex-end; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input, .field textarea {
     font: inherit; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
     padding: 8px 10px;
   }
   .field textarea { font-size: var(--fs-xs); resize: vertical; }

@@ -72,7 +72,7 @@
   <span class="spacer"></span>
   <div class="modes" role="group" aria-label={$t('notes_mode')}>
     <button type="button" class="mode" class:on={mode === 'rich'} onclick={() => onmode('rich')} aria-label={$t('notes_mode_rich')}>
-      <Icon name="edit" size={16} />
+      <Icon name="pencil" size={16} />
     </button>
     <button type="button" class="mode" class:on={mode === 'md'} onclick={() => onmode('md')} aria-label={$t('notes_mode_md')}>
       <span class="h-label">MD</span>
@@ -114,11 +114,11 @@
     color: var(--text-2);
   }
   .fb:active { background: var(--m-seg); color: var(--text); }
-  .fb:disabled { opacity: 0.35; }
+  .fb:disabled { opacity: 0.45; }
   .h-label {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    font-weight: 700;
+    font-weight: var(--fw-bold);
   }
   .sep {
     flex-shrink: 0;

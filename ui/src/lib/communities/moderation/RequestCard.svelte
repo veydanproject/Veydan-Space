@@ -69,7 +69,7 @@
 <li class="card" class:selected aria-label={facts.name}>
   <div class="head">
     <input class="tick" type="checkbox" checked={selected} disabled={busy} onchange={ontick} aria-label={$t('chan_req_select', { name: facts.name })} />
-    <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={40} />
+    <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={36} />
     <div class="who">
       <span class="name" title={facts.name}>{facts.name}</span>
       {#if facts.nip05}
@@ -121,7 +121,7 @@
 <style>
   .card {
     list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0;
     transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
   .card.selected { background: var(--accent-bg); border-color: var(--accent-border); }
@@ -135,13 +135,13 @@
   .nip05-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .npub {
     align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
-    border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-2xs); color: var(--text-3);
+    border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3);
   }
   .npub:hover { color: var(--accent-text); }
   .more { flex-shrink: 0; }
   .note {
     margin: 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--accent-border); border-radius: var(--radius-xs);
-    background: var(--surface); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-body);
+    background: var(--surface); font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-body);
   }
   /* Five lines, the rest on «ещё»; the padding is the quote's, so no part of a sixth line shows. */
   .note-text {
@@ -158,13 +158,13 @@
   .facts { display: flex; flex-wrap: wrap; gap: 6px; }
   .fact {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); color: var(--text-2); background: var(--surface-3); border: 1px solid var(--border);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); background: var(--surface-3); border: 1px solid var(--border);
   }
   .fact.ok { color: var(--success-text, var(--success)); }
   .fact.warn { color: var(--warn-text); }
   .about { margin: 0; font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; padding-top: 2px; }
-  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-2xs); color: var(--text-3); min-width: 0; }
+  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .when :global(svg) { flex-shrink: 0; }
   .wait { color: var(--text-2); font-weight: var(--fw-semibold); }
   .acts { display: flex; gap: 6px; margin-left: auto; }

@@ -13,6 +13,8 @@
   import { untrack } from 'svelte';
   import { t, locale, localeTag } from '$lib/core/i18n';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { moderationError } from '../errors';
   import { channelsApi, type ChannelDetail, type ModSettings } from '../api';
@@ -39,7 +41,6 @@
   let tz = $state(start.schedule?.tz ?? deviceZone());
   let busy = $state(false);
   let error = $state('');
-  let saved = $state(false);
 
   function fill(s: ModSettings) {
     comments = s.comments !== 'off';
@@ -66,15 +67,14 @@
 
   function toggleDay(d: number) {
     days = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
-    saved = false;
   }
 
   async function save() {
     if (!valid) return;
-    error = ''; saved = false; busy = true;
+    error = ''; busy = true;
     try {
       await channelsApi.moderation.settingsSet(detail.channel.id, draft);
-      saved = true;
+      toast.success($t('common_saved'));
       await channelStore.refresh(detail.channel.id);
     } catch (e) {
       error = moderationError(e, tr);
@@ -91,7 +91,7 @@
     <div class="option">
       <span class="label">{$t('chan_rule_comments')}</span>
       <button class="toggle" class:on={comments} role="switch" aria-checked={comments} aria-label={$t('chan_rule_comments')} disabled={busy}
-        onclick={() => { comments = !comments; saved = false; }}></button>
+        onclick={() => { comments = !comments; }}></button>
     </div>
     <p class="hint">{$t(comments ? 'chan_comments_on_hint' : 'chan_comments_off_hint')}</p>
   </section>
@@ -100,7 +100,7 @@
     <div class="option">
       <span class="label">{$t('chan_rule_schedule')}</span>
       <button class="toggle" class:on={scheduled} role="switch" aria-checked={scheduled} aria-label={$t('chan_rule_schedule')} disabled={busy}
-        onclick={() => { scheduled = !scheduled; saved = false; }}></button>
+        onclick={() => { scheduled = !scheduled; }}></button>
     </div>
     <p class="hint">{$t('chan_schedule_hint')}</p>
     {#if scheduled}
@@ -112,18 +112,18 @@
       <div class="times">
         <label class="time">
           <span>{$t('chan_schedule_from')}</span>
-          <input class="field" type="time" bind:value={from} class:bad={!validTime(from)} disabled={busy} oninput={() => (saved = false)} />
+          <input class="field" type="time" bind:value={from} class:bad={!validTime(from)} disabled={busy} />
         </label>
         <label class="time">
           <span>{$t('chan_schedule_to')}</span>
-          <input class="field" type="time" bind:value={to} class:bad={!validTime(to)} disabled={busy} oninput={() => (saved = false)} />
+          <input class="field" type="time" bind:value={to} class:bad={!validTime(to)} disabled={busy} />
         </label>
       </div>
       <div class="zone">
         <span class="sub">{$t('chan_schedule_tz')}</span>
-        <CustomSelect options={zones} bind:value={tz} onchange={() => (saved = false)} />
+        <CustomSelect options={zones} bind:value={tz} />
       </div>
-      {#if !valid}<p class="hint bad-text">{$t('chan_schedule_invalid')}</p>{/if}
+      {#if !valid}<p class="hint bad-text">{$t('msg_mod_schedule_invalid')}</p>{/if}
     {/if}
   </section>
 
@@ -132,7 +132,7 @@
     <div class="seg" role="radiogroup" aria-label={$t('chan_rule_premod')}>
       {#each PREMODS as v (v)}
         <button class="seg-btn" class:active={premod === v} role="radio" aria-checked={premod === v} disabled={busy}
-          onclick={() => { premod = v; saved = false; }}>{$t(`chan_premod_${v}` as 'chan_premod_off')}</button>
+          onclick={() => { premod = v; }}>{$t(`chan_premod_${v}` as 'chan_premod_off')}</button>
       {/each}
     </div>
     <p class="hint">{$t(`chan_premod_hint_${premod}` as 'chan_premod_hint_off')}</p>
@@ -140,10 +140,9 @@
 
   <!-- The verb stays at the foot of the panel while the rules scroll under it (the owner's rule, 2026-10-25). -->
   <div class="actions">
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="actions-row">
-      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('chan_save')}</button>
-      {#if saved}<span class="saved">{$t('chan_saved')}</span>{/if}
+      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('common_save')}</button>
     </div>
   </div>
 </div>
@@ -154,13 +153,12 @@
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
-  .hint.rule { color: var(--text-2); }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .bad-text { color: var(--danger-text); }
   .option { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   /* A phone is narrower than three choices in one line: each wraps its words. */
   .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: 1.25; }
+  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: var(--lh-tight); }
   .days { display: flex; flex-wrap: wrap; gap: 6px; }
   .times { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
   .time { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); flex: 1; min-width: 110px; }
@@ -178,7 +176,6 @@
     background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); border-top: 1px solid var(--border);
   }
   .actions-row { display: flex; align-items: center; gap: var(--sp-3); }
-  .saved { font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
   @media (pointer: coarse) {
     .field { font-size: var(--fs-md); min-height: 44px; }
     .chip { min-height: 40px; padding-inline: 12px; }

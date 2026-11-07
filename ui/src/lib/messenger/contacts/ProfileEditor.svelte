@@ -11,6 +11,7 @@
   import { onDestroy, tick, untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { BIO_MAX_CHARS, profileInputOf, type MessengerProfileInput } from '../api';
   import { messengerStore } from '../store.svelte';
@@ -143,7 +144,7 @@
   async function cancel() {
     if (busy) return;
     if (dirty) {
-      const yes = await ask({ title: $t('msg_profile_discard_confirm'), confirmLabel: $t('msg_profile_discard'), cancelLabel: $t('msg_back') });
+      const yes = await ask({ title: $t('msg_profile_discard_confirm'), confirmLabel: $t('msg_profile_discard') });
       if (!yes) return;
     }
     done(false);
@@ -153,6 +154,7 @@
 <form class="editor" novalidate bind:this={formEl} onsubmit={(e) => { e.preventDefault(); void publish(); }}>
   <section class="block">
     <AvatarPicker disabled={!canAct} {onopenmedia} />
+    {#if errors.avatar}<div class="error-msg" role="alert">{errors.avatar}</div>{/if}
   </section>
 
   <section class="block fields">
@@ -175,7 +177,7 @@
       <label for="own-website">{$t('msg_profile_website')}</label>
       <input id="own-website" type="url" inputmode="url" bind:value={form.website} disabled={busy} placeholder={$t('msg_profile_website_placeholder')}
         spellcheck="false" autocapitalize="off" aria-invalid={!!errors.website} class:bad={!!errors.website} />
-      {#if errors.website}<div class="field-error" role="alert">{errors.website}</div>{/if}
+      {#if errors.website}<div class="error-msg" role="alert">{errors.website}</div>{/if}
     </div>
     <div class="field">
       <span class="label">{$t('msg_profile_socials')}</span>
@@ -194,8 +196,7 @@
     </div>
   </section>
 
-  {#if errors.form}<div class="error-msg" role="alert">{errors.form}</div>{/if}
-  {#if errors.avatar}<div class="error-msg" role="alert">{errors.avatar}</div>{/if}
+  {#if errors.form}<Notice tone="danger">{errors.form}</Notice>{/if}
 
   <div class="footer">
     <p class="hint public"><Icon name="world" size={12} />{$t('msg_profile_public_hint')}</p>
@@ -218,9 +219,8 @@
   @media (max-width: 560px) { .fields { grid-template-columns: 1fr; } }
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .field > label, .label { font-size: var(--fs-xs); color: var(--text-3); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
-  .bad { border-color: var(--danger-border); }
-  .field-error { font-size: var(--fs-xs); color: var(--danger-text); }
+  .hint { margin: 0; line-height: var(--lh-snug); }
+  .bad { border-color: var(--danger); }
   .footer {
     display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border);
   }

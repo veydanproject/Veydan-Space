@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import NotesNav from '$lib/notes/mobile/NotesNav.svelte';
   import NoteRow from '$lib/notes/mobile/NoteRow.svelte';
@@ -375,13 +376,20 @@
   {/if}
 
   {#if error}
-    <div class="m-error">{error}</div>
+    <div class="err"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
   {#if notes.length === 0}
-    <div class="m-empty">
-      <Icon name={filter.kind === 'trash' ? 'trash-2' : 'notes'} size={40} />
-      <p>{emptyText()}</p>
+    <!-- A search that found nothing: the one look of it (NotesList, ChatList), with the query. -->
+    <div class="empty-state">
+      {#if search.trim()}
+        <div class="empty-icon"><Icon name="search" size={22} /></div>
+        <p>{$t('common_nothing_found')}</p>
+        <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
+      {:else}
+        <div class="empty-icon"><Icon name={filter.kind === 'trash' ? 'trash-2' : 'notes'} size={22} /></div>
+        <p>{emptyText()}</p>
+      {/if}
     </div>
   {:else if notes.length && viewMode === 'table' && !selecting}
     <div class="table-wrap">
@@ -433,7 +441,7 @@
 {#if selecting}
   <div class="bulk">
     {#if rowMode === 'trash'}
-      <button type="button" onclick={() => bulk('restore')}><Icon name="rotate-ccw" size={20} /><span>{$t('notes_restore')}</span></button>
+      <button type="button" onclick={() => bulk('restore')}><Icon name="rotate-ccw" size={20} /><span>{$t('common_restore')}</span></button>
       <button type="button" class="danger" onclick={() => bulk('purge')}><Icon name="trash-2" size={20} /><span>{$t('notes_purge')}</span></button>
     {:else}
       <button type="button" onclick={() => openMove([...selected])}><Icon name="folder" size={20} /><span>{$t('notes_move_btn')}</span></button>
@@ -479,7 +487,7 @@
 <BottomSheet open={sheet === 'quick' && !!quickNote} title={quickNote?.title || $t('notes_untitled')} onclose={() => (sheet = 'none')}>
   <div class="m-list">
     {#if rowMode === 'trash'}
-      <button type="button" class="m-row" onclick={() => quickAct('restore')}><Icon name="rotate-ccw" size={20} /><span class="m-row-label">{$t('notes_restore')}</span></button>
+      <button type="button" class="m-row" onclick={() => quickAct('restore')}><Icon name="rotate-ccw" size={20} /><span class="m-row-label">{$t('common_restore')}</span></button>
       <button type="button" class="m-row" onclick={() => quickAct('purge')}><Icon name="trash-2" size={20} /><span class="m-row-label danger-text">{$t('notes_purge')}</span></button>
     {:else}
       <button type="button" class="m-row" onclick={() => quickAct('pin')}><Icon name="pin" size={20} /><span class="m-row-label">{quickNote?.pinned ? $t('notes_unpin') : $t('notes_pin')}</span></button>
@@ -504,6 +512,7 @@
 />
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .list { min-height: 0; }
   .pull {
     display: flex;
@@ -519,10 +528,8 @@
   .group {
     padding: var(--sp-3) var(--sp-2) var(--sp-1);
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
   .table-wrap {
     margin: 0 calc(-1 * var(--sp-3));
@@ -535,11 +542,11 @@
     min-height: 48px;
     background: var(--m-card);
     border: 1px solid var(--m-card-border);
-    border-radius: var(--m-radius);
+    border-radius: var(--radius-lg);
     box-shadow: var(--m-card-shadow);
     color: var(--danger-text);
     font-size: var(--fs-body);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .rows { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); padding-bottom: var(--sp-6); }
   .danger-text { color: var(--danger-text); }
@@ -566,8 +573,8 @@
     border-radius: 0;
     background: transparent;
     color: var(--text);
-    font-size: var(--fs-2xs);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
   }
   .bulk button.danger { color: var(--danger-text); }
 </style>

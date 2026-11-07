@@ -88,7 +88,7 @@
           <div class="drawer-actions">
             {@render actions?.()}
             <button class="drawer-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
-              <Icon name="x" size={16} />
+              <Icon name="x" size={18} />
             </button>
           </div>
         </header>
@@ -151,14 +151,16 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: var(--sp-5) var(--sp-5);
+    min-height: 64px;
+    padding: 0 var(--sp-3) 0 var(--sp-6);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
   .drawer-title {
     font-size: var(--fs-lg);
     font-weight: var(--fw-bold);
-    letter-spacing: -0.3px;
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
     color: var(--text);
   }
   .drawer-actions {
@@ -199,7 +201,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--sp-2);
-    padding: var(--sp-4) var(--sp-5);
+    padding: var(--sp-3) var(--sp-5);
     border-top: 1px solid var(--border);
     background: var(--surface-drawer-footer);
     flex-shrink: 0;

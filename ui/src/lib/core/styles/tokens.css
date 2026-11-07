@@ -42,11 +42,8 @@
   --sp-12:  48px;
 
   /* ── Type scale ── (snap raw sizes to the nearest step; see STYLEGUIDE)
-     «Quiet Glass»: micro and caption 12, secondary 13, control 14, body 15,
-     section 16, dialog 18, title 20, H1 28. */
-  --fs-3xs:  0.5rem;    /* 8px the time under a message: as tall as its ticks */
-  --fs-2xs:  0.75rem;   /* 12px micro: counts, tiny labels, dot text */
-  --fs-xs:   0.75rem;   /* 12px captions, chips, table meta */
+     «Quiet Glass», 8 steps: 12, 13, 14, 15, 16, 18, 20, 28. */
+  --fs-xs:   0.75rem;   /* 12px captions, counts, chips, table meta */
   --fs-sm:   0.8125rem; /* 13px secondary text, hints */
   --fs-base: 0.875rem;  /* 14px — controls (matches global input/button) */
   --fs-body: 0.9375rem; /* 15px — long text: messages, descriptions, note body */
@@ -54,7 +51,6 @@
   --fs-lg:   1.125rem;  /* 18px dialog titles, phone app bar */
   --fs-xl:   1.25rem;   /* 20px page / list / column titles */
   --fs-2xl:  1.75rem;   /* 28px H1, hero / page headers */
-  --fs-3xl:  2rem;      /* 32px note reader title */
 
   --fw-normal: 400;
   --fw-medium: 500;
@@ -62,24 +58,29 @@
   --fw-bold: 700;
   --fw-extrabold: 800;
 
+  --lh-icon:  1;       /* a line that holds one glyph or icon */
   --lh-tight: 1.2;
+  --lh-snug:  1.4;     /* list rows, captions */
   --lh-base:  1.5;
   --lh-body:  1.4667;  /* 22px on 15px body text */
+
+  --ls-tight: -0.02em; /* page and window titles only */
 
   /* ── Radius ── (theme-independent; «Quiet Glass» scale) */
   --file-meta:    0px;   /* the room a file line keeps for the time of its message */
   --radius-xs:    4px;   /* small kind tiles, checkboxes */
-  --radius-badge: 6px;   /* counters, kind chips */
-  --radius-sm:    8px;   /* status pills, icon tiles, menu items, 32px buttons */
-  --radius:       10px;  /* buttons / inputs / icon buttons / toasts */
+  --radius-badge: 6px;   /* kind chips (not counters: a counter is a pill) */
+  --radius-sm:    8px;   /* menu items, 32px buttons */
+  --radius:       10px;  /* buttons / inputs / icon buttons / icon tiles 36 */
   --radius-field: 10px;  /* tall form fields (same as --radius) */
   --radius-md:    12px;  /* nested cards, menus, popovers */
   --radius-lg:    16px;  /* list rows, tables, small tiles */
   --radius-head:  18px;  /* floating header plates */
+  --radius-bubble: 18px; /* message bubbles; a picture inside: this minus 3 */
   --radius-pane:  20px;  /* floating panes: module columns, panels */
   --radius-card:  24px;  /* cards, home tiles, dialogs, call windows, sheets */
   --radius-bar:   26px;  /* phone floating bars: tab bar, composer */
-  --radius-pill:  999px; /* chips, search fields, toggles, pills */
+  --radius-pill:  999px; /* chips, counters, tags, search fields, toggles, pills */
 
   /* ── Layout heights ── */
   --topbar-h: 64px;

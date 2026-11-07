@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
   import Tabs from '$lib/core/ui/Tabs.svelte';
   import { leave } from '$lib/core/ui/back';
@@ -104,7 +105,8 @@
   );
   const updateLabel = $derived(
     updateCheck.status === 'checking' ? $t('update_checking')
-    : updateCheck.status === 'available' ? $t('update_available', { version: updateCheck.latest })
+    // The card over the list says it already: one phrase on the screen.
+    : updateCheck.status === 'available' && distribution.fromStore ? $t('update_available', { version: updateCheck.latest })
     : updateCheck.status === 'upToDate' ? $t('update_up_to_date')
     : '',
   );
@@ -328,7 +330,7 @@
       disabled={updateCheck.status === 'checking'}
       onclick={() => updateCheck.check()}
     >
-        <span class="set-tile"><Icon name="download" size={20} /></span>
+        <span class="set-tile"><Icon name="circle-arrow-up" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('update_check')}</span>
           <span class="m-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>{updateLabel}</span>
@@ -343,7 +345,7 @@
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
     <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.privacy)}>
-        <span class="set-tile"><Icon name="shield" size={20} /></span>
+        <span class="set-tile"><Icon name="file-text-shield" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('settings_about_privacy')}</span>
         </span>
@@ -357,14 +359,14 @@
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
     <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.childSafety)}>
-        <span class="set-tile"><Icon name="shield" size={20} /></span>
+        <span class="set-tile"><Icon name="mood-kid" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('settings_about_child_safety')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
     <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
-        <span class="set-tile"><Icon name="trash" size={20} /></span>
+        <span class="set-tile"><Icon name="trash-2" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{$t('settings_about_delete_account')}</span>
         </span>
@@ -379,7 +381,7 @@
     </button>
   </div>
   {#if updateCheck.status === 'error' && !distribution.fromStore}
-    <p class="err-msg update-err">{$t('settings_update_failed')}</p>
+    <div class="update-err"><Notice tone="danger">{$t('settings_update_failed')}</Notice></div>
   {/if}
 
   <BugReportDialog bind:open={bugOpen} />
@@ -412,7 +414,7 @@
     {/if}
     {#if hasData}
       <button type="button" class="m-row set-row set-danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
-        <span class="set-tile"><Icon name="trash" size={20} /></span>
+        <span class="set-tile"><Icon name="trash-2" size={20} /></span>
         <span class="set-text">
           <span class="m-row-label">{clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}</span>
         </span>
@@ -420,7 +422,7 @@
     {/if}
   </div>
   {#if dataMsg}<p class="ok-msg">{dataMsg}</p>{/if}
-  {#if dataError}<p class="err-msg">{dataError}</p>{/if}
+  {#if dataError}<p class="error-msg data-err">{dataError}</p>{/if}
   {/if}
   </div>
 </div>
@@ -443,11 +445,11 @@
       disabled={demoBusy || clearBusy}
     />
     {#snippet footer()}
-      <button class="btn btn-ghost btn-sm" onclick={() => (pendingData = null)}>
-        {$t('settings_backup_cancel')}
+      <button class="btn btn-ghost" onclick={() => (pendingData = null)}>
+        {$t('common_cancel')}
       </button>
       <button
-        class="btn btn-sm"
+        class="btn"
         class:btn-danger={pendingData === 'clear'}
         class:btn-primary={pendingData !== 'clear'}
         disabled={demoBusy || clearBusy || (appLock.status.enabled && !dataSecret)}
@@ -473,15 +475,15 @@
 
 <style>
   .page-tabs { flex-shrink: 0; padding: 0 var(--sp-4); }
-  .ok, .m-row-value.ok { color: var(--success-text); font-weight: 600; }
+  .ok, .m-row-value.ok { color: var(--success-text); font-weight: var(--fw-semibold); }
   .account { margin-top: var(--sp-3); }
-  .new, .m-row-value.new { color: var(--accent-text); font-weight: 600; }
+  .new, .m-row-value.new { color: var(--accent-text); font-weight: var(--fw-semibold); }
   .update-card {
     display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);
     margin-top: var(--sp-3); padding: var(--sp-4);
     border-color: var(--accent-border);
   }
-  .update-title { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+  .update-title { font-size: var(--fs-body); font-weight: var(--fw-bold); color: var(--text); }
   /* The download the whole width of the card, a full touch target. */
   .update-open { margin-top: var(--sp-1); align-self: stretch; min-height: var(--sp-12); justify-content: center; }
   .update-err { margin-top: var(--sp-2); }
@@ -490,16 +492,16 @@
   .about-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .mono { font-size: var(--fs-xs); }
   .under-list { margin-top: var(--sp-2); padding: 0 var(--sp-1); }
-  .m-row:disabled { opacity: 0.5; }
+  .m-row:disabled { opacity: 0.45; }
 
   /* The rows of the design kit: a tile with the icon, the name, its value under it. */
   .set-h { display: flex; align-items: center; gap: var(--sp-2); }
   .set-h :global(.icon) { color: var(--text-2); }
   .m-list:has(.set-row), .m-list.rows { padding: var(--sp-1); }
-  .set-row { gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-3); border-bottom: 0; border-radius: var(--radius-lg); }
+  .set-row { gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-bottom: 0; border-radius: var(--radius-lg); }
   .set-tile {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-    width: 36px; height: 36px; border-radius: var(--radius-md);
+    width: 36px; height: 36px; border-radius: var(--radius);
     background: var(--m-seg); color: var(--text-soft);
   }
   .set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -508,5 +510,5 @@
   .set-danger { color: var(--danger-text); }
   .set-danger .set-tile { background: var(--danger-bg); color: var(--danger-text); }
   .ok-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--success-text); }
-  .err-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--danger-text); }
+  .data-err { margin: var(--sp-2) var(--sp-1) 0; }
 </style>

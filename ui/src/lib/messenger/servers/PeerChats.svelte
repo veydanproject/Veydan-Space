@@ -100,5 +100,5 @@
   .stamp { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   /* The unread count is the .count-pill of base.css, 22 on a row. */
   .preview { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .open-text { font-size: var(--fs-base); color: var(--text); font-weight: var(--fw-bold); line-height: 1.35; overflow-wrap: anywhere; }
+  .open-text { font-size: var(--fs-base); color: var(--text); font-weight: var(--fw-bold); line-height: var(--lh-snug); overflow-wrap: anywhere; }
 </style>

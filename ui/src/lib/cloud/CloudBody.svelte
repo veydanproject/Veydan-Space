@@ -34,7 +34,7 @@
   import AccountLinks from '$lib/cloud/AccountLinks.svelte';
   import AccountSync from '$lib/cloud/AccountSync.svelte';
   import DeleteAccount from '$lib/cloud/DeleteAccount.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import PlanCard from '$lib/cloud/PlanCard.svelte';
   import PlanPicker from '$lib/cloud/PlanPicker.svelte';
   import RedeemDialog from '$lib/cloud/RedeemDialog.svelte';
@@ -146,7 +146,7 @@
     <AccountHead {profile}>
       {#snippet actions()}
         {#if refresh && cloudPage.status?.account}
-          <button class="icon-btn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('cloud_refresh')} title={$t('cloud_refresh')}>
+          <button class="icon-btn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('common_refresh')} title={$t('common_refresh')}>
             <span class="turn" class:spin={cloudPage.busy}><Icon name="refresh-cw" size={18} /></span>
           </button>
         {/if}
@@ -160,10 +160,10 @@
   {:else}
     <!-- No answer from the cloud concerns the whole account: over the tabs, seen from each. -->
     {#if view === 'unreachable'}
-      <Notice tone="warn" icon="wifi-off">
-        {statusError ? words(statusError.code, statusError.message) : $t('cloud_unreachable')}
+      <Notice tone="danger" icon="wifi-off">
+        {statusError ? words(statusError.code, statusError.message) : $t('cloud_err_no_host')}
         {#snippet action()}
-          <button class="btn btn-ghost btn-sm" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.load()}>{$t('cloud_retry')}</button>
+          <button class="btn btn-ghost btn-sm" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.load()}>{$t('common_try_again')}</button>
         {/snippet}
       </Notice>
     {/if}
@@ -237,7 +237,7 @@
     </div>
   {/if}
   {#if cloudPage.error}
-    <div class="error-msg" role="alert">{words(cloudPage.error.code, cloudPage.error.message)}</div>
+    <Notice tone="danger">{words(cloudPage.error.code, cloudPage.error.message)}</Notice>
   {/if}
 </div>
 

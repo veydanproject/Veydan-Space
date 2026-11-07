@@ -54,7 +54,7 @@
     switch (mode) {
       case 'trash':
         return [
-          { action: 'restore', icon: 'rotate-ccw', label: 'notes_restore' },
+          { action: 'restore', icon: 'rotate-ccw', label: 'common_restore' },
           { action: 'purge', icon: 'trash-2', label: 'notes_purge', danger: true },
         ];
       case 'archived':
@@ -242,8 +242,8 @@
     border-radius: 0;
     background: var(--accent);
     color: #fff;
-    font-size: var(--fs-2xs);
-    font-weight: 600;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
   }
   .rbtn.danger { background: var(--danger); }
   .row {
@@ -268,8 +268,8 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    line-height: 16px;
+    font-size: var(--fs-xs);
+    line-height: var(--lh-snug);
     color: var(--text-2);
   }
   .mid { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
@@ -284,5 +284,5 @@
   }
   .time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
   .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; padding-top: 2px; }
-  .more { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--text-2); }
+  .more { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
 </style>

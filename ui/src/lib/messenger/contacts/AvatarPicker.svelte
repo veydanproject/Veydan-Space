@@ -13,6 +13,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { get } from 'svelte/store';
@@ -196,8 +197,8 @@
         <Icon name="camera" size={13} />{picture ? $t('msg_profile_avatar_change') : $t('msg_profile_avatar_upload')}
       </button>
       {#if picture}
-        <button type="button" class="btn btn-ghost btn-sm danger" disabled={disabled || busy} onclick={remove}>
-          <Icon name="trash" size={13} />{$t('msg_profile_avatar_remove')}
+        <button type="button" class="btn btn-danger-soft btn-sm" disabled={disabled || busy} onclick={remove}>
+          <Icon name="trash-2" size={13} />{$t('msg_profile_avatar_remove')}
         </button>
       {/if}
     </div>
@@ -219,19 +220,21 @@
         <p class="status"><span class="spinner"></span>{$t('msg_profile_avatar_uploading')}</p>
       {/if}
       {#if cropError}
-        <div class="error-msg" role="alert">
-          {noServer ? $t('msg_profile_no_media_server') : cropError}
-          {#if noServer && onopenmedia}
-            <button type="button" class="btn btn-ghost btn-sm media-btn" onclick={openMedia}>
-              <Icon name="settings" size={13} />{$t('msg_profile_open_media_settings')}
-            </button>
-          {/if}
+        {#snippet mediaBtn()}
+          <button type="button" class="btn btn-ghost btn-sm" onclick={openMedia}>
+            <Icon name="settings" size={13} />{$t('msg_profile_open_media_settings')}
+          </button>
+        {/snippet}
+        <div class="crop-error">
+          <Notice tone="danger" role="alert" action={noServer && onopenmedia ? mediaBtn : undefined}>
+            {noServer ? $t('msg_profile_no_media_server') : cropError}
+          </Notice>
         </div>
       {/if}
     </div>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" disabled={phase === 'uploading'} onclick={cancel}>{$t('msg_profile_crop_cancel')}</button>
+    <button type="button" class="btn btn-ghost" disabled={phase === 'uploading'} onclick={cancel}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" disabled={phase !== 'cropping' || !rect} onclick={apply}>
       {#if phase === 'uploading'}<span class="spinner"></span>{:else}<Icon name="check" size={14} />{/if}{$t('msg_profile_crop_apply')}
     </button>
@@ -246,7 +249,7 @@
     position: relative; display: block; padding: 0; border: none; background: none; border-radius: 50%; cursor: pointer;
   }
   .face:disabled { cursor: default; }
-  .face:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .face:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
   .face:hover:not(:disabled) :global(.avatar) { filter: brightness(0.92); }
   .badge-cam {
     position: absolute; right: -2px; bottom: -2px; width: 32px; height: 32px; border-radius: 50%;
@@ -256,19 +259,17 @@
   .badge-cam .spinner { border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
   .drop {
     position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center;
-    padding: 6px; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); line-height: 1.2;
+    padding: 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-tight);
     background: color-mix(in srgb, var(--accent) 78%, transparent); color: #fff; pointer-events: none;
   }
   .side { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   .btn :global(svg) { margin-right: 2px; }
-  .danger:hover:not(:disabled) { color: var(--danger-text); border-color: var(--danger-border); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .center { text-align: center; }
   .crop-body { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); }
-  .crop-body .error-msg { align-self: stretch; display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+  .crop-error { align-self: stretch; }
   .status { margin: 0; display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-2); }
-  .media-btn { color: var(--text); }
   @media (max-width: 420px) {
     .avatar-pick { flex-direction: column; text-align: center; }
     .buttons { justify-content: center; }

@@ -273,13 +273,13 @@
 
   /** An empty list says why: nothing matches, or the view is empty; only an empty vault offers New note. */
   const emptyText = $derived.by(() => {
-    if (searchQuery.trim()) return $t('notes_list_nothing');
+    if (searchQuery.trim()) return $t('common_nothing_found');
     switch (activeFilter.type) {
       case 'all': return $t('notes_list_empty');
       case 'trash': return $t('notes_list_empty_trash');
       case 'pinned': return $t('notes_list_empty_pinned');
       case 'archived': return $t('notes_list_empty_archived');
-      default: return $t('notes_list_nothing');
+      default: return $t('common_nothing_found');
     }
   });
   const emptyCanCreate = $derived(!searchQuery.trim() && activeFilter.type === 'all');
@@ -362,13 +362,13 @@
         <div class="list-actions">
           <!-- Looks like an input; the palette's own field takes focus once open -->
           <button class="palette-field" onclick={() => paletteStore.show()} title={$t('cmd_title')}>
-            <Icon name="command" size={13} />
+            <Icon name="command" size={18} />
             <span class="palette-placeholder">{$t('cmd_placeholder')}</span>
             <kbd>Ctrl+P</kbd>
           </button>
           {#if !sidebarVisible}
             <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_toggle_sidebar')}>
-              <Icon name="sidebar" size={14} />
+              <Icon name="sidebar" size={18} />
             </button>
           {/if}
           <div class="sort-ctl" title={$t('notes_sort')}>
@@ -384,7 +384,7 @@
               onclick={() => setSort({ ...sort, asc: !sort.asc })}
               title={sort.asc ? $t('notes_sort_asc') : $t('notes_sort_desc')}
             >
-              <Icon name={sort.asc ? 'arrow-up' : 'arrow-down'} size={14} />
+              <Icon name={sort.asc ? 'arrow-up' : 'arrow-down'} size={18} />
             </button>
           </div>
           <button
@@ -392,13 +392,13 @@
             onclick={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
             title={viewMode === 'list' ? $t('notes_view_table') : $t('notes_view_list')}
           >
-            <Icon name={viewMode === 'list' ? 'table' : 'layout-list'} size={14} />
+            <Icon name={viewMode === 'list' ? 'table' : 'layout-list'} size={18} />
           </button>
           {#if isTrash}
             <ListBulkActions {isTrash} notes={displayList} />
           {:else}
-            <button class="btn-new" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
-              <Icon name="plus" size={16} />
+            <button class="icon-btn create" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
+              <Icon name="plus" size={18} />
             </button>
           {/if}
         </div>
@@ -423,6 +423,7 @@
           onselect={handleSelectNote}
           oncreate={emptyCanCreate ? () => (showCreate = true) : undefined}
           {emptyText}
+          search={searchQuery}
           {workspaceName}
           {workspaceColor}
           {profileName}
@@ -464,9 +465,9 @@
     {/if}
   </div>
   {#snippet footer()}
-    <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('notes_btn_cancel')}</button>
+    <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('common_cancel')}</button>
     <button class="btn btn-primary" onclick={createNote} disabled={!createTitle.trim()}>
-      {$t('notes_btn_create')}
+      {$t('common_create')}
     </button>
   {/snippet}
 </Dialog>
@@ -599,7 +600,8 @@
   .list-title {
     font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
-    letter-spacing: -0.3px;
+    letter-spacing: var(--ls-tight);
+    line-height: var(--lh-tight);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .list-sub { font-size: var(--fs-xs); color: var(--text-2); }
@@ -609,22 +611,26 @@
     display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
     gap: 6px; flex: 1 1 240px; min-width: 0;
   }
-  .sort-ctl { display: flex; align-items: center; flex-shrink: 0; }
-  .sort-ctl .icon-btn { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: 0; }
-  /* Compact CustomSelect matching the 36px header controls; as wide as its label, never cut */
+  /* One group like .seg: a shared frame and fill, a thin line between the select and the arrow */
+  .sort-ctl {
+    display: flex; align-items: center; flex-shrink: 0; overflow: hidden;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2);
+  }
+  .list-actions .sort-ctl .icon-btn { border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--bg-2); width: 36px; height: 34px; }
+  /* Compact CustomSelect matching the 36px header controls (34 inside the 1px group border); as wide as its label, never cut */
   .sort-select { width: auto; min-width: 104px; }
   .sort-select :global(.trigger) { gap: var(--sp-2); }
   .sort-select :global(.trigger-label) { overflow: visible; }
   .sort-select :global(.trigger) {
-    min-height: 36px; height: 36px; padding: 0 0.6rem;
-    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-    background: var(--bg-2); color: var(--text-2); font-size: var(--fs-xs);
+    min-height: 34px; height: 34px; padding: 0 0.6rem;
+    border: 0; border-radius: 0;
+    background: var(--bg-2); color: var(--text-2); font-size: var(--fs-sm);
   }
   .sort-select :global(.trigger:focus), .sort-select :global(.trigger.open) { box-shadow: none; }
   .palette-field {
     flex: 1 1 120px;
     min-width: 0;
-    height: var(--control-h);
+    height: 36px;
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
@@ -640,34 +646,21 @@
   .palette-field:hover { border-color: var(--border-2); color: var(--text-2); }
   .palette-placeholder { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .palette-field kbd {
-    font-size: var(--fs-2xs); color: var(--text-3);
+    font-size: var(--fs-xs); color: var(--text-3);
     border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 0.3rem; flex-shrink: 0;
   }
   .list-actions .icon-btn { width: 36px; height: 36px; }
-
-  .btn-new {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius);
-    background: var(--accent);
-    color: #fff;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .btn-new:hover { background: var(--accent-hover); }
 
   /* Narrow list column: title on its own line, the field shrinks to an icon */
   @container (max-width: 560px) {
     .list-title-group { flex: 1 1 100%; }
     .list-actions { margin-left: auto; }
   }
+  @container (max-width: 500px) {
+    .palette-field kbd { display: none; }
+  }
   @container (max-width: 420px) {
-    .palette-placeholder, .palette-field kbd { display: none; }
+    .palette-placeholder { display: none; }
     .palette-field { flex: 0 0 36px; width: 36px; justify-content: center; padding: 0; }
   }
 

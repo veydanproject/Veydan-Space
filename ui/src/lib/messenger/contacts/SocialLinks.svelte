@@ -21,29 +21,22 @@
   }
   let { socials, compact = false }: Props = $props();
 
-  let copied = $state<string | null>(null);
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
   function open(s: SocialView) {
     if (/^https:\/\/\S+$/.test(s.url)) {
       void linkActions.follow(s.url as ExternalUrl);
       return;
     }
-    linkActions.copy(s.handle).then(() => {
-      copied = s.platform + s.handle;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => (copied = null), 1500);
-    }).catch(() => {});
+    // «Скопировано» is the toast of the copy; the mark and the handle stay.
+    linkActions.copy(s.handle).catch(() => {});
   }
 </script>
 
 {#if socials.length}
   <div class="socials" class:compact>
     {#each socials as s (s.platform + s.handle)}
-      {@const done = copied === s.platform + s.handle}
       <button type="button" class="social" title={s.url ? `${s.name}: ${s.url}` : `${s.name}: ${$t('msg_card_copy')}`} onclick={() => open(s)}>
-        <Icon name={done ? 'check' : brandIcon(s.platform)} size={compact ? 13 : 15} />
-        <span class="handle">{done ? $t('msg_card_copied') : s.handle}</span>
+        <Icon name={brandIcon(s.platform)} size={compact ? 13 : 15} />
+        <span class="handle">{s.handle}</span>
       </button>
     {/each}
   </div>
@@ -60,7 +53,7 @@
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
   }
   .social:hover { background: var(--surface-hover); border-color: var(--border-2, var(--border)); }
-  .social:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .social:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .handle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .compact .social { padding: 3px 8px; gap: 5px; }
 </style>

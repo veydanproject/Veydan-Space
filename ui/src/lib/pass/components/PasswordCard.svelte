@@ -20,6 +20,7 @@
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
 
   interface Props {
@@ -35,14 +36,6 @@
   $effect(() => () => hide.stop());
   let note = $state('');
   let error = $state('');
-  /** The copy button shows a check for 2 s. */
-  let copied = $state(false);
-  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  function flip() {
-    copied = true;
-    clearTimeout(copiedTimer);
-    copiedTimer = setTimeout(() => (copied = false), 2000);
-  }
   let unlockOpen = $state(false);
   let afterUnlock = $state<(() => void) | null>(null);
 
@@ -156,8 +149,7 @@
     error = '';
     try {
       await api.passwords.copy(entry.id);
-      flip();
-      secretCopied($t('pw_copied'));
+      secretCopied($t('toast_copied'));
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
       if (code === 'vault_locked' || code === 'vault_mismatch' || code === 'decrypt_failed') {
@@ -166,8 +158,7 @@
       }
       try {
         const value = (await api.passwords.reveal(entry.id, 'password')).value;
-        await copySecret(value, { toast: $t('pw_copied') });
-        flip();
+        await copySecret(value, { toast: $t('toast_copied') });
       } catch (err) {
         fail(err);
       }
@@ -177,7 +168,7 @@
   async function copyUsername() {
     if (!entry.username) return;
     await navigator.clipboard.writeText(entry.username);
-    toast.success($t('pw_copied'));
+    toast.success($t('toast_copied'));
   }
 
   async function remove() {
@@ -198,7 +189,7 @@
     <div class="line">
       <span>{$t('pw_field_username')}</span>
       <strong>{entry.username}</strong>
-      <button type="button" class="btn btn-ghost btn-sm" onclick={copyUsername}>{$t('pw_btn_copy')}</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick={copyUsername}>{$t('common_copy')}</button>
     </div>
   {/if}
   {#if entry.url}
@@ -218,8 +209,8 @@
       <button type="button" class="icon-btn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
         <Icon name={revealed ? 'eye-off' : 'eye'} size={14} />
       </button>
-      <button type="button" class="icon-btn" class:ok={copied} onclick={copyPassword} aria-label={$t('pw_btn_copy')}>
-        <Icon name={copied ? 'check' : 'copy'} size={14} />
+      <button type="button" class="icon-btn" onclick={copyPassword} aria-label={$t('common_copy')}>
+        <Icon name="copy" size={14} />
       </button>
     {:else}
       <button type="button" class="icon-btn" onclick={() => askUnlock(() => void copyPassword())} aria-label={$t('lock_title')}>
@@ -261,12 +252,12 @@
       <TotpLiveCode entryId={totp.id} period={totp.period} copiedLabel={$t('totp_copy')} compact />
     </div>
   {/each}
-  {#if error}<p class="err">{error}</p>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
   {#if unlocked}
     <div class="actions">
-      <button type="button" class="btn btn-ghost btn-sm" onclick={onedit}><Icon name="pencil" size={12} /> {$t('pw_btn_edit')}</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick={remove}><Icon name="trash-2" size={12} /> {$t('pw_btn_delete')}</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick={onedit}><Icon name="pencil" size={12} /> {$t('common_edit')}</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick={remove}><Icon name="trash-2" size={12} /> {$t('common_delete')}</button>
     </div>
   {/if}
 </article>
@@ -285,9 +276,6 @@
   .totp-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .primary { display: inline-flex; color: var(--accent-text); }
   a { color: var(--text); }
-  .err { color: var(--danger-text); margin: 0; }
-  .ok { color: var(--success-text); margin: 0; }
-  .icon-btn.ok { color: var(--success-text); }
   .actions { display: flex; gap: var(--sp-2); }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; }
   /* Shown, not clicked: a link to an entity of another module goes nowhere here. */

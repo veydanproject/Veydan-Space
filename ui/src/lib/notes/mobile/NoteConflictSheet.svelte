@@ -6,6 +6,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api, formatError, onSyncStatus, type ConflictView, type MergeBlock } from '$lib/notes/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
   import { hasErrorCode } from '$lib/core/utils';
@@ -132,9 +133,16 @@
   }
 </script>
 
-<BottomSheet {open} title={$t('note_sync_conflict_title')} {onclose}>
-  {#if error}<div class="m-error">{error}</div>{/if}
-  {#if notice}<div class="notice"><Icon name="alert-triangle" size={14} /> {notice}</div>{/if}
+<!-- «Применить» stays in the sheet's foot, out of the scrolling list. -->
+{#snippet applyFoot()}
+  <button type="button" class="btn btn-primary" disabled={busy || !complete} onclick={applyReview}>
+    <Icon name="check" size={16} /> {$t('note_sync_conflict_apply')}
+  </button>
+{/snippet}
+
+<BottomSheet {open} title={$t('note_sync_conflict_title')} {onclose} footer={view ? applyFoot : undefined}>
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
+  {#if notice}<Notice tone="warn" role="status">{notice}</Notice>{/if}
 
   {#if loading && !view}
     <p class="empty"><Icon name="loader" size={16} /></p>
@@ -167,22 +175,11 @@
         {/if}
       {/each}
     </div>
-
-    <button type="button" class="btn btn-primary" disabled={busy || !complete} onclick={applyReview}>
-      <Icon name="check" size={16} /> {$t('note_sync_conflict_apply')}
-    </button>
   {/if}
 </BottomSheet>
 
 <style>
   .empty { color: var(--text-3); text-align: center; padding: var(--sp-6) 0; }
-  .notice {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    color: var(--warn-text, var(--text-2));
-    font-size: var(--fs-sm);
-  }
   .bulk { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .left { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); }
   .blocks {
@@ -193,5 +190,5 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
 </style>

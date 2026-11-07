@@ -14,6 +14,7 @@
   import { untrack } from 'svelte';
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
   import { Avatar, shortKey } from '$lib/messenger/seams/shared';
@@ -91,7 +92,7 @@
   }
 </script>
 
-{#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if loaded && requests.length === 0}
   <div class="empty-state">
@@ -150,7 +151,7 @@
     <textarea class="field" rows="3" maxlength="500" bind:value={refusing.reason} placeholder={$t('chan_level_req_reason')} aria-label={$t('chan_level_req_reason')} disabled={acting !== null}></textarea>
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" disabled={acting !== null} onclick={() => (refusing.open = false)}>{$t('chan_cancel')}</button>
+    <button type="button" class="btn btn-ghost" disabled={acting !== null} onclick={() => (refusing.open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-danger" disabled={acting !== null}
       onclick={() => refusing.r && answer(refusing.r, false, refusing.reason.trim() || undefined)}>{$t('chan_level_req_refuse')}</button>
   {/snippet}
@@ -165,7 +166,7 @@
   .nip05 { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .nip05-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .npub { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-2xs); color: var(--text-3); }
+  .npub { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); }
   .npub:hover { color: var(--accent-text); }
   .level { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
   .lvl {
@@ -175,17 +176,17 @@
   .opens { font-size: var(--fs-xs); color: var(--text-2); }
   .note {
     margin: 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--accent-border); border-radius: var(--radius-xs);
-    background: var(--surface); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere;
+    background: var(--surface); font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .note-none { margin: 0; font-size: var(--fs-sm); color: var(--text-3); font-style: italic; }
   .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; padding-top: 2px; }
-  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-2xs); color: var(--text-3); min-width: 0; }
+  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .wait { color: var(--text-2); font-weight: var(--fw-semibold); }
   .acts { display: flex; gap: 6px; margin-left: auto; }
   .empty-state { padding: var(--sp-10) var(--sp-4); }
   .empty-state p { margin: 0; }
   .dlg { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   .field {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
     border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px; resize: vertical;

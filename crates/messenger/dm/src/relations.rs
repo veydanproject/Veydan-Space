@@ -923,11 +923,13 @@ impl DmService {
 
     /// A control message arrived (already stored as a hidden row).
     /// `invited`: the peer's accept came with an invitation of mine that
-    /// admits them (`redeem_invite`, decided before the row).
+    /// admits them (`redeem_invite`, decided before the row). `id`: the
+    /// rumor of the signal.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn on_control(
         &self,
         chat_id: &str,
+        id: &str,
         peer: &DmPeer,
         from_me: bool,
         action: Option<&str>,
@@ -940,7 +942,7 @@ impl DmService {
         }
         let Some(signal) = action.and_then(Signal::parse) else { return Ok(vec![]) };
         if invited && !from_me && signal == Signal::Accept {
-            return self.admit_by_invite(chat_id, peer, at, historical).await;
+            return self.admit_by_invite(chat_id, id, peer, at, historical).await;
         }
         let current = self.load_relation(peer).await?;
         if from_me {
@@ -1047,11 +1049,19 @@ impl DmService {
     /// the snapshot came first), nothing is said twice: their use was
     /// recorded, the rest stands. Without the keys of a session (locked)
     /// the decision is taken and the answer waits for their accept to
-    /// come again, as a confirm-back does.
-    async fn admit_by_invite(&self, chat_id: &str, peer: &DmPeer, at: i64, historical: bool) -> Result<Vec<Effect>> {
+    /// come again, as a confirm-back does. An accept the chat held when it
+    /// was deleted here (history on a device set up later) still counts,
+    /// but makes no chat: an empty one would come back. Told as their
+    /// messages are, by their own time (`peer_upto`) and by id, not by
+    /// mine: a new accept dated in the second of the deletion, or by a
+    /// clock behind mine, is new.
+    async fn admit_by_invite(&self, chat_id: &str, id: &str, peer: &DmPeer, at: i64, historical: bool) -> Result<Vec<Effect>> {
         let current = self.load_relation(peer).await?;
         let now = self.clock.now().secs();
-        chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
+        let (_, peer_upto) = chats::tombstone(&self.store, chat_id).await?;
+        if at > peer_upto && !chats::was_deleted(&self.store, id).await? {
+            chats::ensure_dm(&self.store, peer.key.as_hex(), peer.server()).await?;
+        }
         let outcome = apply_peer_signal(&current, Signal::Accept, at, !historical, now);
         let mut next = outcome.next;
         // Their accept is the newest word of theirs whatever its date: an

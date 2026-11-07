@@ -262,7 +262,24 @@ impl MessengerState {
                     desktop,
                 )
             })
-            .await
+            .await?;
+        if let Some(rt) = self.slot.current() {
+            self.offer_archive(&rt);
+        }
+        Ok(())
+    }
+
+    /// The archive of the conversation over the runtime's store, for the
+    /// handler of its sync entities (`sync`): the archive first, then the
+    /// runtime, whose arrival goes on with a restore the last run left.
+    fn offer_archive(&self, rt: &Arc<MessengerRuntime>) {
+        let arch = self.app.state::<crate::sync::ArchiveSync>();
+        let archive = Arc::new(messenger_archive::Archive::new(
+            rt.store().clone(),
+            Arc::new(messenger_core::traits::SystemClock),
+        ));
+        arch.provide_store(Some(archive.clone()));
+        arch.provide_runtime(Some(Arc::new(crate::sync::LiveRuntime::new(rt.clone(), archive, self.app.clone()))), Some(&self.app));
     }
 
     /// Stop what `start` started and shut the runtime down: no relay
@@ -274,6 +291,16 @@ impl MessengerState {
         let app = self.app.clone();
         self.slot
             .stop(|rt| async move {
+                // The archive's last word before the runtime goes: on a
+                // computer that quits, the open months with news are
+                // written; then the handler has no archive and no runtime.
+                #[cfg(desktop)]
+                if app.state::<veydan_shell::Shell>().exiting() {
+                    crate::sync::exit_flush(&app).await;
+                }
+                let arch = app.state::<crate::sync::ArchiveSync>();
+                arch.provide_runtime(None, None);
+                arch.provide_store(None);
                 #[cfg(target_os = "android")]
                 push::stop_bridge(&app, &rt).await;
                 // A call under way ends with the runtime: the shell of the phone (service, audio mode, camera) is let go.
@@ -492,7 +519,7 @@ fn spawn_ui_event_forwarder(
 }
 
 /// The box of the lock the messenger keeps its secrets in.
-const SECRET_BOX: &str = "messenger";
+pub(crate) const SECRET_BOX: &str = "messenger";
 
 /// `SecretStore` of the messenger: the lock's box `messenger`. Reaches the
 /// lock through the app on each call.
@@ -600,6 +627,9 @@ async fn forget_lost_identity(rt: &MessengerRuntime) {
 }
 
 /// Remove the identity: the push registration, the key, the row, the session.
+/// Its chats, contacts and groups stay with the record of whose they are
+/// (`messenger_store::account`): the same key imported again finds them,
+/// another key made or imported wipes them first (`IdentityService::persist`).
 async fn drop_identity(rt: &MessengerRuntime) -> messenger_core::Result<()> {
     // The push server is told to forget the device while there is still a
     // key to sign the request with. It is not a reason to keep the identity:
@@ -1069,13 +1099,19 @@ pub async fn messenger_chat_open(peer: String, messenger: tauri::State<'_, Messe
 }
 
 /// One page of visible messages, oldest first, strictly older than `before`.
+/// The newest page is the chat opening: the archive restores its months
+/// before the others.
 #[tauri::command]
 pub async fn messenger_chat_messages(
     chat_id: String,
     before: Option<i64>,
     limit: Option<i64>,
     messenger: tauri::State<'_, MessengerState>,
+    archive: tauri::State<'_, crate::sync::ArchiveSync>,
 ) -> CmdResult<Vec<MessageView>> {
+    if before.is_none() {
+        archive.set_open(crate::sync::scope_of_chat(&chat_id));
+    }
     messenger.runtime_unlocked().await?.messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
 }
 
@@ -1123,8 +1159,16 @@ pub async fn messenger_presence_list(messenger: tauri::State<'_, MessengerState>
 /// The page is in sight (said again every 45 s while it is) or hidden.
 /// In sight is refused while the lock is closed: nothing is seen then.
 #[tauri::command]
-pub async fn messenger_presence_foreground(visible: bool, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+pub async fn messenger_presence_foreground(
+    visible: bool,
+    messenger: tauri::State<'_, MessengerState>,
+    app: tauri::AppHandle,
+) -> CmdResult<()> {
     let rt = if visible { messenger.runtime_unlocked().await? } else { messenger.runtime()? };
+    if !visible {
+        // Out of sight: the open months of the archive with news are written.
+        crate::sync::background(&app);
+    }
     rt.presence_foreground(visible).await.map_err(map_err)
 }
 
@@ -1169,12 +1213,21 @@ pub async fn messenger_chat_set_muted(
     Ok(())
 }
 
-/// Removes the chat and its messages from this device only.
+/// Removes the chat and its messages from this device only. A group goes
+/// from the archive too; a personal chat's deletion is an event the
+/// archive keeps as any other.
 #[tauri::command]
-pub async fn messenger_chat_delete(chat_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+pub async fn messenger_chat_delete(
+    chat_id: String,
+    messenger: tauri::State<'_, MessengerState>,
+    app: tauri::AppHandle,
+) -> CmdResult<()> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         messenger.runtime()?.chat_delete(&chat_id).await.map_err(map_err)?;
+        if let Some(group) = chat_id.strip_prefix("group:") {
+            crate::sync::group_forgotten(&app, group).await;
+        }
         unread_changed();
         Ok(())
     })
@@ -1491,10 +1544,16 @@ pub async fn messenger_group_link_qr(
     messenger.runtime()?.group_link_qr(&group_id).await.map_err(map_err)
 }
 
-/// Remove from this device a group I am no longer in.
+/// Remove from this device a group I am no longer in, and from the archive.
 #[tauri::command]
-pub async fn messenger_group_forget(group_id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
-    messenger.runtime()?.group_forget(&group_id).await.map_err(map_err)
+pub async fn messenger_group_forget(
+    group_id: String,
+    messenger: tauri::State<'_, MessengerState>,
+    app: tauri::AppHandle,
+) -> CmdResult<()> {
+    messenger.runtime()?.group_forget(&group_id).await.map_err(map_err)?;
+    crate::sync::group_forgotten(&app, &group_id).await;
+    Ok(())
 }
 
 /// «Load earlier» in a group: the newest `limit` events before `before`
@@ -2332,10 +2391,14 @@ pub async fn messenger_servers_use_own(messenger: tauri::State<'_, MessengerStat
 /// and on every device of mine, with its chats; `server_unknown` for an id
 /// that is no private server of this device.
 #[tauri::command]
-pub async fn messenger_server_remove(id: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+pub async fn messenger_server_remove(id: String, messenger: tauri::State<'_, MessengerState>, app: tauri::AppHandle) -> CmdResult<()> {
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
-        messenger.runtime()?.server_remove_private(&id).await.map_err(map_err)
+        messenger.runtime()?.server_remove_private(&id).await.map_err(map_err)?;
+        // What the archive held of its private chats here goes with it; the
+        // storage keeps the segments for the server put in again.
+        crate::sync::server_forgotten(&app, &id).await;
+        Ok(())
     })
     .await
 }
@@ -2355,6 +2418,20 @@ pub async fn messenger_server_accept(link: String, messenger: tauri::State<'_, M
     // Boxed: the bridge thread of Android carries only the box (`command_futures`).
     Box::pin(async move {
         messenger.runtime()?.server_accept(&link).await.map_err(map_err)
+    })
+    .await
+}
+
+/// Join private server `id` of mine with the invite `code` of its admin
+/// (a server of its members, internal/messenger-wire.md, «Режимы доступа
+/// сервера»). Its errors are the words the UI reads:
+/// `server_invite_invalid`, `server_invite_used`, `server_invite_expired`,
+/// `server_join_failed` (and `server_unknown`). The code is never kept.
+#[tauri::command]
+pub async fn messenger_server_join(id: String, code: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move {
+        messenger.runtime_unlocked().await?.server_join(&id, &code).await.map_err(map_err)
     })
     .await
 }
@@ -2509,6 +2586,38 @@ mod tests {
         lock.set(Some("demo".into()), None, Some("password".into()), None).await.unwrap();
         forget_lost_identity(&rt).await;
         assert!(rt.identity().get().await.unwrap().is_none());
+        rt.shutdown().await;
+        db.close().await;
+    }
+
+    /// The demo data wiped the lock and the messenger dropped its identity;
+    /// its chats stayed. A new account made then starts with none of them
+    /// (the iPhone of 2026-11-04 showed the old chats to the new key); the
+    /// key of the old one imported again would have found them.
+    #[tokio::test]
+    async fn a_new_account_after_the_demo_data_sees_nothing_of_the_old_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock_schema = veydan_core::Schema { module: "lock", steps: veydan_lock::SCHEMA_STEPS };
+        let db = veydan_core::db::open(&dir.path().join(veydan_core::db::DB_FILE), &[veydan_core::SCHEMA, lock_schema])
+            .await
+            .unwrap();
+        let lock = Arc::new(Lock::new(db.clone()));
+        lock.open_default().await.unwrap();
+        let config = MessengerConfig::new(dir.path().join(DATA_SUBDIR));
+        let rt = MessengerRuntime::start(config, Arc::new(LockBox(lock.clone()))).await.unwrap();
+        let old = rt.identity().create("backup words").await.unwrap();
+        messenger_store::chats::ensure_dm(rt.store(), &"bb".repeat(32), None).await.unwrap();
+
+        lock.wipe().await.unwrap();
+        lock.set(Some("demo".into()), None, Some("password".into()), None).await.unwrap();
+        forget_lost_identity(&rt).await;
+        assert!(rt.identity().get().await.unwrap().is_none());
+        assert_eq!(messenger_store::chats::list(rt.store(), true).await.unwrap().len(), 1, "kept for the same key");
+
+        let new = rt.identity().create("other words").await.unwrap();
+        assert_ne!(new.identity.npub, old.identity.npub);
+        rt.refresh_signer().await.unwrap();
+        assert!(messenger_store::chats::list(rt.store(), true).await.unwrap().is_empty());
         rt.shutdown().await;
         db.close().await;
     }

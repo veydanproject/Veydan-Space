@@ -11,11 +11,14 @@
   import Icon from '$lib/core/Icon.svelte';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import TermHint from '$lib/core/ui/TermHint.svelte';
   import { formatError } from '$lib/core/utils';
   import { isEntityKind, parseBinding } from '$lib/core/bindings';
   import { isSystemTag, mergeTags, systemTags, userLabels } from '$lib/pass/totp-tags';
   import { notesLinkedToTotp, syncTotpNotes } from '$lib/pass/totp-notes';
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     initialTags?: string[];
@@ -99,6 +102,9 @@
 
   let saving = $state(false);
   let error = $state('');
+  // A required field's error stands under that field; any other error is the plate of the form.
+  const nameErr = $derived(!!error && error === $t('totp_error_name'));
+  const secretErr = $derived(!!error && tab === 'manual' && error === $t('totp_error_secret'));
   let noteIds = $state<string[]>([]);
   let noteSeed = $state<string[]>([]);
   let notesSeeded = false;
@@ -312,7 +318,7 @@
           {#if qrError}<div class="error-msg">{qrError}</div>{/if}
           {#if qrPreview}
             <div class="qr-detected">
-              <span style="color:var(--success);display:flex"><Icon name="check-circle" size={14} /></span>
+              <span style="color:var(--success);display:flex"><Icon name="check" size={14} /></span>
               {$t('totp_qr_detected')}
               <span class="masked mono">{$t('totp_qr_secret_masked')} {qrPreview.secret_masked}</span>
             </div>
@@ -322,7 +328,8 @@
 
       <div class="form-group">
         <label for="totp-name">{$t('totp_field_name')}</label>
-        <input id="totp-name" type="text" bind:value={name} placeholder={$t('totp_field_name_placeholder')} />
+        <input id="totp-name" type="text" bind:value={name} placeholder={$t('totp_field_name_placeholder')} aria-invalid={nameErr} />
+        {#if nameErr}<div class="error-msg">{error}</div>{/if}
       </div>
 
       <div class="form-group">
@@ -334,14 +341,10 @@
         <div class="form-group">
           <div class="label-row">
             <label for="totp-secret">{$t('totp_field_secret')}</label>
-            <span class="tooltip-wrap">
-              <span class="tooltip-trigger">?</span>
-              <span class="tooltip-box">
-                {$t('totp_hint_secret')}
-              </span>
-            </span>
+            <TermHint term={$t('totp_field_secret')}>{$t('totp_hint_secret')}</TermHint>
           </div>
-          <input id="totp-secret" class="mono" type="text" bind:value={secret} placeholder={$t('totp_field_secret_placeholder')} autocomplete="off" />
+          <input id="totp-secret" class="mono" type="text" bind:value={secret} placeholder={$t('totp_field_secret_placeholder')} autocomplete="off" aria-invalid={secretErr} />
+          {#if secretErr}<div class="error-msg">{error}</div>{/if}
         </div>
       {/if}
 
@@ -350,48 +353,41 @@
         <div class="form-group">
           <div class="label-row">
             <label for="totp-algo">{$t('totp_field_algorithm')}</label>
-            <span class="tooltip-wrap">
-              <span class="tooltip-trigger">?</span>
-              <span class="tooltip-box">
-                {$t('totp_hint_algorithm')}
-              </span>
-            </span>
+            <TermHint term={$t('totp_field_algorithm')}>{$t('totp_hint_algorithm')}</TermHint>
           </div>
-          <select id="totp-algo" bind:value={algorithm}>
-            <option value="SHA1">{$t('totp_algo_default')}</option>
-            <option value="SHA256">SHA256</option>
-            <option value="SHA512">SHA512</option>
-          </select>
+          <CustomSelect
+            id="totp-algo"
+            options={[
+              { value: 'SHA1', label: $t('totp_algo_default') },
+              { value: 'SHA256', label: 'SHA256' },
+              { value: 'SHA512', label: 'SHA512' },
+            ]}
+            bind:value={algorithm}
+          />
         </div>
         <div class="form-group">
           <div class="label-row">
             <label for="totp-digits">{$t('totp_field_digits')}</label>
-            <span class="tooltip-wrap">
-              <span class="tooltip-trigger">?</span>
-              <span class="tooltip-box">
-                {$t('totp_hint_digits')}
-              </span>
-            </span>
+            <TermHint term={$t('totp_field_digits')}>{$t('totp_hint_digits')}</TermHint>
           </div>
-          <select id="totp-digits" bind:value={digits}>
-            <option value={6}>6</option>
-            <option value={8}>8</option>
-          </select>
+          <CustomSelect
+            id="totp-digits"
+            options={[{ value: '6', label: '6' }, { value: '8', label: '8' }]}
+            value={String(digits)}
+            onchange={(v) => (digits = Number(v))}
+          />
         </div>
         <div class="form-group">
           <div class="label-row">
             <label for="totp-period">{$t('totp_field_period')}</label>
-            <span class="tooltip-wrap">
-              <span class="tooltip-trigger">?</span>
-              <span class="tooltip-box">
-                {$t('totp_hint_period')}
-              </span>
-            </span>
+            <TermHint term={$t('totp_field_period')}>{$t('totp_hint_period')}</TermHint>
           </div>
-          <select id="totp-period" bind:value={period}>
-            <option value={30}>30</option>
-            <option value={60}>60</option>
-          </select>
+          <CustomSelect
+            id="totp-period"
+            options={[{ value: '30', label: '30' }, { value: '60', label: '60' }]}
+            value={String(period)}
+            onchange={(v) => (period = Number(v))}
+          />
         </div>
       </div>
       {/if}
@@ -480,15 +476,15 @@
         <TotpNoteLinks notes={noteOptions} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
       {/if}
 
-      {#if error}
-        <div class="error-msg">{error}</div>
+      {#if error && !nameErr && !secretErr}
+        <Notice tone="danger">{error}</Notice>
       {/if}
     </div>
 
   {#snippet footer()}
-      <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('totp_btn_cancel')}</button>
+      <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
       <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
-        {saving ? $t('loading') : $t('totp_btn_save')}
+        {saving ? $t('loading') : $t('common_save')}
       </button>
   {/snippet}
 
@@ -517,77 +513,17 @@
 
   /* Form: .form-group, its label and the fields are the global primitives (base.css), as in the password dialog. */
 
+  /* The «?» note opens under the row of its term; under the row of three selects it spans the row. */
   .label-row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.35rem;
   }
-
-  /* Tooltip */
-  .tooltip-wrap {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .tooltip-trigger {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    font-size: var(--fs-2xs);
-    color: var(--text-2);
-    cursor: default;
-    font-style: normal;
-    line-height: 1;
-    flex-shrink: 0;
-    transition: all var(--dur-fast);
-  }
-
-  .tooltip-wrap:hover .tooltip-trigger {
-    background: var(--accent-tint);
-    border-color: var(--accent-border);
-    color: var(--accent-text);
-  }
-
-  .tooltip-box {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: var(--fs-xs);
-    line-height: 1.5;
-    padding: var(--sp-2) 0.65rem;
-    border-radius: var(--radius-sm);
-    width: 220px;
-    box-shadow: var(--shadow-lg);
-    z-index: var(--z-popover);
-    white-space: normal;
-    pointer-events: none;
-  }
-
-  .tooltip-box::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: var(--bg);
-  }
-
-  .tooltip-wrap:hover .tooltip-box { display: block; }
+  .form-row .label-row { position: static; }
 
   /* The algorithm's option is the longest ("SHA1 (default)"). */
-  .form-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: var(--sp-3); }
+  .form-row { position: relative; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: var(--sp-3); }
 
   .label-chips {
     display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.3rem;
@@ -596,13 +532,13 @@
   .label-chip {
     display: inline-flex; align-items: center; gap: var(--sp-1);
     border-width: 1px; border-style: solid;
-    border-radius: var(--radius-sm); font-size: var(--fs-2xs); padding: 0.15rem var(--sp-2);
+    border-radius: var(--radius-pill); font-size: var(--fs-xs); padding: 0.15rem var(--sp-2);
   }
 
   /* The chip's ink, faded: a fixed --text-2 does not follow the tint. */
   .label-chip button {
     background: none; border: none; cursor: pointer;
-    color: inherit; opacity: var(--chip-fade); padding: 0; font-size: var(--fs-base); line-height: 1;
+    color: inherit; opacity: var(--chip-fade); padding: 0; font-size: var(--fs-base); line-height: var(--lh-icon);
   }
   .label-chip button:hover { opacity: 1; color: var(--danger-text); }
 
@@ -614,7 +550,7 @@
     opacity: var(--chip-fade);
     padding: 0;
     font-size: var(--fs-base);
-    line-height: 1;
+    line-height: var(--lh-icon);
   }
 
   .pick {
@@ -625,7 +561,7 @@
     padding: 0.35rem;
     background: var(--surface-3);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     max-height: 220px;
     overflow-y: auto;
   }
@@ -681,13 +617,5 @@
   .masked { color: var(--text-2); font-size: var(--fs-sm); }
   /* The secret is `.mono`; its hint is a sentence in the UI font. */
   #totp-secret::placeholder { font-family: var(--font-ui); }
-  .hint { font-size: var(--fs-sm); color: var(--text-2); margin: 0; }
-
-  .error-msg {
-    background: var(--danger-bg);
-    border: 1px solid var(--danger-border);
-    border-radius: var(--radius);
-    color: var(--danger-text);
-    font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3);
-  }
+  .hint { margin: 0; }
 </style>

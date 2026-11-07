@@ -4,6 +4,7 @@
 <!-- Outgoing wiki links and backlinks of a note. -->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api, formatError, type NoteLinks, type NoteListItem } from '$lib/notes/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
@@ -50,7 +51,7 @@
 {/snippet}
 
 <BottomSheet {open} title={$t('notes_links')} {onclose}>
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   {#if isEmpty}
     <p class="empty">{$t('notes_links_empty')}</p>
   {:else if links}
@@ -77,10 +78,8 @@
   .empty { color: var(--text-3); text-align: center; padding: var(--sp-5) 0; }
   .group {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     margin-bottom: var(--sp-1);
   }
   .m-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

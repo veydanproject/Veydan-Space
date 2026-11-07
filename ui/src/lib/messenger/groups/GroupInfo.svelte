@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { tick, untrack } from 'svelte';
   import { pushState } from '$app/navigation';
   import { page } from '$app/state';
@@ -98,8 +99,8 @@
 
   const act = (a: GroupAction) => run(() => groupStore.act(group.id, a));
 
-  async function sure(text: string, cta: string, a: GroupAction): Promise<boolean> {
-    return (await confirmStore.ask(text, cta, true)) && (await act(a));
+  async function sure(text: string, cta: string, a: GroupAction, icon?: string): Promise<boolean> {
+    return (await confirmStore.ask(text, cta, true, icon)) && (await act(a));
   }
 
   const now = () => Math.floor(Date.now() / 1000);
@@ -277,30 +278,30 @@
     if (!m.is_me) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true,
       onselect: () => reportStore.open({ accused: m.pubkey, name: who, context: { t: 'group', group_id: group.id }, canBlock: false }) });
     for (const role of rolesFor(group, m)) {
-      list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield',
+      list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield-check',
         onselect: () => demoting(m, role, () => act({ op: 'set_role', who: m.pubkey, role })) });
     }
     if (canMute(group, m) && hasModeration(group)) {
       if (mutedNow(m)) list.push({ label: $t('msg_group_member_unmute'), icon: 'bell', onselect: () => moderate({ t: 'unmute', who: m.pubkey }) });
-      else list.push({ label: $t('msg_mod_member_mute'), icon: 'bell-off', onselect: () => { dialogError = ''; mute = { open: true, m, span: 'hour' }; } });
+      else list.push({ label: $t('msg_mod_member_mute'), icon: 'message-circle-off', onselect: () => { dialogError = ''; mute = { open: true, m, span: 'hour' }; } });
     } else if (canMute(group, m)) {
       // A core without moderation: the mute of the log, until lifted.
-      list.push({ label: m.muted ? $t('msg_group_member_unmute') : $t('msg_group_member_mute'), icon: 'bell-off', onselect: () => act({ op: 'set_muted', who: m.pubkey, muted: !m.muted }) });
+      list.push({ label: m.muted ? $t('msg_group_member_unmute') : $t('msg_group_member_mute'), icon: 'message-circle-off', onselect: () => act({ op: 'set_muted', who: m.pubkey, muted: !m.muted }) });
     }
     if (canTrust(group, m) && checksMessages(group)) {
       list.push(m.trusted
-        ? { label: $t('msg_mod_member_untrust'), icon: 'shield', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: false }) }
+        ? { label: $t('msg_mod_member_untrust'), icon: 'eye', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: false }) }
         : { label: $t('msg_mod_member_trust'), icon: 'shield-check', onselect: () => moderate({ t: 'trust', who: m.pubkey, trusted: true }) });
     }
     if (isOwner(group) && !m.is_me) {
-      list.push({ label: $t('msg_group_member_transfer'), icon: 'key', onselect: () => sure($t('msg_group_transfer_confirm', { name: who }), $t('msg_group_member_transfer'), { op: 'transfer_ownership', to: m.pubkey }) });
+      list.push({ label: $t('msg_group_member_transfer'), icon: 'key', onselect: () => sure($t('msg_group_transfer_confirm', { name: who }), $t('msg_group_member_transfer'), { op: 'transfer_ownership', to: m.pubkey }, 'key') });
     }
     if (canRemove(group, m)) {
       list.push({ type: 'separator' });
-      list.push({ label: $t('msg_group_member_remove'), icon: 'x', danger: true,
-        onselect: () => demoting(m, null, () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey })) });
+      list.push({ label: $t('msg_group_member_remove'), icon: 'user-minus', danger: true,
+        onselect: () => demoting(m, null, () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey }, 'user-minus')) });
       if (hasModeration(group)) list.push({ label: $t('msg_mod_ban'), icon: 'user-cancel', danger: true, onselect: () => { dialogError = ''; ban = { open: true, m, hide: true }; } });
-      else list.push({ label: $t('msg_group_member_ban'), icon: 'user-cancel', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }) });
+      else list.push({ label: $t('msg_group_member_ban'), icon: 'user-cancel', danger: true, onselect: () => sure($t('msg_group_ban_confirm', { name: who }), $t('msg_group_member_ban'), { op: 'ban', who: m.pubkey }, 'user-cancel') });
     }
     return list;
   }
@@ -327,15 +328,15 @@
   const fingerprint = (id: string) => id.match(/.{1,4}/g)?.join(' ') ?? id;
 
   async function leave() {
-    if (await confirmStore.ask($t('msg_group_leave_confirm', { name: group.name }), $t('msg_group_leave'), true)) await act({ op: 'leave' });
+    if (await confirmStore.ask($t('msg_group_leave_confirm', { name: group.name }), $t('msg_group_leave'), true, 'logout')) await act({ op: 'leave' });
   }
 
   async function disband() {
-    if (await confirmStore.ask($t('msg_group_disband_confirm', { name: group.name }), $t('msg_group_disband'), true)) await act({ op: 'disband' });
+    if (await confirmStore.ask($t('msg_group_disband_confirm', { name: group.name }), $t('msg_group_disband'), true, 'trash-2')) await act({ op: 'disband' });
   }
 
   async function forget() {
-    if (!(await confirmStore.ask($t('msg_group_forget_confirm', { name: group.name }), $t('msg_group_forget'), true))) return;
+    if (!(await confirmStore.ask($t('msg_group_forget_confirm', { name: group.name }), $t('msg_group_forget'), true, 'trash-2'))) return;
     if (await run(() => groupStore.forget(group.id))) onforgotten?.();
   }
 
@@ -409,7 +410,7 @@
 <!-- Who is in, in which role: a row opens what may be done about them. -->
 {#snippet membersBody()}
   <section class="block" aria-label={$t('msg_group_members')}>
-    {#if manager}<button class="btn btn-ghost wide" onclick={() => (inviting = true)}><Icon name="user-plus" size={18} />{$t('msg_group_invite')}</button>{/if}
+    {#if manager}<button class="btn btn-ghost wide" onclick={() => (inviting = true)}><Icon name="mail" size={18} />{$t('msg_group_invite')}</button>{/if}
     <ul class="box glass-card rows">
       {#each group.members as m (m.pubkey)}
         <li>
@@ -422,7 +423,7 @@
             </span>
             {#if m.trusted && checksMessages(group)}<span class="dim" title={$t('msg_mod_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
             {#if mutedNow(m)}
-              <span class="dim" title={m.muted_until ? $t('msg_mod_member_muted_until', { time: untilText(m.muted_until) }) : $t('msg_group_member_muted')}><Icon name="bell-off" size={16} /></span>
+              <span class="dim" title={m.muted_until ? $t('msg_mod_member_muted_until', { time: untilText(m.muted_until) }) : $t('msg_group_member_muted')}><Icon name="message-circle-off" size={16} /></span>
             {/if}
             {#if m.role !== 'member'}<span class="role {m.role}">{$t(`msg_group_role_${m.role}` as 'msg_group_role_admin')}</span>{/if}
           </button>
@@ -455,7 +456,7 @@
   {:else if shown && !editing}
   <PanelHead title={$t(PAGE_TITLE[shown])} onback={closePage} onclose={close} />
   <div class="scroll">
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if shown === 'key' && group.key}{@render keyCard(group.key)}
     {:else if shown === 'link'}<GroupLink {group} heading={false} />
     {:else if shown === 'members'}{@render membersBody()}
@@ -480,12 +481,12 @@
           </div>
         {/if}
       </section>
-      {#if error}<div class="error-msg">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
     <!-- The form's buttons stay at the foot of the panel; the form scrolls above them. -->
     <footer class="foot">
-      <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('msg_group_cancel')}</button>
-      <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('msg_group_save')}</button>
+      <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('common_cancel')}</button>
+      <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('common_save')}</button>
     </footer>
   {:else}
   <div class="scroll">
@@ -509,7 +510,7 @@
           </div>
         </div>
         {#if manager}
-          <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('msg_group_edit')} title={$t('msg_group_edit')}><Icon name="pencil" size={18} /></button>
+          <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
         {/if}
       </div>
       {#if group.about}<div class="about"><MessageContent text={group.about} cards={false} /></div>{/if}
@@ -523,7 +524,7 @@
       </p>
     </section>
 
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
     {#if !joined}
       <div class="state"><Icon name="clock" size={16} />{$t(`msg_group_state_${group.membership}` as 'msg_group_state_left')}</div>
@@ -531,7 +532,7 @@
 
     {#if seesModeration(group)}
       <button class="mod-row" class:waits={!!waiting} onclick={openModeration}>
-        <Tile icon="shield" tone={waiting ? 'accent' : 'plain'} />
+        <Tile icon="shield-check" tone={waiting ? 'accent' : 'plain'} />
         <span class="mod-text">
           <span class="mod-name">{$t('msg_mod_title')}</span>
           {#if waiting}<span class="mod-waiting">{waiting}</span>{:else}<span class="mod-hint">{$t('msg_mod_row_hint')}</span>{/if}
@@ -567,7 +568,7 @@
         {#snippet sub()}<span class="stack">{#each group.members.slice(0, 7) as m (m.pubkey)}<span class="stack-av"><Avatar url={nameStore.picture(m.pubkey)} label={nameStore.label(m.pubkey)} seed={m.pubkey} size={22} /></span>{/each}</span>{/snippet}
       </NavRow>
       {#if pages.banned}
-        <NavRow icon="ban" title={$t('msg_group_banned')} page="banned" onclick={() => openPage('banned')} count={group.banned.length}>
+        <NavRow icon="user-cancel" title={$t('msg_group_banned')} page="banned" onclick={() => openPage('banned')} count={group.banned.length}>
           {#snippet sub()}{group.banned.map((b) => nameStore.label(b)).join(', ')}{/snippet}
         </NavRow>
       {/if}
@@ -577,17 +578,17 @@
       {#if isOwner(group)}<p class="hint">{$t('msg_group_owner_hint')}</p>{/if}
       <div class="zone-btns">
         {#if joined && !isOwner(group)}
-          <button class="btn btn-ghost danger" disabled={busy} onclick={leave}><Icon name="x" size={18} />{$t('msg_group_leave')}</button>
+          <button class="btn btn-danger-soft" disabled={busy} onclick={leave}><Icon name="logout" size={18} />{$t('msg_group_leave')}</button>
         {/if}
         {#if isOwner(group)}
-          <button class="btn btn-ghost danger" disabled={busy} onclick={disband}><Icon name="trash-2" size={18} />{$t('msg_group_disband')}</button>
+          <button class="btn btn-danger-soft" disabled={busy} onclick={disband}><Icon name="trash-2" size={18} />{$t('msg_group_disband')}</button>
         {/if}
         {#if !group.banned}
-          <button class="btn btn-ghost danger" disabled={busy}
+          <button class="btn btn-danger-soft" disabled={busy}
             onclick={() => reportStore.open({ target: 'group', accused: '', name: group.name, context: { t: 'group', group_id: group.id }, canBlock: false })}><Icon name="alert-triangle" size={18} />{$t('msg_report_group')}</button>
         {/if}
         {#if !joined && group.membership !== 'joining'}
-          <button class="btn btn-ghost danger" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('msg_group_forget')}</button>
+          <button class="btn btn-danger-soft" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('msg_group_forget')}</button>
         {/if}
       </div>
     </section>
@@ -610,8 +611,7 @@
   .scroll > :global(*) { width: 100%; max-width: 560px; align-self: center; flex-shrink: 0; }
   .box { border-radius: var(--radius-lg); }
   /* A block's total is the .count-pill of base.css, .quiet. */
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
-  .danger { color: var(--danger-text); }
+  .hint { margin: 0; line-height: var(--lh-snug); }
 
   /* Who: the cover beside the name, the description, the rule of history a fact under a line. */
   .hero { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -625,19 +625,19 @@
   }
   .cover-btn:hover .cam { border-color: var(--accent-border); }
   .hero-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
-  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: 1.25; overflow-wrap: anywhere; word-break: break-word; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow-wrap: anywhere; word-break: break-word; }
   .kind-line :global(svg) { flex: none; margin-top: 2px; }
-  .kind-line { display: flex; align-items: flex-start; gap: var(--sp-1); line-height: 1.4; font-size: var(--fs-sm); color: var(--text-3); }
+  .kind-line { display: flex; align-items: flex-start; gap: var(--sp-1); line-height: var(--lh-snug); font-size: var(--fs-sm); color: var(--text-3); }
   .edit-btn {
     align-self: flex-start; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: none; border-radius: var(--radius);
     background: var(--surface-2); color: var(--text); cursor: pointer; transition: background var(--dur-fast) var(--ease);
   }
   .edit-btn:hover { background: var(--surface-hover); }
   .edit-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .about { font-size: var(--fs-base); line-height: 1.5; color: var(--text); }
+  .about { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text); }
   .fact {
     display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--border-2);
-    font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2);
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text-2);
   }
   .fact :global(svg) { flex: none; margin-top: 1px; color: var(--text-3); }
 
@@ -653,7 +653,7 @@
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-3); text-align: left;
     border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2);
   }
-  .option-text { flex: 1; min-width: 0; font-size: var(--fs-base); color: var(--text); line-height: 1.4; }
+  .option-text { flex: 1; min-width: 0; font-size: var(--fs-base); color: var(--text); line-height: var(--lh-snug); }
   /* Its buttons line up with the form above: no wider than 560, in the middle on a tablet. */
   .foot {
     flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: var(--sp-3) max(var(--sp-4), calc((100% - 560px) / 2));
@@ -664,7 +664,7 @@
 
   .state {
     display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md);
-    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: 1.45;
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
   }
   .state :global(svg) { flex: none; }
 
@@ -677,14 +677,14 @@
   .mod-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .mod-name { font-size: var(--fs-body); font-weight: var(--fw-bold); }
-  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.4; }
+  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .mod-row.waits { border-color: var(--accent-border); background: var(--accent-bg); }
-  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: 1.4; }
+  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: var(--lh-snug); }
 
   /* The contents: groups of rows. */
   .nav-group > :global(.nav + .nav)::before { content: ''; position: absolute; top: 0; left: 60px; right: var(--sp-3); height: 1px; background: var(--border-2); }
   .nav-group { display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--radius-lg); }
-  .link-line { font-size: var(--fs-2xs); color: var(--text-3); }
+  .link-line { font-size: var(--fs-xs); color: var(--text-3); }
   .stack { display: inline-flex; padding-left: var(--sp-2); margin-top: 2px; }
   .stack-av { display: inline-flex; margin-left: calc(-1 * var(--sp-2)); border-radius: 50%; box-shadow: 0 0 0 2px var(--surface-2); }
 
@@ -698,12 +698,12 @@
   .key-head { display: flex; align-items: center; gap: var(--sp-3); }
   .key-name { flex: 1; min-width: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
   .key-cipher { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
-  .key-meta { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
+  .key-meta { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); overflow-wrap: anywhere; }
   .key-fp {
     display: block; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3);
-    font-size: var(--fs-xs); color: var(--text-2); letter-spacing: 0.2px;
+    font-size: var(--fs-xs); color: var(--text-2);
   }
-  .key-note { margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--tone); }
+  .key-note { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--tone); }
 
   /* The pages of people: a card of rows. */
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -719,12 +719,12 @@
   .as-button.still:hover { background: none; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who code { font-size: var(--fs-2xs); color: var(--text-3); }
+  .who code { font-size: var(--fs-xs); color: var(--text-3); }
   .me { color: var(--text-3); font-weight: var(--fw-medium); }
   .dim { flex: none; color: var(--text-3); display: inline-flex; }
   .role {
     flex-shrink: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); background: var(--surface-3); color: var(--text-2);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--surface-3); color: var(--text-2);
   }
   .role.owner { background: var(--accent-bg); color: var(--accent-text); }
   .role.admin { background: var(--success-bg); color: var(--success-text, var(--success)); }

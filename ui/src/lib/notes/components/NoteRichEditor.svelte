@@ -438,7 +438,7 @@
     left: var(--sp-5);
     color: var(--text-3);
     font-size: var(--fs-body);
-    line-height: 1.7;
+    line-height: var(--lh-base);
     pointer-events: none;
   }
 
@@ -472,7 +472,7 @@
     border: none;
     color: var(--text-2);
     cursor: pointer;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
     padding: 0.15rem 0.3rem;
@@ -509,7 +509,7 @@
     outline: none;
     padding: var(--sp-3) var(--sp-5);
     font-size: var(--fs-body);
-    line-height: 1.7;
+    line-height: var(--lh-base);
     color: var(--text-body);
     word-wrap: break-word;
     white-space: pre-wrap;
@@ -518,12 +518,12 @@
   .host :global(h4), .host :global(h5), .host :global(h6) {
     color: var(--text);
     margin: 1.2em 0 0.5em;
-    line-height: 1.3;
+    line-height: var(--lh-snug);
     font-weight: var(--fw-bold);
   }
-  .host :global(h1) { font-size: 1.6em; }
-  .host :global(h2) { font-size: 1.35em; }
-  .host :global(h3) { font-size: 1.15em; }
+  .host :global(h1) { font-size: var(--fs-xl); }
+  .host :global(h2) { font-size: var(--fs-lg); }
+  .host :global(h3) { font-size: var(--fs-md); }
   .host :global(.ProseMirror > :first-child) { margin-top: 0; }
   .host :global(p) { margin: 0 0 0.8em; }
   .host :global(a) { color: var(--accent-text); text-decoration: none; cursor: pointer; }

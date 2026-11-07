@@ -27,14 +27,14 @@
 
 {#if phone}
   <header class="head phone">
-    {#if back}<button class="icon back" onclick={back} aria-label={$t('msg_back')}><Icon name="chevron-left" size={24} /></button>{/if}
+    {#if back}<button class="icon back" onclick={back} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>{/if}
     <span class="head-title">{title}</span>
   </header>
 {:else}
   <header class="head" class:inset={!onback}>
-    {#if onback}<button class="icon" onclick={onback} title={$t('msg_back')}><Icon name="arrow-left" size={16} /></button>{/if}
+    {#if onback}<button class="icon" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
     <span class="head-title">{title}</span>
-    {#if onclose}<button class="icon" onclick={onclose} title={$t('msg_back')}><Icon name="x" size={16} /></button>{/if}
+    {#if onclose}<button class="icon" onclick={onclose} title={$t('common_back')}><Icon name="x" size={18} /></button>{/if}
   </header>
 {/if}
 
@@ -42,13 +42,12 @@
   .head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); min-height: 56px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .head.inset { padding-left: var(--sp-4); }
   .head-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-bold); font-size: var(--fs-base); }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  @media (pointer: coarse) { .icon { padding: 10px; } }
 
   /* The phone: the head of the messenger's screens (mobile/MobileFrame.svelte), no bar — no fill, no line, the glow runs behind it. */
   .head.phone { gap: var(--sp-1); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); border-bottom: 0; background: none; --edge-l: var(--sp-1); --edge-r: var(--sp-2); --edge-t: var(--sp-1); }
-  .head.phone .head-title { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: -0.02em; }
-  .head.phone .back { color: var(--text); padding: 10px; border-radius: var(--radius-md); }
+  .head.phone .head-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
+  .head.phone .back { color: var(--text); width: 40px; height: 40px; border-radius: var(--radius-md); }
   .head.phone .back:active { background: var(--surface-3); }
 </style>

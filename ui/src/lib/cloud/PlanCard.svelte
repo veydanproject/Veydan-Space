@@ -7,7 +7,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { isMobile } from '$lib/core/platform';
   import { dateOf, formatBytes, type ShownAccount } from '$lib/cloud/account';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let {
     account,
@@ -95,14 +95,14 @@
     border-radius: var(--radius-md); background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent);
   }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-  .name { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); line-height: 1.15; letter-spacing: -0.01em; }
+  .label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-dim); }
+  .name { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); line-height: var(--lh-tight); }
   .line { margin: 0; font-size: var(--fs-base); color: var(--text-body); }
   .muted { color: var(--text-3); font-size: var(--fs-sm); }
   .facts { margin: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-2); }
   .facts div { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); min-width: 0; }
   .facts dd { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text); white-space: nowrap; }
-  .facts dt { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.35; }
+  .facts dt { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .m .actions .btn { flex: 1 1 auto; min-height: 48px; font-size: var(--fs-body); }
   .m .facts div { padding: var(--sp-2) var(--sp-3); }

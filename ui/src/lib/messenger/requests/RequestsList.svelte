@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Avatar from '../contacts/Avatar.svelte';
@@ -80,14 +81,14 @@
       {/if}
     {/if}
 
-    {#if error}<p class="error-msg">{error}</p>{/if}
+    {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
   </div>
 </div>
 
 <style>
   .requests { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; }
-  .intro { margin: var(--sp-3) var(--sp-3) var(--sp-3); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-3); }
+  .intro { margin: var(--sp-3) var(--sp-3) var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-3); }
   .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-2); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
   /* The count held behind the request is the .count-pill of base.css, .quiet: not an unread one. */
@@ -96,7 +97,7 @@
     padding: var(--sp-8) var(--sp-4); color: var(--text-3);
   }
   .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .empty span { font-size: var(--fs-xs); line-height: 1.5; }
+  .empty span { font-size: var(--fs-xs); line-height: var(--lh-base); }
   .more { align-self: center; margin: var(--sp-2) 0; }
-  .error-msg { margin: var(--sp-2) var(--sp-3); }
+  .err { margin: var(--sp-2) var(--sp-3); }
 </style>

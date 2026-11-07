@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import type { CreateProxyRequest, Proxy } from '$lib/browser/types';
   import Drawer from '$lib/core/ui/Drawer.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { registry } from '$lib/core/registry';
   import { explainError } from '$lib/browser/tor-error';
 
@@ -23,6 +24,9 @@
 
   let saving = $state(false);
   let error = $state('');
+  // A check of the fields shows under them (the countries field shows its own); a refusal of the save is the form's plate.
+  const fieldsErr = $derived(!!error && error === $t('proxy_error_fields'));
+  const countriesErr = $derived(!!error && error === $t('proxy_tor_countries_invalid'));
 
   // SSH TOFU: shown when a new (unknown) server fingerprint is received
   let pendingFingerprint = $state<{ fingerprint: string; ip: string } | null>(null);
@@ -112,19 +116,22 @@
 </script>
 
 <Drawer open title={isEdit ? $t('proxies_form_edit') : $t('proxies_form_new')} {onclose}>
-      <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
-        {#if error}
-          <div class="error-msg" style="margin-bottom:0.75rem">{error}</div>
+      <form id="px-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
+        {#if error && !fieldsErr && !countriesErr}
+          <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>
         {/if}
 
-        <div class="section">
-          <div class="section-label">{$t('proxy_field_type')}</div>
-          <div class="type-row">
+        <!-- Every caption of the form is the one field caption (`.form-group label`); the type is a segment. -->
+        <div class="section form-group">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label id="pp-type-label">{$t('proxy_field_type')}</label>
+          <div class="seg seg-fill" role="group" aria-labelledby="pp-type-label">
             {#each ['http', 'https', 'socks5', 'ssh', 'tor'] as t_}
               <button
                 type="button"
-                class="type-btn"
+                class="seg-btn"
                 class:active={form.proxy_type === t_}
+                aria-pressed={form.proxy_type === t_}
                 onclick={() => setType(t_)}
               >{t_ === 'tor' ? 'Tor' : t_.toUpperCase()}</button>
             {/each}
@@ -133,8 +140,8 @@
 
         <div class="divider"></div>
 
-        <div class="section">
-          <div class="section-label">{$t('proxy_field_name')} *</div>
+        <div class="section form-group">
+          <label for="pp-name">{$t('proxy_field_name')} *</label>
           <div class="form-group">
             <!-- svelte-ignore a11y_autofocus -->
             <input
@@ -142,6 +149,7 @@
               type="text"
               bind:value={form.name}
               placeholder={$t('proxy_field_name_placeholder')}
+              aria-invalid={fieldsErr && !form.name.trim()}
               autofocus
             />
           </div>
@@ -150,7 +158,7 @@
           <div class="form-row">
             <div class="form-group host-group">
               <label for="pp-host">{$t('proxy_field_host')} *</label>
-              <input id="pp-host" type="text" bind:value={form.host} placeholder={$t('proxy_field_host_placeholder')} />
+              <input id="pp-host" type="text" bind:value={form.host} placeholder={$t('proxy_field_host_placeholder')} aria-invalid={fieldsErr && !form.host.trim()} />
             </div>
             <div class="form-group port-group">
               <label for="pp-port">{$t('proxy_field_port')}</label>
@@ -158,12 +166,13 @@
             </div>
           </div>
           {/if}
+          {#if fieldsErr}<div class="error-msg">{error}</div>{/if}
         </div>
 
         {#if isTorType}
         <div class="divider"></div>
-        <div class="section">
-          <div class="section-label">{$t('proxy_tor_countries')}</div>
+        <div class="section form-group">
+          <label for="pp-tor-countries">{$t('proxy_tor_countries')}</label>
           <div class="form-group">
             <input
               id="pp-tor-countries"
@@ -186,8 +195,8 @@
         {:else}
         <div class="divider"></div>
 
-        <div class="section">
-          <div class="section-label">{$t('proxy_field_username')} / {$t('proxy_field_password')}</div>
+        <div class="section form-group">
+          <label for="pp-user">{$t('proxy_field_username')} / {$t('proxy_field_password')}</label>
           <div class="form-group">
             <input id="pp-user" type="text" bind:value={form.username} placeholder={$t('proxy_field_username')} />
           </div>
@@ -206,8 +215,8 @@
 
         {#if form.proxy_type === 'ssh'}
         <div class="divider"></div>
-        <div class="section">
-          <div class="section-label">{$t('proxy_section_ssh_key')}</div>
+        <div class="section form-group">
+          <label for="pp-pkey">{$t('proxy_section_ssh_key')}</label>
           <div class="form-group">
             <textarea
               id="pp-pkey"
@@ -215,7 +224,7 @@
               rows="5"
               bind:value={form.private_key}
               placeholder={proxy?.has_private_key && form.private_key === null ? $t('secret_stored_placeholder') : '-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'}
-              style="font-size: var(--fs-2xs); resize: vertical;"
+              style="font-size: var(--fs-xs);"
             ></textarea>
             {#if proxy?.has_private_key && form.private_key === null}
               <button type="button" class="link-btn" onclick={() => (form.private_key = '')}>{$t('secret_clear')}</button>
@@ -227,8 +236,9 @@
 
         <div class="divider"></div>
 
-        <div class="section">
-          <div class="section-label">{$t('proxy_section_geo')}</div>
+        <div class="section form-group">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label>{$t('proxy_section_geo')}</label>
           <div class="form-row">
             <div class="form-group">
               <label for="pp-country">{$t('proxy_col_country')}</label>
@@ -241,13 +251,6 @@
           </div>
         </div>
         {/if}
-
-        <div class="form-actions">
-          <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('proxy_btn_cancel')}</button>
-          <button type="submit" class="btn btn-primary" disabled={saving}>
-            {saving ? '…' : isEdit ? $t('proxy_btn_save') : $t('proxy_btn_add')}
-          </button>
-        </div>
       </form>
       {#if proxy}
         <!-- What other modules show about a proxy: the notes about it. -->
@@ -255,65 +258,37 @@
           <view.component id={proxy.id} name={proxy.name} />
         {/each}
       {/if}
+  {#snippet footer()}
+    <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+    <button type="submit" form="px-form" class="btn btn-primary" disabled={saving}>
+      {saving ? '…' : isEdit ? $t('common_save') : $t('proxy_btn_add')}
+    </button>
+  {/snippet}
 </Drawer>
 
 <style>
   .section { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-1); }
 
-  .section-label {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 0.9px;
-  }
-
-  /* Proxy type — standalone segment buttons (46px / radius 11) */
-  .type-row { display: flex; gap: var(--sp-2); }
-
-  .type-btn {
-    flex: 1; height: var(--control-h-lg); padding: 0 0.5rem;
-    font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-    background: var(--surface-3); border: 1px solid var(--border);
-    color: var(--text-2); border-radius: var(--radius-field); cursor: pointer;
-    transition: all var(--dur-fast);
-  }
-  .type-btn:hover:not(.active) { border-color: var(--border-2); color: var(--text); }
-  .type-btn.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-
   .divider { height: 1px; background: var(--border); margin: var(--sp-3) 0; }
 
   .field-hint {
-    font-size: var(--fs-2xs); color: var(--text-faint); margin-top: -0.25rem;
+    font-size: var(--fs-xs); color: var(--text-faint); margin-top: -0.25rem;
   }
   .field-hint--error { color: var(--danger-text); }
   .link-btn {
     align-self: flex-start; background: none; border: none; padding: 0; margin-top: 0.25rem; cursor: pointer;
-    font-size: var(--fs-2xs); color: var(--text-faint); text-decoration: underline;
+    font-size: var(--fs-xs); color: var(--text-faint); text-decoration: underline;
   }
   .link-btn:hover { color: var(--text); }
 
-  /* Tall drawer form fields per design (46px / radius 11) */
+  /* The fields: the common ones on the panel's glass, 40 high (--control-h). */
   form input[type='text'],
   form input[type='number'],
-  form input[type='password'] {
-    height: var(--control-h-lg);
-    border-radius: var(--radius-field);
-    background: var(--surface-3);
-    font-size: var(--fs-base);
-  }
+  form input[type='password'] { height: var(--control-h); }
 
-  textarea {
-    width: 100%; background: var(--surface-3); border: 1px solid var(--border);
-    border-radius: var(--radius-field); color: var(--text);
-    padding: 0.6rem 0.75rem; box-sizing: border-box;
-  }
-  textarea:focus { outline: none; border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  textarea { resize: vertical; }
 
   .form-row { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); }
   .port-group { width: 100px; }
   .host-group { flex: 1; }
-
-  .form-actions {
-    display: flex; gap: 10px; justify-content: flex-end;
-    padding-top: var(--sp-3);
-  }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

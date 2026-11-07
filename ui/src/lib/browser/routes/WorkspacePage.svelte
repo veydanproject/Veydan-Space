@@ -15,7 +15,8 @@
     ProxyCheckResult,
   } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import KanbanBoard from '$lib/browser/components/KanbanBoard.svelte';
   import TableView from '$lib/browser/components/TableView.svelte';
   import TopologyGraph from '$lib/browser/components/TopologyGraph.svelte';
@@ -189,7 +190,6 @@
   let drawerOpen = $state<Record<string, boolean>>(Object.fromEntries(drawers.map((d) => [d.id, false])));
   let proxyPanelProxy = $state<Proxy | null | undefined>(undefined);
   let proxyCheckResults = $state<Record<string, ProxyCheckResult & { checking?: boolean; err?: string }>>({});
-  let proxyDeleteModal = $state({ open: false, id: '', name: '', usage: '' });
   let proxySearch = $state('');
 
   function openCreateProxy() {
@@ -227,22 +227,15 @@
     finally { fingerprintPrompt = null; }
   }
 
-  /** Open the confirmation, then fill in what the delete would detach. */
+  /** Ask, saying what the delete would detach, then delete. */
   async function askDeleteProxy(proxy: Proxy) {
-    proxyDeleteModal = { open: true, id: proxy.id, name: proxy.name, usage: '' };
     const usage = await proxiesStore.deleteWarning(proxy.id);
-    // The user may have cancelled or picked another row while this was in flight.
-    if (proxyDeleteModal.open && proxyDeleteModal.id === proxy.id) {
-      proxyDeleteModal.usage = usage;
-    }
-  }
-
-  async function confirmDeleteProxy() {
+    const label = $t('common_delete');
+    if (!(await ask({ title: confirmTitle(label), message: $t('proxy_confirm_delete', { name: proxy.name }) + usage, confirmLabel: label, variant: 'danger', icon: 'trash-2' }))) return;
     try {
-      await proxiesStore.remove(proxyDeleteModal.id);
+      await proxiesStore.remove(proxy.id);
       proxies = proxiesStore.byWorkspace(workspaceId);
     } catch {}
-    finally { proxyDeleteModal = { open: false, id: '', name: '', usage: '' }; }
   }
 
   function onProxyPanelSaved(proxy: Proxy) {
@@ -271,7 +264,7 @@
     <div class="ws-header">
       <div class="breadcrumb">
         <a href="/" class="back-link">
-          <Icon name="arrow-left" size={15} />
+          <Icon name="chevron-left" size={18} />
           {$t('back_workspaces')}
         </a>
         <span class="crumb-sep">/</span>
@@ -309,36 +302,38 @@
         <button
           class="btn btn-ghost btn-sm"
           class:action-hidden={tab === 'proxies'}
+          style="min-height: 36px"
           onclick={() => (showImportModal = true)}
         >
-          <Icon name="download" size={12} />{$t('workspace_btn_import')}
+          <Icon name="file-import" size={18} />{$t('workspace_btn_import')}
         </button>
         <button
-          class="btn btn-primary btn-sm"
+          class="icon-btn create"
           onclick={tab === 'proxies' ? openCreateProxy : () => (showCreatePanel = true)}
+          title={tab === 'proxies' ? $t('proxies_add') : $t('workspace_btn_add_profile')}
+          aria-label={tab === 'proxies' ? $t('proxies_add') : $t('workspace_btn_add_profile')}
         >
-          <Icon name="plus" size={12} />
-          {tab === 'proxies' ? $t('proxies_add') : $t('workspace_btn_add_profile')}
+          <Icon name="plus" size={18} />
         </button>
       </div>
     </div>
 
     {#if error}
-      <div class="error-msg" style="margin-bottom:0.75rem">{error}</div>
+      <div class="plate"><Notice tone="danger">{error}</Notice></div>
     {/if}
 
     {#if fingerprintPrompt}
-      <div class="fingerprint-banner">
-        <div class="fingerprint-banner-icon">⚠</div>
-        <div class="fingerprint-banner-body">
-          <div class="fingerprint-banner-title">{$t('ssh_fingerprint_new_title')}</div>
-          <div class="fingerprint-banner-fp">{fingerprintPrompt.fingerprint}</div>
-          <div class="fingerprint-banner-hint">{$t('ssh_fingerprint_new_hint')}</div>
-        </div>
-        <div class="fingerprint-banner-actions">
-          <button class="btn btn-primary btn-sm" onclick={trustFingerprint}>{$t('ssh_fingerprint_trust')}</button>
-          <button class="btn btn-ghost btn-sm" onclick={() => fingerprintPrompt = null}>{$t('cancel')}</button>
-        </div>
+      <!-- A new server: the one plate of a server's key (SSHTerminal, FilePanel), «Trust» a plain secondary button. -->
+      <div class="plate">
+        <Notice tone="warn" role="alert">
+          <b>{$t('ssh_fingerprint_new_title')}</b>
+          <code class="fingerprint-fp">{fingerprintPrompt.fingerprint}</code>
+          {$t('ssh_fingerprint_new_hint')}
+          {#snippet action()}
+            <button class="btn btn-ghost btn-sm" type="button" onclick={() => fingerprintPrompt = null}>{$t('common_cancel')}</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick={trustFingerprint}>{$t('ssh_fingerprint_trust')}</button>
+          {/snippet}
+        </Notice>
       </div>
     {/if}
 
@@ -346,14 +341,13 @@
     <div class="tabs-row">
       <div class="seg">
         <button class="seg-btn" class:active={tab === 'board'} onclick={() => (tab = 'board')}>
-          <Icon name="columns" size={15} />{$t('workspace_tab_board')}
+          <Icon name="columns" size={18} />{$t('workspace_tab_board')}
         </button>
         <button class="seg-btn" class:active={tab === 'proxies'} onclick={() => (tab = 'proxies')}>
-          <Icon name="globe" size={15} />{$t('workspace_tab_proxies')}
-          <span class="tab-count">{proxies.length}</span>
+          <Icon name="globe" size={18} />{$t('workspace_tab_proxies')}
         </button>
         <button class="seg-btn" class:active={tab === 'topology'} onclick={() => (tab = 'topology')}>
-          <Icon name="git-fork" size={15} />{$t('workspace_tab_topology')}
+          <Icon name="git-fork" size={18} />{$t('workspace_tab_topology')}
         </button>
       </div>
 
@@ -365,7 +359,7 @@
             title={$t('ws_view_kanban')}
             aria-label={$t('ws_view_kanban')}
           >
-            <Icon name="kanban" size={15} />
+            <Icon name="kanban" size={18} />
           </button>
           <button
             class="seg-btn"
@@ -374,7 +368,7 @@
             title={$t('ws_view_table')}
             aria-label={$t('ws_view_table')}
           >
-            <Icon name="table" size={15} />
+            <Icon name="table" size={18} />
           </button>
         </div>
     </div>
@@ -435,7 +429,7 @@
             {#if filteredProxies.length === 0}
               <div class="empty-state" style="padding:2rem">
                 <Icon name="search" size={28} strokeWidth={1.5} />
-                <p>{$t('proxies_not_found')}</p>
+                <p>{$t('common_nothing_found')}</p>
               </div>
             {:else}
               <div class="proxy-table-wrap">
@@ -472,10 +466,10 @@
                             <button class="act-btn" title={$t('proxy_btn_check')} disabled={result?.checking} onclick={(e) => { e.stopPropagation(); checkProxy(proxy.id); }}>
                               <Icon name="refresh-cw" size={12} />
                             </button>
-                            <button class="act-btn" title={$t('proxy_btn_edit')} onclick={(e) => { e.stopPropagation(); proxyPanelProxy = proxy; }}>
+                            <button class="act-btn" title={$t('common_edit')} onclick={(e) => { e.stopPropagation(); proxyPanelProxy = proxy; }}>
                               <Icon name="pencil" size={12} />
                             </button>
-                            <button class="act-btn act-danger" title={$t('proxy_btn_delete')} onclick={(e) => { e.stopPropagation(); askDeleteProxy(proxy); }}>
+                            <button class="icon-btn danger-soft" title={$t('common_delete')} onclick={(e) => { e.stopPropagation(); askDeleteProxy(proxy); }}>
                               <Icon name="trash-2" size={12} />
                             </button>
                           </div>
@@ -584,17 +578,6 @@
   />
 {/if}
 
-<Modal
-  open={proxyDeleteModal.open}
-  title={$t('proxy_btn_delete')}
-  message={$t('proxy_confirm_delete', { name: proxyDeleteModal.name }) + proxyDeleteModal.usage}
-  confirmLabel={$t('proxy_btn_delete')}
-  cancelLabel={$t('proxy_btn_cancel')}
-  variant="danger"
-  onconfirm={confirmDeleteProxy}
-  oncancel={() => (proxyDeleteModal = { open: false, id: '', name: '', usage: '' })}
-/>
-
 {#each drawers as drawer (drawer.id)}
   <drawer.component id={workspaceId} bind:open={drawerOpen[drawer.id]} />
 {/each}
@@ -687,7 +670,7 @@
   .type-badge {
     font-family: var(--font-mono);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: 4px 12px; border-radius: var(--radius-sm);
+    padding: 4px 12px; border-radius: var(--radius-pill);
     border: none; background: var(--surface-2); color: var(--text-2);
   }
   .type-http, .type-https { background: color-mix(in srgb, var(--cat-blue) 14%, transparent); color: var(--cat-blue); }
@@ -696,8 +679,8 @@
 
   .status-badge {
     display: inline-flex; align-items: center; gap: 7px;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
-    padding: 4px 11px; border-radius: var(--radius-sm);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    padding: 4px 11px; border-radius: var(--radius-pill);
   }
   .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .status-active { background: var(--success-bg); color: var(--success-text); }
@@ -713,27 +696,12 @@
   }
   .act-btn:hover { border-color: var(--border-2); color: var(--text); }
   .act-btn:first-child:hover { border-color: var(--accent); color: var(--accent-text); } /* check/refresh → accent */
-  .act-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-  .act-danger:hover { background: var(--danger-bg) !important; border-color: var(--danger-border) !important; color: var(--danger-text) !important; }
-
+  .act-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   /* Notes Tab */
   .notes-tab { display: flex; flex-direction: column; gap: var(--sp-3); flex: 1; }
-  .notes-area { flex: 1; resize: none; min-height: 200px; font-size: var(--fs-sm); line-height: 1.6; }
+  .notes-area { flex: 1; resize: none; min-height: 200px; font-size: var(--fs-sm); line-height: var(--lh-base); }
   .notes-footer { display: flex; justify-content: flex-end; }
 
-  .fingerprint-banner {
-    display: flex; align-items: flex-start; gap: var(--sp-3);
-    background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
-    border-radius: var(--radius); padding: 0.875rem var(--sp-4); margin-bottom: var(--sp-3);
-  }
-  .fingerprint-banner-icon { font-size: var(--fs-lg); flex-shrink: 0; margin-top: 0.1rem; }
-  .fingerprint-banner-body { flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .fingerprint-banner-title { font-weight: 700; font-size: var(--fs-base); }
-  .fingerprint-banner-fp {
-    font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-2);
-    word-break: break-all;
-  }
-  .fingerprint-banner-hint { font-size: var(--fs-sm); color: var(--text-2); }
-  .fingerprint-banner-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; align-items: flex-start; }
+  .plate { margin-bottom: var(--sp-3); }
+  .fingerprint-fp { display: block; margin: var(--sp-1) 0; font-family: var(--font-mono); font-size: var(--fs-xs); word-break: break-all; }
 </style>

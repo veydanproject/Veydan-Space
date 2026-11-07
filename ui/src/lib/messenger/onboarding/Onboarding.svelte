@@ -31,7 +31,7 @@
   .servers { display: flex; flex-direction: column; gap: var(--sp-3); }
   .steps { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-3); }
   .steps li { display: flex; align-items: center; gap: 6px; }
-  .steps li.active { color: var(--text); font-weight: 600; }
+  .steps li.active { color: var(--text); font-weight: var(--fw-semibold); }
   .steps li.done { color: var(--text-2); }
   .num {
     display: inline-flex; align-items: center; justify-content: center;

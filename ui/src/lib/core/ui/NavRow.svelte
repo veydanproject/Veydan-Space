@@ -102,18 +102,17 @@
 
   /* The contents of an info panel. */
   .panel { position: relative; min-height: 56px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md); }
-  .panel .title { font-size: var(--fs-base); font-weight: var(--fw-bold); }
-  .panel .sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); line-height: 1.4; color: var(--text-2); }
+  .panel .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+  .panel .sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text-2); }
   .panel .sub:has(:global(.stack)) { overflow: visible; }
 
   /* A list of the cloud. */
   .list { min-height: 64px; padding: var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--divider); border-radius: 0; }
   .list:last-child { border-bottom: 0; }
   .list.m { padding: var(--sp-3) var(--sp-4); }
-  .list .title { font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: 1.3; }
-  .list.m .title { font-size: var(--fs-body); }
+  .list .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-snug); }
   .list.danger .title { color: var(--danger-text); }
-  .list .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
+  .list .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .trailing { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-2); }
 
   /* A line of a block. */

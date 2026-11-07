@@ -61,7 +61,7 @@
       <strong>{$t('cloud_account_none')}</strong>
       <span class="sub">{$t('cloud_account_invite')}</span>
     </span>
-    <span class="go">{$t('cloud_account_create')}</span>
+    <span class="go">{$t('common_create')}</span>
   </a>
 {/if}
 <a class="m-row sync" href="/settings/sync">
@@ -80,18 +80,18 @@
   .sync { min-height: 60px; border-bottom: 0; }
   .tile {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-    width: 36px; height: 36px; margin: 0 6px; border-radius: var(--radius-md);
+    width: 36px; height: 36px; margin: 0 6px; border-radius: var(--radius);
     background: var(--m-seg); color: var(--text-soft);
   }
   .sync .m-row-label { flex: none; font-weight: var(--fw-medium); }
   .ava {
     display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
-    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: 800;
+    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
   }
   .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  strong { font-size: var(--fs-md); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35; }
-  .go { flex-shrink: 0; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text); font-size: var(--fs-sm); font-weight: 700; }
-  .ok { color: var(--success-text); font-weight: 600; }
+  strong { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
+  .go { flex-shrink: 0; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
+  .ok { color: var(--success-text); font-weight: var(--fw-semibold); }
 </style>

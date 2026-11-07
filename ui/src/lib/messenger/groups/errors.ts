@@ -14,11 +14,14 @@ const KNOWN = new Set([
   'group_target_not_member', 'group_invalid', 'group_wrong_kind', 'group_closed', 'group_muted_until', 'group_banned',
 ]);
 
+/** Refusals said by the text of a group's state: one message, one key. */
+const STATE: Record<string, string> = { group_author_banned: 'msg_group_state_banned', group_stale_link: 'msg_group_state_stale_link' };
+
 /** Text for a refusal of the group module; `null` when the error is not one. */
 export function groupRefusal(e: unknown, tr: Translate): string | null {
   const code = groupErrorCode(e);
   if (!code) return null;
-  return tr(KNOWN.has(code) ? `msg_err_${code}` : 'msg_err_group_other', { code });
+  return tr(STATE[code] ?? (KNOWN.has(code) ? `msg_err_${code}` : 'msg_err_group_other'), { code });
 }
 
 export function groupError(e: unknown, tr: Translate): string {

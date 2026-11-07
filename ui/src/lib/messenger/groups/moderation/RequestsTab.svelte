@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
@@ -108,7 +109,7 @@
 
   async function ban(r: MessengerGroupRequest) {
     if (acting || running) return;
-    if (!(await confirmStore.ask($t('msg_greq_ban_confirm', { name: nameOf(r.requester) }), $t('msg_greq_ban'), true))) return;
+    if (!(await confirmStore.ask($t('msg_greq_ban_confirm', { name: nameOf(r.requester) }), $t('msg_greq_ban'), true, 'user-cancel'))) return;
     acting = r.requester; error = '';
     try { await act('ban', r.requester); }
     catch (e) { error = explain(e); }
@@ -124,7 +125,7 @@
   async function many(kind: BulkKind, keys: string[], ask = true) {
     if (!keys.length || running || acting) return;
     const n = keys.length;
-    if (ask && !(await confirmStore.ask($t(countKey(CONFIRM[kind], n, $locale), { n: String(n) }), $t(CTA[kind]), kind !== 'approve'))) return;
+    if (ask && !(await confirmStore.ask($t(countKey(CONFIRM[kind], n, $locale), { n: String(n) }), $t(CTA[kind]), kind !== 'approve', kind === 'ban' ? 'user-cancel' : 'x'))) return;
     names = { ...names, ...Object.fromEntries(keys.map((k) => [k, nameOf(k)])) };
     selected = selected.filter((k) => !keys.includes(k));
     error = '';
@@ -157,14 +158,14 @@
       <span>{$t('msg_greq_failed', { names: failedNames })}</span>
       {#if failedWhy}<span class="why">{failedWhy}</span>{/if}
       <button type="button" class="btn btn-ghost btn-sm retry" onclick={() => bulk && many(bulk.kind, bulk.failed.map((f) => f.requester), false)}>
-        <Icon name="refresh-cw" size={13} />{$t('toast_retry')}
+        <Icon name="arrow-forward-up" size={13} />{$t('common_retry')}
       </button>
     </div>
     <button type="button" class="icon-btn" title={$t('common_close')} aria-label={$t('common_close')} onclick={() => (bulk = null)}><Icon name="x" size={14} /></button>
   </div>
 {/if}
 
-{#if error}<div class="error-msg">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if group.requests.length}
   <div class="tools">
@@ -227,7 +228,7 @@
       <button type="button" class="btn btn-primary btn-sm" onclick={() => many('approve', [...selected])}><Icon name="check" size={14} />{$t('msg_group_request_approve')}</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick={() => many('reject', [...selected])}>{$t('msg_group_request_reject')}</button>
       <!-- The ban is a mark with its name in the tooltip: three words do not fit a panel's width. -->
-      <button type="button" class="btn btn-ghost btn-sm danger ban" title={$t('msg_greq_ban_short')} aria-label={$t('msg_greq_ban_short')} onclick={() => many('ban', [...selected])}><Icon name="user-cancel" size={15} /></button>
+      <button type="button" class="btn btn-danger-soft btn-sm ban" title={$t('msg_greq_ban_short')} aria-label={$t('msg_greq_ban_short')} onclick={() => many('ban', [...selected])}><Icon name="user-cancel" size={15} /></button>
     </div>
   </div>
 {/if}
@@ -238,10 +239,10 @@
 <style>
   .tools { display: flex; flex-direction: column; gap: var(--sp-2); }
   .search {
-    display: flex; align-items: center; gap: var(--sp-2); min-height: calc(var(--control-h) - var(--sp-1)); padding: 0 var(--sp-3); color: var(--text-3);
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h); padding: 0 var(--sp-3); color: var(--text-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill);
   }
-  .search:focus-within { border-color: var(--accent-border); }
+  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   .search :global(svg) { flex-shrink: 0; }
   .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
@@ -256,7 +257,7 @@
   .empty-state p { margin: 0; }
   .status {
     display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
-    font-size: var(--fs-xs); line-height: 1.4;
+    font-size: var(--fs-xs); line-height: var(--lh-snug);
   }
   .status.failed { color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-border); }
   .status > :global(svg) { flex-shrink: 0; margin-top: 2px; }
@@ -278,7 +279,6 @@
   .bar-acts { display: flex; align-items: center; gap: 6px; }
   .bar-acts .btn { flex: 1 1 0; justify-content: center; min-width: 0; }
   .bar-acts .btn.ban { flex: 0 0 auto; }
-  .danger { color: var(--danger-text); }
   .progress { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 4px 0; }
   .track { height: 4px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
   .fill { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--dur-base) var(--ease); }

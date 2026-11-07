@@ -19,6 +19,7 @@
   import type { PasswordEntry } from '$lib/pass/types';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   interface Props {
     entry?: PasswordEntry | null;
@@ -46,6 +47,8 @@
   let suggest = $state(false);
   let showPassword = $state(false);
   let error = $state('');
+  // The field the error is about: its line goes under it; any other at the end of the form.
+  const errField = $derived(!error ? '' : error === $t('pw_err_title') ? 'title' : error === $t('pw_err_password') ? 'password' : '');
   let saving = $state(false);
 
   const editing = $derived(entry !== null);
@@ -251,10 +254,10 @@
 <Dialog open title={editing ? $t('pw_edit_title') : $t('cmd_passwords_create')} width="460px" {onclose}>
   <!-- A form: Enter in a field saves, as the Save button does. -->
   <form id="pw-edit-form" class="form" onsubmit={(e) => { e.preventDefault(); void save(); }}>
-    {#if error}<div class="error-msg">{error}</div>{/if}
     <div class="form-group">
       <label for="pw-title">{$t('pw_field_title')}</label>
-      <input id="pw-title" bind:value={title} autocomplete="off" />
+      <input id="pw-title" bind:value={title} autocomplete="off" aria-invalid={errField === 'title'} />
+      {#if errField === 'title'}<div class="error-msg">{error}</div>{/if}
     </div>
     <div class="form-group">
       <label for="pw-user">{$t('pw_field_username')}</label>
@@ -276,6 +279,7 @@
           autocomplete="new-password"
           placeholder={editing ? $t('pw_unchanged') : ''}
           title={editing ? $t('pw_unchanged') : undefined}
+          aria-invalid={errField === 'password'}
         />
         <button
           type="button"
@@ -287,9 +291,10 @@
           <Icon name={showPassword ? 'eye-off' : 'eye'} size={14} />
         </button>
         <button type="button" class="icon-btn" onclick={generate} title={$t('pw_btn_generate')} aria-label={$t('pw_btn_generate')}>
-          <Icon name="key" size={14} />
+          <Icon name="dices" size={14} />
         </button>
       </span>
+      {#if errField === 'password'}<div class="error-msg">{error}</div>{/if}
     </div>
     <div class="form-group">
       <label for="pw-note">{$t('pw_field_note')}</label>
@@ -350,7 +355,7 @@
           <input bind:value={totpName} placeholder={$t('totp_field_name')} autocomplete="off" />
           <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} autocomplete="off" />
           <input bind:value={totpSecret} placeholder={$t('totp_field_secret')} autocomplete="off" />
-          <button type="button" class="btn btn-ghost btn-sm" onclick={() => (addTotp = false)}>{$t('pw_btn_cancel')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick={() => (addTotp = false)}>{$t('common_cancel')}</button>
         </div>
       {/if}
     </div>
@@ -411,11 +416,12 @@
         </div>
       {/if}
     </div>
+    {#if error && !errField}<Notice tone="danger">{error}</Notice>{/if}
   </form>
   {#snippet footer()}
-    <button class="btn btn-ghost" type="button" onclick={onclose}>{$t('pw_btn_cancel')}</button>
+    <button class="btn btn-ghost" type="button" onclick={onclose}>{$t('common_cancel')}</button>
     <!-- mousedown keeps the focus where it is (an open suggestion list stays put); the click saves, from the mouse and the keyboard. -->
-    <button class="btn btn-primary" type="submit" form="pw-edit-form" onmousedown={(e) => e.preventDefault()} disabled={saving}>{$t('pw_btn_save')}</button>
+    <button class="btn btn-primary" type="submit" form="pw-edit-form" onmousedown={(e) => e.preventDefault()} disabled={saving}>{$t('common_save')}</button>
   {/snippet}
 </Dialog>
 
@@ -451,7 +457,7 @@
     max-width: 100%;
     border-width: 1px;
     border-style: solid;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-pill);
     padding: 2px 4px 2px var(--sp-2);
     font-size: var(--fs-xs);
   }
@@ -484,7 +490,7 @@
     overflow: auto;
     padding: var(--sp-1);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     background: var(--surface-drawer);
     box-shadow: var(--shadow-lg);
   }

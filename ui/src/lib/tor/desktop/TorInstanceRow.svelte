@@ -10,7 +10,7 @@
   import { api } from '$lib/tor/api';
   import { clampPercent } from '$lib/tor/format';
   import { exitLabel, socksAddress, torErrorText } from '$lib/tor/settings';
-  import TorNote from '$lib/tor/desktop/TorNote.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import type { InstanceInfo, InstanceState } from '$lib/tor/types';
 
   let { info }: { info: InstanceInfo } = $props();
@@ -112,18 +112,18 @@
     <span><span class="muted">{$t('tor_consumers')}</span> {info.consumers}</span>
   </div>
 
-  {#if info.restart_needed}<TorNote tone="warn">{$t('tor_restart_needed_hint')}</TorNote>{/if}
-  {#if errorText}<TorNote tone="danger">{errorText}</TorNote>{/if}
-  {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
-  {#if message}<TorNote tone="ok">{message}</TorNote>{/if}
+  {#if info.restart_needed}<Notice tone="warn">{$t('tor_restart_needed_hint')}</Notice>{/if}
+  {#if errorText}<Notice tone="danger">{errorText}</Notice>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
+  {#if message}<Notice tone="ok">{message}</Notice>{/if}
 
   <div class="actions">
     <button class="btn btn-ghost" type="button" disabled={busy || info.state !== 'ready'} onclick={newIdentity}>
-      <Icon name="refresh-cw" size={18} />
+      <Icon name="arrows-shuffle" size={18} />
       {$t('tor_btn_new_identity')}
     </button>
     <button class="btn btn-ghost" type="button" disabled={busy || info.state === 'stopping'} onclick={stop}>
-      <Icon name="x" size={18} />
+      <Icon name="square" size={18} />
       {$t('tor_btn_stop')}
     </button>
     <button class="btn btn-ghost quiet" type="button" aria-expanded={logOpen} onclick={toggleLog}>
@@ -150,7 +150,7 @@
   .log {
     margin: 0; max-height: 260px; overflow: auto; padding: var(--sp-3) var(--sp-4);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-md);
-    font-size: var(--fs-xs); line-height: 1.6; color: var(--text-body);
+    font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-body);
     white-space: pre-wrap; overflow-wrap: anywhere;
   }
 </style>

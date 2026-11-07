@@ -55,7 +55,7 @@
   <div class="head">
     <span class="label"><Icon name="notes" size={12} /> {$t('ctx_entity_notes')} <span class="count">{notes.length}</span></span>
     <button type="button" class="btn btn-ghost btn-sm" onclick={() => open(null)}>
-      <Icon name="external-link" size={12} /> {$t('panel_notes_open')}
+      <Icon name="chevron-right" size={12} /> {$t('panel_notes_open')}
     </button>
     <button type="button" class="btn btn-ghost btn-sm" onclick={create}>
       <Icon name="plus" size={12} /> {$t('ctx_entity_new_note')}
@@ -82,8 +82,8 @@
 <style>
   .entity-notes { display: flex; flex-direction: column; gap: 0.4rem; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .head { display: flex; align-items: center; gap: 0.4rem; }
-  .label { display: flex; align-items: center; gap: 0.3rem; flex: 1; font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); font-weight: 600; }
-  .count { font-weight: 400; }
+  .label { display: flex; align-items: center; gap: 0.3rem; flex: 1; font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-semibold); }
+  .count { font-weight: var(--fw-normal); }
   .empty { font-size: var(--fs-xs); color: var(--text-3); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .row {
@@ -93,5 +93,5 @@
   }
   .row:hover { background: var(--surface-2); }
   .title { flex: 1; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .time { font-size: var(--fs-2xs); color: var(--text-3); flex-shrink: 0; }
+  .time { font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; }
 </style>

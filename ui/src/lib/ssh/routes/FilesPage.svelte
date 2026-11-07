@@ -89,7 +89,7 @@
       <button class="btn btn-ghost" onclick={() => filesStore.respondPrompt('no')}>{$t('ssh_hostkey_reject')}</button>
       <button class="btn btn-primary" onclick={() => filesStore.respondPrompt('yes')}>{$t('ssh_hostkey_trust')}</button>
     {:else}
-      <button class="btn btn-ghost" onclick={() => filesStore.cancelPrompt()}>{$t('cancel')}</button>
+      <button class="btn btn-ghost" onclick={() => filesStore.cancelPrompt()}>{$t('common_cancel')}</button>
       <button class="btn btn-primary" onclick={submitPrompt}>{$t('files_prompt_send')}</button>
     {/if}
   {/snippet}

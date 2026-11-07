@@ -61,7 +61,7 @@
     cancel: 'msg_media_cancel',
   };
   const ICON: Record<TransferAction, string> = {
-    pause: 'pause', resume: 'play', retry_now: 'refresh-cw', retry: 'refresh-cw', retry_download: 'refresh-cw', download: 'download', cancel: 'x',
+    pause: 'pause', resume: 'play', retry_now: 'arrow-forward-up', retry: 'arrow-forward-up', retry_download: 'arrow-forward-up', download: 'download', cancel: 'x',
   };
   /** Actions said in words on their button, not only drawn. */
   const WORDED: TransferAction[] = ['retry_now', 'retry', 'retry_download', 'download'];
@@ -118,7 +118,7 @@
       if (a === 'cancel' && p?.direction === 'up' && p.done_bytes > ASK_ABOVE) {
         const text = $t('msg_xfer_cancel_confirm', { name, size: bytes(p.done_bytes, localeTag($locale)) });
         onask?.();
-        if (!(await confirmStore.ask(text, $t('msg_xfer_cancel_upload'), true))) return;
+        if (!(await confirmStore.ask(text, $t('msg_xfer_cancel_upload'), true, 'x'))) return;
       }
       if (act) {
         if (p?.direction === 'down' && a !== 'pause' && a !== 'cancel') background(act(a));
@@ -164,7 +164,7 @@
 {#if look === 'line'}
   <div class="line-wrap" class:failed>
     <FileLine {name} {title} sub={oneLine(p, lines, words)} {failed} mark={lineMark} right={actions.includes('cancel') ? lineCancel : undefined} />
-    {#if error}<span class="err">{error}</span>{/if}
+    {#if error}<span class="error-msg">{error}</span>{/if}
   </div>
 {:else if look === 'compact'}
   <div class="compact" class:overlay class:failed>
@@ -194,7 +194,7 @@
       <span class="lines" aria-live="polite">
         {#if lines.line1}<span class="l1">{lines.line1}</span>{/if}
         {#if lines.line2}<span class="l2">{lines.line2}</span>{/if}
-        {#if error}<span class="err">{error}</span>{/if}
+        {#if error}<span class="error-msg">{error}</span>{/if}
       </span>
       {#if actions.length}
         <span class="btns">
@@ -260,21 +260,20 @@
     align-items: center; justify-content: center; background: var(--surface-3); color: var(--text-2);
   }
   .overlay .mini { position: absolute; top: 6px; left: 6px; background: rgba(0, 0, 0, 0.5); color: #fff; }
-  .pill { font-size: 10px; color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pill { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .overlay .pill { color: #fff; background: rgba(0, 0, 0, 0.45); padding: 1px 6px; border-radius: var(--radius-pill); }
 
   /* Full: words, buttons, a thin bar. The buttons go under the words when the place is narrow. */
   .full { display: flex; flex-direction: column; gap: 4px; min-width: 0; width: 100%; }
   .row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-2); min-width: 0; }
   .lines { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .l1 { font-size: var(--fs-2xs); color: var(--text-2); line-height: 1.3; overflow-wrap: anywhere; }
+  .l1 { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; }
   .failed .l1 { color: var(--danger-text); }
-  .l2 { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.3; font-variant-numeric: tabular-nums; }
-  .err { font-size: var(--fs-2xs); color: var(--danger-text); }
+  .l2 { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); font-variant-numeric: tabular-nums; }
   .btns { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
   .act {
     border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
-    padding: 6px; border-radius: var(--radius-sm); font: inherit; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); white-space: nowrap;
+    padding: 6px; border-radius: var(--radius-sm); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
   }
   .act.worded { color: var(--accent-text-2); padding: 5px 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .act:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }

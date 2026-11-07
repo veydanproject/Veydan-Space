@@ -5,6 +5,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import type { TotpPreview } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
   import { formatError } from '$lib/core/utils';
@@ -13,6 +14,7 @@
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
   import { syncTotpNotes } from '$lib/pass/totp-notes';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { onMount } from 'svelte';
 
   type Mode = 'manual' | 'uri';
@@ -37,6 +39,10 @@
   let noteIds = $state<string[]>([]);
   let error = $state('');
   let saving = $state(false);
+  // The field the error is about: its line goes under it; any other above the button.
+  const errField = $derived(
+    !error ? '' : error === $t('totp_error_name') ? 'name' : error === $t('totp_error_secret') ? 'secret' : error === $t('totp_error_invalid') && mode === 'uri' ? 'uri' : '',
+  );
 
   onMount(() => {
     // Notes to link come through the catalog; a product without them offers none.
@@ -108,11 +114,12 @@
   {#if mode === 'uri'}
     <div class="m-field">
       <label for="uri">{$t('totp_field_uri')}</label>
-      <textarea id="uri" class="mono" rows="3" bind:value={uri} placeholder={$t('totp_field_uri_placeholder')}></textarea>
+      <textarea id="uri" class="mono" rows="3" bind:value={uri} placeholder={$t('totp_field_uri_placeholder')} aria-invalid={errField === 'uri'}></textarea>
+      {#if errField === 'uri'}<div class="m-error">{error}</div>{/if}
     </div>
     {#if preview}
       <div class="preview">
-        <Icon name="check-circle" size={16} />
+        <Icon name="check" size={16} />
         <span>{preview.issuer ? `${preview.issuer} · ` : ''}{preview.name}</span>
         <span class="mono">{preview.secret_masked} · {preview.algorithm}/{preview.digits}/{preview.period}s</span>
       </div>
@@ -121,7 +128,8 @@
 
   <div class="m-field">
     <label for="name">{$t('totp_field_name')}</label>
-    <input id="name" bind:value={name} placeholder={$t('totp_field_name_placeholder')} autocomplete="off" />
+    <input id="name" bind:value={name} placeholder={$t('totp_field_name_placeholder')} autocomplete="off" aria-invalid={errField === 'name'} />
+    {#if errField === 'name'}<div class="m-error">{error}</div>{/if}
   </div>
   <div class="m-field">
     <label for="issuer">{$t('totp_field_issuer')}</label>
@@ -139,7 +147,9 @@
         autocomplete="off"
         autocapitalize="characters"
         spellcheck="false"
+        aria-invalid={errField === 'secret'}
       />
+      {#if errField === 'secret'}<div class="m-error">{error}</div>{/if}
     </div>
 
     <button class="advanced-toggle" onclick={() => (advanced = !advanced)}>
@@ -150,18 +160,24 @@
       <div class="advanced">
         <div class="m-field">
           <label for="alg">{$t('totp_field_algorithm')}</label>
-          <select id="alg" bind:value={algorithm}>
-            <option>SHA1</option>
-            <option>SHA256</option>
-            <option>SHA512</option>
-          </select>
+          <CustomSelect
+            id="alg"
+            options={[
+              { value: 'SHA1', label: 'SHA1' },
+              { value: 'SHA256', label: 'SHA256' },
+              { value: 'SHA512', label: 'SHA512' },
+            ]}
+            bind:value={algorithm}
+          />
         </div>
         <div class="m-field">
           <label for="digits">{$t('totp_field_digits')}</label>
-          <select id="digits" bind:value={digits}>
-            <option value={6}>6</option>
-            <option value={8}>8</option>
-          </select>
+          <CustomSelect
+            id="digits"
+            options={[{ value: '6', label: '6' }, { value: '8', label: '8' }]}
+            value={String(digits)}
+            onchange={(v) => (digits = Number(v))}
+          />
         </div>
         <div class="m-field">
           <label for="period">{$t('totp_field_period')}</label>
@@ -177,18 +193,19 @@
     <TotpNoteLinks mobile {notes} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
   {/if}
 
-  {#if error}
-    <div class="m-error">{error}</div>
+  {#if error && !errField}
+    <div class="err"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
   <button type="button" class="m-btn-grad save" onclick={save} disabled={saving}>
     <Icon name="check" size={18} />
-    {$t('totp_btn_save')}
+    {$t('common_save')}
   </button>
   </div>
 </div>
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .mode {
     display: flex;
     width: 100%;
@@ -207,7 +224,7 @@
     gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-3);
     margin-bottom: var(--sp-3);
-    border-radius: var(--radius-md, 10px);
+    border-radius: var(--radius-md);
     background: var(--success-bg);
     color: var(--success-text);
     font-size: var(--fs-sm);

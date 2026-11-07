@@ -607,6 +607,7 @@ impl RelayService {
                     push_mode: push_mode.into(),
                     source: Some(r.source.clone()),
                     added_at: 0,
+                    access: servers::ACCESS_OPEN.into(),
                 },
             )
             .await?;
@@ -865,6 +866,7 @@ mod tests {
                 push_mode: servers::PUSH_OFF.into(),
                 source: None,
                 added_at: 0,
+                access: servers::ACCESS_OPEN.into(),
             },
         )
         .await

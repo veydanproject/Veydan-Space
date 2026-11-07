@@ -14,6 +14,7 @@
   import { get } from 'svelte/store';
   import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { confirmStore } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
@@ -67,7 +68,7 @@
     const text = n
       ? $t(countKey('chan_scope_delete_confirm', n, $locale), { title: s.title, n: String(n) })
       : $t('chan_scope_delete_confirm_none', { title: s.title });
-    if (!(await confirmStore.ask(text, $t('chan_scope_delete'), true))) return;
+    if (!(await confirmStore.ask(text, $t('chan_scope_delete'), true, 'trash-2'))) return;
     busy = true; error = '';
     try { await channelStore.delScope(cid, s.scope_id); }
     catch (e) { error = channelError(e, tr); }
@@ -127,7 +128,7 @@
           <span class="row-main">{@render scopeRow(s, n)}</span>
         {/if}
         {#if s.scope_id !== EVERYONE && canSetUpSections(detail)}
-          <button class="icon danger" disabled={busy} onclick={() => removeScope(s)} title={$t('chan_scope_delete')} aria-label={$t('chan_scope_delete')}><Icon name="trash-2" size={18} /></button>
+          <button class="icon-btn danger-soft" disabled={busy} onclick={() => removeScope(s)} title={$t('chan_scope_delete')} aria-label={$t('chan_scope_delete')}><Icon name="trash-2" size={18} /></button>
         {:else if canSetUpSections(detail)}
           <span class="icon-space"></span>
         {/if}
@@ -137,7 +138,7 @@
       <li><button class="add" disabled={busy} onclick={() => (scopeDialog = { open: true, id: null })}><Tile icon="folder-plus" tone="dashed" />{$t('chan_scope_add')}</button></li>
     {/if}
   </Box>
-  {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </section>
 {/if}
 
@@ -159,12 +160,12 @@
   .as-button:hover { background: var(--surface-row-hover); }
   .row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .row-name { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); min-width: 0; overflow-wrap: anywhere; }
-  .row-sub { display: flex; align-items: flex-start; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; min-width: 0; }
+  .row-sub { display: flex; align-items: flex-start; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); min-width: 0; }
   .row-sub.dim { color: var(--text-3); }
   .row-sub :global(svg) { flex-shrink: 0; margin-top: 1px; color: var(--text-3); }
   .tag {
     flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-1); height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-2xs); font-weight: var(--fw-semibold); background: var(--surface-3); color: var(--text-2);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--surface-3); color: var(--text-2);
   }
   .hidden-tag { background: var(--danger-bg); color: var(--danger-text); }
   .members { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); font-variant-numeric: tabular-nums; flex-shrink: 0; }
@@ -173,13 +174,11 @@
     border-radius: var(--radius-md); color: var(--accent-text); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-bold); text-align: left; cursor: pointer;
   }
   .add:hover:not(:disabled) { background: var(--surface-row-hover); }
-  .icon { flex: none; border: none; background: none; color: var(--text-2); cursor: pointer; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: var(--radius-sm); }
-  .icon:hover { background: var(--surface-3); }
-  .icon.danger { color: var(--danger-text); }
+  .icon-btn { flex: none; }
   .icon-space { flex: none; width: 32px; }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
   @media (pointer: coarse) {
     .row, .add { min-height: 56px; }
-    .icon, .icon-space { width: 40px; height: 40px; }
+    .icon-btn, .icon-space { width: 40px; height: 40px; }
   }
 </style>

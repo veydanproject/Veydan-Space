@@ -55,12 +55,13 @@
       inputmode={appLock.status.kind === 'pin' ? 'numeric' : 'text'}
       pattern={appLock.status.kind === 'pin' ? '[0-9]*' : undefined}
       bind:value={password}
+      aria-invalid={wrong || undefined}
       placeholder={$t('lock_password')}
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
     />
-    {#if wrong}<p class="err">{$t('lock_wrong')}</p>{/if}
+    {#if wrong}<p class="error-msg">{$t('lock_wrong')}</p>{/if}
     <button class="btn btn-primary" type="submit" disabled={!password || busy}>{$t('lock_unlock')}</button>
   </form>
 {/snippet}
@@ -87,6 +88,6 @@
     color: var(--text);
     font: inherit;
   }
-  .err { margin: 0; color: var(--danger-text); font-size: var(--fs-xs); }
+  .error-msg { margin: 0; }
   input.pin { -webkit-text-security: disc; }
 </style>

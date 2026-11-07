@@ -51,7 +51,7 @@
                 {#if tr.speed > 0}· {formatBytes(tr.speed)}/s{/if}
               {:else if tr.status === 'done'}
                 <span class="status-ok">
-                  {$t('files_transfer_done')}{tr.filesSkipped > 0 ? ` · ${$t('files_transfer_skipped', { n: String(tr.filesSkipped) })}` : ''}
+                  {$t('common_done')}{tr.filesSkipped > 0 ? ` · ${$t('files_transfer_skipped', { n: String(tr.filesSkipped) })}` : ''}
                 </span>
                 {#if tr.moveKept > 0}
                   <span class="status-warn">· {$t('files_transfer_move_kept', { n: String(tr.moveKept) })}</span>
@@ -74,7 +74,7 @@
           </div>
         </div>
         {#if tr.status === 'running'}
-          <button class="icon-btn danger" title={$t('cancel')} onclick={() => filesStore.cancelTransfer(tr.id)}>
+          <button class="icon-btn" title={$t('common_cancel')} onclick={() => filesStore.cancelTransfer(tr.id)}>
             <Icon name="x" size={13} />
           </button>
         {/if}
@@ -108,8 +108,6 @@
   .strip-title {
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
     color: var(--text-2);
   }
 

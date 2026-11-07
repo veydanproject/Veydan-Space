@@ -44,7 +44,7 @@ export const browserEntities: EntityKindDef[] = [
         color: w.color,
       })),
     actions: [
-      { id: 'open', label: 'ctx_action_open', icon: 'external-link', run: async (id) => { await goto(`/workspace/${id}`); } },
+      { id: 'open', label: 'common_open', icon: 'chevron-right', run: async (id) => { await goto(`/workspace/${id}`); } },
     ],
     open: (id) => { void goto(`/workspace/${id}`); },
   },
@@ -108,7 +108,7 @@ export const browserEntities: EntityKindDef[] = [
       },
       {
         id: 'copy',
-        label: 'ctx_action_copy',
+        label: 'common_copy',
         icon: 'copy',
         run: async (id) => {
           // The kind has one list of actions, so it cannot be hidden for one row: a Tor row has no URL.

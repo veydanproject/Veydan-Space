@@ -7,6 +7,7 @@
   import Tabs from '$lib/core/ui/Tabs.svelte';
   import { messengerStore } from '../store.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
+  import ArchiveCard from '../archive/ArchiveCard.svelte';
   import OwnProfileCard from '../contacts/OwnProfileCard.svelte';
   import RelaysPanel from '../relays/RelaysPanel.svelte';
   import NetPanel from '../net/NetPanel.svelte';
@@ -76,6 +77,7 @@
     {#if messengerStore.identity}
       <OwnProfileCard onopenmedia={openMedia} />
       <IdentityCard identity={messengerStore.identity} />
+      <ArchiveCard />
     {/if}
   {:else if tab === 'network'}
     <NetPanel />

@@ -4,6 +4,7 @@
 <!-- A person someone shared: who it is, and how to reach them. -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Avatar from '../../contacts/Avatar.svelte';
   import { dmErrorCode, messengerError, type LinkView } from '../../api';
@@ -50,7 +51,7 @@
   {:else if view.blocked}
     <div class="status closed"><Icon name="user-cancel" size={12} />{$t('msg_card_contact_blocked')}</div>
   {:else}
-    {#if error}<div class="error">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="row">
       <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => run(() => linkActions.write(view))}>
         <Icon name="message-circle" size={13} />{$t('msg_contacts_write')}
@@ -72,11 +73,10 @@
   .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
   .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--text-3); padding: 0 4px; }
-  .error { font-size: var(--fs-xs); color: var(--danger-text); line-height: 1.4; }
+  .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); padding: 0 4px; }
 </style>

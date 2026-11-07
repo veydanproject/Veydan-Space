@@ -18,7 +18,6 @@
   import { confirmStore } from '../shared/confirm.svelte';
   import ShareDialog from '../content/ShareDialog.svelte';
   import MessageContent from '../content/MessageContent.svelte';
-  import CallIcon from '../calls/CallIcon.svelte';
   import { dialable, dialBlock, dialer, targetOf } from '../calls/dial.svelte';
   import BioView from './BioView.svelte';
   import SocialLinks from './SocialLinks.svelte';
@@ -77,7 +76,7 @@
   }
 
   async function remove() {
-    if (!(await confirmStore.ask($t('msg_contacts_remove_confirm', { name }), $t('msg_contacts_remove'), true))) return;
+    if (!(await confirmStore.ask($t('msg_rel_confirm_remove', { name }), $t('common_remove'), true, 'user-minus'))) return;
     await run(async () => {
       await messengerStore.removeContact(contact.pubkey);
       onremoved?.();
@@ -111,10 +110,10 @@
       <span class="disc"><Icon name="message-circle" size={18} /></span>{$t('msg_contacts_write')}
     </button>
     <button class="act call" disabled={!!block} title={block || undefined} onclick={() => chat && dialer.call(targetOf(chat), 'audio', false)}>
-      <span class="disc"><CallIcon name="phone" size={18} /></span>{$t('msg_calls_audio_short')}
+      <span class="disc"><Icon name="phone" size={18} /></span>{$t('msg_calls_audio_short')}
     </button>
     <button class="act call" disabled={!!block} title={block || undefined} onclick={() => chat && dialer.call(targetOf(chat), 'video', false)}>
-      <span class="disc"><CallIcon name="video" size={18} /></span>{$t('msg_calls_video_short')}
+      <span class="disc"><Icon name="video" size={18} /></span>{$t('msg_calls_video_short')}
     </button>
     <button class="act" onclick={() => (shareOpen = true)}>
       <span class="disc"><Icon name="send" size={18} /></span>{$t('msg_contacts_share_short')}
@@ -135,7 +134,7 @@
     <h3>{$t('msg_id_npub')}</h3>
     <div class="key">
       <code>{contact.npub}</code>
-      <button class="icon" onclick={copyKey} title={$t('msg_copy')} aria-label={$t('msg_copy')}><Icon name="copy" size={18} /></button>
+      <button class="icon" onclick={copyKey} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
     </div>
   </section>
 
@@ -158,14 +157,14 @@
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={verify}><Icon name="rosette-discount-check" size={18} />{$t('msg_contacts_verify_nip05')}</button>
     {/if}
     <span class="spacer"></span>
-    <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('msg_contacts_remove')}</button>
+    <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('common_remove')}</button>
   </div>
 
   <!-- The unsaved form's bar (STYLEGUIDE): at the foot of the pane, the card scrolls above it. -->
   {#if changed}
     <div class="savebar">
       <p class="unsaved" role="status"><span class="dot" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>
-      <button class="btn btn-primary" disabled={busy} onclick={save}>{$t('msg_contacts_save')}</button>
+      <button class="btn btn-primary" disabled={busy} onclick={save}>{$t('common_save')}</button>
     </div>
   {/if}
 </div>
@@ -186,7 +185,7 @@
   .nip05.ok { color: var(--success-text); }
   .nip05.bad { color: var(--danger-text); }
   /* A tag in sentence case. */
-  .tag { display: inline-block; height: 22px; line-height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text); }
+  .tag { display: inline-block; line-height: var(--lh-snug); padding: 3px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text); }
   .tag::first-letter { text-transform: uppercase; }
   /* Four actions of one size. */
   .actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
@@ -202,9 +201,9 @@
   .act:disabled { opacity: 0.45; cursor: default; }
   .block { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); }
   .block h3 { margin: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
-  .about { margin: 0; font-size: var(--fs-base); line-height: 1.5; color: var(--text-body); white-space: pre-wrap; }
+  .about { margin: 0; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text-body); white-space: pre-wrap; }
   .key { display: flex; align-items: flex-start; gap: var(--sp-2); }
-  .key code { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3); font-size: var(--fs-xs); line-height: 1.5; color: var(--text-2); overflow-wrap: anywhere; }
+  .key code { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3); font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-2); overflow-wrap: anywhere; }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-hover); }
   .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -218,7 +217,6 @@
   .grid input:focus { outline: none; border-color: var(--accent-border); }
   .more { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
   .spacer { flex: 1; }
-  .btn.danger { color: var(--danger-text); }
   .savebar {
     position: sticky; bottom: 0; z-index: 1; margin-top: auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg);

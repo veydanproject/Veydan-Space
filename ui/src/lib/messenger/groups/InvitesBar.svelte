@@ -4,6 +4,7 @@
 <!-- Invitations to groups that wait for my answer, above the chats. -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { membersKey } from '../i18n';
   import { groupError } from './errors';
@@ -45,10 +46,10 @@
           <span class="sub">{$t('msg_group_invited_by', { name: nameStore.label(i.peer) })} · {$t(membersKey(i.members), { n: String(i.members) })}</span>
         </div>
         <button class="btn btn-primary btn-sm" disabled={busy === i.invite_id} onclick={() => answer(i, true)}>{$t('msg_group_invite_accept')}</button>
-        <button class="icon" disabled={busy === i.invite_id} title={$t('msg_group_invite_decline')} onclick={() => answer(i, false)}><Icon name="x" size={15} /></button>
+        <button class="icon" disabled={busy === i.invite_id} title={$t('msg_group_invite_decline')} onclick={() => answer(i, false)}><Icon name="x" size={18} /></button>
       </div>
     {/each}
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
 {/if}
 
@@ -60,10 +61,9 @@
   }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { font-size: var(--fs-2xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .sub { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   /* The phone: the inset of the search field and the push offer above (12px) */
   .invites.phone { padding-inline: var(--sp-3); }
-  @media (pointer: coarse) { .icon { padding: 10px; } }
 </style>

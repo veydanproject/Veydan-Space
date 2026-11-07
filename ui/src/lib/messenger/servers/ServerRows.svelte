@@ -26,7 +26,7 @@
 </dl>
 
 <style>
-  .rows { margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); line-height: 1.4; }
+  .rows { margin: 0; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); line-height: var(--lh-snug); }
   .row { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
   dt { flex-shrink: 0; color: var(--text-3); }
   dd {

@@ -62,7 +62,7 @@
     border: 1px solid rgba(99, 102, 241, 0.4);
     border-radius: var(--radius-badge);
     padding: 0.4rem 0.6rem;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: #e2e8f0;
     min-width: 160px;
     max-width: 240px;
@@ -70,7 +70,7 @@
   }
 
   .tag {
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: #93c5fd;
     margin-bottom: 0.15rem;
   }
@@ -79,14 +79,14 @@
     color: #86efac;
     margin-bottom: 0.3rem;
     word-break: break-all;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
   }
 
   .row {
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
-    line-height: 1.5;
+    line-height: var(--lh-base);
   }
 
   .lbl {

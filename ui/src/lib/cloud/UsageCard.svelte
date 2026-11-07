@@ -126,7 +126,7 @@
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); }
   .main { display: flex; flex-direction: column; gap: var(--sp-2); }
   .figures { display: flex; align-items: baseline; gap: var(--sp-2); }
-  .used { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); letter-spacing: -0.01em; }
+  .used { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); }
   .of { font-size: var(--fs-base); color: var(--text-2); }
   .percent { margin-left: auto; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-2); }
   .caption { font-size: var(--fs-sm); color: var(--text-2); }
@@ -145,7 +145,7 @@
   .pools li { display: flex; flex-direction: column; gap: 6px; }
   .row { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-base); color: var(--text-body); }
   .amount { color: var(--text-2); white-space: nowrap; font-size: var(--fs-sm); }
-  .stopped { font-size: var(--fs-sm); color: var(--danger-text); line-height: 1.4; }
+  .stopped { font-size: var(--fs-sm); color: var(--danger-text); line-height: var(--lh-snug); }
   .what { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
   .what ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .what li { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-base); color: var(--text-body); }

@@ -6,7 +6,7 @@
   contact I am in a mutual chat with can be called (the runtime refuses
   anyone else, and a direct call shows my address to the peer), so the
   buttons are there only then; they wait while another call is under way.
-  A refusal shows under the buttons for a moment.
+  A refusal is an error toast (pressing again is the retry).
 
   A press asks first "Start a voice call?" / "Start a video call?" unless
   that was turned off (CallConfirm, the setting kept on this device). A
@@ -17,13 +17,14 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import type { CallMedia, MessengerChat } from '../api';
   import { chatAddress } from '../chats/address';
   import { messengerStore } from '../store.svelte';
   import { openSettings } from '../pages/settingsTab.svelte';
   import { onPhone } from '../shared/phone';
   import CallConfirm from './CallConfirm.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { callStore } from './callStore.svelte';
   import { groupCallStore } from './groupCallStore.svelte';
   import { hold } from './hold';
@@ -44,8 +45,6 @@
   );
   const peer = $derived({ name: chat.title, picture: chat.picture ?? null, seed: chat.peer_pubkey ?? chat.id });
 
-  let refusal = $state('');
-  let timer: ReturnType<typeof setTimeout> | null = null;
   /** The kind the question is about while it is asked. */
   let asking = $state<CallMedia | null>(null);
 
@@ -66,9 +65,7 @@
     if (!to) return;
     const { view, refusal: why } = await callStore.dial(to, media);
     if (view || !why) return;
-    refusal = callErrorText(why, tr);
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => (refusal = ''), 4000);
+    toast.error(callErrorText(why, tr), { action: false });
   }
 
   // The question belongs to the chat it was asked in.
@@ -76,8 +73,6 @@
   $effect(() => {
     if (chat.id !== last) { last = chat.id; asking = null; }
   });
-
-  $effect(() => () => { if (timer) clearTimeout(timer); });
 
   const phone = onPhone();
   const toSettings = { onhold: () => { asking = null; openSettings('calls', phone); } };
@@ -88,14 +83,13 @@
     {#if !videoInMenu}
       <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
         title={reason || $t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}>
-        <CallIcon name="video" size={18} />
+        <Icon name="video" size={18} />
       </button>
     {/if}
     <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('audio')} use:hold={toSettings}
       title={reason || $t('msg_call_start')} aria-label={$t('msg_call_start')}>
-      <CallIcon name="phone" size={18} />
+      <Icon name="phone" size={18} />
     </button>
-    {#if refusal}<span class="refusal" role="status">{refusal}</span>{/if}
   </span>
   <CallConfirm media={asking} {peer} oncall={(m) => void call(m)} onclose={() => (asking = null)} />
 {/if}
@@ -111,10 +105,5 @@
   .icon:disabled { opacity: 0.45; cursor: default; }
   /* A head's buttons: 36 on a computer, 40 for a finger (as the feed's). */
   .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  @media (pointer: coarse) { .icon { width: 40px; height: 40px; border-radius: var(--radius-md); } }
-  .refusal {
-    position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: max-content; max-width: 260px;
-    padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.4;
-    background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); box-shadow: var(--shadow);
-  }
+  @media (pointer: coarse) { .icon { width: 40px; height: 40px; border-radius: var(--radius); } }
 </style>

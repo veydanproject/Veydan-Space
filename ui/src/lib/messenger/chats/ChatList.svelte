@@ -4,12 +4,13 @@
 <script lang="ts">
   import { drafts } from '../shared/drafts.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
-  import { t } from '$lib/core/i18n';
+  import { t, type TranslationKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import type { Snippet } from 'svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { chatStore } from './chatStore.svelte';
+  import { act } from './act';
   import { presenceStore } from '../presence/presenceStore.svelte';
   import { listStamp } from '../shared/time';
   import { confirmStore } from '../shared/confirm.svelte';
@@ -28,6 +29,7 @@
   import { groupStore } from '../groups/groupStore.svelte';
   import { answersRequests } from '../groups/permissions';
   import ServerLabel from '../servers/ServerLabel.svelte';
+  import ArchiveBanner from '../archive/ArchiveBanner.svelte';
   import { chatSections, type SectionRow } from '../seams/sections.svelte';
 
   interface Props {
@@ -71,17 +73,17 @@
   let rowMenu = $state<{ open: boolean; x: number; y: number; row: SectionRow | null }>({ open: false, x: 0, y: 0, row: null });
 
   /** A choice the messenger keeps of a module's row, then the module reads its rows again. */
-  function rowAct(run: () => Promise<unknown>) {
-    act(async () => { await run(); host?.refresh(); });
+  function rowAct(failed: TranslationKey, run: () => Promise<unknown>) {
+    act(failed, async () => { await run(); host?.refresh(); });
   }
 
   const rowItems = $derived.by((): MenuEntry[] => {
     const r = rowMenu.row;
     if (!r) return [];
     return [
-      { label: r.pinned ? $t('msg_chat_unpin') : $t('msg_chat_pin'), icon: 'pin', onselect: () => rowAct(() => chatStore.setPinned(r.chatId, !r.pinned)) },
-      { label: r.muted ? $t('msg_chat_unmute') : $t('msg_chat_mute'), icon: r.muted ? 'bell' : 'bell-off', onselect: () => rowAct(() => chatStore.setMuted(r.chatId, !r.muted)) },
-      { label: r.archived ? $t('msg_chat_unarchive') : $t('msg_chat_archive'), icon: r.archived ? 'archive-restore' : 'archive', onselect: () => rowAct(() => chatStore.setArchived(r.chatId, !r.archived)) },
+      { label: r.pinned ? $t('msg_chat_unpin') : $t('msg_chat_pin'), icon: 'pin', onselect: () => rowAct(r.pinned ? 'msg_chat_unpin_failed' : 'msg_chat_pin_failed', () => chatStore.setPinned(r.chatId, !r.pinned)) },
+      { label: r.muted ? $t('msg_chat_unmute') : $t('msg_chat_mute'), icon: r.muted ? 'bell' : 'bell-off', onselect: () => rowAct(r.muted ? 'msg_chat_unmute_failed' : 'msg_chat_mute_failed', () => chatStore.setMuted(r.chatId, !r.muted)) },
+      { label: r.archived ? $t('msg_chat_unarchive') : $t('msg_chat_archive'), icon: r.archived ? 'archive-restore' : 'archive', onselect: () => rowAct(r.archived ? 'msg_chat_unarchive_failed' : 'msg_chat_archive_failed', () => chatStore.setArchived(r.chatId, !r.archived)) },
     ];
   });
   // A request of a stranger is not a chat yet: it waits behind the row of
@@ -114,15 +116,11 @@
     menu = { open: true, x: e.clientX, y: e.clientY, chat };
   }
 
-  /** An action of the menu: a failure says so, with «Повторить». */
-  function act(run: () => Promise<unknown>) {
-    run().catch(() => toast.error($t('msg_action_failed'), { onAction: () => act(run) }));
-  }
   /** Into the archive, with «Отменить» for 8 s. */
   function archive(c: MessengerChat) {
-    act(async () => {
+    act('msg_chat_archive_failed', async () => {
       await chatStore.setArchived(c.id, true);
-      toast.undo($t('msg_chat_archived_toast'), { icon: 'archive', onAction: () => act(() => chatStore.setArchived(c.id, false)) });
+      toast.undo($t('msg_chat_archived_toast'), { icon: 'archive', onAction: () => act('msg_chat_unarchive_failed', () => chatStore.setArchived(c.id, false)) });
     });
   }
 
@@ -132,13 +130,13 @@
     const group = c.kind === "group";
     const removal: MenuEntry[] = group
       // A group I am in is left from its own panel, not thrown away here.
-      ? (c.can_send ? [] : [{ type: "separator" }, { label: $t("msg_group_forget"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_group_forget_confirm", { name: c.title }), $t("msg_group_forget"), true)) chatStore.deleteChat(c.id).catch(() => {}); } }])
-      : [{ type: "separator" }, { label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: c.title }), $t("msg_chat_delete"), true)) chatStore.deleteChat(c.id); } }];
+      ? (c.can_send ? [] : [{ type: "separator" }, { label: $t("msg_group_forget"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_group_forget_confirm", { name: c.title }), $t("msg_group_forget"), true, "trash-2")) chatStore.deleteChat(c.id).catch(() => {}); } }])
+      : [{ type: "separator" }, { label: $t("msg_chat_delete"), icon: "trash-2", danger: true, onselect: async () => { if (await confirmStore.ask($t("msg_chat_delete_confirm", { name: c.title }), $t("common_delete"), true, "trash-2", $t("msg_chat_delete_title"))) chatStore.deleteChat(c.id); } }];
     return [
-      { label: c.pinned ? $t('msg_chat_unpin') : $t('msg_chat_pin'), icon: 'pin', onselect: () => act(() => chatStore.setPinned(c.id, !c.pinned)) },
-      { label: c.is_muted ? $t('msg_chat_unmute') : $t('msg_chat_mute'), icon: c.is_muted ? 'bell' : 'bell-off', onselect: () => act(() => chatStore.setMuted(c.id, !c.is_muted)) },
-      { label: $t('msg_chat_mark_read'), icon: 'check-check', disabled: c.unread === 0, onselect: () => act(() => chatStore.markRead(c.id)) },
-      { label: c.archived ? $t('msg_chat_unarchive') : $t('msg_chat_archive'), icon: c.archived ? 'archive-restore' : 'archive', onselect: () => (c.archived ? act(() => chatStore.setArchived(c.id, false)) : archive(c)) },
+      { label: c.pinned ? $t('msg_chat_unpin') : $t('msg_chat_pin'), icon: 'pin', onselect: () => act(c.pinned ? 'msg_chat_unpin_failed' : 'msg_chat_pin_failed', () => chatStore.setPinned(c.id, !c.pinned)) },
+      { label: c.is_muted ? $t('msg_chat_unmute') : $t('msg_chat_mute'), icon: c.is_muted ? 'bell' : 'bell-off', onselect: () => act(c.is_muted ? 'msg_chat_unmute_failed' : 'msg_chat_mute_failed', () => chatStore.setMuted(c.id, !c.is_muted)) },
+      { label: $t('msg_chat_mark_read'), icon: 'check-check', disabled: c.unread === 0, onselect: () => act('msg_chat_mark_read_failed', () => chatStore.markRead(c.id)) },
+      { label: c.archived ? $t('msg_chat_unarchive') : $t('msg_chat_archive'), icon: c.archived ? 'archive-restore' : 'archive', onselect: () => (c.archived ? act('msg_chat_unarchive_failed', () => chatStore.setArchived(c.id, false)) : archive(c)) },
       ...removal,
     ];
   });
@@ -243,8 +241,8 @@
       {#if host && shown.length === 0 && folded === 0 && !q && host.loading?.()}
         <div class="list-cover-empty" role="status"><span class="spinner" aria-hidden="true"></span></div>
       {:else if shown.length === 0 && folded === 0}
-        {@const icon = host ? host.icon : kind === 'group' ? 'users' : 'message-circle'}
-        {@const words = q ? $t('msg_chats_nothing_found') : host ? $t(host.emptyTitle) : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}
+        {@const icon = q ? 'search' : host ? host.icon : kind === 'group' ? 'users' : 'message-circle'}
+        {@const words = q ? $t('common_nothing_found') : host ? $t(host.emptyTitle) : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}
         <div class="list-cover-empty" role="status" aria-label={words} title={words}><Icon name={icon} size={22} /></div>
       {:else}
         <ul class="covers-list">
@@ -267,6 +265,8 @@
 {:else}
 <div class="list-wrap">
   {@render top?.()}
+  <!-- The older months of the archive are coming back (a restore on a new device). -->
+  <ArchiveBanner />
   {#if requests > 0}
     <!-- No unread badge: a request must not call anyone back to the app. -->
     <button class="chat list-row requests" onclick={openRequests}>
@@ -285,9 +285,9 @@
       </div>
     {:else if hostVisible.length === 0 && hostArchived.length === 0}
       <div class="empty-state list-empty">
-        <div class="empty-icon"><Icon name={host.icon} size={24} /></div>
-        <p>{q ? $t('msg_chats_nothing_found') : $t(host.emptyTitle)}</p>
-        {#if !q}<span>{$t(host.emptyHint)}</span>{/if}
+        <div class="empty-icon"><Icon name={q ? 'search' : host.icon} size={22} /></div>
+        <p>{q ? $t('common_nothing_found') : $t(host.emptyTitle)}</p>
+        <span>{q ? $t('common_nothing_found_hint', { q: q.trim() }) : $t(host.emptyHint)}</span>
       </div>
     {:else}
       <ul class="list-rows">
@@ -311,9 +311,9 @@
     {/if}
   {:else if visible.length === 0 && archived.length === 0}
     <div class="empty-state list-empty">
-      <div class="empty-icon"><Icon name={kind === 'group' ? 'users' : 'message-circle'} size={24} /></div>
-      <p>{q ? $t('msg_chats_nothing_found') : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}</p>
-      {#if !q}<span>{kind === 'group' ? $t('msg_groups_empty_hint') : $t('msg_chats_empty_hint')}</span>{/if}
+      <div class="empty-icon"><Icon name={q ? 'search' : kind === 'group' ? 'users' : 'message-circle'} size={22} /></div>
+      <p>{q ? $t('common_nothing_found') : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}</p>
+      <span>{q ? $t('common_nothing_found_hint', { q: q.trim() }) : kind === 'group' ? $t('msg_groups_empty_hint') : $t('msg_chats_empty_hint')}</span>
     </div>
   {:else}
     <ul class="list-rows">

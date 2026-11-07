@@ -10,6 +10,7 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   interface Props {
     open: boolean;
@@ -50,7 +51,7 @@
         <span>{check}</span>
       </label>
     {/if}
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
     <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
@@ -60,7 +61,7 @@
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .text { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .text { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-body); cursor: pointer; user-select: none; }
   @media (pointer: coarse) { .chip { min-height: 40px; padding-inline: 14px; } }

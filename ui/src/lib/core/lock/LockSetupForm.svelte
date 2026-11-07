@@ -6,6 +6,7 @@
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { registry } from '$lib/core/registry';
   import { t, type TranslationKey } from '$lib/core/i18n';
@@ -89,8 +90,8 @@
       recoveryCode = await appLock.regenerateRecovery(current);
     });
 
-  const setTimeoutMin = (e: Event) =>
-    run(() => appLock.setTimeout(Number((e.currentTarget as HTMLSelectElement).value)));
+  const setTimeoutMin = (v: string | null | undefined) =>
+    run(() => appLock.setTimeout(Number(v)));
 
   /**
    * Last resort when the synced vault cannot be opened: the module that owns
@@ -163,11 +164,14 @@
       <div class="card rows">
         <label class="row-item">
           <span class="words"><span class="title">{$t('settings_lock_timeout')}</span></span>
-          <select class="lock-field timeout" value={String(appLock.status.timeout_min)} onchange={setTimeoutMin} disabled={busy}>
-            {#each TIMEOUTS as m (m)}
-              <option value={String(m)}>{m === 0 ? $t('settings_lock_timeout_never') : $t('settings_lock_timeout_min', { n: String(m) })}</option>
-            {/each}
-          </select>
+          <div class="timeout">
+            <CustomSelect
+              options={TIMEOUTS.map((m) => ({ value: String(m), label: m === 0 ? $t('settings_lock_timeout_never') : $t('settings_lock_timeout_min', { n: String(m) }) }))}
+              value={String(appLock.status.timeout_min)}
+              onchange={setTimeoutMin}
+              disabled={busy}
+            />
+          </div>
         </label>
 
         <div class="row-item recovery">
@@ -205,7 +209,7 @@
         <div class="fail mismatch" role="alert">
           <Icon name="alert-triangle" size={18} />
           <span class="mismatch-words">
-            <span>{$t('pw_mismatch')}</span>
+            <span>{$t('pw_err_mismatch')}</span>
             <button class="reset" type="button" disabled={busy || !current} onclick={resetVault}>
               {$t('pw_reset')}
             </button>
@@ -236,8 +240,6 @@
     background-color: var(--surface-3);
     color: var(--text-body);
   }
-  /* A select, not the flex .field the settings page gives its labels: its text stays centred */
-  select.lock-field { display: block; padding-right: 2rem; }
   .warning {
     display: flex;
     gap: var(--sp-3);
@@ -247,12 +249,12 @@
     background: var(--warn-bg);
     color: var(--warn-text);
     font-size: var(--fs-sm);
-    line-height: 1.5;
+    line-height: var(--lh-base);
   }
   .warning :global(svg) { flex-shrink: 0; margin-top: 1px; }
   .fail {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: 1.5;
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
     overflow-wrap: anywhere;
   }
   .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
@@ -267,7 +269,7 @@
   .timeout { flex: 0 0 180px; }
   .kind { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); }
   .kind.missing { color: var(--warn-text); }
-  .sub { font-size: var(--fs-sm); line-height: 1.4; color: var(--text-2); }
+  .sub { font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .mismatch-words { display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; }
   .reset {
     border: none;
@@ -280,7 +282,7 @@
     text-decoration: underline;
     cursor: pointer;
   }
-  .reset:disabled { opacity: 0.4; cursor: default; }
+  .reset:disabled { opacity: 0.45; cursor: default; }
   .lock-field.pin { -webkit-text-security: disc; }
   .mobile .lock-field { height: auto; min-height: var(--sp-12); font-size: var(--fs-md); }
   .mobile .foot { flex-direction: column-reverse; align-items: stretch; }

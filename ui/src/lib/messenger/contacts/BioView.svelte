@@ -50,7 +50,7 @@
 
 <style>
   .bio {
-    font-size: var(--fs-sm); color: var(--text-body, var(--text)); line-height: 1.45;
+    font-size: var(--fs-sm); color: var(--text-body, var(--text)); line-height: var(--lh-snug);
     white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; min-width: 0;
   }
   .clamp { max-height: calc(var(--lines) * 1.45em); overflow: hidden; }

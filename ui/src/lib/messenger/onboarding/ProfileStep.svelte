@@ -77,10 +77,10 @@
 <style>
   .picture { margin-bottom: var(--sp-4); }
   .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input {
     font: inherit; color: var(--text); min-height: 44px;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
     padding: 8px 10px;
   }
   .field input:focus { outline: none; border-color: var(--accent-border); }

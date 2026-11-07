@@ -122,7 +122,7 @@
   }
 </script>
 
-<!-- An .m-field like the fields around it: the caption is their uppercase label -->
+<!-- An .m-field like the fields around it: the caption is their label -->
 <div class="m-field labels">
   <span class="caption">{$t('totp_field_tags')}</span>
   <div class="m-chips">
@@ -175,9 +175,7 @@
   /* The look of `.m-field label` (core/styles/mobile.css); a span, as no single control is labelled */
   .caption {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-2);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
   }
 </style>

@@ -8,8 +8,13 @@
  * through unasked or never happened. `ask()` opens the shell's
  * `ConfirmHost` (a dialog on the desktop, a bottom sheet on the phone) and
  * resolves with the answer; Escape, the backdrop and a second question
- * answer "no".
+ * answer "no". It is the app's one confirmation: the title, the text under
+ * it, «Отмена» on the left, the verb on the right; a dangerous question has
+ * a red verb and a red tile with the action's icon beside its title.
  */
+
+import { get } from 'svelte/store';
+import { t } from '$lib/core/i18n';
 
 export interface ConfirmRequest {
   title: string;
@@ -19,6 +24,13 @@ export interface ConfirmRequest {
   cancelLabel?: string;
   /** Default `danger`: every question of the app guards a deletion or a reset. */
   variant?: 'danger' | 'primary';
+  /** The Tabler icon of the danger tile (`trash-2`, `logout`, `user-minus`…); default `alert-triangle`. A question that is not dangerous has no tile. */
+  icon?: string;
+}
+
+/** The title of a question that is its action: «Удалить чат» → «Удалить чат?», with the language's own question marks. */
+export function confirmTitle(label: string): string {
+  return get(t)('common_confirm_title', { label });
 }
 
 interface Pending extends ConfirmRequest {

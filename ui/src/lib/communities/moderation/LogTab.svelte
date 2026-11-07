@@ -13,6 +13,7 @@
   import { untrack } from 'svelte';
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { stamp } from '$lib/messenger/seams/shared';
   import { nameStore, shortKey } from '../names.svelte';
   import { channelStore } from '../channelStore.svelte';
@@ -75,7 +76,7 @@
   }
 </script>
 
-{#if error}<div class="error-msg">{error}</div>{/if}
+{#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if !items.length && !loading && !error}
   <p class="empty">{$t('chan_mod_log_empty')}</p>
@@ -103,7 +104,7 @@
   .target { color: var(--text-2); margin-left: 0.35em; }
   /* The words of a post: one line, the rest cut. */
   .target.excerpt { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
-  .meta { font-size: var(--fs-2xs); color: var(--text-3); overflow-wrap: anywhere; }
+  .meta { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; margin-top: var(--sp-2); }
 </style>

@@ -3357,9 +3357,10 @@ async fn a_join_again_sends_what_the_session_before_sent_and_says_what_it_took()
     w.settle().await;
     let room = w.node.rooms()[0].clone();
     bob.calls.set_mute(true).await.unwrap();
-    w.settle().await;
     let seat = bob.last_state().unwrap().participant.unwrap();
-    assert_eq!(media_of(&alice.last_state().unwrap(), seat), (Some(true), Some(false), Some(false)), "bob's camera on, muted");
+    // His word goes through the data channel of the node, which no quiet
+    // of the effects bounds on a loaded machine.
+    w.until("bob's camera on, muted", || alice.shows(|v| media_of(v, seat) == (Some(true), Some(false), Some(false)))).await;
 
     // His way fails; the home answers: he joins it again.
     let lose = |seat: u32| {

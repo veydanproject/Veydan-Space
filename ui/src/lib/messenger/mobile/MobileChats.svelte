@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import { messengerStore } from '../store.svelte';
   import { netState as netStateOf } from '../shared/net-state';
@@ -15,6 +16,7 @@
   import NewGroupDialog from "../groups/NewGroupDialog.svelte";
   import InvitesBar from "../groups/InvitesBar.svelte";
   import BridgeOffer from "../net/BridgeOffer.svelte";
+  import { netStore } from '../net/netStore.svelte';
   import Onboarding from '../onboarding/Onboarding.svelte';
   import MobileFrame from './MobileFrame.svelte';
   import { chatHref, sectionItemHref } from './routes';
@@ -64,8 +66,9 @@
 <!-- The offers are the head of the list: they scroll away with the rows rather than stand over them. -->
 {#snippet offers()}
   <div class="offers">
+    <!-- One card at a time: the bridge first, the notifications once the bridge is answered. -->
     <BridgeOffer />
-    <PushOffer />
+    {#if !netStore.toOffer}<PushOffer />{/if}
   </div>
 {/snippet}
 
@@ -77,9 +80,9 @@
   {#if !s}
     <Skeleton height={64} size={44} trailing />
   {:else if !s.compiled}
-    <div class="error-msg">{$t('msg_status_not_compiled')}</div>
+    <Notice tone="danger">{$t('msg_status_not_compiled')}</Notice>
   {:else if s.error}
-    <div class="error-msg">{$t('msg_status_error', { error: s.error })}</div>
+    <Notice tone="danger">{$t('msg_status_error', { error: s.error })}</Notice>
   {:else if !s.enabled}
     <div class="note">{$t('msg_mobile_disabled')}</div>
   {:else if needsIdentity}
@@ -87,12 +90,12 @@
     <Onboarding />
   {:else}
     {#if netState === 'locked' || netState === 'silent'}
-      <div class="strip">{$t(`msg_net_${netState}` as 'msg_net_locked', { connected: '0', total: '0' })}</div>
+      <div class="strip"><Notice tone="warn" role="status">{$t(`msg_net_${netState}` as 'msg_net_locked', { connected: '0', total: '0' })}</Notice></div>
     {/if}
     <div class="search">
       <Icon name="search" size={16} />
       <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search" />
-      {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('msg_back')}><Icon name="x" size={14} /></button>{/if}
+      {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
     </div>
     {#if host}
       {#if host.above}{@const Above = host.above}<Above />{/if}
@@ -101,11 +104,11 @@
     {/if}
     <ChatList {query} {kind} onopen={open} onopenrow={(id) => goto(sectionItemHref(id))} top={!host && kind === 'dm' ? offers : undefined} />
     {#if host}
-      <button class="fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
+      <button class="m-fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
     {:else if kind === 'group'}
-      <button class="fab" onclick={() => (newGroup = true)} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={22} /></button>
+      <button class="m-fab" onclick={() => (newGroup = true)} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={22} /></button>
     {:else}
-      <button class="fab" onclick={() => (newChat = true)} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={22} /></button>
+      <button class="m-fab" onclick={() => (newChat = true)} aria-label={$t('msg_newchat_title')}><Icon name="message-circle-plus" size={22} /></button>
     {/if}
   {/if}
 </MobileFrame>
@@ -120,28 +123,23 @@
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
   .net.lost { background: var(--danger); }
   @keyframes pulse { 50% { opacity: 0.35; } }
-  .note { padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .intro { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .strip { padding: var(--sp-2) var(--sp-4); font-size: var(--fs-xs); color: var(--warn-text); background: var(--warn-bg); border-bottom: 1px solid var(--warn-border); }
+  .note { padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-base); }
+  .intro { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-base); }
+  .strip { padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
   .search {
     display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3); padding: 0 var(--sp-4); flex-shrink: 0;
     background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
   }
-  /* The pill is the field: its border is the one focus mark. */
-  .search:focus-within { border-color: var(--accent-border); }
+  /* The pill is the field: its border and halo are the one focus mark. */
+  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }
   /* Inside the list, whose own side gap (--sp-2) would add to the cards' margin: they keep the edge of the search. */
   .offers { margin: 0 calc(-1 * var(--sp-2)); }
-  .fab {
-    position: absolute; right: var(--sp-4); bottom: var(--sp-4); width: 56px; height: 56px; border: none; border-radius: 50%;
-    background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
-    box-shadow: var(--shadow-accent);
-  }
-  .fab { --hit-r: var(--sp-4); }
-  .fab:active { filter: brightness(0.92); }
-  /* The list scrolls its last row out from under the «+»: the button (56), its offset and the list's own gap.
+  /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
+  .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
+  /* The list scrolls its last row out from under the «+»: the button (52), its offset and the list's own gap.
      The bar of sections lies under .content and holds the safe area itself. */
-  :global(.list-wrap):has(~ .fab) { padding-bottom: calc(56px + var(--sp-4) + var(--sp-2)); }
+  :global(.list-wrap):has(~ .m-fab) { padding-bottom: calc(52px + var(--sp-4) + var(--sp-2)); }
 </style>

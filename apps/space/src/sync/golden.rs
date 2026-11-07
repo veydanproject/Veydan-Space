@@ -54,5 +54,10 @@ pub(crate) fn types() -> BTreeSet<String> {
 }
 
 /// The entity types 5.x added. 4.0.7 skips them and none of its files holds
-/// them; they keep no blob of format v1 (spec 9.5).
-pub(crate) const NEW_IN_5: [&str; 1] = [veydan_sync_host::LABEL_ENTITY];
+/// them; they keep no blob of format v1 (spec 9.5): the labels, and the
+/// archive of the conversation, whose segments are large files v2 (9.6).
+pub(crate) const NEW_IN_5: [&str; 3] = [
+    veydan_sync_host::LABEL_ENTITY,
+    veydan_messenger_app::sync::ENTITY_SECRET,
+    veydan_messenger_app::sync::ENTITY_SEGMENT,
+];

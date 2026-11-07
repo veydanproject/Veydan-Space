@@ -32,13 +32,13 @@
 </BottomSheet>
 
 <style>
-  .m-row.on { color: var(--accent-text); font-weight: 600; }
+  .m-row.on { color: var(--accent-text); font-weight: var(--fw-semibold); }
   .tick { color: var(--accent-text); display: inline-flex; }
   /* A language's code as a small chip, as the computer's settings show it. */
   .code {
     flex-shrink: 0; min-width: 38px; padding: 1px 6px; border: 1px solid var(--border-2); border-radius: var(--radius-xs);
     font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold); text-align: center;
-    text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2);
+    color: var(--text-2);
   }
   .on .code { border-color: var(--accent-border); color: var(--accent-text); }
 </style>

@@ -677,7 +677,11 @@ async fn notes_and_pass_share_a_vault_with_space_and_delete_nothing_of_it() {
     let settings_before = setting_values(&space).await;
     let files_before = vault_files(&vault);
     let space_types = types_published(&space).await;
-    for entity in sync_registry().entities() {
+    // The archive of the messenger publishes only with its archive and its
+    // runtime, which these states do not have: its case with Notes and Pass
+    // on one vault is the check of stage Э5 (messenger-archive-plan.md §7, 11).
+    let archive = [veydan_messenger_app::sync::ENTITY_SECRET, veydan_messenger_app::sync::ENTITY_SEGMENT];
+    for entity in sync_registry().entities().into_iter().filter(|e| !archive.contains(e)) {
         assert!(space_types.contains(entity), "Space published no {entity}");
     }
 
@@ -1242,6 +1246,127 @@ async fn a_product_that_knows_every_type_collects_as_before() {
     assert_eq!(blobs(&notes).await, expected);
 
     close(notes).await;
+    let _ = std::fs::remove_dir_all(&vault);
+}
+
+/// A segment of the archive of the messenger as Space's handler writes it
+/// (platform-spec 9.6): the file as a large file v2, the op with its
+/// summary and the manifest in `lf_refs` — the one field the collection
+/// of garbage reads (the reference `lf` is left out here, so the test
+/// tells which field keeps the file); without `refs`, an op that names no
+/// file, whose file is garbage. The touches of this process are
+/// forgotten after the push: a GC of the same process would otherwise
+/// keep the file for them, whatever the ops say.
+async fn push_segment(state: &TestStates, entity_id: &str, bytes: &[u8], refs: bool) -> veydan_sync::LargeFileRef {
+    let db = &state.core.db;
+    let engine = open_engine(&state.core).await.unwrap();
+    let path = state.core.app_data_dir.join("segment.bin");
+    std::fs::write(&path, bytes).unwrap();
+    let store = engine
+        .large_files(veydan_sync::LargeFileConfig::default())
+        .unwrap();
+    let lf = store
+        .upload(
+            &veydan_sync::PathSource::new(&path).unwrap(),
+            &|_| {},
+            &veydan_sync::CancelFlag::default(),
+        )
+        .await
+        .unwrap();
+    let (mut local, last) = state::load_local_state(db).await.unwrap();
+    let mut clock = HlcClock::new(engine.device_id().to_string(), last.as_ref());
+    let mut payload = json!({
+        "owner": "ab".repeat(32), "scope": "dm", "month": "2026-10", "count": 1,
+        "first_at": 1_790_000_000, "last_at": 1_790_000_000,
+        "size": bytes.len(), "hash": veydan_sync::sha256_hex(bytes),
+    });
+    if refs {
+        payload["lf_refs"] = json!([lf.manifest_id]);
+    }
+    let op = Op {
+        entity_type: veydan_messenger_app::sync::ENTITY_SEGMENT.into(),
+        entity_id: entity_id.into(),
+        hlc: clock.now(),
+        deleted: false,
+        payload,
+    };
+    engine.push(&mut local, vec![op]).await.unwrap();
+    state::save_own_state(db, &local, &clock.last())
+        .await
+        .unwrap();
+    veydan_sync::large_files::forget_touches_before(i64::MAX);
+    lf
+}
+
+/// The size of the file of a segment as `state` reads it from the vault.
+async fn segment_size(state: &TestStates, lf: &veydan_sync::LargeFileRef) -> u64 {
+    segment_size_or_none(state, lf).await.expect("the file is in the vault")
+}
+
+/// The same, `None` when the vault no longer holds the file.
+async fn segment_size_or_none(state: &TestStates, lf: &veydan_sync::LargeFileRef) -> Option<u64> {
+    open_engine(&state.core)
+        .await
+        .unwrap()
+        .large_files(veydan_sync::LargeFileConfig::default())
+        .unwrap()
+        .inspect(lf)
+        .await
+        .ok()
+        .map(|m| m.size)
+}
+
+/// Plan §7, 11 (`internal/messenger-archive-plan.md`): Space wrote a
+/// segment of the archive of the messenger — a large file v2 whose manifest
+/// its op names in `lf_refs` — into the vault it shares with Notes and
+/// Pass. Neither knows the type: each sees it as unknown, takes nothing of
+/// it, and its garbage collection leaves the manifest and the chunks in
+/// place; Space's own, which knows the type, leaves them too. The file of
+/// a segment whose op names no manifest is garbage to every client, the
+/// type known or not: it is `lf_refs` that keeps a file, not the type.
+#[tokio::test]
+async fn notes_and_pass_keep_the_segments_of_the_messenger_archive() {
+    let vault = crate::db::test_dir();
+    let space = device(sync_registry(), &vault).await;
+    create_vault(&space).await;
+    let owner = "ab".repeat(32);
+    let body = b"VMA1 a segment of the test, not of the real format";
+    let segment = push_segment(&space, &format!("{owner}/dm/2026-10"), body, true).await;
+    let named_files = vault_files(&vault);
+    let loose = b"VMA1 a segment whose op names no file";
+    let unnamed = push_segment(&space, &format!("{owner}/dm/2026-09"), loose, false).await;
+    assert_eq!(segment_size(&space, &segment).await, body.len() as u64);
+
+    let notes = device(notes_like(), &vault).await;
+    join_vault(&notes).await;
+    let pass = device(pass_like(), &vault).await;
+    join_vault(&pass).await;
+    for state in [&notes, &pass] {
+        cycle(state).await;
+        assert!(
+            !row_state_types(state).await.contains(veydan_messenger_app::sync::ENTITY_SEGMENT),
+            "took a segment"
+        );
+        veydan_sync::large_files::forget_touches_before(i64::MAX);
+        let outcome = collect_garbage(state).await;
+        assert_eq!(outcome.unknown, [veydan_messenger_app::sync::ENTITY_SEGMENT]);
+        assert_eq!(outcome.removed, 0, "an unknown type: its ops stay");
+        assert_eq!(segment_size(state, &segment).await, body.len() as u64, "the file named in lf_refs stays");
+        // The file no op names is garbage to any client, this one first:
+        // it is `lf_refs` that keeps a file, not the type.
+        assert!(segment_size_or_none(state, &unnamed).await.is_none(), "the loose file is gone");
+        assert!(vault_files(&vault).is_superset(&named_files), "the named segment is whole");
+    }
+
+    veydan_sync::large_files::forget_touches_before(i64::MAX);
+    let outcome = collect_garbage(&space).await;
+    assert!(outcome.unknown.is_empty(), "{:?}", outcome.unknown);
+    assert_eq!(outcome.lf_removed, 0, "nothing of the archive is garbage to the client that knows it: {}", outcome.lf_removed);
+    assert_eq!(segment_size(&space, &segment).await, body.len() as u64, "the file named in lf_refs stays");
+
+    for state in [space, notes, pass] {
+        close(state).await;
+    }
     let _ = std::fs::remove_dir_all(&vault);
 }
 

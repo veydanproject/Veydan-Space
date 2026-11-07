@@ -1,7 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- My profile and my key on a phone, without the other tabs of the chat's settings: the screen behind the avatar in Space (mobile/MobileProfile), the first tab of the settings in Chat (entry/mobile, `into: 'tab'`). -->
+<!-- My profile, my key and the archive of chats on a phone, without the other tabs of the chat's settings: the screen behind the avatar in Space (mobile/MobileProfile), the first tab of the settings in Chat (entry/mobile, `into: 'tab'`). -->
 <script lang="ts">
   import { onMount } from 'svelte';
   import '../shared/emoji/font.css';
@@ -9,6 +9,7 @@
   import { messengerStore } from '../store.svelte';
   import OwnProfileCard from '../contacts/OwnProfileCard.svelte';
   import IdentityCard from '../identity/IdentityCard.svelte';
+  import ArchiveCard from '../archive/ArchiveCard.svelte';
   import { openSettings, settingsUi } from './settingsTab.svelte';
 
   markPhone();
@@ -28,6 +29,8 @@
   {#if messengerStore.identity}
     <OwnProfileCard onopenmedia={openMedia} />
     <IdentityCard identity={messengerStore.identity} />
+    <!-- The archive of chats, as under «Profile and key» of the settings: whichever way the profile is opened. -->
+    <ArchiveCard />
   {/if}
 </div>
 

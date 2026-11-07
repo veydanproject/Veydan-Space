@@ -52,5 +52,5 @@
 <style>
   .btn :global(svg) { margin-right: 2px; }
   .foot { flex: 1; min-width: 0; }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.45; }
+  .hint { margin: 0; line-height: var(--lh-snug); }
 </style>

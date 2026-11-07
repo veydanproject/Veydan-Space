@@ -56,6 +56,6 @@
     text-align: left;
   }
   .pick.on { background: var(--accent-bg); }
-  .pick:disabled { opacity: 0.5; }
+  .pick:disabled { opacity: 0.45; }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

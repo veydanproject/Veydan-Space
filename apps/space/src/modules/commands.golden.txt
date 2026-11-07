@@ -158,6 +158,7 @@ lock_timeout_set shell all
 lock_touch shell all
 lock_unlock shell all
 media_grant_access shell all
+messenger_archive_status messenger all
 messenger_avatar_cached messenger all
 messenger_avatar_prepare messenger all
 messenger_avatar_remove messenger all
@@ -359,6 +360,7 @@ messenger_relays_set_enabled messenger all
 messenger_relays_set_silent messenger all
 messenger_report_send messenger all
 messenger_server_accept messenger all
+messenger_server_join messenger all
 messenger_server_preview messenger all
 messenger_server_remove messenger all
 messenger_servers_private messenger all

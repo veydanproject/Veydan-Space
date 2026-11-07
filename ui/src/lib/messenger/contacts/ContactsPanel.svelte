@@ -4,7 +4,9 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { messengerStore } from '../store.svelte';
+  import { confirmStore } from '../shared/confirm.svelte';
   import { contactLabel, messengerError, type MessengerContact } from '../api';
   import ShareDialog from '../content/ShareDialog.svelte';
   import MessageContent from '../content/MessageContent.svelte';
@@ -24,7 +26,6 @@
   let { onchat, compact = false }: Props = $props();
 
   let busy = $state(false);
-  let error = $state('');
   let openId = $state<string | null>(null);
   let editNick = $state('');
   let editNote = $state('');
@@ -34,11 +35,16 @@
   let shareOpen = $state(false);
 
   async function run(fn: () => Promise<unknown>) {
-    error = '';
     busy = true;
     try { await fn(); }
-    catch (e) { error = messengerError(e); }
+    catch (e) { toast.error(messengerError(e), { action: false }); }
     finally { busy = false; }
+  }
+
+  /** Removal asks first, in the words of the card and the chat; a refusal removes nothing. */
+  async function remove(c: MessengerContact) {
+    if (!(await confirmStore.ask($t('msg_rel_confirm_remove', { name: contactLabel(c) }), $t('common_remove'), true, 'user-minus'))) return;
+    await run(() => messengerStore.removeContact(c.pubkey));
   }
 
   // The phone: Write and Save stay buttons, the rest of a contact's actions are a sheet.
@@ -47,7 +53,7 @@
     const c = moreFor;
     if (!c) return [];
     return [
-      { label: $t('msg_share_contact'), icon: 'send', onselect: () => { sharing = c.pubkey; shareOpen = true; } },
+      { label: $t('msg_share_contact'), icon: 'share', onselect: () => { sharing = c.pubkey; shareOpen = true; } },
       {
         label: c.followed ? $t('msg_contacts_unfollow') : $t('msg_contacts_follow'),
         icon: 'user',
@@ -62,7 +68,7 @@
           }]
         : []),
       { type: 'separator' },
-      { label: $t('msg_contacts_remove'), icon: 'trash-2', danger: true, onselect: () => void run(() => messengerStore.removeContact(c.pubkey)) },
+      { label: $t('common_remove'), icon: 'user-minus', danger: true, onselect: () => void remove(c) },
     ];
   });
 
@@ -78,7 +84,7 @@
 <div class="contacts" class:card={!compact} class:compact>
   {#if !compact}
     <div class="title-row">
-      <div class="card-title"><Icon name="user" size={16} /> {$t('msg_contacts_title')}</div>
+      <div class="card-title"><Icon name="book-user" size={16} /> {$t('msg_contacts_title')}</div>
       <span class="title-actions">
         <ScanQrButton disabled={!messengerStore.status?.runtime?.session_active} />
         <MyQrButton disabled={!messengerStore.status?.runtime?.session_active} />
@@ -88,7 +94,6 @@
   <p class="muted">{$t('msg_contacts_text')}</p>
 
   {#if !compact}<ContactAddForm />{/if}
-  {#if error}<div class="error-msg">{error}</div>{/if}
 
   {#if messengerStore.contacts.length === 0}
     <div class="muted small empty">{$t('msg_contacts_empty')}</div>
@@ -136,7 +141,7 @@
                 {/if}
                 <button class="btn btn-ghost btn-sm" disabled={busy}
                   onclick={() => run(() => messengerStore.updateContact(c.pubkey, { nickname: editNick.trim() || null, note: editNote.trim() || null }))}>
-                  {$t('msg_contacts_save')}
+                  {$t('common_save')}
                 </button>
                 {#if compact}
                   <span class="spacer"></span>
@@ -145,7 +150,7 @@
                   </button>
                 {:else}
                 <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => { sharing = c.pubkey; shareOpen = true; }}>
-                  <Icon name="send" size={12} />{$t('msg_share_contact')}
+                  <Icon name="share" size={12} />{$t('msg_share_contact')}
                 </button>
                 <button class="btn btn-ghost btn-sm" disabled={busy}
                   onclick={() => run(() => messengerStore.setFollowed(c.pubkey, !c.followed))}>
@@ -161,8 +166,8 @@
                   </button>
                 {/if}
                 <span class="spacer"></span>
-                <button class="btn btn-ghost btn-sm danger" disabled={busy} onclick={() => run(() => messengerStore.removeContact(c.pubkey))}>
-                  <Icon name="trash-2" size={12} />{$t('msg_contacts_remove')}
+                <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={() => remove(c)}>
+                  <Icon name="user-minus" size={12} />{$t('common_remove')}
                 </button>
                 {/if}
               </div>
@@ -199,7 +204,7 @@
   }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .tag { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.5px; padding: 1px var(--sp-2); border-radius: var(--radius-sm); background: var(--accent-tint); color: var(--accent-text-2); }
+  .tag { font-size: var(--fs-xs); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .meta code { font-family: var(--font-mono); }
   .verified { color: var(--success-text); }
@@ -210,18 +215,17 @@
   .grid label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
   .grid input {
     font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 6px 8px;
   }
   .actions { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
   .spacer { flex: 1; }
-  .btn.danger { color: var(--danger-text); }
 
   /* The phone: one grouped list of full-width rows, like the shell's lists (mobile.css .m-list). */
-  .compact .muted { font-size: var(--fs-base); line-height: 1.45; padding: 0 var(--sp-1); }
+  .compact .muted { font-size: var(--fs-base); line-height: var(--lh-snug); padding: 0 var(--sp-1); }
   .compact .empty { text-align: center; padding: var(--sp-6) var(--sp-4); font-size: var(--fs-sm); }
   .compact .list {
     gap: 0; overflow: hidden; background: var(--m-card, var(--surface));
-    border: 1px solid var(--m-card-border, var(--border)); border-radius: var(--m-radius, var(--radius-lg));
+    border: 1px solid var(--m-card-border, var(--border)); border-radius: var(--radius-lg);
   }
   .compact .row { border: none; border-radius: 0; background: none; }
   .compact .row + .row { border-top: 1px solid var(--m-card-border, var(--border)); }
@@ -231,5 +235,5 @@
   .compact .name { font-size: var(--fs-body); }
   .compact .meta { font-size: var(--fs-sm); }
   .compact .details { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top-color: var(--m-card-border, var(--border)); }
-  .compact .grid input { font-size: var(--fs-md); padding: 8px 10px; border-radius: var(--radius); }
+  .compact .grid input { font-size: var(--fs-md); padding: 8px 10px; }
 </style>

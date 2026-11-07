@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import QrScanner from '$lib/core/ui/QrScanner.svelte';
@@ -150,7 +151,10 @@
     </div>
   {/if}
 
-  {#if scanError}<div class="error-msg">{scanError}{#if onmanual}<button class="link-btn" onclick={onmanual}>{$t('msg_inv_scan_manual')}</button>{/if}</div>{/if}
+  {#if scanError}
+    {#snippet manual()}<button class="btn btn-ghost btn-sm" onclick={onmanual}>{$t('msg_inv_scan_manual')}</button>{/snippet}
+    <Notice tone="danger" action={onmanual ? manual : undefined}>{scanError}</Notice>
+  {/if}
 </div>
 
 <style>
@@ -160,5 +164,4 @@
   .joined .mark { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--bg); }
   .joined-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--text); }
   .joined-text span { color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
-  .link-btn { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--accent-text-3); font: inherit; text-decoration: underline; cursor: pointer; }
 </style>

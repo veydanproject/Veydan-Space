@@ -12,7 +12,7 @@
   import { exitArgument, torErrorText } from '$lib/tor/settings';
   import type { InstanceInfo } from '$lib/tor/types';
   import TorInstanceRow from '$lib/tor/desktop/TorInstanceRow.svelte';
-  import TorNote from '$lib/tor/desktop/TorNote.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let list = $state<InstanceInfo[]>([]);
   let exit = $state('');
@@ -67,14 +67,14 @@
       </button>
     </div>
     <span class="hint" id="tor-start-hint">{$t('tor_start_hint')}</span>
-    {#if error}<TorNote tone="danger">{error}</TorNote>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </form>
 </div>
 
 <style>
   .tor-instances { display: flex; flex-direction: column; gap: var(--sp-3); }
   .empty { display: flex; align-items: flex-start; gap: var(--sp-4); padding: var(--sp-5); }
-  .empty p { margin: 0; font-size: var(--fs-base); line-height: 1.55; color: var(--text-2); }
+  .empty p { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); }
   .tile {
     display: inline-flex; align-items: center; justify-content: center; width: var(--control-h); height: var(--control-h); flex-shrink: 0;
     border-radius: var(--radius); background: var(--accent-tint); color: var(--accent-text);
@@ -83,5 +83,5 @@
   .start label { font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .start-row { display: flex; gap: var(--sp-2); align-items: center; }
   .start-row input { flex: 1; min-width: 0; }
-  .hint { font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2); }
+  .hint { line-height: var(--lh-snug); }
 </style>

@@ -277,6 +277,7 @@ async fn the_card_of_my_server_never_goes_into_a_group() {
             call_node: None,
             name: Some("S1".into()),
             push_mode: None,
+            access: None,
         })
         .await
         .unwrap();

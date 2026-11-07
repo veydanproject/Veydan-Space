@@ -1182,7 +1182,11 @@ impl ChannelService {
             // The messenger's code, so a page says the same words as in a chat.
             return Err(MessengerError::Invalid("err.too_large_for_preview".into()));
         }
-        let bytes = tokio::fs::read(&path).await?;
+        let mut bytes = tokio::fs::read(&path).await?;
+        // A circle of Android shown on Linux, the file untouched (messenger-media `webm`).
+        if mime == "video/webm" {
+            messenger_media::webm::clear_alpha_mode(&mut bytes);
+        }
         Ok(Some(format!("data:{mime};base64,{}", B64.encode(bytes))))
     }
 

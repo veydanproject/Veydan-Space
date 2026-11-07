@@ -46,7 +46,7 @@
 
 <style>
   .pref { display: flex; flex-direction: column; gap: 6px; }
-  .label { font-size: var(--fs-2xs); font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+  .label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .presets { display: flex; gap: 8px; flex-wrap: wrap; }
   .preset {
     min-height: 34px;
@@ -57,7 +57,7 @@
     color: var(--text);
     font: inherit;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     cursor: pointer;
   }
   .preset.active { background: var(--accent); color: #fff; }

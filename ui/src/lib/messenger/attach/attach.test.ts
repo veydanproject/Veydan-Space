@@ -13,7 +13,7 @@ import { ResultGate, finishPanel, runAction } from './resultGate';
 import galleryPanel from './GalleryPanel.svelte?raw';
 import builtinSource from './builtin.ts?raw';
 import { mockLibrary, MOCK_PICKED } from './MockLibrary';
-import { holdBack, resetBacks, type SheetBackEnv } from './sheetBack';
+import { holdBack, resetBacks, type SheetBackEnv } from '$lib/core/ui/sheetBack';
 import buttonSource from '../media/AttachButton.svelte?raw';
 
 const ctx = (over: Partial<AttachContext> = {}): AttachContext => ({

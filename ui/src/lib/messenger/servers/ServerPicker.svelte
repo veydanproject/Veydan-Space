@@ -85,7 +85,7 @@
               <Icon name="server-2" size={14} /><span class="name">{nameOfServer(s)}</span><span class="host">{hostOf(s.relay)}</span>
             </button></li>
           {:else}
-            <li class="empty">{$t('msg_srv_pick_none')}</li>
+            <li class="empty">{$t('common_nothing_found')}</li>
           {/each}
         </ul>
       </div>
@@ -106,7 +106,7 @@
   .srv-chip:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
   .srv-chip.on { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent-border); }
   .srv-chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .srv-chip:disabled { opacity: 0.5; cursor: default; }
+  .srv-chip:disabled { opacity: 0.45; cursor: default; }
 
   .many { display: flex; flex-direction: column; gap: 6px; }
   .field {
@@ -116,12 +116,12 @@
   .field :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .field-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .host { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .count { font-size: var(--fs-2xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
+  .host { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { font-size: var(--fs-xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
   .list { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
   .search {
     font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 6px 9px;
+    border: 1px solid var(--border); border-radius: var(--radius-pill); height: var(--control-h); padding: 0 9px;
   }
   .search:focus { outline: none; border-color: var(--accent-border); }
   ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }

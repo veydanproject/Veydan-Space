@@ -99,7 +99,7 @@
   <div class="m-body">
   <div class="output m-card" class:empty={!password}>
     <span class="pw mono">{password || $t('pwgen_placeholder')}</span>
-    <button class="m-ibtn" disabled={!password} onclick={() => copyText(password)} aria-label={$t('pwgen_btn_copy')}>
+    <button class="m-ibtn" disabled={!password} onclick={() => copyText(password)} aria-label={$t('common_copy')}>
       <Icon name="copy" size={20} />
     </button>
   </div>
@@ -150,8 +150,8 @@
     </p>
     {#if pwgenHistory.loaded && history.length > 0}
       <button class="m-link danger off-clear" onclick={clearHistory}>
-        <Icon name="trash" size={16} />
-        {$t('pwgen_btn_clear')}
+        <Icon name="trash-2" size={16} />
+        {$t('common_clear')}
       </button>
     {/if}
   {/if}
@@ -161,8 +161,8 @@
       <span class="m-section">{$t('pwgen_history_title', { n: String(history.length) })}</span>
       {#if history.length > 0}
         <button class="m-link danger" onclick={clearHistory}>
-          <Icon name="trash" size={16} />
-          {$t('pwgen_btn_clear')}
+          <Icon name="trash-2" size={16} />
+          {$t('common_clear')}
         </button>
       {/if}
     </div>
@@ -179,7 +179,7 @@
         {#each history as entry (entry.id)}
           {@const shown = revealed.has(entry.id)}
           <div class="m-row entry">
-            <button class="entry-copy" onclick={() => copyText(entry.password)} aria-label={$t('pwgen_btn_copy')}>
+            <button class="entry-copy" onclick={() => copyText(entry.password)} aria-label={$t('common_copy')}>
               <span class="entry-pw mono" class:masked={!shown}>
                 {shown ? entry.password : '•'.repeat(Math.min(entry.password.length, 20))}
               </span>
@@ -223,7 +223,7 @@
     user-select: text;
     -webkit-user-select: text;
   }
-  .m-ibtn:disabled { opacity: 0.35; }
+  .m-ibtn:disabled { opacity: 0.45; }
   .generate { margin-top: var(--sp-5); }
   .length {
     flex-direction: column;
@@ -232,7 +232,7 @@
     padding-top: var(--sp-3);
     padding-bottom: var(--sp-3);
   }
-  .length .m-row-label { font-weight: 600; }
+  .length .m-row-label { font-weight: var(--fw-semibold); }
   .length input[type='range'] {
     width: 100%;
     min-height: 0;
@@ -280,6 +280,6 @@
     overflow-wrap: anywhere;
     word-break: break-all;
   }
-  .entry-pw.masked { color: var(--text-3); letter-spacing: 0.05em; }
+  .entry-pw.masked { color: var(--text-3); }
   .entry-date { font-size: var(--fs-xs); color: var(--text-3); }
 </style>

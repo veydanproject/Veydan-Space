@@ -87,12 +87,16 @@ pub async fn clear<R: Runtime>(app: &AppHandle<R>, parts: &[DemoPart<R>]) -> Cmd
     veydan_sync_host::gc::forget_candidates(&core.db).await
 }
 
-/// Replace everything with the demo data of `locale`: the parts are cleared,
+/// Replace everything with the demo data of `locale`: a device joined to a
+/// vault leaves it (as `ClearScope::Device` does), the parts are cleared,
 /// the key and the secret boxes go, the lock becomes [`DEMO_LOCK`] over a
 /// new key, then the parts are seeded in the order of the product's list —
-/// a module after those it links to. A product none of whose modules has
-/// demo data (Chat) has nothing to replace: its lock, and what stands behind
-/// the lock's key (the messenger's key), are left as they are.
+/// a module after those it links to. The leave comes first: the demo data
+/// never reaches the vault, the tombstones of what was there neither, and
+/// no binding to a vault whose key went with the lock stays. A product
+/// none of whose modules has demo data (Chat) has nothing to replace: its
+/// lock, its vault and what stands behind the lock's key (the messenger's
+/// key) are left as they are. Runs with the slot of sync held.
 pub async fn seed<R: Runtime>(
     app: &AppHandle<R>,
     parts: &[DemoPart<R>],
@@ -100,6 +104,11 @@ pub async fn seed<R: Runtime>(
 ) -> CmdResult<()> {
     if parts.is_empty() {
         return Ok(());
+    }
+    let db = &app.state::<Core>().db;
+    if veydan_sync_host::config::load_binding(db).await.is_some() {
+        veydan_sync_host::join::leave(db, app.state::<SyncManager>().registry()).await?;
+        let _ = app.emit(veydan_sync_host::EVENT_STATUS, ());
     }
     clear(app, parts).await?;
     let lock = app.state::<Lock>();
@@ -161,8 +170,9 @@ pub async fn app_clear_data(
 }
 
 /// Wipe, then load the demo data of `locale` (`ru` or `en`). Runs with the
-/// sync slot held, then pushes right away, so the fresh rows carry a newer
-/// clock than any tombstone another device may still publish. Refused in a
+/// sync slot held; a joined device leaves its vault first (`seed`), so the
+/// cycle triggered after has no vault to push to until one is made or
+/// joined anew. Refused in a
 /// release without the feature `demo`; `secret` as for `app_clear_data`.
 #[tauri::command]
 pub async fn demo_seed(
@@ -383,6 +393,31 @@ mod tests {
                 .as_deref(),
             Some("0")
         );
+    }
+
+    /// The demo data on a joined device: the device leaves its vault before
+    /// anything is cleared, so neither the demo rows nor the tombstones of
+    /// the real ones reach it, and no binding to it stays.
+    #[tokio::test]
+    async fn the_demo_data_leaves_the_vault_first() {
+        let (app, _dir) = app().await;
+        join(&app).await;
+        seed(app.handle(), &[part_joined()], "en").await.unwrap();
+        assert_eq!(log(&app), ["clear joined=false"]);
+        assert_eq!(row_states(&app).await, 0);
+        let db = &app.state::<Core>().db;
+        assert!(veydan_sync_host::config::load_binding(db).await.is_none());
+        assert_eq!(
+            veydan_core::settings::get(db, "sync_enabled")
+                .await
+                .as_deref(),
+            Some("0")
+        );
+
+        // A product without demo data replaces nothing: its vault stays.
+        join(&app).await;
+        seed(app.handle(), &[], "en").await.unwrap();
+        assert!(veydan_sync_host::config::load_binding(db).await.is_some());
     }
 
     #[test]

@@ -49,7 +49,7 @@
     <input type="text" class="nick" bind:value={nickname} placeholder={$t('msg_contacts_nick_placeholder')} disabled={busy || !canAct} />
     <div class="foot">
       <button class="btn btn-primary" type="submit" disabled={busy || !canAct || !key.trim()}>
-        <Icon name="plus" size={18} />{$t('msg_contacts_add')}
+        <Icon name="plus" size={18} />{$t('common_add')}
       </button>
     </div>
   </form>
@@ -61,7 +61,7 @@
   .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add input {
     flex: 1; min-width: 180px; font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px;
   }
   .add input.key { font-size: var(--fs-xs); }
   .add input.nick { flex: 0 1 140px; }
@@ -76,7 +76,7 @@
   .add.stacked { display: contents; }
   .add.stacked input, .add.stacked input.nick {
     flex: none; width: 100%; min-width: 0; height: var(--control-h-lg); padding: 0 var(--sp-3);
-    background: var(--surface-3); border-radius: var(--radius); font-size: var(--fs-base);
+    background: var(--surface-3); font-size: var(--fs-base);
   }
   .add.stacked input.key { font-size: var(--fs-sm); }
   .add.stacked input::placeholder { font-family: var(--font-ui); }

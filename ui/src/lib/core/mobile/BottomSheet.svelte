@@ -125,7 +125,7 @@
       >
         {#if onback}
           <button type="button" class="m-ibtn" onclick={onback} aria-label={$t('common_back')} onpointerdown={(e) => e.stopPropagation()}>
-            <Icon name="arrow-left" size={20} />
+            <Icon name="chevron-left" size={18} />
           </button>
         {/if}
         <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
@@ -134,7 +134,7 @@
           {#if titleAside}<span class="aside" role="presentation" onpointerdown={(e) => e.stopPropagation()}>{@render titleAside()}</span>{/if}
         </div>
         {#if closable}<button type="button" class="m-ibtn" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
-          <Icon name="x" size={20} />
+          <Icon name="x" size={18} />
         </button>{/if}
       </div>
     {/if}
@@ -179,13 +179,14 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
+    min-height: 64px;
     margin-bottom: var(--sp-2);
     touch-action: none;
     flex-shrink: 0;
   }
   /* The title and what it keeps beside it: dragged with the head; the row a note opens under. */
   .title-row { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; pointer-events: none; }
-  h2 { min-width: 0; margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); }
+  h2 { min-width: 0; margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: var(--lh-tight); letter-spacing: var(--ls-tight); }
   /* What the title keeps beside it (a «?»): pressed, not dragged; its note is placed by the title's row. */
   .aside { display: inline-flex; pointer-events: auto; }
   .body {
@@ -198,5 +199,6 @@
     touch-action: pan-y;
   }
   .body > :global(*) { flex-shrink: 0; }
-  .foot { flex-shrink: 0; padding-top: var(--sp-3); }
+  /* Like the footer of Dialog and Drawer: 12 above, 20 at the sides (the sheet's own). */
+  .foot { flex-shrink: 0; padding: var(--sp-3) 0 0; }
 </style>

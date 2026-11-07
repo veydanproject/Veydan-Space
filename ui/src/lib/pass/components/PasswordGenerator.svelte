@@ -98,7 +98,7 @@
             <button class="icon-btn pw-eye" onclick={() => (passUi.generatedShown = !passUi.generatedShown)} title={$t('pwgen_btn_show_hide')}>
               <Icon name={passUi.generatedShown ? 'eye-off' : 'eye'} size={14} />
             </button>
-            <button class="icon-btn pw-copy" onclick={() => copyText(passUi.generated)} title={$t('pwgen_btn_copy')}>
+            <button class="icon-btn pw-copy" onclick={() => copyText(passUi.generated)} title={$t('common_copy')}>
               <Icon name="copy" size={14} />
             </button>
           {/if}
@@ -109,7 +109,7 @@
         {/if}
 
         <button class="btn btn-primary btn-generate" onclick={generate}>
-          <Icon name="refresh-cw" size={14} />
+          <Icon name="dices" size={14} />
           {$t('pwgen_btn_generate')}
         </button>
       </div>
@@ -194,8 +194,8 @@
             </span>
             {#if history.length > 0}
               <button class="btn btn-ghost btn-sm" onclick={clearHistory}>
-                <Icon name="trash" size={13} />
-                {$t('pwgen_btn_clear')}
+                <Icon name="trash-2" size={13} />
+                {$t('common_clear')}
               </button>
             {/if}
           </div>
@@ -218,7 +218,7 @@
                     <button class="icon-btn" onclick={() => toggleReveal(entry.id)} title={$t('pwgen_btn_show_hide')}>
                       <Icon name={revealedIds.has(entry.id) ? 'eye-off' : 'eye'} size={13} />
                     </button>
-                    <button class="icon-btn" onclick={() => copyText(entry.password)} title={$t('pwgen_btn_copy')}>
+                    <button class="icon-btn" onclick={() => copyText(entry.password)} title={$t('common_copy')}>
                       <Icon name="copy" size={13} />
                     </button>
                   </div>
@@ -257,11 +257,10 @@
   .pw-field {
     font-size: var(--fs-md);
     font-weight: var(--fw-semibold);
-    letter-spacing: 0.04em;
     height: var(--control-h-lg);
     background: var(--pane-strong);
     border-color: var(--border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-field);
     color: var(--text);
     text-overflow: ellipsis;
   }
@@ -273,20 +272,19 @@
     align-items: center;
     padding: 0.55rem 0.75rem;
     border: 1px solid var(--border);
-    line-height: 1.45;
+    line-height: var(--lh-snug);
     overflow-wrap: anywhere;
     word-break: break-all;
     user-select: text;
     -webkit-user-select: text;
   }
-  .pw-value.masked { letter-spacing: 0.08em; user-select: none; -webkit-user-select: none; }
+  .pw-value.masked { user-select: none; -webkit-user-select: none; }
   /* Room for the reveal and copy buttons, which show once there is a password. */
   .pw-field.filled { padding-right: 4.5rem; }
   /* The hint is a sentence, not a password: the UI font (the empty field is not `.mono`), so it fits a narrow pane in either language. */
   .pw-field::placeholder {
     font-size: var(--fs-base);
     font-weight: var(--fw-medium);
-    letter-spacing: 0;
   }
 
   .pw-eye {
@@ -363,7 +361,7 @@
   .setting-row label {
     min-width: 80px;
     flex-shrink: 0;
-    font-weight: 500;
+    font-weight: var(--fw-medium);
     color: var(--text-2);
   }
 
@@ -401,7 +399,7 @@
     background: var(--warn-bg);
     color: var(--warn-text);
     padding: 0.4rem 0.6rem;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     font-size: var(--fs-xs);
   }
 
@@ -419,10 +417,8 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
-    text-transform: uppercase;
-    letter-spacing: 0.7px;
     color: var(--text-dim);
   }
 
@@ -467,10 +463,10 @@
     max-width: 180px;
   }
 
-  .masked { color: var(--text-3); letter-spacing: 0.05em; }
+  .masked { color: var(--text-3); }
 
   .history-date {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
   }
 

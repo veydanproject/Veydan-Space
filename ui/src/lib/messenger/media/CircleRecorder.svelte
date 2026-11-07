@@ -131,9 +131,9 @@
   .time.on { color: #fff; }
   .controls { display: flex; align-items: center; gap: var(--sp-6); }
   .side { width: 52px; height: 52px; border: none; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-  .side:disabled { opacity: 0.3; }
-  .main { width: 76px; height: 76px; border: 4px solid #fff; border-radius: 50%; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; }
-  .main:disabled { opacity: 0.4; }
+  .side:disabled { opacity: 0.45; }
+  .main { width: 76px; height: 76px; padding: 0; border: 4px solid #fff; border-radius: 50%; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; }
+  .main:disabled { opacity: 0.45; }
   .main.stop { background: var(--accent-grad); border-color: transparent; }
-  .rec-dot { width: 52px; height: 52px; border-radius: 50%; background: var(--danger); }
+  .rec-dot { flex: none; width: 52px; height: 52px; border-radius: 50%; background: var(--danger); }
 </style>

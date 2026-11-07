@@ -12,6 +12,7 @@ use messenger_core::traits::{RelayState, SystemClock, UiEvent};
 use messenger_core::{Clock, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SubId, SyncItem, TextFormat, Timestamp, Transport};
 use messenger_dm::{ChatView, MessageView};
 use messenger_groups::{GroupKind, GroupService, GroupView, InviteView, OpBody, Outcome, Signal};
+use messenger_archive::ArchiveScope;
 use messenger_ingress::{filters, Outbox};
 use messenger_store::{cursors, events_raw, groups as repo, servers, settings, Store};
 use std::collections::{BTreeMap, HashSet};
@@ -170,6 +171,9 @@ pub struct GroupsDriver {
     /// The private servers this session has taken up the groups of: those
     /// of its start, and each that came since (`servers_changed`).
     servers_known: Arc<Mutex<HashSet<String>>>,
+    /// The archive of the conversation: how far it reaches, and whether a
+    /// fresh database should wait for it (`crate::archive`).
+    archive: Arc<crate::archive::ArchiveBridge>,
 }
 
 impl GroupsDriver {
@@ -180,6 +184,7 @@ impl GroupsDriver {
         relays: Arc<RelayService>,
         outbox: Outbox,
         ui: broadcast::Sender<UiEvent>,
+        archive: Arc<crate::archive::ArchiveBridge>,
     ) -> Self {
         Self {
             groups,
@@ -190,6 +195,7 @@ impl GroupsDriver {
             synced: Arc::default(),
             listened: Arc::default(),
             servers_known: Arc::default(),
+            archive,
         }
     }
 
@@ -236,6 +242,9 @@ impl GroupsDriver {
             *known = now;
             came
         };
+        // A server came or went: a segment of the archive parked for want
+        // of it may go now, or is to be parked (`crate::archive`).
+        self.archive.wake();
         if let Err(e) = self.relays.reload().await {
             eprintln!("messenger groups: the relays were not reloaded: {e}");
         }
@@ -270,6 +279,29 @@ impl GroupsDriver {
         self.resubscribe().await;
     }
 
+    /// Private server `id` let this device in (a join, «Режимы доступа
+    /// сервера»): what its relay refused before is asked again. Its groups
+    /// here catch up their past there, and the subscriptions are sent anew
+    /// (`nostr-sdk` drops one the relay closed with `restricted:`).
+    pub(crate) async fn server_joined(&self, id: &str) {
+        if self.groups.signer().is_none() {
+            return;
+        }
+        let ids = self.groups.watched().await.unwrap_or_default();
+        for (server, part) in self.by_server(&ids).await {
+            if server.as_deref() == Some(id) {
+                {
+                    let mut synced = self.synced.lock().await;
+                    for g in &part {
+                        synced.remove(g);
+                    }
+                }
+                self.catch_up(server, part).await;
+            }
+        }
+        self.resubscribe().await;
+    }
+
     fn me(&self) -> Option<PubKey> {
         self.groups.signer().and_then(|k| PubKey::parse(&k.public_key().to_hex()))
     }
@@ -294,11 +326,25 @@ impl GroupsDriver {
         }
         if outcome.resubscribe {
             self.resubscribe().await;
+            // My membership of a group changed (its welcome landed): a
+            // segment of the archive parked for want of its row may go now.
+            self.archive.wake();
         }
         for g in outcome.maintain {
             self.maintain_later(g);
         }
         Ok(())
+    }
+
+    /// Groups I forgot on another device of mine went from the store here
+    /// (the snapshot of my relations): their keys and links leave the
+    /// secret store, what is held of them in memory goes, and the session
+    /// stops listening to them.
+    async fn groups_forgotten(&self) {
+        if let Err(e) = self.groups.forget_gone().await {
+            eprintln!("messenger groups: what the groups forgotten on another device left was not forgotten: {e}");
+        }
+        self.resubscribe().await;
     }
 
     /// Listen to the groups I am in; ask for the history of those that
@@ -531,16 +577,47 @@ impl GroupsDriver {
                 tokio::spawn(async move { this.history(known, Some(since)).await });
             }
         } else if !ids.is_empty() {
-            // First catch-up ever: everything, and the cursor starts here.
+            // First catch-up ever: everything, and the cursor starts here;
+            // or, with an archive of the conversation, everything after
+            // the archive's high-water mark of each group, once the archive
+            // has restored its newest months (`crate::archive`, plan §4.4
+            // step 3). Groups with one mark go in one request.
             {
                 let mut synced = self.synced.lock().await;
                 synced.extend(ids.iter().cloned());
             }
             let this = self.clone();
-            tokio::spawn(async move { this.history(ids, Some(0)).await });
+            tokio::spawn(async move {
+                this.archive.wait_restored().await;
+                let mut by_since: BTreeMap<i64, Vec<String>> = BTreeMap::new();
+                for g in ids {
+                    let since = this
+                        .archive
+                        .since_without_cursor(&ArchiveScope::Group { id: g.clone() }, filters::GROUP_LIVE_MARGIN_SECS, SystemClock.now())
+                        .await;
+                    by_since.entry(since).or_default().push(g);
+                }
+                for (since, part) in by_since {
+                    let that = this.clone();
+                    tokio::spawn(async move { that.history(part, Some(since)).await });
+                }
+            });
         } else {
             let _ = cursors::advance(&self.store, filters::CURSOR_GROUPS, key, SystemClock.now().secs()).await;
         }
+    }
+
+    /// A key of `group_id` came into the lock box from the archive
+    /// (`MessengerRuntime::group_secret_arrived`): what waited for it is
+    /// opened under the group's lock, and what that did is carried out.
+    pub(crate) async fn key_arrived(&self, group_id: &str, key_id: &str) -> Result<()> {
+        let Some(keys) = self.groups.signer() else { return Ok(()) };
+        let lock = self.groups.lock_of(group_id).await;
+        let outcome = {
+            let _guard = lock.lock().await;
+            self.groups.key_arrived(&keys, group_id, key_id).await?
+        };
+        self.apply(outcome).await
     }
 
     async fn maintain_now(&self, group_id: &str) {
@@ -603,6 +680,7 @@ impl GroupsDriver {
                 },
                 ev = told.recv(), if open => match ev {
                     Ok(ev) if ev.name == crate::private::UI_EVENT_SERVERS_UPDATED => self.servers_changed().await,
+                    Ok(ev) if ev.name == messenger_dm::snapshot::UI_EVENT_GROUPS_FORGOTTEN => self.groups_forgotten().await,
                     Ok(_) => {}
                     // Missed events may have been one of them.
                     Err(broadcast::error::RecvError::Lagged(_)) => self.servers_changed().await,

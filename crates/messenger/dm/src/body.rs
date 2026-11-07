@@ -91,11 +91,12 @@ fn text(text: &str) -> Option<Body> {
 /// The parameters of a link of the app that let somebody in and are no
 /// word to show: the app key of a server card (`k`) and the card of a
 /// server riding on a link of a person or a group (`srv`, which carries
-/// the key in it).
-const SECRET_PARAMS: [&str; 2] = ["k", "srv"];
+/// the key in it), and the invite of a server card (`inv`), which lets
+/// whoever has it into a server of its members.
+const SECRET_PARAMS: [&str; 3] = ["k", "srv", "inv"];
 
 /// A text as a line of the list of chats or a notification may show it:
-/// in every `veydan://` link in it, the value of `k=` and of `srv=` is
+/// in every `veydan://` link in it, the value of `k=`, `srv=` and `inv=` is
 /// `…`. The chat shows the message as it came; a line seen on a locked
 /// screen or over a shoulder does not show the key of a server.
 pub fn redact_secrets(text: &str) -> String {
@@ -364,6 +365,14 @@ mod tests {
         assert_eq!(redact_secrets(&format!("x {card} y")), format!("x {} y", card.replace("k=s3cr3t-app-key", "k=…")));
         assert_eq!(redact_secrets("veydan://server/ab?u=x&k=&p=off"), "veydan://server/ab?u=x&k=&p=off", "an empty key is none");
         assert_eq!(redact_secrets("k=1 https://x.org/?k=2"), "k=1 https://x.org/?k=2", "only links of the app");
+        // The invite of a card of a team server, as the key.
+        let team = messenger_links::ServerLink {
+            access: messenger_links::Access::Team,
+            invite: Some("vi1.s3cr3t-invite".into()),
+            ..server.clone()
+        };
+        let line = redact_secrets(&format!("вход: {}", team.encode()));
+        assert!(!line.contains("s3cr3t") && line.ends_with("&a=team&inv=…"), "{line}");
         // A caption, and a stored message as the list reads it.
         let photo = file(serde_json::json!({ "kind": "image", "name": "a.jpg", "caption": format!("ключ: {card}") }));
         let Some(Body::Media { caption: Some(caption), .. }) = body_of(&photo) else { panic!() };

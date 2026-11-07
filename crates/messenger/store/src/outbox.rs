@@ -104,6 +104,18 @@ pub async fn mark_failed(store: &Store, local_id: &str, error: &str, next_retry_
     Ok(())
 }
 
+/// Every row waiting for its next try (`failed`) is due now: a server
+/// that refused them let this device in (a join). Its tries and refusals
+/// so far stay. How many.
+pub async fn due_now(store: &Store, now: i64) -> Result<u64> {
+    let done = sqlx::query("UPDATE msg_outbox SET next_retry_at = ?1 WHERE state = 'failed' AND next_retry_at > ?1")
+        .bind(now)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(done.rows_affected())
+}
+
 /// Given up on: not tried again unless the user asks.
 pub async fn mark_abandoned(store: &Store, local_id: &str, error: &str) -> Result<()> {
     set_state(store, local_id, STATE_ABANDONED, Some(error), None, false).await
@@ -231,5 +243,21 @@ mod tests {
         assert_eq!(count_pending(&s).await.unwrap(), 1);
         assert_eq!(prune_published(&s, -1).await.unwrap(), 1);
         assert!(get(&s, "a").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn rows_waiting_for_a_try_are_made_due() {
+        let s = Store::open_in_memory().await.unwrap();
+        let out = Outbound::Unsubscribe { id: SubId("x".into()) };
+        let now = crate::now();
+        enqueue(&s, "a", &out, now, None).await.unwrap();
+        enqueue(&s, "b", &out, now, None).await.unwrap();
+        mark_failed(&s, "a", "restricted: not a member of this server", now + 300, true).await.unwrap();
+        mark_abandoned(&s, "b", "given up").await.unwrap();
+        assert!(due(&s, now, 60).await.unwrap().is_empty());
+        assert_eq!(due_now(&s, now).await.unwrap(), 1, "the failed one, not the abandoned");
+        let d = due(&s, now, 60).await.unwrap();
+        assert_eq!(d.iter().map(|r| r.local_id.as_str()).collect::<Vec<_>>(), vec!["a"]);
+        assert_eq!(d[0].rejections, 1, "its count stays");
     }
 }

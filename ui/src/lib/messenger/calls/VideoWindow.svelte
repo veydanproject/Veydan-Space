@@ -15,7 +15,6 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
   import { callPeer } from './peer';
   import ScreenPicker from './ScreenPicker.svelte';
@@ -113,11 +112,11 @@
     <div class="bar">
       <button class="ctl" class:off={call.muted} disabled={callStore.busy || call.phase === 'outgoing'} onclick={() => callStore.toggleMute()}
         title={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-pressed={call.muted}>
-        <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={17} />
+        <Icon name={call.muted ? 'mic-off' : 'mic'} size={17} />
       </button>
       <button class="ctl" class:off={!cameraOn} disabled={callStore.busy} onclick={() => callStore.toggleCamera()}
         title={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-pressed={cameraOn}>
-        <CallIcon name={cameraOn ? 'video' : 'video-off'} size={17} />
+        <Icon name={cameraOn ? 'video' : 'video-off'} size={17} />
       </button>
       {#if cameraOn && callStore.cameras.length > 1}
         <button class="ctl" disabled={callStore.busy} onclick={() => callStore.switchCamera()} title={$t('msg_call_camera_switch')} aria-label={$t('msg_call_camera_switch')}>
@@ -129,7 +128,7 @@
           <button class="ctl" class:active={sharing} disabled={callStore.busy} {onclick}
             title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
             aria-pressed={sharing} aria-haspopup="menu" aria-expanded={expanded}>
-            <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
+            <Icon name={sharing ? 'screen-share-off' : 'screen-share'} size={17} />
           </button>
         {/snippet}
       </ScreenPicker>
@@ -137,7 +136,7 @@
         <Icon name={big ? 'minimize-2' : 'maximize-2'} size={16} />
       </button>
       <button class="ctl end" disabled={callStore.ending} onclick={() => callStore.hangUp()} title={$t('msg_call_end')} aria-label={$t('msg_call_end')}>
-        <CallIcon name="hangup" size={18} />
+        <Icon name="phone-hangup" size={18} />
       </button>
     </div>
   </div>
@@ -147,7 +146,7 @@
   .win {
     position: fixed; z-index: 70; right: 16px; bottom: 16px;
     width: clamp(300px, 34vw, 460px); aspect-ratio: 16 / 10;
-    border-radius: var(--radius-card); overflow: hidden; background: #0b0d10;
+    border-radius: var(--radius-card); overflow: hidden; background: var(--call-bg);
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
     cursor: grab; touch-action: none; user-select: none;
     animation: rise 240ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
@@ -163,26 +162,26 @@
   .bar {
     position: absolute; z-index: 5; left: 50%; bottom: 10px; transform: translateX(-50%);
     display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: var(--radius-pill);
-    background: rgba(12, 14, 18, 0.62); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    background: var(--call-scrim); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.12);
     opacity: 0; transition: opacity var(--dur-fast) var(--ease);
   }
   .win:hover .bar, .win:focus-within .bar, .win.big .bar { opacity: 1; }
   @media (hover: none) { .bar { opacity: 1; } }
   .ctl {
-    width: 36px; height: 36px; border-radius: 50%; border: none; cursor: pointer;
+    width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, 0.14); color: #fff;
     transition: background var(--dur-fast) var(--ease);
   }
   .ctl:hover:not(:disabled) { background: rgba(255, 255, 255, 0.26); }
   .ctl.off { background: #fff; color: #111; }
-  .ctl.off:hover:not(:disabled) { background: #e8e8e8; }
+  .ctl.off:hover:not(:disabled) { background: var(--call-text); }
   .ctl.active { background: var(--accent); }
-  .ctl.end { width: 46px; border-radius: var(--radius-pill); background: var(--danger); }
+  .ctl.end { width: 52px; border-radius: var(--radius-pill); background: var(--danger); }
   .ctl.end:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
-  .ctl:disabled { opacity: 0.5; cursor: default; }
-  .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .ctl:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } }
   @media (prefers-reduced-motion: reduce) { .win { animation: none; } }
 </style>

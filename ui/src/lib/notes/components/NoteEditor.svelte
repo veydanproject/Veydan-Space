@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { matches } from '$lib/core/keybindings';
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { directory } from '$lib/core/directory';
@@ -22,6 +23,7 @@
   import { isEntityBinding, isEntityKind, parseBinding } from '$lib/core/bindings';
   import { canBindEntities, contextKeys, ensureEntitiesLoaded, entitySummary, resolvePlaceholder } from '$lib/notes/context';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import { ask } from '$lib/core/ui/confirm.svelte';
   import CaptureScreen from '$lib/notes/media/CaptureScreen.svelte';
   import MediaPrefsBar from '$lib/notes/media/MediaPrefsBar.svelte';
   import { loadPrefs, savePrefs } from '$lib/notes/media/prefs';
@@ -92,7 +94,6 @@
 
   let textareaEl: HTMLTextAreaElement | null = $state(null);
   let titleHovered = $state(false);
-  let showDeleteConfirm = $state(false);
   let showHistory = $state(false);
   let mergeHistoryId = $state<string | null>(null);
   let showSyncConflict = $state(false);
@@ -631,8 +632,15 @@
 
   async function confirmDeleteForever() {
     if (!note) return;
-    await notesStore.deleteForever(note.id);
-    showDeleteConfirm = false;
+    const id = note.id;
+    const yes = await ask({
+      title: $t('note_delete_title'),
+      message: $t('note_delete_body1') + ' ' + $t('note_delete_body2'),
+      confirmLabel: $t('note_delete_confirm'),
+      variant: 'danger',
+      icon: 'trash-2',
+    });
+    if (yes) await notesStore.deleteForever(id);
   }
 
   // The store takes the restored body in (contentRev), and the editor with it.
@@ -700,7 +708,7 @@
   }
 
   const saveLabel: Record<string, string> = {
-    saved: $t('note_status_saved'),
+    saved: $t('common_saved'),
     saving: $t('note_status_saving'),
     unsaved: $t('note_status_unsaved'),
     failed: $t('note_status_error'),
@@ -708,7 +716,7 @@
   };
 
   const saveIcon: Record<string, string> = {
-    saved: 'check-circle',
+    saved: 'check',
     saving: 'loader',
     unsaved: 'circle',
     failed: 'alert-circle',
@@ -725,46 +733,50 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="editor-wrap" bind:this={editorWrapEl} class:is-dragging={histDragging}>
   <div class="editor">
-    <!-- Recovery banner -->
-    {#if note.has_draft}
-      <div class="banner banner-warn">
-        <span>{$t('note_draft_found')}</span>
-        <div class="banner-actions">
-          <button onclick={() => notesStore.recoverDraft(note!.id)}>{$t('note_draft_recover')}</button>
-          <button onclick={() => notesStore.discardDraft(note!.id)}>{$t('note_draft_discard')}</button>
-        </div>
-      </div>
-    {/if}
+    <!-- Plates of the page (core/ui/Notice): buttons secondary, the main one last. -->
+    {#if note.has_draft || syncConflict || (pendingFetch.length && fetchDismissed !== note.id) || externalChange}
+      <div class="plates">
+        {#if note.has_draft}
+          <Notice tone="warn">
+            {$t('note_draft_found')}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => notesStore.discardDraft(note!.id)}>{$t('note_draft_discard')}</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => notesStore.recoverDraft(note!.id)}>{$t('note_draft_recover')}</button>
+            {/snippet}
+          </Notice>
+        {/if}
 
-    <!-- Sync conflict banner: the file stays untouched until resolved -->
-    {#if syncConflict}
-      <div class="banner banner-warn">
-        <span>{$t('note_sync_conflict')}</span>
-        <div class="banner-actions">
-          <button onclick={() => (showSyncConflict = true)}>{$t('note_sync_conflict_resolve')}</button>
-        </div>
-      </div>
-    {/if}
+        <!-- Sync conflict: the file stays untouched until resolved -->
+        {#if syncConflict}
+          <Notice tone="warn">
+            {$t('note_sync_conflict')}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => (showSyncConflict = true)}>{$t('note_sync_conflict_resolve')}</button>
+            {/snippet}
+          </Notice>
+        {/if}
 
-    <!-- Vault-only attachments above the prompt size -->
-    {#if pendingFetch.length && fetchDismissed !== note.id}
-      <div class="banner banner-info">
-        <span>{$t('note_att_fetch_prompt', { n: String(pendingFetch.length), size: formatBytes(pendingFetchBytes) })}</span>
-        <div class="banner-actions">
-          <button onclick={fetchPending}>{$t('note_att_fetch_yes')}</button>
-          <button onclick={() => (fetchDismissed = note!.id)}>{$t('note_att_fetch_later')}</button>
-        </div>
-      </div>
-    {/if}
+        <!-- Vault-only attachments above the prompt size -->
+        {#if pendingFetch.length && fetchDismissed !== note.id}
+          <Notice tone="info">
+            {$t('note_att_fetch_prompt', { n: String(pendingFetch.length), size: formatBytes(pendingFetchBytes) })}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => (fetchDismissed = note!.id)}>{$t('common_later')}</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick={fetchPending}>{$t('note_att_fetch_yes')}</button>
+            {/snippet}
+          </Notice>
+        {/if}
 
-    <!-- External change banner -->
-    {#if externalChange}
-      <div class="banner banner-info">
-        <span>{$t('note_external_change')}</span>
-        <div class="banner-actions">
-          <button onclick={() => notesStore.acceptExternalChange()}>{$t('note_external_accept')}</button>
-          <button onclick={() => notesStore.discardExternalChange()}>{$t('note_external_keep')}</button>
-        </div>
+        <!-- Changed outside: the same plate and order on a phone (MobileNotePage) -->
+        {#if externalChange}
+          <Notice tone="info">
+            {$t('note_external_change')}
+            {#snippet action()}
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => notesStore.discardExternalChange()}>{$t('note_external_keep')}</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick={() => notesStore.acceptExternalChange()}>{$t('note_external_accept')}</button>
+            {/snippet}
+          </Notice>
+        {/if}
       </div>
     {/if}
 
@@ -797,16 +809,16 @@
             title={$t('ctx_title')}
             aria-label={$t('ctx_title')}
           >
-            <Icon name="layers" size={13} />
+            <Icon name="file-text" size={13} />
             {#if contextCount > 0}<span class="att-count">{contextCount}</span>{/if}
           </button>
         {/if}
         <span
           class="save-status-icon status-{saveStatus}"
-          title={saveLabel[saveStatus] ?? $t('note_status_saved')}
+          title={saveLabel[saveStatus] ?? $t('common_saved')}
           class:spinning={saveStatus === 'saving'}
         >
-          <Icon name={saveIcon[saveStatus] ?? 'check-circle'} size={14} />
+          <Icon name={saveIcon[saveStatus] ?? 'check'} size={14} />
         </span>
         <button
           class="icon-action"
@@ -972,13 +984,13 @@
           <button
             class="icon-action"
             onclick={() => note && notesStore.restoreNote(note.id)}
-            title={$t('note_btn_restore')}
+            title={$t('common_restore')}
           >
             <Icon name="rotate-ccw" size={13} />
           </button>
           <button
             class="icon-action icon-danger"
-            onclick={() => (showDeleteConfirm = true)}
+            onclick={confirmDeleteForever}
             title={$t('note_btn_delete_forever')}
           >
             <Icon name="trash-2" size={13} />
@@ -1027,22 +1039,6 @@
       </div>
     </div>
 
-    {#if showDeleteConfirm}
-      <div class="delete-overlay">
-        <div class="delete-modal">
-          <p class="delete-title">{$t('note_delete_title')}</p>
-          <p class="delete-warn">
-            {$t('note_delete_body1')}
-            {$t('note_delete_body2')}
-          </p>
-          <div class="delete-actions">
-            <button class="btn btn-ghost btn-sm" onclick={() => (showDeleteConfirm = false)}>{$t('notes_btn_cancel')}</button>
-            <button class="btn btn-danger btn-sm" onclick={confirmDeleteForever}>{$t('note_delete_confirm')}</button>
-          </div>
-        </div>
-      </div>
-    {/if}
-
     {#if mergeHistoryId}
       {@const noteId = note.id}
       {@const historyId = mergeHistoryId}
@@ -1060,9 +1056,9 @@
           remoteTitle={$t('notes_merge_remote')}
           localName={syncLocalDevice || $t('notes_merge_this_device')}
           remoteName={syncRemoteDevice}
-          oursAction={$t('notes_merge_keep_local')}
+          oursAction={$t('note_sync_conflict_accept_local')}
           bothAction={$t('notes_merge_keep_both')}
-          theirsAction={$t('notes_merge_keep_remote')}
+          theirsAction={$t('note_sync_conflict_accept_remote')}
           onresolved={onSyncConflictResolved}
           oncancel={() => (showSyncConflict = false)}
         />
@@ -1193,38 +1189,7 @@
     container: note-editor / inline-size;
   }
 
-  .banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
-    font-size: var(--fs-sm);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .banner-warn { background: var(--warn-bg); color: var(--warn-text); }
-  .banner-info { background: var(--accent-bg); color: var(--accent-text); }
-
-  .banner-actions {
-    display: flex;
-    gap: 0.4rem;
-    flex-shrink: 0;
-  }
-
-  .banner-actions button {
-    background: none;
-    border: 1px solid currentColor;
-    border-radius: var(--radius-sm);
-    padding: 0.15rem var(--sp-2);
-    font-size: var(--fs-xs);
-    color: inherit;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-
-  .banner-actions button:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
+  .plates { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
 
   .editor-header {
     display: flex;
@@ -1265,7 +1230,7 @@
     outline: none;
     font-size: var(--fs-lg);
     font-weight: var(--fw-extrabold);
-    letter-spacing: -0.3px;
+    letter-spacing: var(--ls-tight);
     color: var(--text);
     padding: 0;
     min-width: 0;
@@ -1283,7 +1248,7 @@
   }
 
   .updated-at {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
     white-space: nowrap;
   }
@@ -1297,7 +1262,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    line-height: 1;
+    line-height: var(--lh-icon);
   }
 
   .save-status-icon.status-saved    { color: var(--success-text); }
@@ -1343,7 +1308,7 @@
     outline: none;
     resize: none;
     font-size: var(--fs-body);
-    line-height: 1.75;
+    line-height: var(--lh-base);
     color: var(--text-body);
     font-family: var(--font-mono);
     overflow-y: auto;
@@ -1359,10 +1324,8 @@
   }
 
   .footer-meta {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
     font-family: var(--font-mono);
   }
 
@@ -1385,51 +1348,10 @@
 
   .icon-action:hover { color: var(--text); background: var(--surface); }
   .att-count {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-family: var(--font-mono);
     margin-left: 2px;
   }
   .icon-action.active { color: var(--accent-text); }
   .icon-danger:hover { color: var(--danger-text) !important; }
-
-  .delete-overlay {
-    position: absolute;
-    inset: 0;
-    background: var(--backdrop);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    border-radius: inherit;
-  }
-  .delete-modal {
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: var(--sp-5) var(--sp-6);
-    max-width: 320px;
-    width: 90%;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-  }
-  .delete-title {
-    margin: 0;
-    font-size: var(--fs-md);
-    font-weight: 600;
-    color: var(--text);
-  }
-  .delete-warn {
-    margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--text-2);
-    line-height: 1.5;
-  }
-  .delete-actions {
-    display: flex;
-    gap: var(--sp-2);
-    justify-content: flex-end;
-    margin-top: var(--sp-1);
-  }
-
 </style>

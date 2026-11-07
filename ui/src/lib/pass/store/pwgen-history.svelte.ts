@@ -56,11 +56,11 @@ class PwgenHistoryStore {
    * sheet (`ask()`) — with the same words on both. True when the user said
    * yes; nothing is deleted otherwise.
    */
-  async confirmClear(tr: (key: 'pwgen_history_clear_title' | 'pwgen_history_clear_message' | 'pwgen_btn_clear') => string): Promise<boolean> {
+  async confirmClear(tr: (key: 'pwgen_history_clear_title' | 'pwgen_history_clear_message' | 'common_clear') => string): Promise<boolean> {
     const yes = await ask({
       title: tr('pwgen_history_clear_title'),
       message: tr('pwgen_history_clear_message'),
-      confirmLabel: tr('pwgen_btn_clear'),
+      confirmLabel: tr('common_clear'),
     });
     if (yes) await this.clear();
     return yes;

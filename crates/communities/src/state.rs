@@ -1744,6 +1744,27 @@ pub(crate) fn db_path(dir: &Path, keys: &Keys) -> PathBuf {
     dir.join(format!("{name}.db"))
 }
 
+/// The databases of the identities before the one at work (`db_path` of
+/// another key, with the files of its journal) are removed: one identity at
+/// a time is on a device, and the messenger wipes the data of the one
+/// before when another key is made or imported (platform-spec 12). The
+/// same key finds its own file again; the `communities.db` of the builds
+/// before is not an identity's and stays.
+pub(crate) fn forget_other_identities(dir: &Path, own: &Path) {
+    let Some(own) = own.file_name().and_then(|n| n.to_str()) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
+        let base = ["-wal", "-shm", "-journal"].iter().fold(name.as_str(), |n, s| n.strip_suffix(s).unwrap_or(n));
+        if !base.starts_with("npub1") || !base.ends_with(".db") || base == own {
+            continue;
+        }
+        if let Err(e) = std::fs::remove_file(entry.path()) {
+            crate::log::clog!("the data of another identity was not removed: {e}");
+        }
+    }
+}
+
 /// The driver of the identity at work and its loop.
 struct Running {
     pubkey: String,
@@ -1860,7 +1881,9 @@ impl Shared {
     async fn open(&self, keys: &Keys) -> CmdResult<Running> {
         let net = seams::seam::<dyn Transport, _, _>(&self.app)
             .ok_or_else(|| AppError::Other(format!("{STOPPED}: the messenger is not in the product")))?;
-        let db = Db::open(&db_path(&self.dir, keys)).await.map_err(map_err)?;
+        let path = db_path(&self.dir, keys);
+        let db = Db::open(&path).await.map_err(map_err)?;
+        forget_other_identities(&self.dir, &path);
         let secrets: Arc<dyn SecretStore> = Arc::new(BoxSecrets { app: self.app.clone() });
         let blobs = Arc::new(MediaHosts::new().map_err(map_err)?);
         // The notes to a keeper go with the wake of its owner's phone.
@@ -2646,6 +2669,33 @@ mod tests {
         let again = Db::open(&path_a).await.unwrap();
         assert_eq!(db::channels::list(&again).await.unwrap().len(), 1, "the first finds its own again");
         again.close().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The identity at work keeps its own file; those of the identities
+    /// before go with their journals, and the files that are no
+    /// identity's stay.
+    #[test]
+    fn the_files_of_the_identities_before_are_removed() {
+        let dir = std::env::temp_dir().join(format!("communities-forget-{}-{}", std::process::id(), now_secs()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (Keys::generate(), Keys::generate());
+        let (path_a, path_b) = (db_path(&dir, &a), db_path(&dir, &b));
+        let name_b = path_b.file_name().unwrap().to_str().unwrap().to_owned();
+        let others = [name_b.clone(), format!("{name_b}-wal"), format!("{name_b}-shm")];
+        let kept = [db::FILE_NAME.to_string(), "background.json".to_string()];
+        std::fs::write(&path_a, b"a").unwrap();
+        for name in others.iter().chain(&kept) {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        forget_other_identities(&dir, &path_a);
+        assert!(path_a.exists());
+        for name in &others {
+            assert!(!dir.join(name).exists(), "{name}");
+        }
+        for name in &kept {
+            assert!(dir.join(name).exists(), "{name}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

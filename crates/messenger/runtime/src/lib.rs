@@ -10,6 +10,7 @@
 //! `messenger-cli` tomorrow. Nothing here knows about Tauri.
 
 pub mod addr;
+pub mod archive;
 pub mod private;
 pub mod media;
 pub mod notify;
@@ -87,7 +88,7 @@ pub use messenger_contacts::book::{parse_key, ContactPatch};
 pub use messenger_contacts::{BotCommand, ContactView, ProfileInput, ProfileView};
 pub use messenger_identity::{CreatedIdentity, Identity};
 pub use messenger_groups::{GroupKind, GroupView, InviteView, JoinRequestView, KeyView as GroupKeyView, MemberView, OpBody as GroupOp, Role as GroupRole};
-pub use links::{LinkView, PrivateServerView, ServerPreview};
+pub use links::{LinkView, PrivateServerView, ServerAccess, ServerPreview};
 pub use calls::{CallBackends, RegistrySource};
 pub use call_nodes::{CallNodeClass, CallNodeHealth, CallNodeInfo, CallNodeSource, CallNodesView, CallTrust};
 pub use calls::{
@@ -188,6 +189,8 @@ pub struct MessengerRuntime {
     reports: report::Reports,
     /// «Load earlier» in a direct chat: one ask per server at a time (`crate::dm_history`).
     dm_history_state: dm_history::DmHistoryState,
+    /// The archive of the conversation (`crate::archive`).
+    archive: Arc<archive::ArchiveBridge>,
 }
 
 impl MessengerRuntime {
@@ -317,8 +320,11 @@ impl MessengerRuntime {
             Arc::new(avatars::HttpAvatarNet::new()?),
             config.avatars_dir(),
         );
+        // The archive of the conversation, installed later by the host
+        // (`set_archive`); wired into every session from the first.
+        let archive = Arc::new(archive::ArchiveBridge::new(store.clone()));
         let group_driver =
-            groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone());
+            groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone(), archive.clone());
         let group_signals = tokio::spawn(group_driver.clone().run(signals_rx));
         let presence = Arc::new(presence::PresenceDriver::new(store.clone(), dm.clone(), contacts.clone(), outbox.clone()));
         let meta = meta::MetaFollow::new(contacts.clone(), dm.clone(), relays.clone());
@@ -355,6 +361,7 @@ impl MessengerRuntime {
             group_calls,
             reports: report::Reports::default(),
             dm_history_state: dm_history::DmHistoryState::default(),
+            archive,
         };
         // Before any session: what came while the app was off is judged by
         // the bans of the manifest in use, one an update of the app brought
@@ -458,6 +465,7 @@ impl MessengerRuntime {
             self.presence.clone(),
             self.avatars.clone(),
             self.meta.clone(),
+            self.archive.clone(),
         )
         .await?;
         self.group_driver.groups.set_signer(Some(keys_for_dm.clone()));
@@ -513,6 +521,69 @@ impl MessengerRuntime {
             }
         }
         taken
+    }
+
+    // ─── The archive of the conversation (`crate::archive`) ───────────────
+
+    /// Installs the archive of the conversation (`messenger-archive`, plan
+    /// `internal/messenger-archive-plan.md`): from now on every event the
+    /// ingress keeps is recorded in it, and the relay catch-up of a fresh
+    /// database starts where the archive ends. `None` takes it away (the
+    /// sync storage is gone). Takes effect at once, for the running
+    /// session and the next ones; the handler of the sync entities
+    /// (`messenger-app`) calls it when the storage opens.
+    pub fn set_archive(&self, archive: Option<Arc<dyn archive::ArchiveHooks>>) {
+        self.archive.install(archive);
+    }
+
+    /// Who the runtime tells that something a parked segment of the
+    /// restore may have waited for came: a group's welcome landed, a
+    /// private server was put in or taken out (`archive::ArchiveBridge::wake`).
+    pub fn set_archive_waker(&self, waker: Option<archive::Waker>) {
+        self.archive.set_waker(waker);
+    }
+
+    /// Replays what the archive restores into the running session, as
+    /// history (`messenger_archive::Replayer`). Fails with `NotLoggedIn`
+    /// between sessions.
+    pub fn replayer(&self) -> Arc<dyn messenger_archive::Replayer> {
+        self.archive.clone()
+    }
+
+    /// The archive has restored what a fresh device waits for before its
+    /// relay catch-up (every segment, or as much as step B of the restore
+    /// takes): the catch-up may go. Without this it goes after
+    /// `archive::RESTORE_WAIT` anyway.
+    pub fn archive_restored(&self) {
+        self.archive.restored();
+    }
+
+    /// Feeds the archive the past this device holds from before the
+    /// archive existed, once per identity, in the background; the handle
+    /// answers how many events were handed over. Called by the handler
+    /// when the archive becomes available; `NotLoggedIn` without a session
+    /// (the wraps are opened with its keys), `Other` without an archive.
+    pub fn archive_backfill(&self) -> Result<tokio::task::JoinHandle<Result<u64>>> {
+        if !self.archive.is_installed() {
+            return Err(MessengerError::Other("no archive installed".into()));
+        }
+        let keys = self.dm.session_keys().ok_or(MessengerError::NotLoggedIn)?;
+        let bridge = self.archive.clone();
+        Ok(tokio::spawn(async move { bridge.backfill(keys).await }))
+    }
+
+    /// A secret of the lock box came from the archive (`messenger_secret`,
+    /// plan §4.3; `name` as the box spells it, `group.<id>.key.<kid>` or
+    /// `group.<id>.link.<epoch>`): a key of a group opens what waited for
+    /// it in `msg_group_pending`, as history. A link secret needs nothing
+    /// done: it is read when a join is proven. Nothing without a session.
+    pub async fn group_secret_arrived(&self, name: &str) -> Result<()> {
+        let Some(rest) = name.strip_prefix("group.") else { return Ok(()) };
+        let Some((group_id, key_id)) = rest.split_once(".key.") else { return Ok(()) };
+        if group_id.is_empty() || key_id.is_empty() {
+            return Ok(());
+        }
+        self.group_driver.key_arrived(group_id, key_id).await
     }
 
     /// Tell the world where we read DMs (kind 10050): our enabled write
@@ -1039,6 +1110,12 @@ impl MessengerRuntime {
     /// changed. Call after identity create/import/delete and after the host
     /// unlocks secrets. Idempotent and cheap when nothing changed.
     pub async fn refresh_signer(&self) -> Result<bool> {
+        // The key made or imported is another identity's than the data
+        // was: the store is wiped (`IdentityService::persist`); its files
+        // and what the services hold of it go before a session starts.
+        if self.identity.take_wiped() {
+            self.account_wiped().await;
+        }
         // No session until the user has chosen whose servers to use: it
         // would publish our inbox relays.
         let signer = match self.servers_chosen().await? {
@@ -1057,6 +1134,32 @@ impl MessengerRuntime {
             self.start_session(keys).await?;
         }
         Ok(true)
+    }
+
+    /// What the wipe of the store left of the identity before
+    /// (`messenger_store::account::wipe`): the files of its media and its
+    /// avatars, what the notifications brought for it, the keys of its
+    /// groups in the secret store and their logs in memory. The pages are
+    /// told to read their lists again.
+    async fn account_wiped(&self) {
+        let dirs = (self.media.cache_dir().to_path_buf(), self.config.avatars_dir(), self.config.push_inbox_dir());
+        let removed = tokio::task::spawn_blocking(move || {
+            let (media, avatars, inbox) = dirs;
+            // The media cache keeps a folder per file, named by its hash;
+            // its lock and the runs of transfers stay.
+            remove_entries(&media, |name| name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()));
+            remove_entries(&avatars, |_| true);
+            remove_entries(&inbox, |_| true);
+        })
+        .await;
+        if let Err(e) = removed {
+            eprintln!("messenger: the files of the identity before were not removed: {e}");
+        }
+        if let Err(e) = self.group_driver.groups.forget_gone().await {
+            eprintln!("messenger groups: the keys of the identity before stay owed: {e}");
+        }
+        let _ = self.ui.send(UiEvent { name: messenger_dm::UI_EVENT_CHATS_UPDATED.into(), payload: serde_json::json!({}) });
+        let _ = self.ui.send(messenger_dm::contacts_updated(None));
     }
 
     async fn servers_chosen(&self) -> Result<bool> {
@@ -1112,6 +1215,23 @@ impl MessengerRuntime {
         self.relays.shutdown().await;
         self.net.shutdown();
         self.store.close().await;
+    }
+}
+
+/// Remove the files and folders in `dir` whose name `pick` takes; a folder
+/// that is not there has nothing to remove.
+fn remove_entries(dir: &std::path::Path, pick: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
+        if !pick(&name) {
+            continue;
+        }
+        let path = entry.path();
+        let removed = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        if let Err(e) = removed {
+            eprintln!("messenger: {} was not removed: {e}", path.display());
+        }
     }
 }
 
@@ -1282,6 +1402,59 @@ mod tests {
                 assert_eq!(rt.net.asked(), 0, "{servers:?} {mode:?}: nothing was asked");
             }
         }
+        rt.shutdown().await;
+    }
+
+    /// The key went and another one came: the chats, the contacts and the
+    /// files of the identity before are gone before the new one's session;
+    /// the same key imported again finds them (the demo data, a reset of
+    /// the lock, «delete the key»).
+    #[tokio::test]
+    async fn another_identity_starts_with_nothing_of_the_one_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        servers::use_veydan_offline(&rt).await;
+        rt.identity().create("pw").await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        rt.dm_send_text(&Keys::generate().public_key().to_hex(), "hello", None).await.unwrap();
+        rt.contact_add(&Keys::generate().public_key().to_hex(), Some("Bob")).await.unwrap();
+        let file = rt.media.cache_dir().join("ab".repeat(32)).join("photo.jpg");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"jpeg").unwrap();
+        let avatar = rt.config().avatars_dir().join(format!("{}.jpg", "cd".repeat(32)));
+        std::fs::create_dir_all(rt.config().avatars_dir()).unwrap();
+        std::fs::write(&avatar, b"jpeg").unwrap();
+        let backup = rt.identity().export_ncryptsec("pw-b").await.unwrap();
+        let chats = rt.dm().list_chats(true).await.unwrap().len();
+        let contacts = rt.contacts().list().await.unwrap().len();
+        assert!(chats > 0 && contacts > 0);
+
+        // The same key again: everything stays.
+        rt.identity().delete().await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        rt.identity().import_ncryptsec(&backup, "pw-b").await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        assert_eq!(rt.dm().list_chats(true).await.unwrap().len(), chats);
+        assert_eq!(rt.contacts().list().await.unwrap().len(), contacts);
+        assert!(file.exists() && avatar.exists());
+
+        // Another key: nothing of the one before.
+        rt.identity().delete().await.unwrap();
+        rt.refresh_signer().await.unwrap();
+        let mut events = rt.ui_events();
+        rt.identity().create("pw").await.unwrap();
+        assert!(rt.refresh_signer().await.unwrap());
+        assert!(rt.dm().list_chats(true).await.unwrap().is_empty());
+        assert!(rt.contacts().list().await.unwrap().is_empty());
+        assert!(!file.exists() && !avatar.exists());
+        assert!(rt.media.cache_dir().exists(), "the folder of the cache stays");
+        let mut told = Vec::new();
+        while let Ok(e) = events.try_recv() {
+            told.push(e.name);
+        }
+        assert!(told.iter().any(|n| n == messenger_dm::UI_EVENT_CHATS_UPDATED), "{told:?}");
         rt.shutdown().await;
     }
 
@@ -1497,6 +1670,7 @@ mod tests {
             push_mode: servers::PUSH_OFF.into(),
             source: Some("card".into()),
             added_at: 0,
+            access: "open".into(),
         };
         let id = servers::put(rt.store(), &server).await.unwrap();
         relay_repo::upsert(
@@ -2056,7 +2230,7 @@ mod tests {
     use nostr::nips::nip59::UnwrappedGift;
 
     /// One of my devices, kept off the network: a new key, or `nsec`.
-    async fn device(nsec: Option<&str>) -> (tempfile::TempDir, MessengerRuntime, Arc<MemorySecretStore>, Keys) {
+    pub(crate) async fn device(nsec: Option<&str>) -> (tempfile::TempDir, MessengerRuntime, Arc<MemorySecretStore>, Keys) {
         let dir = tempfile::tempdir().unwrap();
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let rt = MessengerRuntime::start(MessengerConfig::new(dir.path().join("messenger")), secrets.clone()).await.unwrap();

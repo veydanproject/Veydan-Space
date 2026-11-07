@@ -318,7 +318,7 @@
       <div class="viewer" role="dialog" aria-label={item.kind === 'video' ? $t('msg_attach_video_item', { d: durationLabel(item.duration) }) : $t('msg_attach_photo_item')}>
         {#if viewer.url}<img src={viewer.url} alt="" draggable="false" onerror={() => viewer.failed()} />{/if}
         {#if item.kind === 'video'}<span class="play"><Icon name="play" size={28} /></span><span class="dur big">{durationLabel(item.duration)}</span>{/if}
-        <button type="button" class="m-ibtn back" onclick={() => viewer.close()} aria-label={$t('msg_back')}><Icon name="arrow-left" size={20} /></button>
+        <button type="button" class="m-ibtn back" onclick={() => viewer.close()} aria-label={$t('common_back')}><Icon name="chevron-left" size={20} /></button>
         {@render circle(item)}
       </div>
     {/if}
@@ -373,7 +373,7 @@
   .tile:active img { transform: scale(0.97); }
   .dur {
     position: absolute; left: var(--sp-1); bottom: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--radius-xs);
-    background: var(--media-scrim); color: #fff; font-size: var(--fs-2xs); font-weight: var(--fw-semibold); line-height: var(--lh-base);
+    background: var(--media-scrim); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-base);
   }
   .pick-circle {
     position: absolute; top: var(--sp-1); right: var(--sp-1); width: var(--media-check); height: var(--media-check); padding: 0;

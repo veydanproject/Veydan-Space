@@ -102,7 +102,7 @@
 
   /** Spam: a ban and everything they wrote hidden, after a yes. `target`: the message it was seen on. */
   export async function spam(who: string, target?: string) {
-    if (!(await confirmStore.ask(tr('chan_mod_spam_confirm', { names: nameOf(who) }), tr('chan_mod_spam'), true))) return;
+    if (!(await confirmStore.ask(tr('chan_mod_spam_confirm', { names: nameOf(who) }), tr('chan_mod_spam'), true, 'ban'))) return;
     await demoting(who, null, async () => {
       try {
         await channelsApi.moderation.mod(cid, target ? { t: 'spam', author: who, target } : { t: 'spam', author: who });
@@ -150,7 +150,7 @@
   }
 </script>
 
-<ChoiceDialog bind:open={mute.open} bind:value={mute.span} title={$t('chan_mod_mute_title', { name: nameOf(mute.who) })}
+<ChoiceDialog bind:open={mute.open} bind:value={mute.span} title={$t('msg_mod_mute_title', { name: nameOf(mute.who) })}
   options={muteOptions} cta={$t('chan_mod_mute_cta')} danger {busy} {error} onconfirm={confirmMute} />
 <ChoiceDialog bind:open={ban.open} bind:checked={ban.hide} title={$t('chan_mod_ban_title', { name: nameOf(ban.who) })}
   text={$t('chan_mod_ban_text')} check={$t('chan_mod_ban_hide')} cta={$t('chan_member_ban')} danger {busy} {error} onconfirm={confirmBan} />

@@ -48,7 +48,7 @@
   ];
 
   const modes: { id: EditorMode; icon?: string; text?: string; label: TranslationKey }[] = [
-    { id: 'rich', icon: 'edit', label: 'note_mode_rich' },
+    { id: 'rich', icon: 'pencil', label: 'note_mode_rich' },
     { id: 'source', text: 'MD', label: 'note_mode_source' },
   ];
 
@@ -120,12 +120,12 @@
   .tb-btn {
     background: none;
     border: none;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-sm);
     padding: 0.2rem 0.4rem;
     cursor: pointer;
     color: var(--text-2);
     font-size: var(--fs-sm);
-    line-height: 1;
+    line-height: var(--lh-icon);
     transition: background 0.12s, color 0.12s;
     min-width: 1.8rem;
     height: 1.7rem;
@@ -134,13 +134,12 @@
     justify-content: center;
   }
   .tb-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-  .tb-btn:disabled { opacity: 0.4; cursor: default; }
+  .tb-btn:disabled { opacity: 0.45; cursor: default; }
   .tb-btn.active { color: var(--accent-text); background: var(--accent-bg); }
   .tb-h-label {
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
-    letter-spacing: 0.02em;
   }
   .tb-sep {
     width: 1px;

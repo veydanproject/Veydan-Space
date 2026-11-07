@@ -71,11 +71,11 @@
   .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .label { color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.5px; }
+  .label { color: var(--text-3); font-size: var(--fs-xs); }
   .about { margin: 0; font-size: var(--fs-sm); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere; }
   .note {
     margin: 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--accent-border); border-radius: var(--radius-xs);
-    background: var(--surface-2); font-size: var(--fs-sm); line-height: 1.45; color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere;
+    background: var(--surface-2); font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .none { margin: 0; font-size: var(--fs-sm); color: var(--text-3); font-style: italic; }
 </style>

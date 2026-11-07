@@ -7,6 +7,7 @@
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { directory } from '$lib/core/directory';
   import { t } from '$lib/core/i18n';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   const COLORS = [
     // The kit's presets (N.colors); the colour is the user's, never the kind.
@@ -145,12 +146,13 @@
 
     <div class="row">
       <input class="input" type="text" bind:value={domain} placeholder={$t('notes_smart_domain')} />
-      <select class="input" bind:value={folderId}>
-        <option value="">{$t('notes_smart_any_folder')}</option>
-        {#each notesStore.folders as f (f.id)}
-          <option value={f.id}>{f.name}</option>
-        {/each}
-      </select>
+      <div class="pick">
+        <CustomSelect
+          options={[{ value: '', label: $t('notes_smart_any_folder') }, ...notesStore.folders.map((f) => ({ value: f.id, label: f.name }))]}
+          bind:value={folderId}
+          ariaLabel={$t('notes_col_folder')}
+        />
+      </div>
     </div>
 
     {#if notesStore.allTags.length > 0}
@@ -181,14 +183,13 @@
         {$t('notes_smart_days')}
       </label>
     </div>
-
-    <div class="actions">
-      <button class="btn btn-ghost btn-sm" onclick={onclose}>{$t('notes_btn_cancel')}</button>
-      <button class="btn btn-primary btn-sm" onclick={save} disabled={!name.trim() || saving}>
-        {view ? $t('notes_smart_save') : $t('notes_btn_create')}
-      </button>
-    </div>
   </div>
+  {#snippet footer()}
+    <button class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+    <button class="btn btn-primary" onclick={save} disabled={!name.trim() || saving}>
+      {view ? $t('common_save') : $t('common_create')}
+    </button>
+  {/snippet}
 </Dialog>
 
 <style>
@@ -199,12 +200,13 @@
     padding: 0.4rem 0.55rem;
     font-size: var(--fs-sm);
     border: 1px solid var(--border);
-    border-radius: var(--radius-badge);
+    border-radius: var(--radius-field);
     /* background-color only: a select keeps the chevron of base.css */
     background-color: var(--bg-2);
     color: var(--text);
   }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+  .pick { min-width: 0; }
   .color-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
   .swatch {
     width: 18px; height: 18px; border-radius: 50%;
@@ -214,11 +216,9 @@
   .group { display: flex; flex-direction: column; gap: 0.3rem; }
   .label-row { display: flex; justify-content: space-between; align-items: center; }
   .label {
-    font-size: var(--fs-2xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
   .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
   /* A long list of profiles scrolls inside its group: the dialog keeps the window's height. */
@@ -242,5 +242,4 @@
   .check input[type="checkbox"] { margin: 0; flex-shrink: 0; }
   .check.small { font-size: var(--fs-xs); }
   .days { width: 4.5rem; padding: 0.2rem 0.4rem; }
-  .actions { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.2rem; }
 </style>

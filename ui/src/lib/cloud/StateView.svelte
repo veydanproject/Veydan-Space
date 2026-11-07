@@ -29,7 +29,7 @@
   .danger .mark { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
   .info .mark { background: var(--accent-tint); color: var(--accent-text); border-color: var(--accent-tint-border); }
   h2 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text); }
-  .text { color: var(--text-2); font-size: var(--fs-base); line-height: 1.5; max-width: 420px; }
+  .text { color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); max-width: 420px; }
   .text :global(p) { margin: 0; }
   .actions { align-self: stretch; margin-top: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-3); }
   /* Under a centred mark the buttons are centred too. */

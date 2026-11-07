@@ -97,21 +97,21 @@
     min-height: 88px;
     padding: var(--sp-3);
     border: 0;
-    border-radius: var(--m-radius);
+    border-radius: var(--radius-lg);
     background: var(--m-field);
     color: var(--text);
     font: inherit;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
   }
-  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: 700; }
+  h3 { margin: var(--sp-2) 0 0; font-size: var(--fs-body); font-weight: var(--fw-bold); }
   .list { display: flex; flex-direction: column; gap: 8px; }
   .row {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 4px 4px 4px 8px;
-    border-radius: var(--m-radius);
+    border-radius: var(--radius-lg);
     background: var(--m-card);
     border: 1px solid var(--m-card-border);
   }
@@ -127,10 +127,10 @@
     color: var(--text);
     text-align: left;
   }
-  .open:disabled { opacity: 0.6; }
+  .open:disabled { opacity: 0.45; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-  .name { font-size: var(--fs-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { font-size: var(--fs-2xs); color: var(--text-3); }
+  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size { font-size: var(--fs-xs); color: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }
   .x {
     flex-shrink: 0;
@@ -146,6 +146,6 @@
     align-items: center;
     justify-content: center;
   }
-  .player { width: 100%; border-radius: var(--m-radius); }
+  .player { width: 100%; border-radius: var(--radius-lg); }
   video.player { max-height: 240px; background: #000; }
 </style>

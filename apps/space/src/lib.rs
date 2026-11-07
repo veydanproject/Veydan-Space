@@ -100,7 +100,8 @@ const APP_ROWS: &[&str] = &[
 /// note before its flags. Rows of every module share one step, in the order
 /// 4.0.7 kept them in. A phone has no profile files. The labels, which 4.0.7
 /// does not know, come last each way: what came before keeps its order and
-/// its clock, and the rows they name are applied first.
+/// its clock, and the rows they name are applied first. The archive of the
+/// conversation (platform-spec 9.6), unknown to 4.0.7 too, comes after them.
 pub(crate) const SYNC_PLAN: Plan = Plan {
     collect: &[
         Step::rows("note rows", Some(8), "notes", NOTE_ROWS),
@@ -109,6 +110,7 @@ pub(crate) const SYNC_PLAN: Plan = Plan {
         Step::rows("app rows", Some(18), "app", APP_ROWS),
         Step::handler("leases", None, "profile files"),
         Step::rows("labels", None, "app", &["label"]),
+        Step::handler("messenger archive", None, veydan_messenger_app::sync::HANDLER),
     ],
     apply: &[
         Step::handler("attachments", Some(40), "attachments"),
@@ -122,6 +124,7 @@ pub(crate) const SYNC_PLAN: Plan = Plan {
         Step::rows("notes meta", Some(52), "notes", &["note_meta"]),
         Step::rows("app rows", Some(54), "app", APP_ROWS),
         Step::rows("labels", None, "app", &["label"]),
+        Step::handler("messenger archive", None, veydan_messenger_app::sync::HANDLER),
     ],
     late: &["profile files"],
 };

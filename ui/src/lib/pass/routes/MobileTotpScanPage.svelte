@@ -85,7 +85,7 @@
     <div class="msg">
       <Icon name="alert-triangle" size={32} />
       <p>{error}</p>
-      <button class="btn btn-primary" onclick={() => { error = ''; start(); }}>{$t('totp_scan_retry')}</button>
+      <button class="btn btn-primary" onclick={() => { error = ''; start(); }}>{$t('common_try_again')}</button>
     </div>
   {:else}
     <div class="frame"></div>
@@ -121,8 +121,6 @@
   }
   .hint {
     margin-top: var(--sp-5);
-    color: var(--text-2);
-    font-size: var(--fs-sm);
     text-align: center;
   }
 

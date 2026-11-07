@@ -25,8 +25,11 @@ mod commands;
 mod media_server;
 /// The messenger's relays and identity lent to the module `communities`.
 mod net_lend;
+/// The archive of the conversation in the sync storage: the handler of its entities.
+pub mod sync;
 
 pub use commands::MessengerState;
+pub use sync::{ArchiveRuntime, ArchiveStatus, ArchiveStore, ArchiveSync};
 
 use std::path::PathBuf;
 use tauri::{Manager, Runtime};
@@ -38,11 +41,16 @@ pub fn module() -> Module {
         start: Some(start),
         stop: Some(stop),
         backup: Some(backup()),
+        // The archive of the conversation: its entities and their positions
+        // in the data file (internal/platform-spec.md 9.6).
+        schema: Some(sync::SCHEMA),
+        sync: Some(sync::register),
         ..veydan_shell::module! {
             id: "messenger",
             setup: setup,
             commands: [
                 commands::messenger_status,
+                sync::messenger_archive_status,
                 commands::messenger_set_enabled,
                 commands::messenger_identity_get,
                 commands::messenger_identity_create,
@@ -61,6 +69,7 @@ pub fn module() -> Module {
                 commands::messenger_server_remove,
                 commands::messenger_server_preview,
                 commands::messenger_server_accept,
+                commands::messenger_server_join,
                 commands::messenger_contact_open_private,
                 commands::messenger_private_link_qr,
                 commands::messenger_servers_private,
@@ -292,6 +301,10 @@ fn setup(app: &mut tauri::App) -> SetupResult {
         commands::OLD_ENABLED_KEY,
     ))?;
     app.manage(MessengerState::new(app.handle().clone(), &core.app_data_dir));
+    // What the handler of the archive keeps between cycles (sync/mod.rs),
+    // and its ear for the storage leaving.
+    app.manage(sync::ArchiveSync::default());
+    sync::watch_storage(app.handle());
     // The phone's decoder of HEIC, for the photos of chats and of channels (commands/gallery.rs).
     commands::gallery::offer_decoder(app.handle());
     let media_server = media_server::MediaServer::default();

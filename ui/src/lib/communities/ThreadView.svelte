@@ -16,6 +16,7 @@
   import { tick, untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import { AttachButton, Composer, confirmStore, myKey, onPhone, reportStore, TypingLine, writeTo } from '$lib/messenger/seams/shared';
@@ -260,7 +261,7 @@
 
   async function remove(item: FeedItemView) {
     const mineIt = item.author === me;
-    if (!(await confirmStore.ask(tr(mineIt ? 'chan_delete_confirm' : 'chan_delete_other_confirm', { name: nameStore.label(item.author) }), tr('chan_menu_delete'), true))) return;
+    if (!(await confirmStore.ask(tr(mineIt ? 'chan_delete_confirm' : 'chan_delete_other_confirm', { name: nameStore.label(item.author) }), tr('common_remove'), true, 'trash-2'))) return;
     // The post of an album goes whole, as from the feed.
     const all = item.id === post.id && parts?.length ? parts : [item];
     const id = cid;
@@ -323,7 +324,7 @@
 <div class="panel on-glass">
   <!-- The bar of the page: «Пост» with its section and channel under it (the mockup c6.js); the menu of the post; the way back. -->
   <header class="phead" class:phone>
-    {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>{/if}
+    {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>{/if}
     <div class="ph-titles">
       <span class="ph-title">{$t('chan_post_page')}</span>
       <span class="ph-sub">{section ? `${section} · ` : ''}{detail.channel.name}</span>
@@ -331,7 +332,7 @@
     {#if !isLocal(post.id)}
       <button class="icon" onclick={postMenu} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}><Icon name="more-vertical" size={phone ? 20 : 18} /></button>
     {/if}
-    {#if !phone}<button class="icon" onclick={onclose} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={18} /></button>{/if}
+    {#if !phone}<button class="icon" onclick={onclose} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>{/if}
   </header>
   <div class="scroll" bind:this={scroller} {onscroll}>
     <div class="post-box">
@@ -359,7 +360,7 @@
       </div>
     {/each}
     {#each uploads as u (u.id)}<UploadLine {u} />{/each}
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
   </div>
   {#if typers.length}<div class="typing"><TypingLine who={typers} muted /></div>{/if}
@@ -368,7 +369,7 @@
       <div class="replying">
         <Icon name="reply" size={13} />
         <span class="r-text">{$t('chan_replying_to', { name: nameStore.label(replyTo.author) })}</span>
-        <button class="x" onclick={() => (replyTo = null)} aria-label={$t('chan_cancel')}><Icon name="x" size={13} /></button>
+        <button class="x" onclick={() => (replyTo = null)} aria-label={$t('common_cancel')}><Icon name="x" size={18} /></button>
       </div>
     {/if}
     <Composer replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
@@ -395,7 +396,7 @@
   /* On a phone the bar floats inset, as the head of the channel over its feed. */
   .phead.phone {
     position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1);
-    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar);
     background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow);
     -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
@@ -428,12 +429,12 @@
   .typing { display: flex; min-width: 0; padding: 2px var(--sp-4) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); }
   .replying { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--accent-text-2); background: var(--surface-2); }
   .r-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .x { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; padding: 4px; }
+  .x { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-3); }
   /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
   .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }
   /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
-  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
+  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: var(--lh-icon); border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
   @media (pointer: coarse) { .q { max-width: 44px; } }
   .q:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }

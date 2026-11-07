@@ -36,7 +36,7 @@ export function accountLinks(settingsHref: string): () => Promise<AccountLink[]>
         href: settingsHref,
         value: messengerStore.serversMode === 'own' ? 'msg_ob_servers_own' : 'msg_ob_servers_veydan',
       },
-      { id: 'key', title: 'msg_account_key', icon: 'download', href: settingsHref },
+      { id: 'key', title: 'msg_account_key', icon: 'file-export', href: settingsHref },
     ];
   };
 }

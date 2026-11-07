@@ -6,6 +6,7 @@
   import { api } from '$lib/browser/api';
   import type { Profile, ProfileRawData, CookieEntry } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import { formatError, formatEpochDate } from '$lib/core/utils';
   import { locale, t } from '$lib/core/i18n';
@@ -94,7 +95,7 @@
       {#if loading}
         <div class="centered">{$t('loading')}</div>
       {:else if error}
-        <div class="error-msg">{error}</div>
+        <Notice tone="danger">{error}</Notice>
       {:else if data}
 
         {#if tab === 'fingerprint'}
@@ -170,7 +171,7 @@
             <div class="code-block-header">
               <span>CAMOU_CONFIG_1</span>
               <button class="copy-btn" onclick={() => copyToClipboard(data!.camoufox_config)}>
-                <Icon name="copy" size={12} />{$t('raw_copy')}
+                <Icon name="copy" size={12} />{$t('common_copy')}
               </button>
             </div>
             <pre class="code-block">{data.camoufox_config}</pre>
@@ -180,7 +181,7 @@
             <div class="code-block-header">
               <span>user.js</span>
               <button class="copy-btn" onclick={() => copyToClipboard(data!.user_js)}>
-                <Icon name="copy" size={12} />{$t('raw_copy')}
+                <Icon name="copy" size={12} />{$t('common_copy')}
               </button>
             </div>
             <pre class="code-block">{data.user_js}</pre>
@@ -194,7 +195,7 @@
               disabled={exportingCookies || data.cookies.length === 0}
               onclick={exportCookies}
             >
-              <Icon name="download" size={12} />{exportingCookies ? '…' : $t('panel_btn_export_cookies')}
+              <Icon name="file-export" size={12} />{exportingCookies ? '…' : $t('panel_btn_export_cookies')}
             </button>
           </div>
           {#if cookieExportMsg}
@@ -248,9 +249,9 @@
   .tab { justify-content: center; }
 
   .tab-count {
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     border: 1px solid var(--border);
-    line-height: 1.4;
+    line-height: var(--lh-snug);
   }
   .tab.active .tab-count {
     background: var(--accent);
@@ -269,8 +270,8 @@
   /* Fingerprint rows */
   .section { display: flex; flex-direction: column; gap: 0.3rem; }
   .section-title {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase;
-    letter-spacing: 0.7px; color: var(--text-dim); margin-bottom: 0.2rem;
+    font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    color: var(--text-dim); margin-bottom: 0.2rem;
   }
   .rows { display: flex; flex-direction: column; gap: var(--sp-1); }
   .row {
@@ -319,7 +320,7 @@
   .cookies-count {
     font-size: var(--fs-sm);
     color: var(--text-3);
-    font-weight: 500;
+    font-weight: var(--fw-medium);
   }
   .cookie-export-msg {
     font-size: var(--fs-sm);
@@ -344,8 +345,7 @@
   .cookies-table th {
     text-align: left; padding: 0.4rem var(--sp-2);
     border-bottom: 1px solid var(--border);
-    color: var(--text-3); font-weight: var(--fw-bold); font-size: var(--fs-2xs);
-    text-transform: uppercase; letter-spacing: 0.7px;
+    color: var(--text-3); font-weight: var(--fw-bold); font-size: var(--fs-xs);
     background: var(--surface-2); white-space: nowrap;
   }
   .cookies-table td {
@@ -355,12 +355,12 @@
   }
   .cookies-table tr:hover td { background: var(--surface-row-hover); }
   .host-cell { color: var(--text-2); white-space: nowrap; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-  .name-cell { font-weight: 500; white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+  .name-cell { font-weight: var(--fw-medium); white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
   .value-cell { color: var(--text-3); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .expiry-cell { color: var(--text-2); white-space: nowrap; }
   .flags-cell { display: flex; gap: 0.2rem; }
   .flag {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); border-radius: var(--radius-xs);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); border-radius: var(--radius-xs);
     padding: 0.05rem 0.3rem;
   }
   .flag.s { background: var(--success-bg); color: var(--success-text); }

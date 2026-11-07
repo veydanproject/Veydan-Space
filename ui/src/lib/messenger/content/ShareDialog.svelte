@@ -10,6 +10,7 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Avatar from '../contacts/Avatar.svelte';
@@ -154,7 +155,7 @@
       {/if}
     {:else if text}<div class="what"><MessageContent {text} /></div>{/if}
     <input type="text" class="search" bind:value={query} placeholder={$t('msg_share_search')} spellcheck="false" />
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if chats.length}
       <ul class="list divided">
         {#each chats as c (c.id)}
@@ -163,7 +164,7 @@
           <li>
             <button class="row" disabled={busy || done || blocked || (!card && !text)} onclick={() => send(c)}
               title={blocked ? $t('msg_profile_send_card_public_group') : undefined}>
-              <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={34} />
+              <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={36} />
               <span class="name-col">
                 <span class="name">{c.title}</span>
                 {#if blocked}<span class="why">{$t('msg_profile_send_card_public_group')}</span>{/if}
@@ -185,7 +186,7 @@
   .what { display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
   .search {
     font: inherit; font-size: var(--fs-sm); color: var(--text); width: 100%;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); height: var(--control-h); padding: 0 12px;
   }
   .search:focus { outline: none; border-color: var(--accent-border); }
   .whose {
@@ -194,26 +195,26 @@
   }
   .whose-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .whose-name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .whose-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
+  .whose-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .phone { display: flex; align-items: flex-start; gap: var(--sp-2); cursor: pointer; font-size: var(--fs-sm); }
   .phone input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .num { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
   .server { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
-  .phone-hint { font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
+  .phone-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 6px 8px; text-align: left;
-    border: none; border-radius: var(--radius-sm); background: none; color: inherit; font: inherit; cursor: pointer;
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-1) var(--sp-2); text-align: left;
+    border: none; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; cursor: pointer;
   }
   .row:hover:not(:disabled) { background: var(--surface-row-hover); }
   .row:disabled { cursor: default; }
   .name-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .why { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .why { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dim { color: var(--text-3); display: inline-flex; }
-  .state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); color: var(--accent-text-2); flex-shrink: 0; }
+  .state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--accent-text-2); flex-shrink: 0; }
   .state.done { color: var(--success-text, var(--success)); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
-  @media (pointer: coarse) { .search { font-size: var(--fs-md); } .row { padding: 9px 8px; } .phone input { width: 18px; height: 18px; } }
+  .hint { margin: 0; }
+  @media (pointer: coarse) { .search { font-size: var(--fs-md); } .row { min-height: 56px; } .phone input { width: 18px; height: 18px; } }
 </style>

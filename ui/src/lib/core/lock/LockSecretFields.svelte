@@ -75,7 +75,7 @@
   {#if password && issue === 'short'}
     <span class="note">{$t('settings_lock_min_len')}</span>
   {:else if issue === 'digits'}
-    <span class="note err">{$t('settings_lock_pin_digits')}</span>
+    <span class="error-msg">{$t('settings_lock_pin_digits')}</span>
   {/if}
   <label class="hint">
     <span>{$t('settings_lock_hint_label')}</span>
@@ -108,8 +108,7 @@
   }
   .lock-field.pin { -webkit-text-security: disc; }
   .note { font-size: var(--fs-xs); color: var(--text-2); }
-  .note.err { color: var(--danger-text); }
-  .hint { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
+  .hint { display: flex; flex-direction: column; gap: 4px; }
   .mobile .seg-btn { min-height: 44px; }
   .mobile .row { flex-direction: column; }
   .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }

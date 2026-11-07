@@ -81,7 +81,7 @@
   .day span { display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); padding: 0 var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-3); }
   /* A line of an event: quieter than the messages, in the middle. */
   .system { margin: var(--sp-3) var(--sp-4) var(--sp-1); }
-  .system span { font-size: var(--fs-xs); color: var(--text-3); text-align: center; line-height: 1.4; }
+  .system span { font-size: var(--fs-xs); color: var(--text-3); text-align: center; line-height: var(--lh-snug); }
   .system.fold { flex-direction: column; align-items: center; gap: 3px; }
   .fold-head {
     display: inline-flex; align-items: center; gap: 4px; border: none; background: none; cursor: pointer;

@@ -17,6 +17,7 @@
   import { goto } from '$app/navigation';
   import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import {
@@ -539,7 +540,7 @@
   /** A post removed; an album goes whole (its menu is the menu of its last post). */
   async function remove(item: FeedItemView) {
     const mineIt = item.author === me;
-    if (!(await confirmStore.ask(tr(mineIt ? 'chan_delete_confirm' : 'chan_delete_other_confirm', { name: nameStore.label(item.author) }), tr('chan_menu_delete'), true))) return;
+    if (!(await confirmStore.ask(tr(mineIt ? 'chan_delete_confirm' : 'chan_delete_other_confirm', { name: nameStore.label(item.author) }), tr('common_remove'), true, 'trash-2'))) return;
     const id = cid;
     const parts = albumOf.get(item.id) ?? [item];
     await run(async () => { for (const p of parts) await channelsApi.remove(id, p.id); });
@@ -641,18 +642,18 @@
   let headMenu = $state<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
 
   async function leave() {
-    if (!row || !(await confirmStore.ask(tr('chan_leave_confirm', { name: row.name }), tr('chan_leave'), true))) return;
+    if (!row || !(await confirmStore.ask(tr('chan_leave_confirm', { name: row.name }), tr('chan_leave'), true, 'logout'))) return;
     await run(() => channelStore.act(cid, { op: 'leave' }));
   }
 
   async function forget() {
-    if (!row || !(await confirmStore.ask(tr('chan_forget_confirm', { name: row.name }), tr('chan_forget'), true))) return;
+    if (!row || !(await confirmStore.ask(tr('chan_forget_confirm', { name: row.name }), tr('chan_forget'), true, 'trash-2'))) return;
     if (await run(() => channelStore.forget(cid))) onback?.();
   }
 
   /** While the key is awaited there is always a way out: no keeper may hold a reader forever. */
   async function cancelJoin() {
-    if (!row || !(await confirmStore.ask(tr('chan_cancel_join_confirm', { name: row.name }), tr('chan_cancel_join'), true))) return;
+    if (!row || !(await confirmStore.ask(tr('chan_cancel_join_confirm', { name: row.name }), tr('chan_cancel_join'), true, 'x'))) return;
     if (await run(() => channelStore.cancelJoin(cid))) onback?.();
   }
 
@@ -765,8 +766,8 @@
   <section class="window" class:phone>
     <header class="head" class:phone class:on-glass={phone}>
       {#if onback}
-        {#if phone}<button class="icon back" onclick={onback} aria-label={$t('chan_back')}><Icon name="chevron-left" size={24} /></button>
-        {:else}<button class="icon back narrow-only" onclick={onback} title={$t('chan_back')}><Icon name="arrow-left" size={18} /></button>{/if}
+        {#if phone}<button class="icon back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+        {:else}<button class="icon back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
       {/if}
       <div class="ident" role="button" tabindex="0" onclick={() => (panel === 'info' ? (panel = null) : openInfo())}
         onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openInfo(); } }}>
@@ -786,7 +787,7 @@
       {#if sectioned && (where === 'reading' || where === 'catching_up')}
         {#if phone}
           <button bind:this={sectionButton} class="icon sec-icon" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
-            aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}><Icon name="layout-grid" size={20} /></button>
+            aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}><Icon name="layout-grid" size={18} /></button>
         {:else}
           <button bind:this={sectionButton} class="sec-btn" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
             aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}>
@@ -796,7 +797,7 @@
           </button>
         {/if}
       {/if}
-      <button class="icon menu-btn" class:on={headMenu.open} aria-expanded={headMenu.open} aria-haspopup="menu" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={20} />
+      <button class="icon menu-btn" class:on={headMenu.open} aria-expanded={headMenu.open} aria-haspopup="menu" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={18} />
         {#if waitingAll > 0}<span class="menu-count" aria-hidden="true">{waitingAll > 99 ? '99+' : waitingAll}</span>{/if}</button>
     </header>
     <!-- Under the head, the colour of the section shown (the accent for «Все»). -->
@@ -804,11 +805,12 @@
     <!-- The bars under the head: cards the feed's width. -->
     <div class="strips">
       {#if locked}
-        <div class="strip locked-note" role="status">
-          <span class="s-icon"><Icon name="lock" size={16} /></span>
-          <span class="strip-text"><b>{$t('chan_scope_locked')}.</b> {lockedText}</span>
-          <button class="icon" onclick={() => (locked = null)} aria-label={$t('chan_close')} title={$t('chan_close')}><Icon name="x" size={18} /></button>
-        </div>
+        <div class="plate locked-note"><Notice tone="info" icon="lock" role="status">
+          <b>{$t('chan_scope_locked')}.</b> {lockedText}
+          {#snippet action()}
+            <button class="icon" onclick={() => (locked = null)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
+          {/snippet}
+        </Notice></div>
       {/if}
       {#if pinnedPost && where === 'reading'}
         <button class="strip pinbar" onclick={showPinned}>
@@ -817,26 +819,31 @@
         </button>
       {/if}
       {#if row?.needs_update}
-        <div class="strip warn"><span class="s-icon"><Icon name="download" size={16} /></span><span class="strip-text">{$t('chan_needs_update')}</span>
-          <button class="btn btn-ghost btn-sm" onclick={() => void goto('/settings#updates')}>{$t('chan_update')}</button></div>
+        <div class="plate"><Notice tone="warn" icon="download">
+          {$t('chan_needs_update')}
+          {#snippet action()}<button class="btn btn-ghost btn-sm" onclick={() => void goto('/settings#updates')}>{$t('common_update')}</button>{/snippet}
+        </Notice></div>
       {/if}
       {#if where === 'catching_up' && catchUp}
-        <div class="strip" role="status"><span class="s-icon"><Icon name="key" size={16} /></span><span class="strip-text">{$t(countKey(catchUp.key, catchUp.n, $locale), { n: String(catchUp.n) })}</span></div>
+        <div class="plate"><Notice tone="info" icon="key" role="status">{$t(countKey(catchUp.key, catchUp.n, $locale), { n: String(catchUp.n) })}</Notice></div>
       {/if}
       {#if offerForMe}
-        <div class="strip transfer" role="status"><span class="s-icon"><Icon name="key" size={16} /></span>
-          <span class="strip-text">{$t('chan_transfer_in', { name: nameStore.label(offerForMe.peer) })}</span>
-          <button class="btn btn-primary btn-sm" onclick={() => answerTransfer(true)}>{$t('chan_transfer_accept')}</button>
-          <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(false)}>{$t('chan_transfer_decline')}</button>
-        </div>
+        <div class="plate"><Notice tone="info" icon="key" role="status">
+          {$t('chan_transfer_in', { name: nameStore.label(offerForMe.peer) })}
+          {#snippet action()}
+            <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(false)}>{$t('chan_transfer_decline')}</button>
+            <button class="btn btn-ghost btn-sm" onclick={() => answerTransfer(true)}>{$t('chan_transfer_accept')}</button>
+          {/snippet}
+        </Notice></div>
       {/if}
       {#if waitingLevels > 0}
-        <div class="strip" role="status"><span class="s-icon"><Icon name="layers" size={16} /></span>
-          <span class="strip-text">{$t('chan_level_requests_bar', { n: String(waitingLevels) })}</span>
-          <button class="btn btn-ghost btn-sm" onclick={() => openInfo('levels')}>{$t('chan_level_requests_open')}</button></div>
+        <div class="plate"><Notice tone="info" icon="layers" role="status">
+          {$t('chan_level_requests_bar', { n: String(waitingLevels) })}
+          {#snippet action()}<button class="btn btn-ghost btn-sm" onclick={() => openInfo('levels')}>{$t('common_open')}</button>{/snippet}
+        </Notice></div>
       {/if}
-      {#if mutedText && joined(detail)}<div class="strip warn"><span class="s-icon"><Icon name="bell-off" size={16} /></span><span class="strip-text">{mutedText}</span></div>{/if}
-      {#if error}<div class="strip danger" role="alert"><span class="s-icon"><Icon name="alert-triangle" size={16} /></span><span class="strip-text">{error}</span></div>{/if}
+      {#if mutedText && joined(detail)}<div class="plate"><Notice tone="warn" icon="message-circle-off">{mutedText}</Notice></div>{/if}
+      {#if error}<div class="plate"><Notice tone="danger">{error}</Notice></div>{/if}
     </div>
 
     <div class="scroll" bind:this={scroller} {onscroll}>
@@ -986,7 +993,7 @@
   /* A phone and a tablet: the whole screen, the head floats inset as glass and the feed runs under it. */
   /* Over the feed's own layers (a post's ⋮ on its media), under the info panel that lies over the conversation (WithInfo):
      no layer of the scale sits there, so the base's plus two. */
-  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-head); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
+  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
   .head.phone .back { color: var(--text); }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 160px; flex: 1 1 auto; cursor: pointer; border-radius: var(--radius-sm); }
   .head.phone .ident { min-width: 0; gap: 10px; }
@@ -997,7 +1004,7 @@
   .sub { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .warn-text { color: var(--warn-text); }
   .dim { color: var(--text-3); display: inline-flex; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
   .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
@@ -1028,21 +1035,18 @@
   .strip {
     display: flex; align-items: center; gap: 10px; width: 100%; max-width: 720px; margin: 0 auto; min-height: 44px; box-sizing: border-box;
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--bubble-in-border); background: var(--bubble-in-bg);
-    color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: 1.45; text-align: left;
+    color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: var(--lh-snug); text-align: left;
   }
   .s-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
-  .strip-text { flex: 1; min-width: 0; }
-  .strip .icon { flex-shrink: 0; }
-  .locked-note b { font-weight: var(--fw-semibold); color: var(--text-body); }
+  /* The plates of the page (core/ui/Notice) the feed's width; the pinned bar stays a strip (it is a button). */
+  .plate { width: 100%; max-width: 720px; margin: 0 auto; }
+  .locked-note b { font-weight: var(--fw-semibold); }
+  .locked-note .icon { margin: -6px -8px -6px 0; }
   .pinbar { cursor: pointer; }
   .pinbar:hover { background: var(--surface-hover); }
   .strip.pinbar:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .pin-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
   .pin-text b { color: var(--accent-text); font-weight: var(--fw-bold); margin-right: 4px; }
-  .strip.warn { color: var(--text); background: var(--warn-bg); border-color: var(--warn-border); }
-  .strip.warn .s-icon { background: var(--warn-bg); color: var(--warn-text); }
-  .strip.danger { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
-  .strip.danger .s-icon { background: var(--danger-bg); color: var(--danger-text); }
   /* The feed: a column of cards. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-6) var(--sp-4); display: flex; flex-direction: column; }
   /* Under a head without a bar the feed dissolves at the top edge. */
@@ -1057,7 +1061,7 @@
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-2); text-align: center; padding: var(--sp-6); }
   .ph-icon { width: 56px; height: 56px; margin-bottom: 6px; border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
   .placeholder p { margin: 0; color: var(--text); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
-  .placeholder span { font-size: var(--fs-base); max-width: 380px; line-height: 1.55; }
+  .placeholder span { font-size: var(--fs-base); max-width: 380px; line-height: var(--lh-base); }
   .ph-icon.away { background: var(--warn-bg); color: var(--warn-text); }
   .ph-icon.mute { background: var(--surface-3); color: var(--text-3); }
   .ph-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
@@ -1066,7 +1070,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .earlier { display: flex; justify-content: center; }
   .history-start { text-align: center; color: var(--text-3); font-size: var(--fs-xs); padding: var(--sp-2) var(--sp-1) 0; }
-  .out-note { align-self: center; display: inline-flex; align-items: center; gap: 6px; text-align: center; line-height: 1.4; font-size: var(--fs-xs); color: var(--text-2); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); }
+  .out-note { align-self: center; display: inline-flex; align-items: center; gap: 6px; text-align: center; line-height: var(--lh-snug); font-size: var(--fs-xs); color: var(--text-2); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); }
   /* A list kept hidden takes no place; the one shown lays its cards out as children of the feed. */
   .list { display: none; }
   .list.on { display: contents; }
@@ -1098,12 +1102,9 @@
   /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
   .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }
   /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */
-  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: 1; border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
+  .q { flex: 1 1 0; min-width: 0; max-width: 40px; aspect-ratio: 1; height: auto; padding: 0; border: none; background: var(--surface-3); font-size: 20px; line-height: var(--lh-icon); border-radius: 50%; cursor: pointer; display: grid; place-items: center; }
   @media (pointer: coarse) { .q { max-width: 44px; } }
   .q:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .q:hover { background: var(--surface-hover); }
   .q.mine { background: var(--accent-bg); }
-  @media (pointer: coarse) {
-    .icon { padding: 10px; }
-  }
 </style>

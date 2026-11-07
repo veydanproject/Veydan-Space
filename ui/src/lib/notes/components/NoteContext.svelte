@@ -5,6 +5,7 @@
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
   import { parseBinding, isEntityKind, type EntityKind } from '$lib/core/bindings';
@@ -12,18 +13,8 @@
   import { entityKinds, entitySummary, type EntityAction, type EntityStatus } from '$lib/notes/context';
   import { onMount } from 'svelte';
 
-  function markCopied(key: string) {
-    copied = '';
-    requestAnimationFrame(() => (copied = key));
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => (copied = ''), 1600);
-  }
-
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
-
   onMount(() => {
     void directory.ensureLoaded();
-    return () => clearTimeout(copyTimer);
   });
 
   const STATUS_LABEL: Record<EntityStatus, TranslationKey> = {
@@ -78,7 +69,6 @@
   });
 
   let busy = $state<string | null>(null);
-  let copied = $state('');
   let error = $state<string | null>(null);
 
   async function unbind(card: Card, name?: string) {
@@ -93,12 +83,10 @@
   }
 
   async function run(card: Card, action: EntityAction) {
-    const key = `${card.binding}/${action.id}`;
-    busy = key;
+    busy = `${card.binding}/${action.id}`;
     error = null;
     try {
       await action.run(card.id);
-      if (action.id.startsWith('copy')) markCopied(key);
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -146,22 +134,19 @@
               <div class="foot">
                 <div class="pw-actions">
                   {#if def.open}
-                    <button type="button" class="icon-btn" title={$t('ctx_action_open')} onclick={() => def.open?.(card.id)}>
+                    <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(card.id)}>
                       <Icon name="external-link" size={13} />
                     </button>
                   {/if}
                   {#each def.actions.filter((a) => a.id !== 'open') as action (action.id)}
-                    {@const key = `${card.binding}/${action.id}`}
                     <button
                       type="button"
                       class="icon-btn"
-                      class:success={copied === key}
-                      class:pop={copied === key}
                       title={$t(action.label)}
                       disabled={busy !== null}
                       onclick={() => run(card, action)}
                     >
-                      <Icon name={copied === key ? 'check' : action.icon} size={13} />
+                      <Icon name={action.icon} size={13} />
                     </button>
                   {/each}
                 </div>
@@ -190,7 +175,7 @@
       {/if}
     {/each}
     {#if error}
-      <div class="error">{error}</div>
+      <div class="err"><Notice tone="danger">{error}</Notice></div>
     {/if}
   </div>
 {/if}
@@ -219,10 +204,10 @@
     border-radius: var(--radius-sm);
     min-width: 0;
   }
-  .card.focus { border-color: var(--accent); }
+  .card.focus { border-color: var(--accent-border); }
   .card.mention { border-style: dashed; }
   .head { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .card:not([style*='--chip']) .name { color: var(--text); }
   .mark { display: inline-flex; }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -231,12 +216,11 @@
   .dot.unknown { background: var(--text-3); }
   .x {
     background: none; border: 0; padding: 0; cursor: pointer;
-    color: inherit; opacity: var(--chip-fade); font-size: var(--fs-sm); line-height: 1;
+    color: inherit; opacity: var(--chip-fade); font-size: var(--fs-sm); line-height: var(--lh-icon);
   }
   .x:hover { opacity: 1; }
-  .sub { display: flex; align-items: center; gap: 0.3rem; font-size: var(--fs-2xs); min-width: 0; }
+  .sub { display: flex; align-items: center; gap: 0.3rem; font-size: var(--fs-xs); min-width: 0; }
   /* The kind's name is in the card's ink, as its name and icon. */
-  .kind { text-transform: uppercase; letter-spacing: 0.06em; }
   /* The × and the subtitle fade the card's ink: a fixed --text-3 does not follow the tint. */
   .sep, .subtitle { color: inherit; opacity: var(--chip-fade); }
   .subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -249,15 +233,9 @@
     width: 100%;
     margin-top: auto;
   }
-  .btn-xs { font-size: var(--fs-2xs); padding: 0.15rem 0.45rem; gap: 0.25rem; }
+  .btn-xs { font-size: var(--fs-xs); padding: 0.15rem 0.45rem; gap: 0.25rem; }
   .bind { color: var(--accent-text); }
   .spinning { opacity: 0.6; }
-  .error { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--danger-text); }
+  .err { grid-column: 1 / -1; }
   .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
-  .icon-btn.pop { animation: icon-pop 0.35s ease; }
-  @keyframes icon-pop {
-    0% { transform: scale(1); }
-    40% { transform: scale(1.12); }
-    100% { transform: scale(1); }
-  }
 </style>

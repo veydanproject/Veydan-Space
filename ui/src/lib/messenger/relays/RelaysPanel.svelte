@@ -4,6 +4,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { t } from '$lib/core/i18n';
   import { stamp } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
@@ -128,18 +130,19 @@
       {#if mode === 'veydan'}
       <label class="control">
         <span>{$t('msg_relays_region')}</span>
-        <select
-          value={messengerStore.manifest.region}
-          disabled={busy}
-          onchange={(e) => run(() => messengerStore.setRegion((e.currentTarget as HTMLSelectElement).value))}
-        >
-          {#each messengerStore.manifest.regions as r}
-            <option value={r}>{r}</option>
-          {/each}
-          {#if !messengerStore.manifest.regions.includes(messengerStore.manifest.region)}
-            <option value={messengerStore.manifest.region}>{messengerStore.manifest.region}</option>
-          {/if}
-        </select>
+        <div class="region">
+          <CustomSelect
+            options={[
+              ...messengerStore.manifest.regions.map((r) => ({ value: r, label: r })),
+              ...(messengerStore.manifest.regions.includes(messengerStore.manifest.region)
+                ? []
+                : [{ value: messengerStore.manifest.region, label: messengerStore.manifest.region }]),
+            ]}
+            value={messengerStore.manifest.region}
+            disabled={busy}
+            onchange={(v) => run(() => messengerStore.setRegion(v ?? ''))}
+          />
+        </div>
       </label>
       {/if}
       <div class="control silent">
@@ -184,7 +187,7 @@
 
   <RelayAddForm />
   <PrivateServers />
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 </div>
 
 <style>
@@ -194,11 +197,7 @@
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); }
   .control { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
-  .control select {
-    font: inherit; color: var(--text); background: var(--surface-3); min-height: 44px;
-    border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
-  }
-  .control select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .region { min-width: 10rem; }
   /* The switch row takes the line, like every other. */
   .control.silent { flex: 1 1 100%; }
   /* The servers as rows of 48 with a line between them (as the facts of «Профиль и ключ»). */

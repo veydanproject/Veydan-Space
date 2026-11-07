@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
   import { api } from '$lib/pass/api';
@@ -26,6 +27,8 @@
   let missing = $state(false);
   let error = $state('');
   let saving = $state(false);
+  // Before the form is there the error is the page's (a plate); in the form, a line under the name or above the button.
+  const nameErr = $derived(!!error && error === $t('totp_error_name'));
 
   onMount(async () => {
     try {
@@ -85,8 +88,8 @@
   </div>
 
   <div class="m-body">
-    {#if error}
-      <div class="m-error">{error}</div>
+    {#if error && !ready}
+      <div class="err"><Notice tone="danger">{error}</Notice></div>
     {/if}
 
     {#if missing}
@@ -96,7 +99,8 @@
     {:else if ready}
       <div class="m-field">
         <label for="name">{$t('totp_field_name')}</label>
-        <input id="name" bind:value={name} placeholder={$t('totp_field_name_placeholder')} autocomplete="off" />
+        <input id="name" bind:value={name} placeholder={$t('totp_field_name_placeholder')} autocomplete="off" aria-invalid={nameErr} />
+        {#if nameErr}<div class="m-error">{error}</div>{/if}
       </div>
       <div class="m-field">
         <label for="issuer">{$t('totp_field_issuer')}</label>
@@ -108,9 +112,10 @@
     <TotpNoteLinks mobile {notes} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
   {/if}
 
+      {#if error && !nameErr}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
       <button type="button" class="m-btn-grad save" onclick={save} disabled={saving}>
         <Icon name="check" size={18} />
-        {$t('totp_btn_save')}
+        {$t('common_save')}
       </button>
     {:else if !error}
       <p class="wait">{$t('loading')}</p>
@@ -119,6 +124,7 @@
 </div>
 
 <style>
+  .err { margin-bottom: var(--sp-3); }
   .save { margin-top: var(--sp-4); }
   .wait { color: var(--text-2); font-size: var(--fs-sm); }
 </style>

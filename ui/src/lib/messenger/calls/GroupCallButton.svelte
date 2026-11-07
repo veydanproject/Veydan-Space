@@ -10,19 +10,20 @@
 
   As in a conversation of two, a press asks first unless that was turned
   off (CallConfirm, kept on this device), and a hold (or a right click)
-  opens the settings of calls. A refusal shows under the buttons for a
-  moment. On a phone (`menuStarts`) the two buttons that start a call are
+  opens the settings of calls. A refusal is an error toast (pressing
+  again is the retry). On a phone (`menuStarts`) the two buttons that start a call are
   entries of the chat's menu instead (start, canStart, startBlocked); joining
   a call on, or going back to it, stays a button of the header.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import type { CallMedia, MessengerChat, MessengerGroup } from '../api';
   import { messengerStore } from '../store.svelte';
   import { openSettings } from '../pages/settingsTab.svelte';
   import { onPhone } from '../shared/phone';
   import CallConfirm from './CallConfirm.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { callStore } from './callStore.svelte';
   import { groupCallStore } from './groupCallStore.svelte';
   import { hold } from './hold';
@@ -50,8 +51,6 @@
   const face = $derived({ name: group?.name || chat.title, picture: group?.picture || chat.picture || null, seed: groupId });
   const name = $derived(face.name);
 
-  let refusal = $state('');
-  let timer: ReturnType<typeof setTimeout> | null = null;
   /** The kind the question is about while it is asked; `join` asks about the call on now. */
   let asking = $state<CallMedia | null>(null);
   let joining = $state(false);
@@ -79,10 +78,7 @@
   async function go(media: CallMedia) {
     const { view, refusal: why } = joining ? await groupCallStore.join(groupId) : await groupCallStore.start(groupId, media);
     if (view) { openGroupRoom(phone); return; }
-    if (!why) return;
-    refusal = callErrorText(why, tr);
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => (refusal = ''), 4000);
+    if (why) toast.error(callErrorText(why, tr), { action: false });
   }
 
   // The question belongs to the chat it was asked in.
@@ -90,8 +86,6 @@
   $effect(() => {
     if (chat.id !== last) { last = chat.id; asking = null; }
   });
-
-  $effect(() => () => { if (timer) clearTimeout(timer); });
 
   const toSettings = { onhold: () => { asking = null; openSettings('calls', phone); } };
   const question = $derived(
@@ -104,26 +98,25 @@
   <span class="wrap">
     {#if mine}
       <button class="pill on" class:round={phone} onclick={() => openGroupRoom(phone)} title={$t('msg_call_return')} aria-label={$t('msg_call_return')}>
-        <CallIcon name="phone" size={14} />{#if !phone}<span class="label">{$t('msg_gcall_in_room')}</span>{/if}
+        <Icon name="phone" size={14} />{#if !phone}<span class="label">{$t('msg_gcall_in_room')}</span>{/if}
       </button>
     {:else if live}
       <button class="pill" class:round={phone} disabled={!!reason || groupCallStore.busy} onclick={pressJoin} use:hold={toSettings}
         title={reason || $t('msg_gcall_join_title')} aria-label={$t('msg_gcall_join_title')}>
-        <CallIcon name={live.media === 'video' ? 'video' : 'phone'} size={14} />{#if !phone}<span class="label">{$t('msg_gcall_join')}</span>{/if}
+        <Icon name={live.media === 'video' ? 'video' : 'phone'} size={14} />{#if !phone}<span class="label">{$t('msg_gcall_join')}</span>{/if}
       </button>
     {:else if !menuStarts}
       {#if kinds.includes('video')}
         <button class="icon" disabled={!!reason || groupCallStore.busy} onclick={() => press('video')} use:hold={toSettings}
           title={reason || $t('msg_gcall_video_start')} aria-label={$t('msg_gcall_video_start')}>
-          <CallIcon name="video" size={17} />
+          <Icon name="video" size={18} />
         </button>
       {/if}
       <button class="icon" disabled={!!reason || groupCallStore.busy} onclick={() => press('audio')} use:hold={toSettings}
         title={reason || $t('msg_gcall_start')} aria-label={$t('msg_gcall_start')}>
-        <CallIcon name="phone" size={16} />
+        <Icon name="phone" size={18} />
       </button>
     {/if}
-    {#if refusal}<span class="refusal" role="status">{refusal}</span>{/if}
   </span>
   <CallConfirm media={asking} peer={face} {question} action={joining ? $t('msg_gcall_join') : undefined}
     oncall={(m) => void go(m)} onclose={() => (asking = null)} />
@@ -132,7 +125,7 @@
 <style>
   .wrap { position: relative; display: inline-flex; align-items: center; }
   .icon {
-    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; padding: 6px; border-radius: var(--radius-sm);
+    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius);
     -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
   }
   @media (hover: hover) { .icon:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
@@ -145,12 +138,7 @@
   .pill.on { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
   @media (hover: hover) { .pill:hover:not(:disabled) { filter: brightness(1.08); } }
   .label { white-space: nowrap; }
-  @media (pointer: coarse) { .icon { padding: 10px; } .pill { padding: 6px 12px 6px 10px; } }
+  @media (pointer: coarse) { .pill { padding: 6px 12px 6px 10px; } }
   /* A phone: the pill is a round button, its words are the banner's. */
   .pill.round { padding: 8px; }
-  .refusal {
-    position: absolute; top: calc(100% + 6px); right: 0; z-index: 5; width: max-content; max-width: 260px;
-    padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs); line-height: 1.4;
-    background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); box-shadow: var(--shadow);
-  }
 </style>

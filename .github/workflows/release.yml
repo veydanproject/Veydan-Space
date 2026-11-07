@@ -212,6 +212,26 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir ui tauri build ${{ matrix.args }}
 
+      # The Objective-C categories of libwebrtc reach the binary only with
+      # -ObjC, which the product's build.rs asks for
+      # (veydan_build_cfg::darwin_webrtc_objc); without them the app dies
+      # before `main` on `+[NSString stringForStdString:]` (ROO-869). The
+      # category of that method, NSString (StdString), is looked for in the
+      # binary of the bundle; the symbols are stripped, the metadata of
+      # Objective-C stays.
+      - name: libwebrtc categories in the binary (macOS)
+        if: needs.meta.outputs.messenger == 'true' && startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          APP=$(ls -d "data/target/$TARGET/release/bundle/macos/"*.app | head -n 1)
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Contents/Info.plist")"
+          if ! otool -ov "$BIN" | grep -E '\bname\b.*\bStdString$'; then
+            echo "::error::$BIN has no category NSString (StdString) of libwebrtc: -ObjC did not reach the linker"
+            exit 1
+          fi
+
       # The installers and signatures of this product and version, named
       # for the release (Veydan.Notes_5.0.0_amd64.AppImage). Every signature
       # is checked against the public key of tauri.conf.json: a secret that

@@ -17,7 +17,6 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import CallFace from './CallFace.svelte';
-  import CallIcon from './CallIcon.svelte';
   import { callStore } from './callStore.svelte';
   import { clampPanelShift } from './panel';
   import { callPeer } from './peer';
@@ -116,32 +115,32 @@
         <span class="phase" class:clock={talking}>{status}</span>
         {#if call?.via}
           <span class="via" class:relay={call.via === 'relay'} title={$t(call.via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
-            <CallIcon name={call.via} size={11} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
+            <Icon name={call.via === 'relay' ? 'route' : 'arrows-exchange'} size={11} />{$t(call.via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
           </span>
         {/if}
         {#if rtt != null}<span class="rtt">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
-        {#if call?.muted}<span class="muted-mark" title={$t('msg_call_muted')}><CallIcon name="mic-off" size={11} /></span>{/if}
+        {#if call?.muted}<span class="muted-mark" title={$t('msg_call_muted')}><Icon name="mic-off" size={11} /></span>{/if}
       </span>
     </div>
-    {#if error}<div class="error" role="alert">{error}</div>{/if}
+    {#if error}<div class="error error-msg" role="alert">{error}</div>{/if}
     {#if call}
       <div class="controls">
         {#if call.phase !== 'outgoing'}
           <button class="ctl" class:on={call.muted} disabled={callStore.busy} onclick={() => callStore.toggleMute()}
             title={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')} aria-pressed={call.muted}>
-            <CallIcon name={call.muted ? 'mic-off' : 'mic'} size={15} />
+            <Icon name={call.muted ? 'mic-off' : 'mic'} size={15} />
           </button>
         {/if}
         <button class="ctl" class:lit={cameraOn} disabled={callStore.busy} onclick={() => callStore.toggleCamera()}
           title={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-label={$t(cameraOn ? 'msg_call_camera_off' : 'msg_call_camera_on')} aria-pressed={cameraOn}>
-          <CallIcon name={cameraOn ? 'video' : 'video-off'} size={15} />
+          <Icon name={cameraOn ? 'video' : 'video-off'} size={15} />
         </button>
         <ScreenPicker {sharing} share={(id) => callStore.shareScreen(id)} stop={() => callStore.stopScreen()} below>
           {#snippet button({ onclick, expanded })}
             <button class="ctl" class:lit={sharing} disabled={callStore.busy} {onclick}
               title={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')} aria-label={$t(sharing ? 'msg_call_screen_stop' : 'msg_call_screen_share')}
               aria-pressed={sharing} aria-haspopup="menu" aria-expanded={expanded}>
-              <CallIcon name={sharing ? 'screen-share-off' : 'screen-share'} size={15} />
+              <Icon name={sharing ? 'screen-share-off' : 'screen-share'} size={15} />
             </button>
           {/snippet}
         </ScreenPicker>
@@ -149,7 +148,7 @@
           <Icon name="message-circle" size={15} />
         </button>
         <button class="ctl end" disabled={callStore.ending} onclick={() => callStore.hangUp()} title={$t('msg_call_end')} aria-label={$t('msg_call_end')}>
-          <CallIcon name="hangup" size={16} />
+          <Icon name="phone-hangup" size={16} />
         </button>
       </div>
     {/if}
@@ -162,7 +161,8 @@
     width: max-content; max-width: min(620px, calc(100vw - 24px));
     display: flex; align-items: center; gap: var(--sp-2);
     padding: 4px 4px 4px 5px; border-radius: var(--radius-pill);
-    background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+    background: var(--glass-bg-raised); color: var(--text); border: 1px solid var(--border-strong);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     box-shadow: var(--shadow-lg); cursor: grab; touch-action: none; user-select: none;
     animation: drop 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }
@@ -175,16 +175,16 @@
   .phase.clock { font-variant-numeric: tabular-nums; color: var(--success-text); font-weight: var(--fw-semibold); }
   .ended .phase { color: var(--text-2); }
   .via, .muted-mark {
-    display: inline-flex; align-items: center; gap: 3px; padding: 1px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-2xs);
+    display: inline-flex; align-items: center; gap: 3px; padding: 1px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs);
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); cursor: help;
   }
   .via.relay { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
   .muted-mark { padding: 2px 5px; background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); cursor: default; }
-  .rtt { color: var(--text-3); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+  .rtt { color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
   .error {
     position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 360px;
-    padding: 6px 10px; border-radius: var(--radius-sm); font-size: var(--fs-xs);
-    background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger-text); box-shadow: var(--shadow);
+    padding: 6px 10px; border-radius: var(--radius-md);
+    background: var(--danger-bg); border: 1px solid var(--danger-border); box-shadow: var(--shadow);
   }
   .controls { display: flex; gap: 4px; flex-shrink: 0; }
   .ctl {
@@ -198,8 +198,8 @@
   .ctl.lit { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
   .ctl.end { width: 40px; border-radius: var(--radius-pill); background: var(--danger); border-color: transparent; color: #fff; }
   .ctl.end:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
-  .ctl:disabled { opacity: 0.6; cursor: default; }
-  .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .ctl:disabled { opacity: 0.45; cursor: default; }
+  .ctl:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   @keyframes drop {
     from { opacity: 0; transform: translate(-50%, -10px) scale(0.96); }
     to { opacity: 1; transform: translate(-50%, 0) scale(1); }

@@ -8,6 +8,7 @@
   import { quickDraft } from '$lib/notes/store/quickDraft.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   // Kept in memory beyond the page: a lock unmounts it, the unlock brings the text back.
   let text = $state(quickDraft.text);
@@ -100,23 +101,24 @@
   ></textarea>
 
   <div class="meta">
-    <select class="field" bind:value={folderId} title={$t('quick_capture_folder')}>
-      <option value="">{$t('quick_capture_no_folder')}</option>
-      {#each notesStore.folders as f (f.id)}
-        <option value={f.id}>{f.name}</option>
-      {/each}
-    </select>
+    <div class="pick">
+      <CustomSelect
+        options={[{ value: '', label: $t('quick_capture_no_folder') }, ...notesStore.folders.map((f) => ({ value: f.id, label: f.name }))]}
+        bind:value={folderId}
+        title={$t('quick_capture_folder')}
+      />
+    </div>
     <input class="field" type="text" bind:value={tags} placeholder={$t('quick_capture_tags')} />
   </div>
 
   <div class="footer">
-    <span class="hint">{savedFlash ? $t('quick_capture_saved') : $t('quick_capture_hint')}</span>
+    <span class="hint">{savedFlash ? $t('common_saved') : $t('quick_capture_hint')}</span>
     <div class="actions">
       <button class="btn btn-ghost btn-sm" onclick={pasteClipboard} title={$t('quick_capture_paste')}>
         <Icon name="copy" size={13} />
       </button>
       <button class="btn btn-primary btn-sm" onclick={save} disabled={!split(text).title || saving}>
-        {$t('quick_capture_save')}
+        {$t('common_save')}
       </button>
     </div>
   </div>
@@ -138,26 +140,24 @@
     padding: 0.6rem;
     font: inherit;
     font-size: var(--fs-sm);
-    line-height: 1.5;
+    line-height: var(--lh-base);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-field);
     background: var(--bg-2);
     color: var(--text);
   }
-  .text:focus { outline: none; border-color: var(--accent); }
+  .text:focus { outline: none; border-color: var(--accent-border); }
   .meta { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.4rem; }
   .field {
     min-width: 0;
     padding: 0.35rem 0.5rem;
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
-    border-radius: var(--radius-badge);
-    /* The colour alone: the folder select keeps the global chevron. */
+    border-radius: var(--radius-field);
     background-color: var(--bg-2);
     color: var(--text);
   }
-  select.field { padding-right: 1.6rem; background-position: right 0.4rem center; }
+  .pick { min-width: 0; }
   .footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-  .hint { font-size: var(--fs-2xs); color: var(--text-3); }
   .actions { display: flex; gap: 0.4rem; }
 </style>

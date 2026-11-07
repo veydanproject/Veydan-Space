@@ -196,17 +196,17 @@
 
   .aim { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-6); }
   .frame {
-    position: relative; width: min(72vw, 300px); aspect-ratio: 1; border-radius: 28px;
+    position: relative; width: min(72vw, 300px); aspect-ratio: 1; border-radius: var(--radius-card);
     /* Everything outside the frame is dimmed: the frame is the one clear place. */
     box-shadow: 0 0 0 100vmax var(--backdrop);
   }
   .frame.idle { box-shadow: none; background: var(--surface-3); }
   .corner { position: absolute; width: 44px; height: 44px; border: 4px solid #fff; }
   .idle .corner { border-color: var(--border-strong); }
-  .tl { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 28px; }
-  .tr { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 28px; }
-  .bl { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 28px; }
-  .br { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 28px; }
+  .tl { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: var(--radius-card); }
+  .tr { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: var(--radius-card); }
+  .bl { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: var(--radius-card); }
+  .br { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: var(--radius-card); }
   .line {
     position: absolute; left: 12%; right: 12%; top: 10%; height: 2px; border-radius: 2px;
     background: var(--accent); box-shadow: 0 0 12px var(--accent);
@@ -215,7 +215,7 @@
   @keyframes sweep { to { top: 90%; } }
   @media (prefers-reduced-motion: reduce) { .line { animation: none; top: 50%; } }
 
-  .hint { position: relative; z-index: 1; margin: 0; max-width: 300px; text-align: center; font-size: var(--fs-body); line-height: 1.45; font-weight: var(--fw-medium); }
+  .hint { position: relative; z-index: 1; margin: 0; max-width: 300px; text-align: center; font-size: var(--fs-body); line-height: var(--lh-snug); font-weight: var(--fw-medium); color: inherit; }
   /* Over a bright picture the words keep a ground of their own. */
   .live .hint { padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-md); background: var(--backdrop); }
   .bottom { position: relative; z-index: 1; display: flex; justify-content: center; }
@@ -230,7 +230,7 @@
     display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 50%;
     background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border);
   }
-  .lead { margin: 0; max-width: 300px; font-size: var(--fs-body); line-height: 1.45; color: var(--text-2); }
+  .lead { margin: 0; max-width: 300px; font-size: var(--fs-body); line-height: var(--lh-snug); color: var(--text-2); }
   .buttons { display: flex; flex-direction: column; gap: var(--sp-2); align-self: stretch; }
   .buttons .btn { width: 100%; justify-content: center; min-height: 48px; font-size: var(--fs-body); }
 </style>

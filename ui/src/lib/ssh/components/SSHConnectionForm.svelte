@@ -11,17 +11,22 @@
     SshKey,
   } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { t } from '$lib/core/i18n';
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
   import { explainError } from '$lib/ssh/tor-error';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     connection?: SshConnection | null;
     defaultWorkspaceId?: string | null;
     defaultProfileId?: string | null;
     onSave: (conn: SshConnection) => void;
-    onCancel: () => void;
+    /** «Cancel» and «Create/Save» are the host's, in its Drawer's footer: it calls `submit()`; `saving` tells it the
+     *  save is running. */
+    saving?: boolean;
   }
 
   let {
@@ -29,7 +34,7 @@
     defaultWorkspaceId = null,
     defaultProfileId = null,
     onSave,
-    onCancel,
+    saving = $bindable(false),
   }: Props = $props();
 
   // Proxies, workspaces and TOTP entries come through the catalog of entities (their owners are other modules).
@@ -38,10 +43,12 @@
   let totpEntries = $state<{ id: string; name: string; issuer: string }[]>([]);
   let sshKeys = $state<SshKey[]>([]);
   let sshKeysLoaded = $state(false);
-  let saving = $state(false);
   let error = $state('');
+  let advancedOpen = $state(false);
+  /** The field a validation error is about: its line sits under that field; none: a failure of the save itself. */
+  let errorField = $state<'name' | 'host' | 'username' | 'key' | null>(null);
 
-  let name = $state(untrack(() => connection?.name ?? ''));
+  let name =$state(untrack(() => connection?.name ?? ''));
   let host = $state(untrack(() => connection?.host ?? ''));
   let port = $state(untrack(() => connection?.port ?? 22));
   let username = $state(untrack(() => connection?.username ?? ''));
@@ -124,19 +131,25 @@
     }
   }
 
+  /** The save, for a host that draws the buttons in its own footer. */
+  export function submit() { return save(); }
+
   async function save() {
     if (!name.trim() || !host.trim() || !username.trim()) {
       error = $t('ssh_error_required');
+      errorField = !name.trim() ? 'name' : !host.trim() ? 'host' : 'username';
       return;
     }
     const isKeyAuth = authType === 'key' || authType === 'key_password';
     const useSavedKey = isKeyAuth && keySource === 'saved';
     if (useSavedKey && (!sshKeyId || savedKeyMissing)) {
       error = $t('ssh_key_error_select_required');
+      errorField = 'key';
       return;
     }
     saving = true;
     error = '';
+    errorField = null;
     try {
       let conn: SshConnection;
       // Nullable fields are three-state on the backend: omitted = keep,
@@ -179,20 +192,22 @@
 </script>
 
 <div class="form">
-  {#if error}
-    <div class="error-msg">{error}</div>
+  {#if error && !errorField}
+    <Notice tone="danger">{error}</Notice>
   {/if}
 
   <!-- Name takes the whole width, like every field below it -->
   <div class="form-group">
     <label for="ssh-name">{$t('ssh_field_name')}</label>
-    <input id="ssh-name" type="text" bind:value={name} placeholder={$t('ssh_field_name_placeholder')} />
+    <input id="ssh-name" type="text" bind:value={name} placeholder={$t('ssh_field_name_placeholder')} aria-invalid={errorField === 'name'} />
+    {#if error && errorField === 'name'}<div class="error-msg">{error}</div>{/if}
   </div>
 
   <div class="form-row host-port">
     <div class="form-group">
       <label for="ssh-host">{$t('ssh_field_host')}</label>
-      <input id="ssh-host" type="text" bind:value={host} placeholder={$t('ssh_field_host_placeholder')} />
+      <input id="ssh-host" type="text" bind:value={host} placeholder={$t('ssh_field_host_placeholder')} aria-invalid={errorField === 'host'} />
+      {#if error && errorField === 'host'}<div class="error-msg">{error}</div>{/if}
     </div>
     <div class="form-group">
       <label for="ssh-port">{$t('ssh_field_port')}</label>
@@ -202,16 +217,21 @@
 
   <div class="form-group">
     <label for="ssh-username">{$t('ssh_field_username')}</label>
-    <input id="ssh-username" type="text" bind:value={username} placeholder={$t('ssh_field_username_placeholder')} />
+    <input id="ssh-username" type="text" bind:value={username} placeholder={$t('ssh_field_username_placeholder')} aria-invalid={errorField === 'username'} />
+    {#if error && errorField === 'username'}<div class="error-msg">{error}</div>{/if}
   </div>
 
   <div class="form-group">
     <label for="ssh-auth-type">{$t('ssh_field_auth_type')}</label>
-    <select id="ssh-auth-type" bind:value={authType}>
-      <option value="password">{$t('ssh_auth_password')}</option>
-      <option value="key">{$t('ssh_auth_key')}</option>
-      <option value="key_password">{$t('ssh_auth_key_password')}</option>
-    </select>
+    <CustomSelect
+      id="ssh-auth-type"
+      options={[
+        { value: 'password', label: $t('ssh_auth_password') },
+        { value: 'key', label: $t('ssh_auth_key') },
+        { value: 'key_password', label: $t('ssh_auth_key_password') },
+      ]}
+      bind:value={authType}
+    />
   </div>
 
   {#if authType === 'password'}
@@ -235,7 +255,8 @@
 
   {#if authType === 'key' || authType === 'key_password'}
     <div class="form-group">
-      <span class="field-label">{$t('ssh_key_source_label')}</span>
+      <!-- svelte-ignore a11y_label_has_associated_control -->
+      <label>{$t('ssh_key_source_label')}</label>
       <div class="seg">
         <button
           type="button"
@@ -243,7 +264,7 @@
           class:active={keySource === 'saved'}
           onclick={() => (keySource = 'saved')}
         >
-          <Icon name="key" size={12} /> {$t('ssh_key_source_saved')}
+          <Icon name="key" size={18} /> {$t('ssh_key_source_saved')}
         </button>
         <button
           type="button"
@@ -251,7 +272,7 @@
           class:active={keySource === 'inline'}
           onclick={() => (keySource = 'inline')}
         >
-          <Icon name="pencil" size={12} /> {$t('ssh_key_source_inline')}
+          <Icon name="pencil" size={18} /> {$t('ssh_key_source_inline')}
         </button>
       </div>
     </div>
@@ -259,12 +280,13 @@
     {#if keySource === 'saved'}
       <div class="form-group">
         <label for="ssh-saved-key">{$t('ssh_key_field_saved_key')}</label>
-        <select id="ssh-saved-key" bind:value={sshKeyId}>
-          <option value="">{$t('ssh_key_select_placeholder')}</option>
-          {#each sshKeys as k}
-            <option value={k.id}>{keyOptionLabel(k)}</option>
-          {/each}
-        </select>
+        <CustomSelect
+          id="ssh-saved-key"
+          options={[{ value: '', label: $t('ssh_key_select_placeholder') }, ...sshKeys.map((k) => ({ value: k.id, label: keyOptionLabel(k) }))]}
+          bind:value={sshKeyId}
+          invalid={errorField === 'key'}
+        />
+        {#if error && errorField === 'key'}<div class="error-msg">{error}</div>{/if}
         {#if savedKeyMissing}
           <span class="hint warn">{$t('ssh_key_missing_warning')}</span>
         {:else if selectedKey?.has_passphrase}
@@ -320,31 +342,19 @@
     </div>
   {/if}
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <span class="toggle-text">{$t('ssh_field_requires_2fa')}</span>
-    </div>
-    <button
-      type="button"
-      class="toggle-btn"
-      class:active={requires2fa}
-      onclick={() => (requires2fa = !requires2fa)}
-      aria-pressed={requires2fa}
-      aria-label={$t('ssh_field_requires_2fa')}
-    >
-      <span class="toggle-thumb"></span>
-    </button>
-  </div>
+  <ToggleRow title={$t('ssh_field_requires_2fa')} bind:on={requires2fa} />
 
   {#if requires2fa}
     <div class="form-group">
       <label for="ssh-totp-entry">{$t('ssh_field_totp_entry')}</label>
-      <select id="ssh-totp-entry" bind:value={totpEntryId}>
-        <option value="">{$t('ssh_totp_entry_interactive')}</option>
-        {#each totpEntries as entry}
-          <option value={entry.id}>{entry.name}{entry.issuer ? ` (${entry.issuer})` : ''}</option>
-        {/each}
-      </select>
+      <CustomSelect
+        id="ssh-totp-entry"
+        options={[
+          { value: '', label: $t('ssh_totp_entry_interactive') },
+          ...totpEntries.map((entry) => ({ value: entry.id, label: `${entry.name}${entry.issuer ? ` (${entry.issuer})` : ''}` })),
+        ]}
+        bind:value={totpEntryId}
+      />
       <span class="hint">
         {#if totpEntryId}
           {$t('ssh_totp_entry_hint_auto')}
@@ -357,19 +367,18 @@
 
   <div class="form-group">
     <label for="ssh-proxy">{$t('ssh_field_proxy')}</label>
-    <select id="ssh-proxy" bind:value={proxyId}>
-      <option value="">{$t('ssh_proxy_none')}</option>
-      <!-- The stored proxy was deleted, so it is absent from the list above.
-           Without this option the select would render blank, which reads as
-           "no proxy" while the connection actually refuses to connect. -->
-      {#if danglingProxy}
-        <option value={proxyId} disabled>{$t('ssh_proxy_missing')}</option>
-      {/if}
-      {#each proxies as p}
-        <!-- A Tor row names no server: its subtitle (`Tor · DE, NL`) says which exit countries it uses. -->
-        <option value={p.id}>[{p.proxy_type === 'tor' ? p.subtitle : p.proxy_type}] {p.name}</option>
-      {/each}
-    </select>
+    <!-- The stored proxy was deleted, so it is absent from the list: its own row says so.
+         Without it the field would show «no proxy» while the connection actually refuses to connect.
+         A Tor row names no server: its subtitle (`Tor · DE, NL`) says which exit countries it uses. -->
+    <CustomSelect
+      id="ssh-proxy"
+      options={[
+        { value: '', label: $t('ssh_proxy_none') },
+        ...(danglingProxy ? [{ value: proxyId, label: $t('ssh_proxy_missing'), disabled: true }] : []),
+        ...proxies.map((p) => ({ value: p.id, label: `[${p.proxy_type === 'tor' ? p.subtitle : p.proxy_type}] ${p.name}` })),
+      ]}
+      bind:value={proxyId}
+    />
     {#if danglingProxy}
       <span class="hint warn">{$t('ssh_proxy_missing_hint')}</span>
     {/if}
@@ -378,7 +387,8 @@
   <!-- Workspace assignments -->
   {#if workspaces.length > 0}
     <div class="form-group">
-      <span class="field-label">{$t('ssh_field_workspaces')}</span>
+      <!-- svelte-ignore a11y_label_has_associated_control -->
+      <label>{$t('ssh_field_workspaces')}</label>
       <div class="tag-grid">
         {#each workspaces as ws}
           <button
@@ -387,7 +397,7 @@
             class:active={selectedWorkspaceIds.includes(ws.id)}
             onclick={() => toggleWorkspace(ws.id)}
           >
-            {#if selectedWorkspaceIds.includes(ws.id)}<Icon name="check" size={11} />{/if}
+            {#if selectedWorkspaceIds.includes(ws.id)}<Icon name="check" size={18} />{/if}
             {ws.name}
           </button>
         {/each}
@@ -398,8 +408,8 @@
     </div>
   {/if}
 
-  <details class="advanced">
-    <summary>{$t('ssh_advanced')}</summary>
+  <details class="advanced" bind:open={advancedOpen}>
+    <summary><Icon name={advancedOpen ? 'chevron-down' : 'chevron-right'} size={18} />{$t('ssh_advanced')}</summary>
     <div class="advanced-body">
       <div class="form-row">
         <div class="form-group">
@@ -424,13 +434,6 @@
     </div>
   </details>
 
-  <div class="form-actions">
-    <button class="btn btn-ghost" onclick={onCancel}>{$t('ssh_btn_cancel')}</button>
-    <button class="btn btn-primary" onclick={save} disabled={saving}>
-      {#if saving}<Icon name="loader" size={13} />{/if}
-      {connection ? $t('ssh_btn_save') : $t('ssh_btn_create')}
-    </button>
-  </div>
   {#if connection}
     <!-- What other modules show about a connection: the notes about it. -->
     {#each registry.views('ssh', 'inline') as view (view.id)}
@@ -443,57 +446,13 @@
   .form { display: flex; flex-direction: column; gap: var(--sp-4); }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .form-row.host-port { grid-template-columns: 3fr 1fr; }
-  .form-group { display: flex; flex-direction: column; gap: 8px; }
-  /* Caps field labels per redesign drawer-form spec */
-  label, .field-label {
-    font-size: var(--fs-2xs); text-transform: uppercase; color: var(--text-faint);
-    font-weight: var(--fw-bold); letter-spacing: 0.5px;
-  }
-  /* Tall drawer form fields (46px / radius 11) */
-  input, select, textarea {
-    /* background-color only: a select keeps the chevron of base.css */
-    background-color: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    color: var(--text);
-    padding: 0 14px;
-    height: var(--control-h-lg);
-    font-size: var(--fs-base);
-    font-family: inherit;
-    resize: vertical;
-  }
-  select { padding-right: 2.2rem; }
-  textarea { height: auto; min-height: 96px; padding: 12px 14px; font-size: var(--fs-sm); }
-  input:focus, select:focus, textarea:focus {
-    outline: none;
-    border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
-  }
-  .toggle-row {
-    display: flex; align-items: center; justify-content: space-between;
-    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
-    padding: 1rem 0;
-  }
-  .toggle-info { display: flex; flex-direction: column; gap: 4px; }
-  .toggle-text { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); text-transform: none; letter-spacing: 0; }
-  .toggle-btn {
-    position: relative; flex-shrink: 0;
-    width: 40px; height: 24px;
-    background: var(--toggle-off); border: none; border-radius: var(--radius-pill);
-    cursor: pointer; padding: 0; transition: background 0.2s;
-  }
-  .toggle-btn.active { background: var(--accent-hover); }
-  .toggle-thumb {
-    position: absolute; top: 3px; left: 3px;
-    width: 18px; height: 18px; border-radius: 50%;
-    background: #fff; transition: transform 0.2s;
-    box-shadow: var(--shadow-knob);
-  }
-  .toggle-btn.active .toggle-thumb { transform: translateX(16px); }
+  /* The common captions and fields on the panel's glass, 40 high. */
+  input:not([type='checkbox']):not([type='radio']) { height: var(--control-h); }
+  textarea { resize: vertical; }
 
   /* Workspace tag picker */
   .tag-grid { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-  .hint { font-size: var(--fs-xs); color: var(--text-faint); text-transform: none; letter-spacing: 0; font-weight: var(--fw-normal); }
+  .hint { font-weight: var(--fw-normal); }
   .hint.warn { color: var(--warn-text); }
   .link-btn {
     align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer;
@@ -503,9 +462,12 @@
   .seg { align-self: flex-start; }
 
   .advanced { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2); }
-  summary { padding: 0.7rem 1rem; cursor: pointer; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); user-select: none; }
+  /* The disclosure's marker is the chevron (forward closed, down open), not the browser's triangle. */
+  summary {
+    display: flex; align-items: center; gap: var(--sp-2); list-style: none;
+    padding: 0.7rem 1rem; cursor: pointer; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
   summary:hover { color: var(--text); }
   .advanced-body { padding: var(--sp-2) 1rem 1rem; display: flex; flex-direction: column; gap: var(--sp-3); }
-  .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: var(--sp-2); }
-  .form-actions .btn { height: var(--control-h); border-radius: var(--radius); padding: 0 var(--sp-5); }
 </style>

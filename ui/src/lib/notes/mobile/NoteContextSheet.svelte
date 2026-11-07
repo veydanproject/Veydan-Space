@@ -7,6 +7,7 @@
 -->
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { api, formatError, type BindingSummary, type NoteListItem } from '$lib/notes/mobile/api';
   import { t, type MobileKey } from '$lib/core/mobile/i18n';
   import { longpress } from '$lib/core/mobile/longpress';
@@ -41,7 +42,7 @@
     profile: 'user-circle',
     proxy: 'globe',
     ssh: 'terminal',
-    totp: 'shield',
+    totp: 'shield-lock',
     password: kindIcon('password'),
   };
   const KIND_LABEL: Record<EntityKind, MobileKey> = {
@@ -165,7 +166,7 @@
 </script>
 
 <BottomSheet {open} title={$t('notes_context')} {onclose}>
-  {#if error}<div class="m-error">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
   {#if rows.length === 0}
     <p class="empty">{$t('notes_context_empty')}</p>
   {:else}
@@ -233,7 +234,7 @@
   <div class="m-list">
     {#if menuRow && directory.get(menuRow.kind)?.open}
       <button type="button" class="m-row" onclick={() => menuAction('open')}>
-        <Icon name="external-link" size={20} /><span class="m-row-label">{$t('ctx_action_open')}</span>
+        <Icon name="external-link" size={20} /><span class="m-row-label">{$t('common_open')}</span>
       </button>
     {/if}
     {#if menuRow && (menuRow.bound || (menuRow.fromTag && directory.get(menuRow.kind)?.link))}
@@ -253,7 +254,7 @@
 
 <style>
   .empty { margin: var(--sp-4); color: var(--text-3); text-align: center; }
-  .hint { margin: 0 var(--sp-2) var(--sp-3); color: var(--text-3); font-size: var(--fs-xs); }
+  .hint { margin: 0 var(--sp-2) var(--sp-3); }
   .entity { display: flex; flex-direction: column; }
   .entity + .entity { border-top: 1px solid var(--divider); }
   .entity.focus { background: var(--accent-bg); border-radius: var(--radius-md); }

@@ -87,14 +87,12 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    font-size: var(--fs-2xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: var(--fs-xs);
     color: var(--text-3);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     margin-bottom: 0.2rem;
   }
-  .count { margin-left: auto; font-weight: 400; }
+  .count { margin-left: auto; font-weight: var(--fw-normal); }
   .item {
     display: flex;
     flex-direction: column;
@@ -113,6 +111,6 @@
   .item:hover { background: var(--surface-2); }
   .title { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .title.unresolved { color: var(--text-2); text-decoration: underline dotted; }
-  .preview { font-size: var(--fs-2xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .preview { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .empty { font-size: var(--fs-xs); color: var(--text-3); padding: 0.2rem 0.45rem; }
 </style>

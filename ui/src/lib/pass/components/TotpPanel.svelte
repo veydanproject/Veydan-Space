@@ -29,8 +29,8 @@
 <div class="totp-panel">
   <div class="panel-toolbar">
     <span class="toolbar-count">{entries.length} TOTP</span>
-    <button class="btn btn-primary toolbar-add" onclick={() => (showAdd = true)}>
-      <Icon name="plus" size={14} /> {$t('totp_btn_add')}
+    <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
+      <Icon name="plus" size={18} />
     </button>
   </div>
 
@@ -68,13 +68,6 @@
   .toolbar-count {
     font-size: var(--fs-sm);
     color: var(--text-faint);
-  }
-
-  .toolbar-add {
-    height: 34px;
-    padding: 0 13px;
-    font-size: var(--fs-sm);
-    border-radius: var(--radius);
   }
 
   /* .btn / .btn-ghost / .btn-sm are global primitives (base.css) */

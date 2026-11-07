@@ -20,7 +20,7 @@
   import { CABINET_HOST, originLine, webConfirmOf } from '$lib/cloud/web';
   import Actions from '$lib/cloud/Actions.svelte';
   import Countdown from '$lib/cloud/Countdown.svelte';
-  import Notice from '$lib/cloud/Notice.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import StateView from '$lib/cloud/StateView.svelte';
 
   let { search = '', onleave }: { search?: string; onleave?: () => void } = $props();
@@ -73,21 +73,21 @@
 {#if !ask}
   <StateView tone="warn" title={$t('cloud_web_confirm_not_found')}>
     {#snippet actions()}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('cloud_done')}</button></Actions>
+      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('common_done')}</button></Actions>
     {/snippet}
   </StateView>
 {:else if phase === 'done'}
   <StateView tone="ok" title={$t('cloud_web_confirm_done_title')}>
     <p>{$t('cloud_web_confirm_done_text', { host: CABINET_HOST })}</p>
     {#snippet actions()}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('cloud_done')}</button></Actions>
+      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('common_done')}</button></Actions>
     {/snippet}
   </StateView>
 {:else if phase === 'over'}
   <StateView tone="info" title={$t('cloud_card_web_confirm_expired')}>
     <p>{$t('cloud_web_confirm_over_text', { host: CABINET_HOST })}</p>
     {#snippet actions()}
-      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('cloud_done')}</button></Actions>
+      <Actions><button class="btn btn-primary" type="button" onclick={() => onleave?.()}>{$t('common_done')}</button></Actions>
     {/snippet}
   </StateView>
 {:else}
@@ -121,9 +121,9 @@
         <label for="cloud-web-word">{$t('cloud_delete_word')}</label>
         <input id="cloud-web-word" class="mono" type="text" bind:value={form.word} autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE" />
       </div>
-      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
       <Actions>
-        <button class="btn btn-ghost" type="button" disabled={phase === 'sending'} onclick={() => onleave?.()}>{$t('cloud_delete_cancel')}</button>
+        <button class="btn btn-ghost" type="button" disabled={phase === 'sending'} onclick={() => onleave?.()}>{$t('common_cancel')}</button>
         <button class="btn btn-danger" type="submit" disabled={!ready || phase === 'sending'}>
           {phase === 'sending' ? $t('cloud_delete_running') : $t('cloud_web_confirm_delete')}
         </button>
@@ -135,9 +135,9 @@
 <style>
   .zone { display: flex; flex-direction: column; gap: var(--sp-3); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--danger-text); }
-  .text { margin: 0; font-size: var(--fs-base); color: var(--text); line-height: 1.5; }
-  .what { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-base); color: var(--text-body); line-height: 1.6; }
+  .text { margin: 0; font-size: var(--fs-base); color: var(--text); line-height: var(--lh-base); }
+  .what { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-base); color: var(--text-body); line-height: var(--lh-base); }
   .notes { display: flex; flex-direction: column; gap: var(--sp-1); }
-  .notes p { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .notes p { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-snug); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
 </style>

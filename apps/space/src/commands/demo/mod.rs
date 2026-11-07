@@ -76,9 +76,12 @@ mod tests {
     /// What the demo data of platform-stage-4 left in a fresh data file, the
     /// same in both locales: the rows of each table, the files of notes and
     /// profiles. Captured with the code of that stage.
-    const STAGE_4_COUNTS: [(&str, i64); 26] = [
+    const STAGE_4_COUNTS: [(&str, i64); 28] = [
         ("app_settings", 1),
         ("lock_secrets", 0),
+        // The sync positions of the archive of the messenger (platform-spec 9.6): the demo seeds none.
+        ("messenger_archive_secrets", 0),
+        ("messenger_archive_segments", 0),
         ("note_folder_links", 180),
         ("note_folders", 15),
         ("note_history", 0),

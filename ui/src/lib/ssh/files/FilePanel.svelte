@@ -4,7 +4,8 @@
 <script lang="ts">
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import PathBar from './PathBar.svelte';
   import FileTable from './FileTable.svelte';
@@ -35,6 +36,8 @@
     panel.source.kind === 'remote' ? parseHostKeyMismatch(panel.error) : null
   );
   let trusting = $state(false);
+  /** The changed key whose plate «Cancel» put away for this attempt: the error of the panel stands instead; a new source or refresh asks again. */
+  let dismissedFp = $state<string | null>(null);
 
   /** Pin the new host key (user confirmed after a mismatch) and reconnect. */
   async function trustHostKey() {
@@ -78,6 +81,7 @@
 
   function onSourceChange(value: string | null | undefined) {
     if (!value || value === '__sep__') return;
+    dismissedFp = null;
     filesStore.setSource(index, value === 'local' ? { kind: 'local' } : { kind: 'remote', connectionId: value });
   }
 
@@ -134,9 +138,18 @@
     run(() => filesStore.chmodSelected(index, mode));
   }
 
-  function doDelete() {
+  /** Asks, then deletes the selection; the keys of the panel wait while it asks. */
+  async function askDelete() {
+    confirmDelete = true;
+    const yes = await ask({
+      title: confirmTitle($t('common_delete')),
+      message: deleteMessage,
+      confirmLabel: $t('common_delete'),
+      variant: 'danger',
+      icon: 'trash-2',
+    });
     confirmDelete = false;
-    run(() => filesStore.deleteSelected(index));
+    if (yes) run(() => filesStore.deleteSelected(index));
   }
 
   // ── Context menu ─────────────────────────────────────────────────────────
@@ -157,7 +170,7 @@
     const many = panel.selected.length > 1;
     const items: MenuEntry[] = [];
     if (entry) {
-      if (entry.is_dir) items.push({ label: $t('files_op_open'), icon: 'folder-open', onselect: () => onOpen(entry) });
+      if (entry.is_dir) items.push({ label: $t('common_open'), icon: 'folder-open', onselect: () => onOpen(entry) });
       items.push({
         label: index === 0 ? $t('files_op_copy_right') : $t('files_op_copy_left'),
         icon: index === 0 ? 'arrow-right' : 'arrow-left', shortcut: 'F5',
@@ -184,8 +197,8 @@
     if (entry) {
       items.push({ type: 'separator' });
       items.push({
-        label: many ? $t('files_op_delete_n', { n: String(panel.selected.length) }) : $t('files_op_delete'),
-        icon: 'trash', shortcut: 'Del', danger: true, onselect: () => (confirmDelete = true),
+        label: many ? $t('files_op_delete_n', { n: String(panel.selected.length) }) : $t('common_delete'),
+        icon: 'trash-2', shortcut: 'Del', danger: true, onselect: () => void askDelete(),
       });
     }
     return items;
@@ -221,7 +234,7 @@
         break;
       case 'Delete':
       case 'F8':
-        if (sel.length > 0) { e.preventDefault(); confirmDelete = true; }
+        if (sel.length > 0) { e.preventDefault(); void askDelete(); }
         break;
     }
   }
@@ -257,7 +270,7 @@
     showHidden={panel.showHidden}
     onnavigate={(p) => filesStore.navigate(index, p)}
     onup={() => filesStore.up(index)}
-    onrefresh={() => filesStore.refresh(index)}
+    onrefresh={() => { dismissedFp = null; filesStore.refresh(index); }}
     ontogglehidden={() => filesStore.toggleHidden(index)}
   />
 
@@ -269,9 +282,9 @@
       onclick={() => run(() => filesStore.copyToOtherPanel(index))}
     >
       {#if index === 0}
-        {$t('files_copy')} <Icon name="arrow-right" size={13} />
+        {$t('common_copy')} <Icon name="arrow-right" size={13} />
       {:else}
-        <Icon name="arrow-left" size={13} /> {$t('files_copy')}
+        <Icon name="arrow-left" size={13} /> {$t('common_copy')}
       {/if}
     </button>
     <span class="toolbar-gap"></span>
@@ -298,12 +311,12 @@
       <Icon name="file-text-shield" size={14} />
     </button>
     <button
-      class="icon-btn danger"
-      title={`${$t('files_op_delete')} (Del)`}
+      class="icon-btn danger-soft"
+      title={`${$t('common_delete')} (Del)`}
       disabled={panel.selected.length === 0}
-      onclick={() => (confirmDelete = true)}
+      onclick={askDelete}
     >
-      <Icon name="trash" size={14} />
+      <Icon name="trash-2" size={18} />
     </button>
     {#if panel.selected.length > 1}
       <span class="sel-count">{$t('files_selected', { n: String(panel.selected.length) })}</span>
@@ -311,22 +324,24 @@
   </div>
 
   {#if opError}
-    <div class="error-msg">{opError}</div>
-  {:else if mismatchFingerprint}
-    <!-- Host key changed (TOFU mismatch) — offer to trust the new fingerprint -->
-    <div class="error-msg hostkey-msg">
-      <div class="hostkey-title">
-        <Icon name="file-text-shield" size={13} />
-        {$t('ssh_hostkey_changed_title')}
-      </div>
-      <code class="hostkey-fp">{mismatchFingerprint}</code>
-      <div class="hostkey-hint">{$t('ssh_hostkey_changed_hint')}</div>
-      <button class="btn btn-primary btn-sm" onclick={trustHostKey} disabled={trusting}>
-        {trusting ? '…' : $t('ssh_hostkey_trust_btn')}
-      </button>
+    <div class="plate"><Notice tone="danger">{opError}</Notice></div>
+  {:else if mismatchFingerprint && dismissedFp !== mismatchFingerprint}
+    <!-- Host key changed (TOFU mismatch): the one plate of a server's key, as in the terminal (SSHTerminal). -->
+    <div class="plate">
+      <Notice tone="warn" role="alert">
+        <b>{$t('ssh_hostkey_changed_title')}</b>
+        <code class="hostkey-fp">{mismatchFingerprint}</code>
+        {$t('ssh_hostkey_changed_hint')}
+        {#snippet action()}
+          <button class="btn btn-ghost btn-sm" type="button" onclick={() => (dismissedFp = mismatchFingerprint)} disabled={trusting}>{$t('common_cancel')}</button>
+          <button class="btn btn-danger-soft btn-sm" type="button" onclick={trustHostKey} disabled={trusting}>
+            {trusting ? '…' : $t('ssh_hostkey_trust_btn')}
+          </button>
+        {/snippet}
+      </Notice>
     </div>
   {:else if panel.error}
-    <div class="error-msg">{panel.error}</div>
+    <div class="plate"><Notice tone="danger">{panel.error}</Notice></div>
   {/if}
 
   {#if panel.loading}
@@ -376,17 +391,6 @@
   oncancel={() => (chmod.open = false)}
 />
 
-<Modal
-  open={confirmDelete}
-  title={$t('files_op_delete')}
-  message={deleteMessage}
-  confirmLabel={$t('files_op_delete')}
-  cancelLabel={$t('cancel')}
-  variant="danger"
-  onconfirm={doDelete}
-  oncancel={() => (confirmDelete = false)}
-/>
-
 <style>
   .file-panel {
     display: flex;
@@ -430,26 +434,12 @@
     color: var(--text-3);
   }
 
-  /* Host-key mismatch (TOFU) block */
-  .hostkey-msg {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
-    align-items: flex-start;
-  }
-  .hostkey-title {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-weight: var(--fw-semibold);
-  }
+  .plate { padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
   .hostkey-fp {
+    display: block;
+    margin: var(--sp-1) 0;
     font-family: var(--font-mono);
-    font-size: var(--fs-2xs);
-    word-break: break-all;
-  }
-  .hostkey-hint {
     font-size: var(--fs-xs);
-    opacity: 0.85;
+    word-break: break-all;
   }
 </style>

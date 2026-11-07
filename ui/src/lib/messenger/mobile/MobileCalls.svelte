@@ -16,7 +16,7 @@
   import { markPhone } from '../shared/phone';
   import CallHistory from '../calls/CallHistory.svelte';
   import CallDetails from '../calls/CallDetails.svelte';
-  import CallIcon from '../calls/CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import NewCallDialog from '../calls/NewCallDialog.svelte';
   import Dialer from '../calls/Dialer.svelte';
   import { callLog } from '../calls/callLog.svelte';
@@ -59,7 +59,7 @@
   <div class="calls">
     <CallHistory onselect={(r) => (details = r.head.chat_id)} onchat={write} onnew={() => (newCall = true)} />
   </div>
-  <button class="fab" onclick={() => (newCall = true)} aria-label={$t('msg_calls_new')}><CallIcon name="phone" size={22} /></button>
+  <button class="m-fab" onclick={() => (newCall = true)} aria-label={$t('msg_calls_new')}><Icon name="phone-plus" size={22} /></button>
 </MobileFrame>
 
 <Dialog open={!!details} onclose={() => (details = null)}>
@@ -75,11 +75,6 @@
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
   .net.lost { background: var(--danger); }
   @keyframes pulse { 50% { opacity: 0.35; } }
-  .fab {
-    position: absolute; right: var(--sp-4); bottom: var(--sp-4); width: 56px; height: 56px; border: none; border-radius: 50%;
-    background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
-    box-shadow: var(--shadow-accent);
-  }
-  .fab { --hit-r: var(--sp-4); }
-  .fab:active { filter: brightness(0.92); }
+  /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
+  .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
 </style>

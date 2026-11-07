@@ -10,6 +10,8 @@
 //! Repositories are plain functions over the pool, grouped per module
 //! (`settings`, later `identity`, `relays`, `messages`, …).
 
+pub mod account;
+pub mod archive;
 pub mod avatar_cache;
 pub mod banned;
 pub mod calls;

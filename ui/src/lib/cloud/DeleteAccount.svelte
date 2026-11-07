@@ -12,6 +12,7 @@
   import Actions from '$lib/cloud/Actions.svelte';
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
 
   let { startOpen = false }: { startOpen?: boolean } = $props();
 
@@ -100,10 +101,10 @@
             <span>{$t('cloud_delete_revoke')}</span>
           </label>
         {/if}
-        {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+        {#if error}<Notice tone="danger">{error}</Notice>{/if}
         <Actions>
           <button class="btn btn-ghost" type="button" disabled={deleting} onclick={() => (open = false)}>
-            {$t('cloud_delete_cancel')}
+            {$t('common_cancel')}
           </button>
           <button class="btn btn-danger" type="submit" disabled={!ready || deleting || cloudPage.busy}>
             {deleting ? $t('cloud_delete_running') : $t('cloud_delete_confirm')}
@@ -118,11 +119,11 @@
   .zone { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-5); }
   .zone.m { padding: var(--sp-4); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--danger-text); }
-  .text { margin: 0; font-size: var(--fs-base); color: var(--text); line-height: 1.5; }
-  .what { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-base); color: var(--text-body); line-height: 1.6; }
+  .text { margin: 0; font-size: var(--fs-base); color: var(--text); line-height: var(--lh-base); }
+  .what { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-base); color: var(--text-body); line-height: var(--lh-base); }
   .notes { display: flex; flex-direction: column; gap: var(--sp-1); }
-  .notes p { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; }
+  .notes p { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-snug); }
   .form { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-  .check { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-base); line-height: 1.4; cursor: pointer; color: var(--text-body); }
+  .check { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-base); line-height: var(--lh-snug); cursor: pointer; color: var(--text-body); }
   .check input { margin-top: 1px; }
 </style>

@@ -23,7 +23,7 @@
     profile: 'user-circle',
     proxy: 'globe',
     ssh: 'terminal',
-    totp: 'shield',
+    totp: 'shield-lock',
     password: kindIcon('password'),
     note: 'notes',
     domain: 'link',

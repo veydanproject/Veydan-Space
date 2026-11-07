@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Avatar from '../contacts/Avatar.svelte';
@@ -212,7 +213,7 @@
         <Avatar url={null} label={link.name || '?'} seed={link.pubkey} size={36} />
         <span class="person-text">
           <span class="name">{link.name || `${link.pubkey.slice(0, 12)}…`}</span>
-          {#if link.invite}<span class="note"><Icon name="check-circle" size={12} />{$t('msg_inv_link_has_invite')}</span>{/if}
+          {#if link.invite}<span class="note"><Icon name="check" size={12} />{$t('msg_inv_link_has_invite')}</span>{/if}
           {#if privateServer}<span class="server-note"><Icon name="message-circle" size={12} />{$t('msg_srv_card_private_chat')}</span>{/if}
         </span>
       </div>
@@ -231,7 +232,7 @@
     {#if sending}
       <textarea rows="3" bind:value={text} placeholder={$t('msg_inv_message_placeholder')} aria-label={$t('msg_inv_message_placeholder')} disabled={busy} maxlength="1000"></textarea>
     {/if}
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
     {#if contacts.length}
       <div class="label">{$t('msg_contacts_title')}</div>
@@ -249,7 +250,11 @@
     {:else if !q}
       <p class="hint">{$t('msg_newchat_hint')}</p>
     {:else if !kind}
-      <p class="hint">{$t('msg_chats_nothing_found')}</p>
+      <div class="empty-state found">
+        <span class="empty-icon"><Icon name="search" size={22} /></span>
+        <p>{$t('common_nothing_found')}</p>
+        <span>{$t('common_nothing_found_hint', { q: q.trim() })}</span>
+      </div>
     {/if}
   </div>
 </Dialog>
@@ -269,12 +274,12 @@
     font: inherit; font-size: var(--fs-base); color: var(--text); width: 100%;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3);
   }
-  .code { min-height: var(--control-h-lg); letter-spacing: 2px; font-variant-numeric: tabular-nums; }
-  textarea { resize: vertical; min-height: 64px; line-height: 1.4; }
+  .code { min-height: var(--control-h-lg); font-variant-numeric: tabular-nums; }
+  textarea { resize: vertical; min-height: 64px; line-height: var(--lh-snug); }
   .code:focus, textarea:focus { outline: none; border-color: var(--accent-border); }
   .more {
     display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 0; border: 0; background: none; cursor: pointer;
-    font: inherit; font-size: var(--fs-xs); color: var(--accent-text-3); text-align: left; line-height: 1.4;
+    font: inherit; font-size: var(--fs-xs); color: var(--accent-text-3); text-align: left; line-height: var(--lh-snug);
   }
   .more :global(svg) { flex-shrink: 0; }
   .more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
@@ -288,7 +293,7 @@
   .way {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 100%; min-height: 76px;
     padding: var(--sp-2) 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-2);
-    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1.25; text-align: center; cursor: pointer; hyphens: auto;
+    color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-tight); text-align: center; cursor: pointer; hyphens: auto;
   }
   .way :global(svg) { flex-shrink: 0; color: var(--accent-text); }
   .way span { overflow-wrap: break-word; text-wrap: balance; }
@@ -308,7 +313,7 @@
   .row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .name { flex: 1; min-width: 0; font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   code { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  .hint { margin: 0; }
   /* A narrow screen: the tiles in a grid of 2×2, each as high as its row's tallest. */
   @media (max-width: 520px) {
     .ways { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-columns: auto; }
@@ -320,4 +325,5 @@
     .way { min-height: 80px; }
     .more { min-height: 40px; }
   }
+  .found { padding: var(--sp-6) var(--sp-4); }
 </style>

@@ -341,13 +341,13 @@
 
 
   /* The roomier menu: 288 wide by its caller, rows 40, the groups apart. */
-  /* Its inset is the difference of the radii, so a row's corner follows the menu's. */
-  .context-menu.roomy { max-width: calc(100vw - 8px); padding: calc(var(--radius-lg) - var(--radius)); border-radius: var(--radius-lg); }
-  .roomy .menu-item { min-height: 40px; gap: var(--sp-3); padding: 0 10px; border-radius: var(--radius); }
+  /* Its inset is the difference of the radii (4, as in the plain menu), so a row's corner follows the menu's. */
+  .context-menu.roomy { max-width: calc(100vw - 8px); padding: calc(var(--radius-md) - var(--radius-sm)); border-radius: var(--radius-md); }
+  .roomy .menu-item { min-height: 40px; gap: var(--sp-3); padding: 0 10px; border-radius: var(--radius-sm); }
   .roomy .menu-item :global(svg) { color: var(--text-3); }
   .roomy .menu-item.danger :global(svg) { color: var(--danger-text); }
   .roomy .icon-gap { width: 18px; }
-  .roomy .menu-sep { margin: calc(var(--radius-lg) - var(--radius)) 0; }
+  .roomy .menu-sep { margin: calc(var(--radius-md) - var(--radius-sm)) 0; }
 
   .menu-sep {
     height: 1px;

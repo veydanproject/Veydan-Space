@@ -31,9 +31,9 @@ export function actionsFor(rows: QueueItem[], kind: Decision): ModAction[] {
 export function confirmDecision(kind: Decision, names: string[], n: number): Promise<boolean> {
   const tr = get(t);
   const who = names.join(', ');
-  if (kind === 'spam') return confirmStore.ask(tr('msg_mod_spam_confirm', { names: who }), tr('msg_mod_spam'), true);
+  if (kind === 'spam') return confirmStore.ask(tr('msg_mod_spam_confirm', { names: who }), tr('msg_mod_spam'), true, 'ban');
   const text = tr(kind === 'approve' ? 'msg_mod_approve_confirm' : 'msg_mod_reject_confirm', { names: who, n: String(n) });
-  return confirmStore.ask(text, tr(kind === 'approve' ? 'msg_mod_approve' : 'msg_mod_reject'), kind === 'reject');
+  return confirmStore.ask(text, tr(kind === 'approve' ? 'msg_mod_approve' : 'msg_mod_reject'), kind === 'reject', 'x');
 }
 
 /** Every message of `author` waiting under `filter`, newest first. */

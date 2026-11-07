@@ -8,7 +8,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { attachActions, type AttachContext, type AttachRegistration, type AttachResult } from '../seams/attach.svelte';
-  import { holdBack } from './sheetBack';
+  import { holdBack } from '$lib/core/ui/sheetBack';
   import { ResultGate, finishPanel, runAction, type Ticket } from './resultGate';
 
   interface Props {

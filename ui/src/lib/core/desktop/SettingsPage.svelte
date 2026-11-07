@@ -14,6 +14,7 @@
     resetThemeOverrides,
   } from '$lib/core/theme';
   import ColorField from '$lib/core/ui/ColorField.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { inspectorApp } from '$lib/core/inspector/inspector.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api } from '$lib/core/api';
@@ -100,7 +101,7 @@
   );
   const CORE_ICONS: Record<string, string> = {
     modules: 'layout-grid', language: 'language', theme: 'sun', devtools: 'code', hotkeys: 'keyboard',
-    tray: 'arrows-minimize', lock: 'lock', sync: 'refresh-cw', updates: 'download', about: 'info',
+    tray: 'arrows-minimize', lock: 'lock', sync: 'refresh-cw', updates: 'circle-arrow-up', about: 'info',
   };
   function coreLabel(id: string): string {
     switch (id) {
@@ -410,7 +411,7 @@
           lang={lang.tag}
           onclick={() => chooseLanguage(lang.code)}
         >
-          <span class="lang-code">{lang.code}</span>
+          <span class="lang-code">{lang.code.toUpperCase()}</span>
           <span class="lang-native">{lang.native}</span>
           {#if $locale === lang.code}<span class="lang-check"><Icon name="check" size={18} /></span>{/if}
         </button>
@@ -548,7 +549,7 @@
           <span class="update-line ok" role="status">{$t('settings_update_up_to_date')}</span>
         {:else if updaterStore.status === 'available' || updaterStore.status === 'downloading' || updaterStore.status === 'installing'}
           {#if updaterStore.status === 'available' || updaterStore.version}
-            <span class="update-line new" role="status">{$t('settings_update_available', { version: updaterStore.version })}</span>
+            <span class="update-line new" role="status">{$t('update_banner_available', { version: updaterStore.version })}</span>
           {/if}
         {/if}
       </span>
@@ -567,7 +568,7 @@
         </button>
         {#if updaterStore.supported && (updaterStore.status === 'available' || updaterStore.status === 'downloading' || updaterStore.status === 'installing')}
           <button type="button" class="btn btn-primary" disabled={updaterStore.status !== 'available'} onclick={() => updaterStore.install()}>
-            {$t('settings_update_install')}
+            {$t('update_banner_install')}
           </button>
         {/if}
       </span>
@@ -587,22 +588,14 @@
         </div>
       </div>
     {:else if updaterStore.status === 'downloading'}
-      <div class="update-work">
-        <div class="progress-wrap" role="status">
-          <div class="progress-bar">
-            <div class="progress-fill" style="width: {updaterStore.progress}%"></div>
-          </div>
-          <span class="progress-label">
-            {$t('settings_update_downloading')} · {updaterStore.progress}%
-          </span>
-        </div>
-      </div>
+      <!-- The percent is the update bar's (UpdateBanner) alone: here only the state. -->
+      <div class="update-work"><p class="muted small" role="status">{$t('settings_update_downloading')}</p></div>
     {:else if updaterStore.status === 'installing'}
       <div class="update-work"><p class="muted small" role="status">{$t('settings_update_installing')}</p></div>
     {:else if updaterStore.status === 'error'}
       <!-- The plugin's own text is in the console (store/updater.svelte.ts). -->
       <div class="update-work">
-        <div class="update-fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{$t('settings_update_failed')}</span></div>
+        <Notice tone="danger">{$t('settings_update_failed')}</Notice>
       </div>
     {/if}
   </div>
@@ -747,11 +740,11 @@
       disabled={demoBusy || clearBusy}
     />
     {#snippet footer()}
-      <button class="btn btn-ghost btn-sm" onclick={() => (pendingData = null)}>
-        {$t('settings_backup_cancel')}
+      <button class="btn btn-ghost" onclick={() => (pendingData = null)}>
+        {$t('common_cancel')}
       </button>
       <button
-        class="btn btn-sm"
+        class="btn"
         class:btn-danger={pendingData === 'clear'}
         class:btn-primary={pendingData !== 'clear'}
         disabled={demoBusy || clearBusy || (appLock.status.enabled && !dataSecret)}
@@ -793,7 +786,7 @@
   .settings-side { padding: var(--sp-5) var(--sp-3) var(--sp-3); gap: var(--sp-4); }
   /* The title stays in place, as the pane's does: only the list of the sections scrolls. */
   .settings-side :global(.settings-nav) { flex: 1; min-height: 0; overflow-y: auto; }
-  .side-title { padding: 0 var(--sp-2); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
+  .side-title { padding: 0 var(--sp-2); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .pane-head {
     display: flex;
     align-items: center;
@@ -802,7 +795,7 @@
     min-height: 64px;
     padding: var(--sp-4) var(--sp-6) 0;
   }
-  .pane-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: 1.4; }
+  .pane-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .pane-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .settings-main {
     display: flex;
@@ -825,12 +818,6 @@
     display: flex; flex-direction: column; gap: var(--sp-4);
   }
 
-  /* uppercase label variant — differs from global .card-title */
-  .card-title {
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-dim);
-    text-transform: uppercase; letter-spacing: 1px;
-  }
-
   /* badges use global .badge / .badge-ok / .badge-warn */
 
   /* .muted uses global color; keep font-size delta */
@@ -847,7 +834,7 @@
     flex-shrink: 0;
   }
   .about-logo img { width: var(--sp-12); height: var(--sp-12); object-fit: contain; }
-  .about-app { font-size: var(--fs-lg); font-weight: var(--fw-extrabold); letter-spacing: -0.3px; color: var(--text); }
+  .about-app { font-size: var(--fs-lg); font-weight: var(--fw-extrabold); color: var(--text); }
   .about-tagline { font-size: var(--fs-sm); color: var(--text-3); }
   /* The facts across the card, a line over and under them. */
   .about-facts { margin: 0 calc(-1 * var(--sp-5)); padding: var(--sp-1) 0; border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
@@ -855,7 +842,7 @@
   .about-fact + .about-fact::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
   .about-key { flex: 0 0 160px; font-size: var(--fs-sm); color: var(--text-dim); }
   .about-value { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-body); }
-  .about-note { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.5; margin: 0; }
+  .about-note { font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); margin: 0; }
   .about-group { display: flex; flex-direction: column; gap: var(--sp-2); }
   .about-caption { padding: 0 var(--sp-1); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
   /* Rows touch: the line between them is the only space (the page gives a .card a gap). */
@@ -882,7 +869,7 @@
   }
   .demo-label, .demo-chip, .demo-link {
     border: none; background: transparent; color: var(--text-2);
-    font-size: var(--fs-sm); line-height: 1.2; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm);
+    font-size: var(--fs-sm); line-height: var(--lh-tight); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm);
     text-decoration: none;
   }
   .demo-label { color: var(--text-dim); }
@@ -898,7 +885,7 @@
   .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: 0.3rem; }
   .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
   .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
-  .settings-main :global(.progress-label) { font-size: var(--fs-2xs); color: var(--text-2); font-family: var(--font-mono); }
+  .settings-main :global(.progress-label) { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); }
 
   .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
   .card.lang-options { padding: var(--sp-3); }
@@ -917,13 +904,13 @@
   /* The language's code as a small chip: the bundled fonts have no flag glyphs. */
   .lang-code {
     padding: 1px 6px; border: 1px solid var(--border-2); border-radius: var(--radius-xs);
-    font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-bold);
-    text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2);
+    font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    color: var(--text-2);
   }
   .lang-btn.active .lang-code { border-color: var(--accent-border); color: var(--accent-text); }
   .confirm-text { display: flex; flex-direction: column; gap: var(--sp-3); }
   .lang-native { flex: 1; text-align: left; }
-  .lang-check { display: inline-flex; color: var(--accent-text); font-weight: 700; }
+  .lang-check { display: inline-flex; color: var(--accent-text); font-weight: var(--fw-bold); }
 
   /* A row that is a switch, the whole width (developer tools), as the modules' rows. */
   .card.switch-card { padding: var(--sp-1); display: flex; flex-direction: column; gap: 0; }
@@ -942,7 +929,7 @@
   .switch-row + .switch-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
   .switch-row .toggle { pointer-events: none; }
   .switch-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .switch-title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+  .switch-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
   .switch-sub { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-2); }
 
   .card.update-card { padding: var(--sp-1); gap: 0; }
@@ -956,14 +943,12 @@
   .update-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .update-work { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--divider); }
   .update-work .muted { margin: 0; }
-  .update-note, .update-fail {
+  .update-note {
     display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
-    border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: 1.5;
+    border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: var(--lh-base);
   }
   .update-note { background: var(--surface-2); color: var(--text-2); }
-  .update-fail { background: var(--danger-bg); color: var(--text); }
-  .update-note :global(svg), .update-fail :global(svg) { flex-shrink: 0; margin-top: 1px; }
-  .update-fail :global(svg) { color: var(--danger-text); }
+  .update-note :global(svg) { flex-shrink: 0; margin-top: 1px; }
   .update-note-words { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
 
   .card.theme-card { padding: var(--sp-3); }
@@ -978,7 +963,7 @@
   }
   .theme-opt:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
   .theme-opt.active { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
-  .theme-opt:disabled { opacity: 0.4; cursor: not-allowed; }
+  .theme-opt:disabled { opacity: 0.45; cursor: not-allowed; }
   /* The theme's icon on a tile of its own; the chosen one's is the accent's. */
   .theme-icon {
     flex: none; display: grid; place-items: center; width: var(--control-h-sm); height: var(--control-h-sm);

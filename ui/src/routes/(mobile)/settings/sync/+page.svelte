@@ -8,7 +8,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { api, formatError, onSyncProgress, onSyncStatus, syncProgressText, type SyncConfig, type SyncProbe, type SyncProgress, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale } from '$lib/core/mobile/i18n';
-  import { joinErrorKey, storageErrorKey } from '$lib/core/join-error';
+  import { isNoVault, joinErrorKey, storageErrorKey } from '$lib/core/join-error';
   import { LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
   import { directory } from '$lib/core/directory';
@@ -166,8 +166,7 @@
       if (saving && !(await save())) return;
       await fn();
     } catch (e) {
-      const key = joinErrorKey(e);
-      error = key ? $t(key) : formatError(e);
+      await fail(e);
     } finally {
       busy = false;
     }
@@ -221,16 +220,29 @@
       status = await api.sync.runNow();
       if (!status.running) finishSyncBtn(status.last_error);
     } catch (e) {
-      const key = joinErrorKey(e);
-      error = key ? $t(key) : formatError(e);
+      await fail(e);
       syncBtnState = 'idle';
     } finally {
       busy = false;
     }
   };
 
+  /**
+   * An error into the banner. A joined device whose storage holds no vault is
+   * the exception: the card of the status says it, once, with the way out.
+   */
+  async function fail(e: unknown) {
+    if (status?.joined && isNoVault(e)) {
+      status = await api.sync.status().catch(() => status);
+      return;
+    }
+    const key = joinErrorKey(e);
+    error = key ? $t(key) : formatError(e);
+  }
+
   /** The last error of the cycle, in words where the storage itself is refused. */
   function lastErrorText(message: string): string {
+    if (isNoVault(message)) return $t('settings_sync_no_vault');
     const key = storageErrorKey(message);
     return key ? $t(key) : message;
   }
@@ -244,6 +256,18 @@
     clearTimeout(syncResetTimer);
     syncResetTimer = setTimeout(() => (syncBtnState = 'idle'), 1500);
   }
+
+  /**
+   * The storage of a joined device holds no vault (another account of Veydan
+   * Cloud, an emptied folder): the device takes the vault of the storage it
+   * is set to now, as a change of storage does — it leaves the old vault and
+   * joins the one there, or creates it where there is none.
+   */
+  const doFixNoVault = () =>
+    run(async () => {
+      await changeStorage();
+    }, false);
+
   // The form is saved once the device has left: another storage in it is never saved under the vault it leaves.
   const doLeave = () =>
     run(async () => {
@@ -273,8 +297,7 @@
       saveState = 'saved';
       saveResetTimer = setTimeout(() => (saveState = 'idle'), 1500);
     } catch (e) {
-      const key = joinErrorKey(e);
-      error = key ? $t(key) : formatError(e);
+      await fail(e);
       saveState = 'idle';
     } finally {
       busy = false;
@@ -365,6 +388,12 @@
         {/if}
         {#if status.last_error && !running}
           <div class="m-row msg danger">{lastErrorText(status.last_error)}</div>
+          {#if isNoVault(status.last_error)}
+            <button type="button" class="m-row" onclick={doFixNoVault} disabled={busy}>
+              <span class="m-row-label">{$t('settings_sync_no_vault_fix')}</span>
+              <Icon name="chevron-right" size={16} />
+            </button>
+          {/if}
         {:else if status.last_warning}
           <div class="m-row msg warn">{status.last_warning}</div>
         {/if}
@@ -405,7 +434,7 @@
           disabled={busy || syncVisual === 'syncing'}
         >
           <span class="action-icon" class:spin={syncVisual === 'syncing'}>
-            <Icon name={syncVisual === 'done' ? 'check-circle' : 'refresh-cw'} size={16} />
+            <Icon name={syncVisual === 'done' ? 'check' : 'refresh-cw'} size={16} />
           </span>
           {#if syncVisual === 'syncing'}
             {progress ? `${progress.percent}%` : $t('settings_sync_running')}
@@ -592,7 +621,7 @@
       >
         <span class="action-icon" class:spin={saveState === 'saving'}>
           <Icon
-            name={saveState === 'saving' ? 'loader' : saveState === 'saved' ? 'check-circle' : 'check'}
+            name={saveState === 'saving' ? 'loader' : 'check'}
             size={16}
           />
         </span>

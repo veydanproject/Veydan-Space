@@ -68,7 +68,7 @@
   }
   .avatar { border-radius: 50%; flex-shrink: 0; object-fit: cover; background: var(--surface-2); }
   .initials {
-    display: inline-flex; align-items: center; justify-content: center; font-weight: var(--fw-bold); letter-spacing: 0.3px;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: var(--fw-bold);
     /* Mixed with theme tokens so one rule reads well on dark and light. */
     --tone: hsl(var(--h) 68% 56%);
     background: color-mix(in srgb, var(--tone) 24%, var(--surface-2));

@@ -13,7 +13,6 @@
   }
   let { label, value, mono = false }: Props = $props();
 
-  let copied = $state(false);
   let el = $state<HTMLElement | null>(null);
 
   async function copy() {
@@ -28,11 +27,9 @@
         const sel = window.getSelection();
         sel?.removeAllRanges();
         sel?.addRange(range);
-        document.execCommand?.('copy');
+        if (document.execCommand?.('copy')) copiedToast();
       }
     }
-    copied = true;
-    setTimeout(() => (copied = false), 1500);
   }
 </script>
 
@@ -40,8 +37,8 @@
   <span class="label">{label}</span>
   <div class="row">
     <code bind:this={el} class:mono>{value}</code>
-    <button class="icon-btn" title={$t('msg_copy')} aria-label={$t('msg_copy')} onclick={copy}>
-      <Icon name={copied ? 'check' : 'copy'} size={13} />
+    <button class="icon-btn" title={$t('common_copy')} aria-label={$t('common_copy')} onclick={copy}>
+      <Icon name="copy" size={13} />
     </button>
   </div>
 </div>
@@ -53,7 +50,7 @@
   /* A key is long: it wraps inside its box instead of running out of it. */
   code {
     flex: 1; min-width: 0; overflow-wrap: anywhere;
-    font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--text-body);
+    font-family: var(--font-mono); font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-body);
     background: var(--surface-2); padding: var(--sp-3); border-radius: var(--radius);
     user-select: all;
   }

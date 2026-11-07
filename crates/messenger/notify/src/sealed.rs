@@ -332,6 +332,7 @@ mod tests {
             push_mode: servers::PUSH_VEYDAN.into(),
             source: None,
             added_at: 1_760_000_000,
+            access: "open".into(),
         };
         let id = servers::put_private(&store, &row).await.unwrap();
         servers::set_push(&store, &id, Some("https://push.s1.example")).await.unwrap();

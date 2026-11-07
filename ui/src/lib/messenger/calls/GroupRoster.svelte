@@ -15,7 +15,7 @@
   import Avatar from '../contacts/Avatar.svelte';
   import type { GroupCallView } from '../api';
   import { nameStore } from '../groups/names.svelte';
-  import CallIcon from './CallIcon.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { groupCallStore } from './groupCallStore.svelte';
   import { seatMuted, seatSendsVideo, seatsInOrder } from './group';
 
@@ -45,39 +45,39 @@
           <span class="name">{name}</span>
           <span class="state">
             {#if p.verified}
-              <span class="ok"><CallIcon name="shield-check" size={11} />{$t(p.me ? 'msg_gcall_this_device' : 'msg_gcall_verified')}</span>
+              <span class="ok"><Icon name="shield-check" size={11} />{$t(p.me ? 'msg_gcall_this_device' : 'msg_gcall_verified')}</span>
             {:else}
-              <span class="wait"><CallIcon name="shield-question" size={11} />{$t('msg_gcall_checking')}</span>
+              <span class="wait"><Icon name="shield-question" size={11} />{$t('msg_gcall_checking')}</span>
             {/if}
           </span>
         </span>
         <span class="marks">
-          {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><CallIcon name="speaking" size={13} /></span>{/if}
+          {#if p.speaking && p.verified}<span class="talk" title={$t('msg_gcall_speaking')}><Icon name="wave-sine" size={13} /></span>{/if}
           {#if seatSendsVideo(p, call, (seat) => !!groupCallStore.showing[seat])}
             {@const screen = p.screen === true || (p.me && groupCallStore.screen)}
-            <span class="mark" title={$t(screen ? 'msg_call_screen_kind_screen' : 'msg_call_camera')}><CallIcon name={screen ? 'screen-share' : 'video'} size={13} /></span>
+            <span class="mark" title={$t(screen ? 'msg_call_screen_kind_screen' : 'msg_call_camera')}><Icon name={screen ? 'screen-share' : 'video'} size={13} /></span>
           {/if}
-          {#if seatMuted(p, call)}<span class="mark off" title={$t('msg_call_muted')}><CallIcon name="mic-off" size={13} /></span>{/if}
+          {#if seatMuted(p, call)}<span class="mark off" title={$t('msg_call_muted')}><Icon name="mic-off" size={13} /></span>{/if}
         </span>
       </li>
     {/each}
   </ul>
-  <p class="note"><CallIcon name="shield-check" size={11} />{$t('msg_gcall_verified_hint')}</p>
+  <p class="note"><Icon name="shield-check" size={11} />{$t('msg_gcall_verified_hint')}</p>
 </section>
 
 <style>
   .roster { display: flex; flex-direction: column; min-height: 0; color: var(--text); }
   .head {
     display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 12px 6px;
-    font-size: var(--fs-xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-3);
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3);
   }
-  .count { font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+  .count { font-variant-numeric: tabular-nums; }
   ul { list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; flex: 1; min-height: 0; }
   li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: var(--radius-sm); }
   li.unverified { opacity: 0.7; }
   .who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .state { font-size: var(--fs-2xs); }
+  .state { font-size: var(--fs-xs); }
   .ok, .wait { display: inline-flex; align-items: center; gap: 3px; }
   .ok { color: var(--success-text); }
   .wait { color: var(--warn-text); }
@@ -85,13 +85,13 @@
   .mark, .talk { display: inline-flex; }
   .mark.off { color: var(--danger-text); }
   .talk { color: var(--success-text); }
-  .note { display: flex; gap: 5px; align-items: flex-start; margin: 0; padding: 8px 12px 10px; font-size: var(--fs-2xs); color: var(--text-3); line-height: 1.4; }
+  .note { display: flex; gap: 5px; align-items: flex-start; margin: 0; padding: 8px 12px 10px; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .note :global(svg) { margin-top: 1px; }
 
   .dark { color: #fff; }
   .dark .head, .dark .note, .dark .marks { color: rgba(255, 255, 255, 0.6); }
-  .dark .ok { color: #7ee2a8; }
-  .dark .wait { color: #ffd38a; }
-  .dark .talk { color: #7ee2a8; }
-  .dark .mark.off { color: #ffb4a8; }
+  .dark .ok { color: var(--call-ok); }
+  .dark .wait { color: var(--call-warn); }
+  .dark .talk { color: var(--call-ok); }
+  .dark .mark.off { color: var(--call-danger); }
 </style>

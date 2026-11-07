@@ -11,8 +11,8 @@
   import { get } from 'svelte/store';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import { toast } from '$lib/core/ui/toast.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
   import type { ChannelDetail } from '../api';
@@ -55,8 +55,8 @@
     busy = true; error = '';
     try {
       await channelStore.askLevel(cid, level.id, note.trim() || undefined);
+      // «My levels» says it, waiting for the answer: no toast besides.
       open = false;
-      toast.success($t('chan_level_request_sent_text', { name: level.name }));
     } catch (e) {
       error = channelError(e, tr);
     } finally {
@@ -89,18 +89,18 @@
       <textarea class="field" rows="3" bind:value={note} maxlength={NOTE_MAX} disabled={busy}></textarea>
     </label>
     <p class="hint">{$t('chan_level_request_hint')}</p>
-    {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('chan_cancel')}</button>
+    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" disabled={busy || picked === null} onclick={send}><Icon name="send" size={18} />{$t('chan_level_request_send')}</button>
   {/snippet}
 </Dialog>
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-4); }
-  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: 1.5; }
-  .hint { margin: calc(-1 * var(--sp-2)) 0 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+  .lead { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-base); }
+  .hint { margin: calc(-1 * var(--sp-2)) 0 0; line-height: var(--lh-snug); }
   /* The levels: rows of a choice, the chosen one in the accent. */
   .options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .option {
@@ -115,8 +115,8 @@
   .option input { margin-top: 2px; flex-shrink: 0; }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow-wrap: anywhere; }
-  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
-  .tag { font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
+  .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
+  .tag { font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .field {

@@ -5,6 +5,7 @@
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { templateNotes } from '$lib/notes/filter';
   import { t } from '$lib/core/i18n';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   interface Props {
     /** Selected template note id, empty for none */
@@ -18,9 +19,11 @@
   const templates = $derived(templateNotes(notesStore.list, notesStore.folders));
 </script>
 
-<select class={cls} bind:value {onchange} title={$t('note_template_label')}>
-  <option value="">{$t('note_template_none')}</option>
-  {#each templates as n (n.id)}
-    <option value={n.id}>{n.title}</option>
-  {/each}
-</select>
+<div class={cls}>
+  <CustomSelect
+    options={[{ value: '', label: $t('note_template_none') }, ...templates.map((n) => ({ value: n.id, label: n.title }))]}
+    bind:value
+    {onchange}
+    title={$t('note_template_label')}
+  />
+</div>

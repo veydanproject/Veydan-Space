@@ -18,7 +18,7 @@ import { modulesStore } from '../store/modules.svelte';
 import { MODULES, WELCOME, isUnder, onboarding, orderSteps, pathOf } from './store.svelte';
 
 const screen = {} as Component;
-const step = (id: string, order: number, visible?: () => boolean): OnboardingStep => ({ id, title: 'ob_back', order, component: screen, visible });
+const step = (id: string, order: number, visible?: () => boolean): OnboardingStep => ({ id, title: 'common_back', order, component: screen, visible });
 
 function use(...defs: ModuleDef[]) {
   (registry as unknown as { defs: ModuleDef[] }).defs = defs;
@@ -26,14 +26,14 @@ function use(...defs: ModuleDef[]) {
 
 const messenger: ModuleDef = {
   id: 'messenger',
-  title: 'ob_back',
+  title: 'common_back',
   icon: 'message-circle',
   routes: ['/messenger'],
   nav: [],
   settings: [],
   onboarding: [step('account', 20)],
 };
-const notes: ModuleDef = { id: 'notes', title: 'ob_back', icon: 'file-text', routes: ['/notes'], nav: [], settings: [] };
+const notes: ModuleDef = { id: 'notes', title: 'common_back', icon: 'file-text', routes: ['/notes'], nav: [], settings: [] };
 
 /** The core's steps as the wizard's component names them; the modules where the product has a choice. */
 function core(choice: boolean) {

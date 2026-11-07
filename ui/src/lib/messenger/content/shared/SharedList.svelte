@@ -138,7 +138,7 @@
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
   .item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   /* Its own line height, never squeezed by the column: descenders and commas stay whole */
-  .meta { flex: none; line-height: 1.5; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { flex: none; line-height: var(--lh-base); font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item { flex: none; }
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6, 32px) var(--sp-4); color: var(--text-3); font-size: var(--fs-xs); text-align: center; }
   .empty :global(svg) { opacity: 0.7; }

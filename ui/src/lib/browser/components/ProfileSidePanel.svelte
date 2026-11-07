@@ -10,8 +10,9 @@
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import ExportProfileModal from '$lib/browser/components/ExportProfileModal.svelte';
   import { registry } from '$lib/core/registry';
@@ -62,7 +63,6 @@
   const launching = $derived(runningStore.launching.includes(profile.id));
   /** It waits for the files of the profile to sync. */
   const syncing = $derived(runningStore.syncing.includes(profile.id));
-  let deleteModal = $state(false);
   let exportModal = $state(false);
   let error = $state('');
   let cookieFileInput: HTMLInputElement | null = $state(null);
@@ -156,9 +156,10 @@
   }
 
   async function confirmDelete() {
+    const label = $t('common_delete');
+    if (!(await ask({ title: confirmTitle(label), message: $t('profiles_confirm_delete', { name: profile.name }), confirmLabel: label, variant: 'danger', icon: 'trash-2' }))) return;
     try {
       await api.profiles.delete(profile.id);
-      deleteModal = false;
       await tick();
       onchange();
     } catch (e) { error = formatError(e); }
@@ -210,7 +211,7 @@
       {:else}
 
       {#if error}
-        <div class="error-msg" style="margin-bottom:0.5rem">{error}</div>
+        <Notice tone="danger">{error}</Notice>
       {/if}
 
       <div class="info-section">
@@ -289,10 +290,12 @@
       <ProfileSyncBadge profileId={profile.id} />
 
       {#if leaseBlockedBy}
-        <div class="error-msg lease-block">
-          <span>{$t('profile_sync_in_use', { device: leaseBlockedBy })}</span>
-          <button class="btn btn-ghost btn-sm" disabled={actionLoading || launching} onclick={() => launch(true)}>{$t('profile_sync_launch_anyway')}</button>
-        </div>
+        <Notice tone="danger">
+          {$t('profile_sync_in_use', { device: leaseBlockedBy })}
+          {#snippet action()}
+            <button class="btn btn-ghost btn-sm" disabled={actionLoading || launching} onclick={() => launch(true)}>{$t('profile_sync_launch_anyway')}</button>
+          {/snippet}
+        </Notice>
       {/if}
 
       <div class="panel-actions">
@@ -308,7 +311,7 @@
         {/if}
 
         <button class="btn btn-ghost" onclick={() => onedit(profile)}>
-          <Icon name="pencil" size={13} />{$t('panel_btn_edit')}
+          <Icon name="pencil" size={13} />{$t('common_edit')}
         </button>
         <button class="btn btn-ghost" onclick={() => onrawdata(profile)}>
           <Icon name="code" size={13} />{$t('panel_btn_raw_data')}
@@ -343,31 +346,20 @@
           title={$t('panel_btn_export_cookies_hint')}
           onclick={exportCookies}
         >
-          <Icon name="download" size={13} />{exportingCookies ? '…' : $t('panel_btn_export_cookies')}
+          <Icon name="file-export" size={13} />{exportingCookies ? '…' : $t('panel_btn_export_cookies')}
         </button>
 
         <button
-          class="btn btn-ghost btn-delete"
-          onclick={() => (deleteModal = true)}
+          class="btn btn-danger-soft"
+          onclick={confirmDelete}
         >
-          <Icon name="trash-2" size={13} />{$t('panel_btn_delete')}
+          <Icon name="trash-2" size={13} />{$t('common_delete')}
         </button>
       </div>
 
       {/each}
   </div>
 </Drawer>
-
-<Modal
-  open={deleteModal}
-  title={$t('profiles_btn_delete')}
-  message={$t('profiles_confirm_delete', { name: profile.name })}
-  confirmLabel={$t('profiles_btn_delete')}
-  cancelLabel={$t('profile_btn_cancel')}
-  variant="danger"
-  onconfirm={confirmDelete}
-  oncancel={() => (deleteModal = false)}
-/>
 
 <ExportProfileModal
   {profile}
@@ -396,15 +388,14 @@
 <style>
   .status-badge {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 4px 11px;
-    border-radius: var(--radius-sm); text-transform: uppercase; letter-spacing: 0.4px;
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 4px 11px;
+    border-radius: var(--radius-pill);
     background: var(--surface-2); color: var(--text-2);
     border: 1px solid var(--border-2);
     width: fit-content;
   }
   .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .status-badge.running { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
-  .lease-block { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
 
   .psp-body {
     display: flex;
@@ -439,7 +430,7 @@
   .info-value.muted { color: var(--text-2); }
 
   .country-badge {
-    font-size: var(--fs-2xs);
+    font-size: var(--fs-xs);
     background: var(--surface-2);
     border: 1px solid var(--border);
     padding: 0 0.35rem;
@@ -479,28 +470,24 @@
     overflow: hidden;
   }
   .panel-actions .btn-main,
-  .panel-actions .btn-delete {
+  .panel-actions .btn-danger-soft {
     grid-column: 1 / -1;
     justify-content: center;
   }
   .panel-actions .btn-main { height: 42px; font-size: var(--fs-body); font-weight: var(--fw-bold); }
-  .btn-delete { color: var(--danger-text) !important; }
-  .btn-delete:hover:not(:disabled) { background: var(--danger-bg) !important; border-color: var(--danger-border) !important; }
 
   .crm-count {
     font-size: var(--fs-xl);
-    font-weight: 800;
+    font-weight: var(--fw-extrabold);
     color: var(--text);
-    line-height: 1;
+    line-height: var(--lh-icon);
     margin-bottom: 0.65rem;
   }
 
   .crm-domains-label {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--fw-semibold);
     color: var(--text-3);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     margin-bottom: var(--sp-1);
   }
 
@@ -524,7 +511,7 @@
 
   /* Tags */
   .tags-section { display: flex; flex-direction: column; gap: 10px; }
-  .tags-label { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.8px; }
+  .tags-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); }
   .no-tags { font-size: var(--fs-sm); color: var(--text-2); }
   .column-select-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   /* Colours: the tinted rule of base.css (`.active`: the pressed tint, a

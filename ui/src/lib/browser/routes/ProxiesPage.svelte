@@ -7,16 +7,25 @@
   import { t } from '$lib/core/i18n';
   import type { Proxy, ProxyCheckResult } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
-  import Modal from '$lib/core/ui/Modal.svelte';
+  import StatePill, { type PillTone } from '$lib/core/ui/StatePill.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import ProxyPanel from '$lib/browser/components/ProxyPanel.svelte';
   import BulkImportProxyModal from '$lib/browser/components/BulkImportProxyModal.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
   import { formatError } from '$lib/core/utils';
   import { explainError } from '$lib/browser/tor-error';
   import ProxyAddress from '$lib/browser/components/ProxyAddress.svelte';
+  import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
 
   const PAGE_SIZE = 20;
+
+  /** The colour of a type's chip (`.tinted`): http/https blue, socks5 purple, ssh teal, tor pink. */
+  const TYPE_CHIP: Record<string, string> = {
+    http: 'var(--cat-blue)', https: 'var(--cat-blue)', socks5: 'var(--cat-purple)', ssh: 'var(--cat-teal)', tor: 'var(--cat-pink)',
+  };
+  const STATUS_TONE: Record<string, PillTone> = { active: 'ok', failed: 'bad', unknown: 'neutral' };
 
   let loading = $state(false);
   let error = $state('');
@@ -29,14 +38,12 @@
   let panelProxy = $state<Proxy | null | undefined>(undefined);
   let importOpen = $state(false);
   let checkResults = $state<Record<string, ProxyCheckResult & { checking?: boolean; err?: string }>>({});
-  let deleteModal = $state({ open: false, id: '', name: '', usage: '' });
-
-  /** Open the confirmation, then fill in what the delete would detach. */
+  /** Ask, saying what the delete would detach, then delete. */
   async function askDelete(proxy: Proxy) {
-    deleteModal = { open: true, id: proxy.id, name: proxy.name, usage: '' };
     const usage = await proxiesStore.deleteWarning(proxy.id);
-    // The user may have cancelled or picked another row while this was in flight.
-    if (deleteModal.open && deleteModal.id === proxy.id) deleteModal.usage = usage;
+    const label = $t('common_delete');
+    if (!(await ask({ title: confirmTitle(label), message: $t('proxy_confirm_delete', { name: proxy.name }) + usage, confirmLabel: label, variant: 'danger', icon: 'trash-2' }))) return;
+    await confirmDelete(proxy.id);
   }
 
   onMount(async () => {
@@ -114,12 +121,11 @@
     finally { fingerprintPrompt = null; }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(id: string) {
     try {
-      await api.proxies.delete(deleteModal.id);
-      proxiesStore.list = proxiesStore.list.filter((p) => p.id !== deleteModal.id);
+      await api.proxies.delete(id);
+      proxiesStore.list = proxiesStore.list.filter((p) => p.id !== id);
     } catch (e) { error = formatError(e); }
-    finally { deleteModal = { open: false, id: '', name: '', usage: '' }; }
   }
 
   function onPanelSaved(proxy: Proxy) {
@@ -135,80 +141,91 @@
   <div class="page-header">
     <div class="page-title-group">
       <h1>{$t('proxies_title')}</h1>
-      <p class="page-sub">{$t('proxies_sub', { count: String(proxiesStore.list.length) })}</p>
+      <p class="page-sub">{$t('proxies_sub')}</p>
     </div>
     <button class="btn btn-ghost spacer" onclick={() => (importOpen = true)}>
-      <Icon name="file-import" size={15} />{$t('proxies_import_btn')}
+      <Icon name="file-import" size={18} />{$t('proxies_import_btn')}
     </button>
-    <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
-      <Icon name="plus" size={15} />{$t('proxies_add')}
+    <button class="icon-btn create" onclick={() => (panelProxy = null)} title={$t('proxies_add')} aria-label={$t('proxies_add')}>
+      <Icon name="plus" size={18} />
     </button>
   </div>
 
-  {#if error}<div class="error-msg" style="margin-bottom:1rem">{error}</div>{/if}
+  {#if error}<div class="plate"><Notice tone="danger">{error}</Notice></div>{/if}
 
   {#if fingerprintPrompt}
-    <div class="fingerprint-banner">
-      <div class="fingerprint-banner-icon">⚠</div>
-      <div class="fingerprint-banner-body">
-        <div class="fingerprint-banner-title">{$t('ssh_fingerprint_new_title')}</div>
-        <div class="fingerprint-banner-fp">{fingerprintPrompt.fingerprint}</div>
-        <div class="fingerprint-banner-hint">{$t('ssh_fingerprint_new_hint')}</div>
-      </div>
-      <div class="fingerprint-banner-actions">
-        <button class="btn btn-primary btn-sm" onclick={trustFingerprint}>{$t('ssh_fingerprint_trust')}</button>
-        <button class="btn btn-ghost btn-sm" onclick={() => fingerprintPrompt = null}>{$t('cancel')}</button>
-      </div>
+    <!-- A new server: the one plate of a server's key (SSHTerminal, FilePanel), «Trust» a plain secondary button. -->
+    <div class="plate">
+      <Notice tone="warn" role="alert">
+        <b>{$t('ssh_fingerprint_new_title')}</b>
+        <code class="fingerprint-fp">{fingerprintPrompt.fingerprint}</code>
+        {$t('ssh_fingerprint_new_hint')}
+        {#snippet action()}
+          <button class="btn btn-ghost btn-sm" type="button" onclick={() => fingerprintPrompt = null}>{$t('common_cancel')}</button>
+          <button class="btn btn-ghost btn-sm" type="button" onclick={trustFingerprint}>{$t('ssh_fingerprint_trust')}</button>
+        {/snippet}
+      </Notice>
     </div>
   {/if}
 
   <!-- Toolbar -->
   <div class="filter-bar">
     <div class="search-field">
-      <Icon name="search" size={13} />
+      <Icon name="search" size={18} />
       <input type="text" bind:value={search} placeholder={$t('proxies_search_placeholder')} />
       {#if search}
-        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
+        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={18} /></button>
       {/if}
     </div>
 
-    <select bind:value={filterType} class="filter-select">
-      <option value="all">{$t('proxies_filter_all_types')}</option>
-      <option value="http">HTTP</option>
-      <option value="https">HTTPS</option>
-      <option value="socks5">SOCKS5</option>
-      <option value="ssh">SSH</option>
-      <option value="tor">{'Tor'}</option>
-    </select>
-    <select bind:value={filterStatus} class="filter-select">
-      <option value="all">{$t('proxies_filter_all_statuses')}</option>
-      <option value="active">{$t('proxies_filter_active')}</option>
-      <option value="failed">{$t('proxies_filter_failed')}</option>
-      <option value="unknown">{$t('proxies_filter_unknown')}</option>
-    </select>
+    <div class="filter-select">
+      <CustomSelect
+        options={[
+          { value: 'all', label: $t('proxies_filter_all_types') },
+          { value: 'http', label: 'HTTP' },
+          { value: 'https', label: 'HTTPS' },
+          { value: 'socks5', label: 'SOCKS5' },
+          { value: 'ssh', label: 'SSH' },
+          { value: 'tor', label: 'Tor' },
+        ]}
+        bind:value={filterType}
+      />
+    </div>
+    <div class="filter-select">
+      <CustomSelect
+        options={[
+          { value: 'all', label: $t('proxies_filter_all_statuses') },
+          { value: 'active', label: $t('proxies_filter_active') },
+          { value: 'failed', label: $t('proxies_filter_failed') },
+          { value: 'unknown', label: $t('proxies_filter_unknown') },
+        ]}
+        bind:value={filterStatus}
+      />
+    </div>
 
     <span class="count-badge">{$t('proxies_count', { n: String(filtered.length) })}</span>
   </div>
 
   {#if loading}
-    <div class="table-wrap"><Skeleton rows={5} height={48} avatar="none" trailing /></div>
+    <div class="data-table table-scroll"><Skeleton rows={5} height={48} avatar="none" trailing /></div>
   {:else if proxiesStore.list.length === 0}
     <div class="empty-state">
-      <div class="empty-icon"><Icon name="globe" size={40} strokeWidth={1.5} /></div>
+      <span class="empty-icon"><Icon name="globe" size={22} /></span>
       <p>{$t('proxies_empty')}</p>
       <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
-        <Icon name="plus" size={14} />{$t('proxies_empty_add')}
+        <Icon name="plus" size={18} />{$t('proxies_empty_add')}
       </button>
     </div>
   {:else if filtered.length === 0}
     <div class="empty-state">
-      <Icon name="search" size={32} strokeWidth={1.5} />
-      <p>{$t('proxies_not_found')}</p>
+      <span class="empty-icon"><Icon name="search" size={22} /></span>
+      <p>{$t('common_nothing_found')}</p>
+      <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
-    <div class="table-wrap">
+    <div class="data-table table-scroll">
       <table class="proxy-table">
-        <thead>
+        <thead class="data-table-head">
           <tr>
             <th class="col-num">#</th>
             <th>{$t('proxy_col_name')}</th>
@@ -222,19 +239,19 @@
         <tbody>
             {#each pageItems as proxy, i (proxy.id)}
             {@const result = checkResults[proxy.id]}
-            <tr class="proxy-row" onclick={() => (panelProxy = proxy)}>
+            <tr class="data-table-row proxy-row" onclick={() => (panelProxy = proxy)}>
               <td class="col-num text-muted">{currentPage * PAGE_SIZE + i + 1}</td>
               <td class="col-name">
                 <span class="proxy-name">{proxy.name}</span>
               </td>
               <td class="col-type">
-                <span class="type-badge type-{proxy.proxy_type}">{proxy.proxy_type}</span>
+                <span class="type-chip tinted" style:--chip={TYPE_CHIP[proxy.proxy_type]}>{proxy.proxy_type}</span>
               </td>
               <td class="col-host">
                 <ProxyAddress {proxy} {result} />
               </td>
               <td class="col-status">
-                <span class="status-badge status-{proxy.status}">{$t(`proxies_filter_${proxy.status}`)}</span>
+                <StatePill text={$t(`proxies_filter_${proxy.status}`)} tone={STATUS_TONE[proxy.status] ?? 'neutral'} />
               </td>
               <td class="col-geo">
                 {#if proxy.country}
@@ -251,21 +268,21 @@
                     disabled={result?.checking}
                     onclick={(e) => { e.stopPropagation(); checkProxy(proxy.id); }}
                   >
-                    <Icon name="refresh-cw" size={13} />
+                    <Icon name="refresh-cw" size={18} />
                   </button>
                   <button
                     class="icon-btn"
-                    title={$t('proxy_btn_edit')}
+                    title={$t('common_edit')}
                     onclick={(e) => { e.stopPropagation(); panelProxy = proxy; }}
                   >
-                    <Icon name="pencil" size={13} />
+                    <Icon name="pencil" size={18} />
                   </button>
                   <button
                     class="icon-btn danger-soft"
-                    title={$t('proxy_btn_delete')}
+                    title={$t('common_delete')}
                     onclick={(e) => { e.stopPropagation(); askDelete(proxy); }}
                   >
-                    <Icon name="trash-2" size={13} />
+                    <Icon name="trash-2" size={18} />
                   </button>
                 </div>
               </td>
@@ -278,7 +295,7 @@
     {#if totalPages > 1}
       <div class="pagination">
         <button class="page-btn" disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}>
-          <Icon name="chevron-left" size={14} />
+          <Icon name="chevron-left" size={18} />
         </button>
         {#each Array.from({ length: totalPages }, (_, i) => i) as p_}
           <button
@@ -288,7 +305,7 @@
           >{p_ + 1}</button>
         {/each}
         <button class="page-btn" disabled={currentPage === totalPages - 1} onclick={() => (page = currentPage + 1)}>
-          <Icon name="chevron-right" size={14} />
+          <Icon name="chevron-right" size={18} />
         </button>
       </div>
     {/if}
@@ -305,17 +322,6 @@
   />
 {/if}
 
-<Modal
-  open={deleteModal.open}
-  title={$t('proxy_btn_delete')}
-  message={$t('proxy_confirm_delete', { name: deleteModal.name }) + deleteModal.usage}
-  confirmLabel={$t('proxy_btn_delete')}
-  cancelLabel={$t('proxy_btn_cancel')}
-  variant="danger"
-  onconfirm={confirmDelete}
-  oncancel={() => (deleteModal = { open: false, id: '', name: '', usage: '' })}
-/>
-
 <style>
   /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.count-badge из base.css */
   /* The placeholder names four fields: the width of the SSH keys search, so it is read whole. */
@@ -323,31 +329,17 @@
 
   .page-title-group { display: flex; flex-direction: column; gap: 6px; }
 
-  /* Table */
-  .table-wrap {
-    flex: 1; min-height: 0; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    background: var(--surface);
-  }
+  /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
+  .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 
-  .proxy-table {
-    width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
-  }
-
-  .proxy-table thead {
-    position: sticky; top: 0; z-index: 1;
-    background: var(--surface); border-bottom: 1px solid var(--border);
-  }
+  .proxy-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 
   .proxy-table th {
     padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
-    white-space: nowrap;
+    font: inherit; white-space: nowrap;
   }
 
-  .proxy-table td { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--divider); vertical-align: middle; }
-  .proxy-row:last-child td { border-bottom: none; }
-  .proxy-row:hover td { background: var(--surface-row-hover); }
+  .proxy-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
   .proxy-row { cursor: pointer; }
 
   .col-num { width: 44px; color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-xs); }
@@ -356,28 +348,35 @@
   .col-geo { width: 120px; }
   .col-actions { width: 120px; }
 
-  .proxy-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); display: block; }
+  .proxy-name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); display: block; overflow-wrap: anywhere; }
 
-  /* Proxy type badges: http → blue tint, socks5 → purple tint (design) */
-  .type-badge {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: 4px 12px; border-radius: var(--radius-sm);
-    border: none; background: var(--surface-2); color: var(--text-2);
+  /* The type: a chip in the interface's font, its colour by `--chip` (`.tinted`). */
+  .type-chip {
+    display: inline-flex; align-items: center; height: 24px; padding: 0 var(--sp-3); box-sizing: border-box;
+    border: 1px solid; border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
   }
-  .type-http, .type-https { background: color-mix(in srgb, var(--cat-blue) 14%, transparent); color: var(--cat-blue); }
-  .type-socks5 { background: var(--accent-tint); color: var(--accent-text-2); }
-  .type-tor { background: var(--accent-tint); color: var(--accent-text-2); }
 
-  .status-badge {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-size: var(--fs-2xs); font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.4px;
-    padding: 4px 11px; border-radius: var(--radius-sm);
+  /* A narrow window: a row folds — the name and the type on top, the host under them, the state and the buttons at
+     the right, the number and the country a line below. No column is lost. */
+  @media (max-width: 900px) {
+    .proxy-table thead { display: none; }
+    .proxy-table tbody { display: block; }
+    .proxy-row {
+      display: grid; align-items: center; column-gap: var(--sp-3); row-gap: var(--sp-1); padding: var(--sp-3) var(--sp-4);
+      /* The first column is the number's (fixed, up to four digits): the name spans it, the country starts after it. */
+      grid-template-columns: 2.5rem minmax(0, max-content) auto 1fr auto auto;
+      grid-template-areas: 'name name type . st act' 'host host host host st act' 'num geo geo geo geo geo';
+    }
+    .proxy-table td { display: block; width: auto; padding: 0; min-width: 0; }
+    .proxy-row .col-num { grid-area: num; }
+    .proxy-row .col-name { grid-area: name; }
+    .proxy-row .col-type { grid-area: type; }
+    .proxy-row .col-host { grid-area: host; }
+    .proxy-row .col-status { grid-area: st; }
+    .proxy-row .col-geo { grid-area: geo; }
+    .proxy-row .col-actions { grid-area: act; }
   }
-  .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .status-active { background: var(--success-bg); color: var(--success-text); }
-  .status-failed { background: var(--danger-bg); color: var(--danger-text); }
-  .status-unknown { background: var(--surface-2); color: var(--text-2); }
 
   .geo-chip { font-size: var(--fs-xs); color: var(--text-2); }
   .text-muted { color: var(--text-3); font-size: var(--fs-xs); }
@@ -399,24 +398,9 @@
   }
   .page-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border-2); color: var(--text); }
   .page-btn.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-  /* Empty (uses global .empty-state) */
-  .empty-icon { opacity: 0.4; }
 
-  .fingerprint-banner {
-    display: flex; align-items: flex-start; gap: var(--sp-3);
-    background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
-    border-radius: var(--radius); padding: 0.875rem var(--sp-4); margin-bottom: var(--sp-4);
-  }
-  .fingerprint-banner-icon { font-size: var(--fs-lg); flex-shrink: 0; margin-top: 0.1rem; }
-  .fingerprint-banner-body { flex: 1; display: flex; flex-direction: column; gap: var(--sp-1); }
-  .fingerprint-banner-title { font-weight: 700; font-size: var(--fs-base); }
-  .fingerprint-banner-fp {
-    font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-2);
-    word-break: break-all;
-  }
-  .fingerprint-banner-hint { font-size: var(--fs-sm); color: var(--text-2); }
-  .fingerprint-banner-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; align-items: flex-start; }
+  .plate { margin-bottom: var(--sp-4); }
+  .fingerprint-fp { display: block; margin: var(--sp-1) 0; font-family: var(--font-mono); font-size: var(--fs-xs); word-break: break-all; }
 </style>

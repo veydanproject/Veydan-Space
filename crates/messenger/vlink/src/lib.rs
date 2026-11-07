@@ -24,13 +24,15 @@
 //!
 //! # Where the code comes from
 //!
-//! `net.rs`, `call_list.rs` (the signed list of call nodes a registry
-//! gives, checked by the rules of the lists of bridges) and this file are
-//! written here. The client itself is not: it
+//! `net.rs` and this file are written here. The client itself is not: it
 //! is VLink, the bridge system, which lives in this repository in a
 //! workspace of its own (`services/link/`). This crate depends on its crates
 //! `vlink-proto` and `vlink-client` by path and gives them out under the
 //! names below, so that the rest of the messenger knows one crate only.
+//! `call_list.rs` gives the signed list of call nodes a registry hands
+//! out under the names the messenger uses; its form is `registry-proto`
+//! of Veydan Common (`services/common/`), the one copy the registry and
+//! the node read too.
 
 pub mod call_list;
 pub mod net;

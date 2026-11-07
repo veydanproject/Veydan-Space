@@ -23,7 +23,7 @@ export const settingsUi = $state<{ tab: SettingsTab; focusMedia: boolean }>({ ta
 
 /** The icon of each section in the nav. */
 export const SETTINGS_ICONS: Record<SettingsTab, string> = {
-  profile: 'key', network: 'wifi', notifications: 'bell', privacy: 'shield', calls: 'phone', diagnostics: 'activity',
+  profile: 'id', network: 'wifi', notifications: 'bell', privacy: 'shield', calls: 'phone', diagnostics: 'activity',
 };
 
 /**

@@ -22,7 +22,7 @@
 {#if isMobile}
   <div class="m-page">
     <div class="m-header">
-      <a class="m-ibtn" href={back} onclick={arrow} aria-label={$t('cloud_link_back')}>
+      <a class="m-ibtn" href={back} onclick={arrow} aria-label={$t('common_back')}>
         <Icon name="chevron-left" size={24} />
       </a>
       <h1 class="m-title" class:long={title.length > 24}>{title}</h1>
@@ -34,7 +34,7 @@
 {:else}
   <div class="page screen">
     <div class="page-header">
-      <a class="icon-btn" href={back} onclick={arrow} aria-label={$t('cloud_link_back')}><Icon name="chevron-left" size={18} /></a>
+      <a class="icon-btn" href={back} onclick={arrow} aria-label={$t('common_back')}><Icon name="chevron-left" size={18} /></a>
       <h1>{title}</h1>
     </div>
     <div class="card body">{@render children()}</div>
@@ -47,5 +47,5 @@
   .body { padding: var(--sp-6); }
   .sheet { padding: var(--sp-4); margin-top: var(--sp-2); }
   /* A long title keeps all its words: smaller and on two lines, never cut. */
-  .m-title.long { font-size: 17px; line-height: 1.2; white-space: normal; overflow-wrap: anywhere; }
+  .m-title.long { font-size: var(--fs-md); line-height: var(--lh-tight); white-space: normal; overflow-wrap: anywhere; }
 </style>

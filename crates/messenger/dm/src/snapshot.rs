@@ -182,6 +182,10 @@ pub struct Applied {
     /// Groups of mine this device is not in: the runtime fetches their
     /// welcomes to myself.
     pub groups_wanted: Vec<GroupWanted>,
+    /// Groups I forgot on another device that went from this one too
+    /// (`groups::forget_copy`): the runtime lets go of what it holds of
+    /// them outside the store.
+    pub groups_forgotten: Vec<String>,
 }
 
 /// `[hex, my_contact, blocked, decided_at]`, compact: `my_contact` is one
@@ -316,8 +320,18 @@ struct Header {
     /// id (`GroupWanted`); `server_id` empty for the home set.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     groups: Vec<serde_json::Value>,
+    /// The groups I forgot, `[group_id, forgotten_at]`
+    /// (`groups::forgotten`), the latest first: a welcome of before brings
+    /// one back nowhere, and a device that still has it lets it go.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    groups_forgotten: Vec<(String, i64)>,
     peers: Vec<Entry>,
 }
+
+/// UI event: groups I forgot on another device of mine went from this one
+/// (`Applied::groups_forgotten`), `{"ids": [...]}`; the group driver lets
+/// go of what it holds of them.
+pub const UI_EVENT_GROUPS_FORGOTTEN: &str = "groups.forgotten";
 
 /// The groups the header names at most, the latest touched first.
 pub const GROUPS_MAX: usize = 200;
@@ -332,9 +346,10 @@ pub struct GroupWanted {
     pub server: Option<String>,
 }
 
-/// `messenger_groups::service::MEMBERSHIP_JOINED`, which this crate does
-/// not see.
+/// `messenger_groups::service::MEMBERSHIP_JOINED` and `MEMBERSHIP_JOINING`,
+/// which this crate does not see.
 const JOINED: &str = "joined";
+const JOINING: &str = "joining";
 
 /// `[chat_id, muted, pinned, archived]`: each choice by the time it was
 /// made (my clock), positive when on, negative when off, 0 when never.
@@ -513,12 +528,13 @@ fn paginate(home: Vec<Entry>, private: Vec<serde_json::Value>) -> (Vec<PageEntri
 /// The header cut to `HEADER_MAX_BYTES`, when it is over: whole entries
 /// from the end of the invitations (the ones that ended are last), then
 /// of the servers, then of the relations of private chats; only after
-/// them the removals of servers, the deletions and the choices of chats —
+/// them the removals of servers, the groups forgotten, the deletions and
+/// the choices of chats —
 /// a deletion or a choice left out stays undone on my other devices,
 /// where a server left out is only not brought. What was cut is logged.
 fn fit_header(header: &mut Header) -> Result<String> {
     let mut plain = serde_json::to_string(&*header)?;
-    let mut cut = [0usize; 8];
+    let mut cut = [0usize; 9];
     while plain.len() > HEADER_MAX_BYTES {
         let which = if header.invites.pop().is_some() {
             0
@@ -532,6 +548,8 @@ fn fit_header(header: &mut Header) -> Result<String> {
             2
         } else if header.servers_removed.pop().is_some() {
             3
+        } else if header.groups_forgotten.pop().is_some() {
+            8
         } else if header.deleted.pop().is_some() {
             4
         } else if header.chats.pop().is_some() {
@@ -543,10 +561,10 @@ fn fit_header(header: &mut Header) -> Result<String> {
         plain = serde_json::to_string(&*header)?;
     }
     if cut.iter().any(|n| *n > 0) {
-        let [invites, servers, private, removed, deleted, chats, wills, groups] = cut;
+        let [invites, servers, private, removed, deleted, chats, wills, groups, forgotten] = cut;
         eprintln!(
             "messenger relations: the header was over {HEADER_MAX_BYTES} bytes; cut {invites} invitations, {wills} wills of peers, \
-             {groups} groups, \
+             {groups} groups, {forgotten} forgotten groups, \
              {servers} servers, {private} relations of private chats, {removed} removals of servers, {deleted} deletions, \
              {chats} choices of chats"
         );
@@ -643,6 +661,7 @@ impl DmService {
         let deleted = chats::tombstones(&self.store).await?;
         let (my_servers, servers_removed) = servers::entries(&self.store).await?;
         let groups = self.group_entries().await?;
+        let groups_forgotten = messenger_store::groups::forgotten(&self.store).await?;
         let mut events = Vec::with_capacity(pages.len());
         let count = pages.len();
         for (n, (peers, private_peers)) in pages.into_iter().enumerate() {
@@ -665,6 +684,7 @@ impl DmService {
                     private_peers,
                     wills: piece_wills,
                     groups: groups.clone(),
+                    groups_forgotten: groups_forgotten.clone(),
                     peers,
                 };
                 fit_header(&mut header)?
@@ -864,6 +884,7 @@ impl DmService {
         let mut chats_changed = false;
         let mut servers_changed = false;
         let mut groups_wanted = Vec::new();
+        let mut groups_forgotten = Vec::new();
         if let Some(h) = header {
             // My private servers, before the relations of their chats: a
             // removal newer than the server here takes it and its chats, a
@@ -874,6 +895,20 @@ impl DmService {
             // After the servers: a group of a server that just came is
             // wanted too.
             groups_wanted = self.groups_wanted(&h.groups).await?;
+            // A group forgotten there: the mark here, and the group goes
+            // unless this device came in again after it.
+            for (group_id, at) in &h.groups_forgotten {
+                if !chat_id_ok(&format!("group:{group_id}")) || !messenger_store::groups::mark_forgotten(&self.store, group_id, *at).await? {
+                    continue;
+                }
+                let here = messenger_store::groups::get(&self.store, group_id).await?;
+                if here.is_some_and(|g| g.membership != JOINED && g.membership != JOINING)
+                    && messenger_store::groups::forget_copy(&self.store, group_id).await?
+                {
+                    groups_forgotten.push(group_id.clone());
+                    chats_changed = true;
+                }
+            }
             // A list that carries wills is of a build that writes them:
             // what this device takes from it owes no publication once more
             // (`owe_wills_once`); a will that changes here owes its own.
@@ -946,7 +981,7 @@ impl DmService {
         if rev > get_i64(&self.store, KEY_REV).await?.max(0) as u64 {
             settings::set(&self.store, KEY_REV, &rev.to_string()).await?;
         }
-        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed, servers_changed, groups_wanted }, effects))
+        Ok((Applied { rev: Some(rev), complete, changed, settings_changed, chats_changed, servers_changed, groups_wanted, groups_forgotten }, effects))
     }
 }
 
@@ -1498,7 +1533,7 @@ mod tests {
 
         // Their removal comes: the list owes their new will.
         let chat = crate::peer::DmPeer::home(x.clone()).chat_id();
-        a.on_control(&chat, &crate::peer::DmPeer::home(x.clone()), false, Some("contact_removed"), now(), false, false).await.unwrap();
+        a.on_control(&chat, "", &crate::peer::DmPeer::home(x.clone()), false, Some("contact_removed"), now(), false, false).await.unwrap();
         assert_eq!(a.load_relation(&x).await.unwrap().peer_signal, PeerSignal::Left);
         assert!(a.relations_owed().await.unwrap(), "their will changed");
     }
@@ -1587,6 +1622,52 @@ mod tests {
         assert!(!complete);
     }
 
+    /// `groups_forgotten` is a field of the header either build reads
+    /// (ROO-692): a header of an older build, without it, reads with none;
+    /// an empty list is not written; a header that has it, as a build
+    /// before it reads one with a field unknown to it, reads whole.
+    #[test]
+    fn the_groups_forgotten_are_optional_in_the_header() {
+        let header = || Header {
+            v: SNAPSHOT_VERSION,
+            rev: 1,
+            at: 1,
+            pages: 1,
+            complete: true,
+            dm_from: "everyone".into(),
+            keep_days: 30,
+            settings_at: 0,
+            invites: Vec::new(),
+            chats: Vec::new(),
+            deleted: Vec::new(),
+            servers: None,
+            servers_removed: Vec::new(),
+            private_peers: Vec::new(),
+            wills: Vec::new(),
+            groups: Vec::new(),
+            groups_forgotten: Vec::new(),
+            peers: home(2),
+        };
+        let plain = serde_json::to_value(header()).unwrap();
+        assert!(plain.get("groups_forgotten").is_none(), "an empty list is not written: {plain}");
+        let old: Header = serde_json::from_value(plain).unwrap();
+        assert!(old.groups_forgotten.is_empty());
+        assert_eq!(old.peers.len(), 2);
+
+        let g = "ab".repeat(32);
+        let mut h = header();
+        h.groups_forgotten = vec![(g.clone(), 1_700_000_000)];
+        let mut json = serde_json::to_value(&h).unwrap();
+        assert_eq!(json["groups_forgotten"], serde_json::json!([[g, 1_700_000_000]]));
+        let back: Header = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back.groups_forgotten, h.groups_forgotten);
+        // What a build before the field does with it: a field it does not
+        // know, skipped, the rest read.
+        json["a_field_of_later"] = serde_json::json!([1, 2]);
+        let later: Header = serde_json::from_value(json).unwrap();
+        assert_eq!((later.groups_forgotten.len(), later.peers.len()), (1, 2));
+    }
+
     /// Over the bytes of a header, the invitations go first, then the
     /// servers, then the relations of private chats; the removals of
     /// servers, the deletions and the choices of chats only after them.
@@ -1609,6 +1690,7 @@ mod tests {
             private_peers: private(private_peers),
             wills: Vec::new(),
             groups: Vec::new(),
+            groups_forgotten: Vec::new(),
             peers: home(HEADER_ENTRIES),
         };
         // Fits: nothing is cut.

@@ -6,15 +6,17 @@ import { formatError } from '$lib/core/utils';
 
 /** What the backend puts before the English text of an error that came through Tor: `tor_failed: …`. */
 const KEYS = {
-  tor_not_installed: 'ssh_tor_err_not_installed',
+  // The words of a Tor failure are the proxies' own (browser/i18n.ts); only
+  // the exit countries of a proxy are said as SSH sees them.
+  tor_not_installed: 'proxy_tor_err_not_installed',
   tor_invalid_country: 'ssh_tor_err_invalid_country',
-  tor_too_many_instances: 'ssh_tor_err_too_many_instances',
-  tor_bootstrap_timeout: 'ssh_tor_err_bootstrap_timeout',
-  tor_failed: 'ssh_tor_err_failed',
-  tor_stopped: 'ssh_tor_err_stopped',
-  tor_in_use: 'ssh_tor_err_in_use',
-  tor_no_builtin_bridges: 'ssh_tor_err_no_builtin_bridges',
-  tor_no_transports: 'ssh_tor_err_no_transports',
+  tor_too_many_instances: 'proxy_tor_err_too_many_instances',
+  tor_bootstrap_timeout: 'proxy_tor_err_bootstrap_timeout',
+  tor_failed: 'proxy_tor_err_failed',
+  tor_stopped: 'proxy_tor_err_stopped',
+  tor_in_use: 'proxy_tor_err_in_use',
+  tor_no_builtin_bridges: 'proxy_tor_err_no_builtin_bridges',
+  tor_no_transports: 'proxy_tor_err_no_transports',
 } as const satisfies Record<string, TranslationKey>;
 
 export type TorErrorCode = keyof typeof KEYS;

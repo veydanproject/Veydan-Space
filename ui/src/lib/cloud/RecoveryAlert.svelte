@@ -48,7 +48,7 @@
     <div class="body">
       <p class="text">{$t('cloud_alert_cancelled', { date: dateOf(alertsStore.cancelled.frozen_until, $locale) })}</p>
       <div class="buttons">
-        <button class="btn btn-ghost btn-sm" type="button" onclick={() => (alertsStore.cancelled = null)}>{$t('cloud_alert_close')}</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick={() => (alertsStore.cancelled = null)}>{$t('common_close')}</button>
       </div>
     </div>
   </div>
@@ -69,16 +69,30 @@
             {$t('cloud_alert_not_me')}
           </button>
         {:else if card.t === 'recovery.escrow_read'}
-          <button class="btn btn-primary btn-sm" type="button" onclick={() => openRecovery(card.id)}>
+          <button class="btn btn-ghost btn-sm" type="button" onclick={() => openRecovery(card.id)}>
             {$t('cloud_alert_open_recovery')}
           </button>
         {/if}
-        <button class="btn btn-ghost btn-sm" type="button" onclick={() => alertsStore.dismiss(card.id)}>{$t('cloud_alert_close')}</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick={() => alertsStore.dismiss(card.id)}>{$t('common_close')}</button>
       </div>
     </div>
   </div>
 {/each}
-{#if errorText}<div class="banner danger" role="alert"><span class="mark"><Icon name="alert-triangle" size={16} /></span><div class="body"><p class="text">{errorText}</p></div></div>{/if}
+<!-- No answer from the cloud: red, as on its page (CloudBody), with «Try again» and the cross of a banner. -->
+{#if errorText}
+  <div class="banner danger" role="alert">
+    <span class="mark"><Icon name="wifi-off" size={16} /></span>
+    <div class="body">
+      <div class="head">
+        <p class="text">{errorText}</p>
+        <button class="close" type="button" aria-label={$t('common_close')} title={$t('common_close')} onclick={() => (alertsStore.error = null)}><Icon name="x" size={14} /></button>
+      </div>
+      <div class="buttons">
+        <button class="btn btn-ghost btn-sm" type="button" disabled={alertsStore.busy} onclick={() => alertsStore.load()}>{$t('common_try_again')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   /* A card of the column of Banners.svelte: the tone on the left edge and the mark, the surface the app's own. */
@@ -98,7 +112,14 @@
   .warn .mark { background: var(--warn-bg); color: var(--warn-text); }
   .ok .mark { background: var(--success-bg); color: var(--success-text); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .text { margin: 0; line-height: 1.45; }
+  .text { margin: 0; line-height: var(--lh-snug); }
   .when { font-size: var(--fs-xs); color: var(--text-3); margin-top: calc(-1 * var(--sp-1)); }
   .buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .head { display: flex; align-items: flex-start; gap: var(--sp-2); }
+  .head .text { flex: 1; }
+  .close {
+    display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-3); cursor: pointer;
+  }
+  .close:hover { background: var(--surface-hover); color: var(--text); }
 </style>

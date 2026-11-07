@@ -11,6 +11,7 @@
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -148,14 +149,14 @@
     </div>
   </div>
 
-  {#if error}<div class="error-msg">{error}</div>{/if}
+  {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   {#if items.length}
     {#if ticked.length}
       <div class="bulk-acts">
         <button class="btn btn-primary btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'approve')}>{$t('msg_mod_approve_all')}</button>
         <button class="btn btn-ghost btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'reject')}>{$t('msg_mod_reject_all')}</button>
-        {#if ticked.every((r) => canSpam(group, r.author))}<button class="btn btn-ghost btn-sm danger" disabled={!!busy} onclick={() => decide(ticked, 'spam')}>{$t('msg_mod_spam')}</button>{/if}
+        {#if ticked.every((r) => canSpam(group, r.author))}<button class="btn btn-danger-soft btn-sm" disabled={!!busy} onclick={() => decide(ticked, 'spam')}>{$t('msg_mod_spam')}</button>{/if}
       </div>
     {/if}
 
@@ -167,7 +168,7 @@
           <div class="top">
             <input class="tick" type="checkbox" checked={selected.includes(row.author)} onchange={() => tick(row.author)} aria-label={name} />
             <button class="open" onclick={() => (author = row.author)} aria-label={$t('msg_mod_author_open', { name })}>
-              <Avatar url={nameStore.picture(row.author)} label={name} seed={row.author} size={32} />
+              <Avatar url={nameStore.picture(row.author)} label={name} seed={row.author} size={36} />
               <span class="who">
                 <span class="line">
                   <span class="name">{name}</span>
@@ -202,12 +203,12 @@
 {/if}
 
 <style>
-  /* The search the whole width, 36 high (c11). */
+  /* The search the whole width, 40 high (c11). */
   .search {
-    display: flex; align-items: center; gap: var(--sp-2); min-height: calc(var(--control-h) - var(--sp-1)); padding: 0 var(--sp-3); color: var(--text-3);
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-field);
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h); padding: 0 var(--sp-3); color: var(--text-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill);
   }
-  .search:focus-within { border-color: var(--accent-border); }
+  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
   .search :global(svg) { flex-shrink: 0; }
   .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .listbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding-left: var(--sp-1); }
@@ -230,14 +231,14 @@
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-2xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
+  .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
   .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
-  .text { font-size: var(--fs-sm); line-height: 1.4; color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .text { font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   /* Under the words (past the avatar): «Одобрить | Отклонить» halves 30 high, the spam an icon in a third column. */
   .acts { grid-column: 2; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) calc(var(--control-h-sm) - 2px); align-items: center; gap: var(--sp-2); padding-left: var(--sp-10); }
-  .acts .btn { min-width: 0; min-height: calc(var(--control-h-sm) - 2px); padding-inline: var(--sp-3); font-size: var(--fs-xs); line-height: 1.25; white-space: normal; text-wrap: balance; text-align: center; }
+  .acts .btn { min-width: 0; min-height: calc(var(--control-h-sm) - 2px); padding-inline: var(--sp-3); font-size: var(--fs-xs); line-height: var(--lh-tight); white-space: normal; text-wrap: balance; text-align: center; }
   .acts .spam { width: calc(var(--control-h-sm) - 2px); height: calc(var(--control-h-sm) - 2px); }
-  .danger, .spam { color: var(--danger-text); }
+  .spam { color: var(--danger-text); }
   /* A narrow panel (beside a chat on a small screen): the answers take the width under the avatar too, so «Одобрить все» fits. */
   @container (max-width: 304px) {
     .acts { padding-left: 0; }

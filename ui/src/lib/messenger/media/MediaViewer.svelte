@@ -237,8 +237,8 @@
           {/if}
         </div>
       {/if}
-      <button onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={18} /></button>
-      <button onclick={() => viewer.dismiss()} aria-label={$t('msg_back')} title={$t('msg_back')}><Icon name="x" size={20} /></button>
+      <button onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="download" size={18} /></button>
+      <button onclick={() => viewer.dismiss()} aria-label={$t('common_back')} title={$t('common_back')}><Icon name="x" size={20} /></button>
     </header>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="stage" bind:this={stage} onclickcapture={swallow}
@@ -276,12 +276,12 @@
   .count { flex-shrink: 0; font-size: var(--fs-sm); opacity: 0.85; font-variant-numeric: tabular-nums; }
   header button { width: 44px; height: 44px; border: none; border-radius: 50%; background: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   header button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
-  header button:disabled { opacity: 0.35; cursor: default; }
+  header button:disabled { opacity: 0.45; cursor: default; }
   .zoom { position: relative; display: flex; align-items: center; flex-shrink: 0; }
-  .zoom .level { width: auto; min-width: 60px; padding: 0 var(--sp-2); border-radius: 22px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .zoom .level { width: auto; min-width: 60px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
   .levels {
     position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px; padding: 4px; display: flex; flex-direction: column;
-    background: rgba(30, 30, 36, 0.98); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-sm, 8px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    background: rgba(30, 30, 36, 0.98); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
   .levels button { width: 88px; height: 36px; border-radius: var(--radius-badge); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
   .levels button.on { background: rgba(255, 255, 255, 0.16); }

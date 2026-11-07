@@ -89,8 +89,8 @@
   .spin { display: inline-flex; }
   .spin :global(svg) { animation: spin 1.1s linear infinite; }
   .len {
-    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 1px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.5); color: #fff; font-family: var(--font-mono); font-size: var(--fs-2xs); line-height: 18px;
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 2px 8px; border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, 0.5); color: #fff; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-snug);
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -17,7 +17,6 @@
   import { onPhone } from '../shared/phone';
   import { shortStamp } from '../shared/time';
   import type { CallLogEntry, CallMedia } from '../api';
-  import CallIcon, { type CallGlyph } from './CallIcon.svelte';
   import { callLog } from './callLog.svelte';
   import { dialable, dialBlock, dialer, targetOf } from './dial.svelte';
   import { isLogMissed, lineOf } from './log';
@@ -55,10 +54,10 @@
     dialer.call(to, media, phone);
   }
 
-  function glyph(e: CallLogEntry): CallGlyph {
+  function glyph(e: CallLogEntry): string {
     if (e.kind === 'group') return e.media === 'video' ? 'video' : 'phone';
-    if (isLogMissed(e)) return 'missed';
-    return e.direction === 'in' ? 'incoming' : 'outgoing';
+    if (isLogMissed(e)) return 'phone-x';
+    return e.direction === 'in' ? 'phone-incoming' : 'phone-outgoing';
   }
 
   function words(e: CallLogEntry): { title: string; detail: string | null } {
@@ -70,7 +69,7 @@
 
   function forget() {
     const ids = calls.map((c) => c.call_id);
-    callLog.hide(ids).then(() => ongone?.()).catch(() => toast.error($t('msg_action_failed'), { onAction: forget }));
+    callLog.hide(ids).then(() => ongone?.()).catch(() => toast.error($t('msg_calls_forget_failed'), { onAction: forget }));
   }
 </script>
 
@@ -86,14 +85,14 @@
     <div class="actions">
       {#if group}
         <button class="act call" disabled={!can || !!block} title={block || undefined} onclick={() => call('audio')}>
-          <span class="disc"><CallIcon name="phone" size={18} /></span>{$t('msg_calls_call')}
+          <span class="disc"><Icon name="phone" size={18} /></span>{$t('msg_calls_call')}
         </button>
       {:else}
         <button class="act call" disabled={!can || !!block} title={block || undefined} onclick={() => call('audio')}>
-          <span class="disc"><CallIcon name="phone" size={18} /></span>{$t('msg_calls_audio_short')}
+          <span class="disc"><Icon name="phone" size={18} /></span>{$t('msg_calls_audio_short')}
         </button>
         <button class="act call" disabled={!can || !!block} title={block || undefined} onclick={() => call('video')}>
-          <span class="disc"><CallIcon name="video" size={18} /></span>{$t('msg_calls_video_short')}
+          <span class="disc"><Icon name="video" size={18} /></span>{$t('msg_calls_video_short')}
         </button>
       {/if}
       <button class="act" disabled={!chat} onclick={() => onchat(chatId)}>
@@ -107,7 +106,7 @@
       {#each calls as e (e.call_id)}
         {@const w = words(e)}
         <li class="call-row" class:missed={isLogMissed(e)}>
-          <span class="glyph"><CallIcon name={glyph(e)} size={16} /></span>
+          <span class="glyph"><Icon name={glyph(e)} size={16} /></span>
           <span class="text">
             <span class="title">{w.title}</span>
             {#if w.detail}<span class="detail">{w.detail}</span>{/if}

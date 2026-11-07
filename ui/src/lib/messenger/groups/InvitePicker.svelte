@@ -4,6 +4,7 @@
 <!-- Whom to invite: a contact, or anyone by their key. -->
 <script lang="ts">
   import { get } from 'svelte/store';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import { groupError } from './errors';
   import Icon from '$lib/core/Icon.svelte';
@@ -51,12 +52,12 @@
     <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
       onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) invite(key.trim()); }} />
     <p class="hint">{$t('msg_group_invite_hint')}</p>
-    {#if error}<div class="error-msg">{error}</div>{/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if contacts.length}
       <ul class="list divided">
         {#each contacts as c (c.pubkey)}
           <li class="row">
-            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={34} />
+            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={36} />
             <span class="name">{contactLabel(c)}</span>
             {#if sent.includes(c.pubkey)}
               <span class="done"><Icon name="check" size={13} />{$t('msg_group_invite_sent')}</span>
@@ -82,10 +83,10 @@
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px;
   }
   input:focus { outline: none; border-color: var(--accent-border); }
-  .hint { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+  .hint { margin: 0; }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .row { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 8px; }
+  .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-md); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
-  @media (pointer: coarse) { input { font-size: var(--fs-md); min-height: 44px; } }
+  @media (pointer: coarse) { input { font-size: var(--fs-md); min-height: 44px; } .row { min-height: 56px; } }
 </style>

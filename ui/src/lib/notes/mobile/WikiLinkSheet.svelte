@@ -27,7 +27,7 @@
     profile: 'user-circle',
     proxy: 'globe',
     ssh: 'terminal',
-    totp: 'shield',
+    totp: 'shield-lock',
     password: kindIcon('password'),
   };
 
@@ -121,7 +121,7 @@
         </button>
       {/each}
       {#if entityHits.length === 0}
-        <div class="m-row"><span class="m-row-label muted">{$t('notes_wiki_no_entities')}</span></div>
+        <div class="m-row"><span class="m-row-label muted">{$t('common_nothing_found')}</span></div>
       {/if}
     {:else}
       {#each matches as n (n.id)}
@@ -172,7 +172,7 @@
     min-height: 44px;
     padding: 0 14px;
     border: 0;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-pill);
     background: var(--m-field);
     color: var(--text);
     font: inherit;

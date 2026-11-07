@@ -22,7 +22,7 @@
       <div class="pw-code">
         <Icon name="key" size={14} />
         <span class="sub pw-code-name">{totpName(tid)}</span>
-        <TotpLiveCode entryId={tid} period={period(tid)} copiedLabel={$t('notes_context_copied')} compact />
+        <TotpLiveCode entryId={tid} period={period(tid)} copiedLabel={$t('totp_copy')} compact />
       </div>
     {/each}
   </div>

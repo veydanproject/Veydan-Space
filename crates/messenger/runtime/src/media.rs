@@ -823,7 +823,7 @@ impl MessengerRuntime {
 
     /// Send something recorded in the app (voice message, video circle).
     /// The bytes are written to the messenger folder and sent from there.
-    pub async fn dm_send_recording(&self, to: &str, rec: Recording, caption: Option<&str>) -> Result<MessageView> {
+    pub async fn dm_send_recording(&self, to: &str, mut rec: Recording, caption: Option<&str>) -> Result<MessageView> {
         if rec.bytes.is_empty() {
             return Err(MessengerError::Invalid("the recording is empty".into()));
         }
@@ -840,6 +840,10 @@ impl MessengerRuntime {
         };
         if !ok {
             return Err(MessengerError::Invalid(format!("unsupported recording type {mime}")));
+        }
+        // Linux plays a circle of Android so too (messenger-media `webm`).
+        if mime == "video/webm" {
+            messenger_media::webm::clear_alpha_mode(&mut rec.bytes);
         }
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
         let ext = match mime.as_str() {
@@ -1442,7 +1446,11 @@ impl MessengerRuntime {
         if !passive(&mime) {
             return Ok(None);
         }
-        let bytes = tokio::fs::read(&path).await?;
+        let mut bytes = tokio::fs::read(&path).await?;
+        // A circle an older Android sent: shown on Linux, the file untouched (messenger-media `webm`).
+        if mime == "video/webm" {
+            messenger_media::webm::clear_alpha_mode(&mut bytes);
+        }
         Ok(Some(format!("data:{mime};base64,{}", B64.encode(bytes))))
     }
 

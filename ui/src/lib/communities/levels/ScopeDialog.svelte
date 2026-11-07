@@ -17,6 +17,7 @@
   import { get } from 'svelte/store';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { confirmStore, isTauriHost, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
@@ -159,7 +160,7 @@
   /** Another section's settings: what was changed here is asked about first. */
   async function switchTo(s: ScopeView) {
     if (s.scope_id === target || busy) return;
-    if (dirty && !(await confirmStore.ask(tr('chan_scope_discard'), tr('chan_scope_discard_ok'), true))) return;
+    if (dirty && !(await confirmStore.ask(tr('chan_scope_discard'), tr('chan_scope_discard_ok'), true, 'x'))) return;
     target = s.scope_id;
     fill(s);
   }
@@ -318,13 +319,13 @@
         </div>
         <p class="hint">{$t('chan_scope_fixed')}</p>
       {/if}
-      {#if error}<div class="error-msg" role="alert">{error}</div>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('chan_cancel')}</button>
+    <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" disabled={busy || (tried && !!problem) || (!isNew && !dirty)} aria-busy={busy} onclick={save}>
-      {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t(isNew ? 'chan_add' : 'chan_save')}
+      {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t(isNew ? 'common_add' : 'common_save')}
     </button>
   {/snippet}
 </Dialog>
@@ -363,7 +364,7 @@
 
   /* What it looks like: the tile (a picture under it is framed in the colour) and the button of the head. */
   .preview {
-    position: relative; overflow: hidden; aspect-ratio: 3 / 2; box-sizing: border-box; padding: var(--sp-3); border-radius: var(--radius-head);
+    position: relative; overflow: hidden; aspect-ratio: 3 / 2; box-sizing: border-box; padding: var(--sp-3); border-radius: var(--radius-card);
     display: flex; flex-direction: column; justify-content: space-between;
     border: 1px solid color-mix(in srgb, var(--t-color) 35%, var(--border)); background: color-mix(in srgb, var(--t-color) 12%, var(--surface-2));
   }
@@ -411,7 +412,7 @@
     display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: var(--radius-sm);
   }
   .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
-  .icon:disabled { opacity: 0.3; cursor: default; }
+  .icon:disabled { opacity: 0.45; cursor: default; }
 
   /* The fields. */
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -420,8 +421,8 @@
     border: 1px solid var(--border); border-radius: var(--radius-field); padding: 0 var(--sp-3);
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
-  .field[aria-invalid='true'] { border-color: var(--danger-border); }
-  .hint { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
+  .field[aria-invalid='true'] { border-color: var(--danger); }
+  .hint { margin: 0; line-height: var(--lh-snug); }
 
   /* The mark: the icon always, the one colour (its tile, and the frame of a background), the background if any. */
   .mark { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -469,8 +470,8 @@
   .hide-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .hide-title { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .hide-box.on .hide-title :global(svg) { color: var(--danger-text); }
-  .hide-text .hint { line-height: 1.45; }
-  .late { display: inline-flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-xs); line-height: 1.45; color: var(--warn-text); }
+  .hide-text .hint { line-height: var(--lh-snug); }
+  .late { display: inline-flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--warn-text); }
   .late :global(svg) { flex-shrink: 0; margin-top: 2px; }
   .choice { display: flex; flex-direction: column; gap: var(--sp-2); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
