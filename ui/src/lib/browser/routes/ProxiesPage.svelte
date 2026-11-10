@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import type { Proxy, ProxyCheckResult } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import StatePill, { type PillTone } from '$lib/core/ui/StatePill.svelte';
@@ -146,8 +147,8 @@
     <button class="btn btn-ghost spacer" onclick={() => (importOpen = true)}>
       <Icon name="file-import" size={18} />{$t('proxies_import_btn')}
     </button>
-    <button class="icon-btn create" onclick={() => (panelProxy = null)} title={$t('proxies_add')} aria-label={$t('proxies_add')}>
-      <Icon name="plus" size={18} />
+    <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
+      <Icon name="plus" size={15} />{$t('proxies_new')}
     </button>
   </div>
 
@@ -210,7 +211,7 @@
     <div class="data-table table-scroll"><Skeleton rows={5} height={48} avatar="none" trailing /></div>
   {:else if proxiesStore.list.length === 0}
     <div class="empty-state">
-      <span class="empty-icon"><Icon name="globe" size={22} /></span>
+      <span class="empty-icon"><Icon name="network" size={22} /></span>
       <p>{$t('proxies_empty')}</p>
       <button class="btn btn-primary" onclick={() => (panelProxy = null)}>
         <Icon name="plus" size={18} />{$t('proxies_empty_add')}
@@ -223,8 +224,8 @@
       <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
-    <div class="data-table table-scroll">
-      <table class="proxy-table">
+    <div class="data-table table-scroll" use:pinnedHead>
+      <table class="proxy-table pinned-head">
         <thead class="data-table-head">
           <tr>
             <th class="col-num">#</th>
@@ -332,10 +333,10 @@
   /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
   .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 
-  .proxy-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .proxy-table { width: 100%; font-size: var(--fs-sm); }
 
   .proxy-table th {
-    padding: var(--sp-3) var(--sp-4); text-align: left;
+    padding: 0 var(--sp-4); text-align: left;
     font: inherit; white-space: nowrap;
   }
 
@@ -368,7 +369,7 @@
       grid-template-columns: 2.5rem minmax(0, max-content) auto 1fr auto auto;
       grid-template-areas: 'name name type . st act' 'host host host host st act' 'num geo geo geo geo geo';
     }
-    .proxy-table td { display: block; width: auto; padding: 0; min-width: 0; }
+    .proxy-table td { display: block; width: auto; border: 0; padding: 0; min-width: 0; }
     .proxy-row .col-num { grid-area: num; }
     .proxy-row .col-name { grid-area: name; }
     .proxy-row .col-type { grid-area: type; }

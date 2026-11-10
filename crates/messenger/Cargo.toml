@@ -111,6 +111,7 @@ messenger-evidence = { path = "evidence" }
 messenger-archive = { path = "archive" }
 
 [patch.crates-io]
+sqlx-sqlite = { path = "../../vendor/sqlx-sqlite" }
 # webrtc-sys as published, with four small patches (its PATCH.md): the
 # include order of the Linux build, the toolchain of this repository, and
 # TURN over TLS to a node whose certificate is signed by the node's own key.

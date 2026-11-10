@@ -79,7 +79,7 @@ export const browserEntities: EntityKindDef[] = [
   },
   {
     kind: 'proxy',
-    icon: 'globe',
+    icon: 'network',
     label: 'ctx_kind_proxy',
     ensureLoaded: () => proxiesStore.ensureLoaded(),
     list: () =>

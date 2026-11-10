@@ -104,7 +104,7 @@
         </div>
         {@render lead?.()}
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="titlebar-drag" onmousedown={onTitlebarMouseDown} ondblclick={onTitlebarDblClick}></div>
+        <div class="titlebar-drag" data-layer-keep onmousedown={onTitlebarMouseDown} ondblclick={onTitlebarDblClick}></div>
         {@render tools?.()}
         <WindowControls />
       </div>

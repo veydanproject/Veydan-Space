@@ -10,6 +10,7 @@
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
   import { portal } from '$lib/core/portal';
+  import { layer } from './layer';
   import { backdropDismiss } from '$lib/core/backdrop';
   import { backdropIn, backdropOut, dialogIn, dialogOut } from './motion';
 
@@ -47,7 +48,7 @@
 
 {#if open}
   <!-- Portalled to body so it stacks above drawers, which live on body too -->
-  <div class="overlay" in:backdropIn out:backdropOut use:portal use:backdropDismiss={oncancel} role="presentation">
+  <div class="overlay" in:backdropIn out:backdropOut use:portal use:layer use:backdropDismiss={oncancel} role="presentation">
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
       class="modal on-glass"

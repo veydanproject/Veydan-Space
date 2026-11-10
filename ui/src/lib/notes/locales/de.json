@@ -14,6 +14,7 @@
     "notes_sync_applied": "Empfangene Änderungen: {n}",
     "notes_btn_open_folder": "Ordner öffnen",
     "notes_btn_toggle_sidebar": "Seitenleiste ein-/ausblenden",
+    "notes_btn_show_sidebar": "Seitenleiste anzeigen",
     "notes_search_placeholder": "Notizen suchen…",
     "notes_btn_new": "Neu",
     "notes_btn_empty_trash": "Papierkorb leeren",

@@ -36,7 +36,7 @@
 </script>
 
 {#if cur}
-  <div class="region" class:phone={isMobile} use:portal use:zone={isMobile ? null : '--zone-toast'}>
+  <div class="region" class:phone={isMobile} data-layer-keep use:portal use:zone={isMobile ? null : '--zone-toast'}>
     {#key cur.id}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="vtoast {cur.type}" role={cur.type === 'error' ? 'alert' : 'status'}

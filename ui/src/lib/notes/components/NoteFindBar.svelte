@@ -132,7 +132,7 @@
     flex: 1;
     min-width: 200px;
   }
-  .find-field:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .find-field:focus-within { border-color: var(--accent-border); }
   /* Reset the global input chrome from base.css: the field draws the border */
   .find-field input {
     flex: 1 1 0;

@@ -9,6 +9,7 @@
   import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { formatDateTime } from '$lib/core/utils';
   import { proxyChip, proxyTypeName } from '$lib/browser/proxy-label';
@@ -152,9 +153,9 @@
   </div>
 
   <!-- Table -->
-  <div class="table-wrap">
-    <table>
-      <thead>
+  <div class="table-wrap" use:pinnedHead>
+    <table class="pinned-head">
+      <thead class="data-table-head">
         <tr>
           <th class="th-num">#</th>
           <th>{$t('table_col_name')}</th>
@@ -219,12 +220,14 @@
 
             <!-- Tags -->
             <td class="td-tags" onclick={(e) => e.stopPropagation()}>
+              <div class="tags-wrap">
               {#each (profile.tags ?? []) as tag}
                 {@const color = tagColorMap.get(tag)}
-                <span class="tag-chip tinted" style:--chip={color}>
-                  {tag}
+                <span class="tag-chip tinted" style:--chip={color} title={tag}>
+                  <span class="tag-text">{tag}</span>
                 </span>
               {/each}
+              </div>
             </td>
 
             <!-- Last Launch -->
@@ -271,26 +274,19 @@
     background: var(--surface);
   }
 
-  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-
-  thead {
-    background: var(--surface); position: sticky; top: 0; z-index: 1;
-    border-bottom: 1px solid var(--border);
-  }
-  thead th {
-    padding: var(--sp-3) var(--sp-3); text-align: left;
-    color: var(--text-2); font-weight: var(--fw-semibold); font-size: var(--fs-xs); white-space: nowrap;
-  }
+  /* The head: the common .data-table-head, pinned, no background (.pinned-head) */
+  table { width: 100%; font-size: var(--fs-sm); }
+  thead th { padding: 0 var(--sp-3); text-align: left; white-space: nowrap; }
+  .tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .th-num { width: 52px; }
   .th-actions { width: 112px; text-align: right; }
 
-  tbody tr {
-    border-bottom: 1px solid var(--divider);
-    cursor: pointer; transition: background 0.12s;
-  }
-  tbody tr:last-child { border-bottom: none; }
-  tbody tr:hover { background: var(--surface-row-hover); }
-  tbody tr.running { background: var(--success-bg); }
+  /* The lines and backgrounds are the cells' (separate borders): cut with them under the pinned head */
+  tbody tr { cursor: pointer; }
+  tbody td { border-bottom: 1px solid var(--divider); transition: background 0.12s; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-row-hover); }
+  tbody tr.running td { background: var(--success-bg); }
 
   td { padding: var(--sp-3) var(--sp-3); vertical-align: middle; }
 
@@ -351,8 +347,9 @@
   .no-proxy { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-dim); font-size: var(--fs-sm); }
 
   /* Tags */
-  .td-tags { max-width: 180px; display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
+  .tags-wrap { max-width: 180px; display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
   .tag-chip {
+    max-width: 100%; min-width: 0;
     display: inline-flex; align-items: center;
     border-width: 1px; border-style: solid;
     border-radius: var(--radius-pill); padding: 0.1rem 0.4rem;

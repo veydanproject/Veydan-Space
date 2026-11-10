@@ -39,7 +39,7 @@
 </script>
 
 {#if isTauri}
-  <div class="win-controls">
+  <div class="win-controls" data-layer-keep>
     <button class="wc" onclick={() => api.settings.windowMinimize()} aria-label={$t('window_minimize')} title={$t('window_minimize')}>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
         <line x1="3" y1="7.5" x2="11" y2="7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />

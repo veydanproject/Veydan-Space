@@ -104,6 +104,9 @@ pub fn module() -> Module {
                 totp::totp_list,
                 totp::totp_add,
                 totp::totp_update,
+                totp::totp_reveal,
+                #[cfg(desktop)]
+                totp::totp_copy,
                 totp::totp_delete,
                 totp::totp_generate_code,
                 totp::totp_generate_codes,

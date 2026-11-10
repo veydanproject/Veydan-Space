@@ -46,7 +46,10 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("password_vault_reset", r3(crate::passwords::password_vault_reset)));
     v.push(("totp_list", r1(crate::totp::totp_list)));
     v.push(("totp_add", r2(crate::totp::totp_add)));
-    v.push(("totp_update", r3(crate::totp::totp_update)));
+    v.push(("totp_update", r4(crate::totp::totp_update)));
+    v.push(("totp_reveal", r3(crate::totp::totp_reveal)));
+    #[cfg(desktop)]
+    v.push(("totp_copy", r3(crate::totp::totp_copy)));
     v.push(("totp_delete", r2(crate::totp::totp_delete)));
     v.push(("totp_generate_code", r3(crate::totp::totp_generate_code)));
     v.push(("totp_generate_codes", r3(crate::totp::totp_generate_codes)));

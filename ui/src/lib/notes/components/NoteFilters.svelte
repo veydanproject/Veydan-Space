@@ -12,6 +12,7 @@
   import { t } from '$lib/core/i18n';
   import { findTag } from '$lib/notes/tag-name';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
 
   const TAG_COLORS = [
     // The kit's presets (N.colors); the colour is the user's, never the kind.
@@ -98,8 +99,11 @@
   const popupSuggestions = $derived(
     allTags
       .filter(t => t.name.toLowerCase().includes(popupInput.toLowerCase()) && popupInput.trim().length > 0)
-      .slice(0, 6)
   );
+  let popupList = $state<Suggest | null>(null);
+  /** The list under the name; Escape hides it until the name changes. */
+  let popupListOpen = $state(true);
+  const popupItems = $derived<SuggestItem[]>(popupSuggestions.map((s) => ({ key: s.id, text: s.name, dot: s.color })));
 
   async function createTag() {
     const name = popupInput.trim();
@@ -122,6 +126,7 @@
   }
 
   function onPopupKeydown(e: KeyboardEvent) {
+    if (popupListOpen && popupList?.keydown(e)) return;
     if (e.key === 'Enter' && popupInput.trim()) { e.preventDefault(); void createTag(); }
     if (e.key === 'Escape') closePopup();
   }
@@ -459,7 +464,7 @@
           {:else}
             <span class="icon-slot"><span class="dot" style="background:{f.color}"></span></span>
           {/if}
-          <span class="item-name">{f.name}</span>
+          <span class="item-name" title={f.name}>{f.name}</span>
         </button>
 
         {#if node.children.length > 0}
@@ -536,7 +541,7 @@
           {:else}
             <span class="icon-slot"><span class="dot" style="background:{node.tag?.color ?? 'var(--text-3)'}; opacity:{node.tag ? 1 : 0.4}"></span></span>
           {/if}
-          <span class="item-name">{node.label}</span>
+          <span class="item-name" title={node.label}>{node.label}</span>
         </button>
 
         {#if hasChildren}
@@ -595,30 +600,30 @@
   <div class="filter-section global-section">
     <button class={filterClass('all')} onclick={() => onfilter({ type: 'all' })}>
       <span class="global-icon-slot"><Icon name="notes" size={13} /></span>
-      {$t('notes_filter_all')}
+      <span class="item-name" title={$t('notes_filter_all')}>{$t('notes_filter_all')}</span>
       <span class="count">{countAll}</span>
     </button>
     <!-- Global (bound to no workspace or profile) says nothing in a product without workspaces where every note is global -->
     {#if directory.owned('workspace') || workspaceTree.length > 0 || countGlobal !== countAll || activeFilter.type === 'global'}
       <button class={filterClass('global')} onclick={() => onfilter({ type: 'global' })}>
         <span class="global-icon-slot"><Icon name="world" size={13} /></span>
-        {$t('notes_filter_global')}
+        <span class="item-name" title={$t('notes_filter_global')}>{$t('notes_filter_global')}</span>
         <span class="count">{countGlobal}</span>
       </button>
     {/if}
     <button class={filterClass('pinned')} onclick={() => onfilter({ type: 'pinned' })}>
       <span class="global-icon-slot"><Icon name="pin" size={13} /></span>
-      {$t('notes_filter_pinned')}
+      <span class="item-name" title={$t('notes_filter_pinned')}>{$t('notes_filter_pinned')}</span>
       <span class="count">{countPinned}</span>
     </button>
     <button class={filterClass('archived')} onclick={() => onfilter({ type: 'archived' })}>
       <span class="global-icon-slot"><Icon name="archive" size={13} /></span>
-      {$t('notes_filter_archived')}
+      <span class="item-name" title={$t('notes_filter_archived')}>{$t('notes_filter_archived')}</span>
       <span class="count">{countArchived}</span>
     </button>
     <button class={filterClass('trash')} onclick={() => onfilter({ type: 'trash' })}>
       <span class="global-icon-slot"><Icon name="trash-2" size={13} /></span>
-      {$t('notes_filter_trash')}
+      <span class="item-name" title={$t('notes_filter_trash')}>{$t('notes_filter_trash')}</span>
       <span class="count">{trashCount}</span>
     </button>
   </div>
@@ -633,7 +638,7 @@
           <div class="tree-row">
             <button class="{filterClass('workspace', ws.id)} tree-item" onclick={() => onfilter({ type: 'workspace', id: ws.id })}>
               <span class="dot-slot"><span class="dot" style="background:{ws.color}"></span></span>
-              <span class="item-name">{ws.name}</span>
+              <span class="item-name" title={ws.name}>{ws.name}</span>
             </button>
             {#if ws.profiles.length > 0}
               <button class="collapse-trigger" onclick={(e) => { e.stopPropagation(); toggle('ws:' + ws.id); }}>
@@ -646,7 +651,7 @@
             {#each ws.profiles as p (p.id)}
               <button class="{filterClass('profile', p.id)} nav-item profile-item" onclick={() => onfilter({ type: 'profile', id: p.id })}>
                 <span class="icon-slot"><Icon name="browser" size={11} /></span>
-                <span class="item-name">{p.name}</span>
+                <span class="item-name" title={p.name}>{p.name}</span>
                 <span class="count">{p.noteCount}</span>
               </button>
             {/each}
@@ -702,7 +707,7 @@
         >
           <button class="{filterClass('smart', view.id)} tree-item" onclick={() => onfilter({ type: 'smart', id: view.id })}>
             <span class="dot-slot"><span class="dot" style="background:{view.color}"></span></span>
-            <span class="item-name">{view.name}</span>
+            <span class="item-name" title={view.name}>{view.name}</span>
           </button>
           <div class="count-wrap"
             class:menu-open={openMenuKey === 'smart:' + view.id}
@@ -741,7 +746,7 @@
         {#each siteList as site (site.domain)}
           <button class={filterClass('domain', site.domain)} onclick={() => onfilter({ type: 'domain', id: site.domain })}>
             <span class="global-icon-slot"><Icon name="world" size={12} /></span>
-            <span class="item-name">{site.domain}</span>
+            <span class="item-name" title={site.domain}>{site.domain}</span>
             <span class="count">{site.noteCount}</span>
           </button>
         {/each}
@@ -829,17 +834,18 @@
       class="popup-input"
       placeholder={popupPrefix ? `${popupPrefix}${$t('notes_tag_name_ph')}` : $t('notes_tag_name_ph')}
       onkeydown={onPopupKeydown}
+      oninput={() => (popupListOpen = true)}
     />
 
-    {#if popupSuggestions.length > 0}
-      <div class="suggestions">
-        {#each popupSuggestions as s (s.id)}
-          <button class="sug-item" onmousedown={(e) => { e.preventDefault(); onfilter({ type: 'tag', id: s.name }); closePopup(); }}>
-            <span class="dot" style="background:{s.color}"></span>
-            {s.name}
-          </button>
-        {/each}
-      </div>
+    {#if popupListOpen && popupItems.length > 0}
+      <Suggest
+        bind:this={popupList}
+        items={popupItems}
+        anchor={popupInputEl}
+        label={$t('notes_areas_title')}
+        onpick={(item) => { onfilter({ type: 'tag', id: item.text }); closePopup(); }}
+        onclose={() => (popupListOpen = false)}
+      />
     {/if}
 
     {#if popupIsNew}
@@ -970,6 +976,10 @@
   }
 
   .section-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: var(--fs-xs);
     color: var(--text-3);
     font-weight: var(--fw-semibold);
@@ -984,7 +994,7 @@
     background: none;
     cursor: pointer;
   }
-  .head-actions { display: inline-flex; align-items: center; margin-left: auto; }
+  .head-actions { display: inline-flex; align-items: center; margin-left: auto; flex-shrink: 0; }
   .head-actions .ws-chevs { margin-left: 0; }
   .ws-chevs { display: inline-flex; align-items: center; margin-left: auto; }
   .chev-slot {
@@ -1027,25 +1037,25 @@
   .nav-item:hover  { background: var(--surface-2); color: var(--text); }
   .nav-item.active { background: var(--accent-bg); color: var(--accent-text); }
 
+  /* The count: a column of 28 at the right, its number at its right edge — «1068» whole in a column of 200. */
   .count {
     margin-left: auto;
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
+    font-variant-numeric: tabular-nums;
     color: var(--text-faint);
-    background: var(--surface-2);
-    border-radius: 50%;
     flex-shrink: 0;
-    min-width: 1.25rem;
+    width: 28px;
     height: 1.25rem;
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 0 0.15rem;
+    justify-content: flex-end;
+    white-space: nowrap;
   }
-  .nav-item.active .count { background: var(--accent-bg); color: var(--accent-text); }
+  .nav-item.active .count { color: var(--accent-text); }
 
-  /* count in a tree-row: makes up for the button padding it lacks */
-  .tree-row > .count { margin-right: var(--sp-2); }
+  /* count in a tree-row: makes up for the button padding it lacks, so it ends where the buttons' counts do */
+  .tree-row > .count { margin-right: var(--sp-3); }
 
   /* Profiles: the children of a workspace */
   .profile-item { padding-left: var(--sp-6); font-size: var(--fs-sm); }
@@ -1130,11 +1140,11 @@
     position: relative;
     flex-shrink: 0;
     margin-left: auto;
-    margin-right: var(--sp-2);
+    margin-right: var(--sp-3);
     display: flex;
     align-items: center;
-    justify-content: center;
-    min-width: 1.25rem;
+    justify-content: flex-end;
+    width: 28px;
     height: 1.25rem;
   }
 
@@ -1315,29 +1325,6 @@
   }
 
   .parent-select { flex: 1; min-width: 0; }
-
-  .suggestions {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .sug-item {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem var(--sp-2);
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: var(--fs-sm);
-    color: var(--text);
-    text-align: left;
-    transition: background 0.1s;
-  }
-  .sug-item:hover { background: var(--surface); }
 
   .color-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 

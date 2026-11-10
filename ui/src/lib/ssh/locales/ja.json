@@ -125,6 +125,7 @@
     "ssh_keys_count": "鍵：{n}",
     "ssh_keys_add": "鍵を追加",
     "ssh_keys_generate": "鍵を生成",
+    "terminal_new_connection": "新規接続",
     "ssh_keys_empty": "SSH鍵はまだありません。生成するかインポートしてください。",
     "ssh_key_col_name": "名前",
     "ssh_key_col_type": "種類",

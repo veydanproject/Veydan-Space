@@ -114,7 +114,7 @@
 </script>
 
 <!-- The window of a key (import / generate, its title by the tab chosen): the fields scroll, «Cancel» and the main button are the drawer's footer. -->
-<Drawer open width="440px" title={activeMode === 'generate' ? $t('ssh_keys_generate') : $t('ssh_key_form_import')} onclose={onCancel}>
+<Drawer open width="var(--drawer-w-md)" title={activeMode === 'generate' ? $t('ssh_keys_generate') : $t('ssh_key_form_import')} onclose={onCancel}>
 <div class="form">
   {#if createdKey}
     <div class="created-hint">

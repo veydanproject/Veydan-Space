@@ -511,7 +511,16 @@
     "setup_progress": "{done} trên {total}",
     "setup_dismiss": "Ẩn",
     "setup_sync": "Bật đồng bộ",
-    "settings_lock_recovery_new_title": "Khóa khôi phục mới của bạn"
+    "settings_lock_recovery_new_title": "Khóa khôi phục mới của bạn",
+    "suggest_group_note_tag": "Thẻ",
+    "suggest_group_note_folder": "Thư mục",
+    "suggest_group_workspace": "Không gian làm việc",
+    "suggest_group_profile": "Hồ sơ",
+    "suggest_group_proxy": "Proxy",
+    "suggest_group_ssh": "Kết nối SSH",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Mật khẩu",
+    "suggest_group_note": "Ghi chú"
   },
   "mobile": {
     "app_launcher": "Ứng dụng",

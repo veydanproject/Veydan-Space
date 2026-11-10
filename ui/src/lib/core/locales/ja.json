@@ -511,7 +511,16 @@
     "setup_progress": "{done} / {total}",
     "setup_dismiss": "非表示",
     "setup_sync": "同期をオンにする",
-    "settings_lock_recovery_new_title": "新しい復旧キー"
+    "settings_lock_recovery_new_title": "新しい復旧キー",
+    "suggest_group_note_tag": "タグ",
+    "suggest_group_note_folder": "フォルダ",
+    "suggest_group_workspace": "ワークスペース",
+    "suggest_group_profile": "プロフィール",
+    "suggest_group_proxy": "プロキシ",
+    "suggest_group_ssh": "SSH 接続",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "パスワード",
+    "suggest_group_note": "ノート"
   },
   "mobile": {
     "app_launcher": "アプリ",

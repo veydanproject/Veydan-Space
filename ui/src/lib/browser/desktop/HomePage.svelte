@@ -305,7 +305,7 @@
                 <span>{$t(countKey('workspaces_profiles_n', s.profile_count, $locale), { n: String(s.profile_count) })}</span>
               </div>
               <div class="stat">
-                <Icon name="globe" size={13} />
+                <Icon name="network" size={13} />
                 <span>{$t(countKey('workspaces_proxies_n', s.proxy_count, $locale), { n: String(s.proxy_count) })}</span>
               </div>
               {#if s.active_count > 0}

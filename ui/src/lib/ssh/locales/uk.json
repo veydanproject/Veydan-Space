@@ -125,6 +125,7 @@
     "ssh_keys_count": "Ключів: {n}",
     "ssh_keys_add": "Додати ключ",
     "ssh_keys_generate": "Згенерувати ключ",
+    "terminal_new_connection": "Нове підключення",
     "ssh_keys_empty": "SSH-ключів ще немає. Згенеруйте або імпортуйте ключ.",
     "ssh_key_col_name": "Назва",
     "ssh_key_col_type": "Тип",

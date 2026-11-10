@@ -40,7 +40,7 @@
   const ICON: Record<EntityKind, string> = {
     workspace: 'layers',
     profile: 'user-circle',
-    proxy: 'globe',
+    proxy: 'network',
     ssh: 'terminal',
     totp: 'shield-lock',
     password: kindIcon('password'),

@@ -125,6 +125,7 @@
     "ssh_keys_count": "{n} khóa",
     "ssh_keys_add": "Thêm khóa",
     "ssh_keys_generate": "Tạo khóa",
+    "terminal_new_connection": "Kết nối mới",
     "ssh_keys_empty": "Chưa có khóa SSH nào. Hãy tạo hoặc nhập một khóa.",
     "ssh_key_col_name": "Tên",
     "ssh_key_col_type": "Loại",

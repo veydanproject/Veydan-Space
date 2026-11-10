@@ -247,7 +247,7 @@
 {:else if s.runtime}
   <div class="page page--fill messenger">
     <div class="shell" bind:clientWidth={shellWidth} style:--list-w={listKey && !narrow ? `${listW}px` : null}>
-      <!-- The sections of the messenger (the design kit's column): chats, groups, calls, contacts; settings and the network at its foot. -->
+      <!-- The sections of the messenger (the design kit's column): chats, groups, the host sections (channels), contacts, calls; settings and the network at its foot. -->
       <nav class="sections" aria-label={$t('msg_title')}>
         {#snippet badge(n: number)}
           {#if n > 0}<span class="count-pill sm sec-badge">{n > 99 ? '99+' : n}</span>{/if}
@@ -266,12 +266,12 @@
             {@render badge(h.unread())}
           </button>
         {/each}
+        <button class="sec" class:active={view === 'contacts'} aria-current={view === 'contacts' ? 'page' : undefined} onclick={() => show('contacts')} title={$t('msg_contacts_title')}>
+          <Icon name="book-user" size={22} />
+        </button>
         <button class="sec" class:active={view === 'calls'} aria-current={view === 'calls' ? 'page' : undefined} onclick={() => show('calls')} title={$t('msg_nav_calls')}>
           <Icon name="phone" size={22} />
           {#if callLog.missed > 0}<span class="count-pill sm danger sec-badge">{callLog.missed > 99 ? '99+' : callLog.missed}</span>{/if}
-        </button>
-        <button class="sec" class:active={view === 'contacts'} aria-current={view === 'contacts' ? 'page' : undefined} onclick={() => show('contacts')} title={$t('msg_contacts_title')}>
-          <Icon name="book-user" size={22} />
         </button>
         <span class="spacer"></span>
         <span class="sec-net" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}>
@@ -565,8 +565,8 @@
     display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 var(--sp-3) var(--sp-2); padding: 0 var(--sp-4);
     background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
   }
-  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
-  /* The pill is the field: its border and halo are the one focus mark. */
+  .search:focus-within { border-color: var(--accent-border); }
+  /* The pill is the field: its border is the one focus mark. */
   .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-base); color: var(--text); padding: 7px 0; }
   .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .setnav { padding: var(--sp-5) var(--sp-2) var(--sp-3); gap: var(--sp-3); overflow-y: auto; }

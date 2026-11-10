@@ -112,7 +112,7 @@
     border-radius: var(--radius-field); padding: 0 var(--sp-3);
     font-size: var(--fs-sm); color: var(--text-body);
   }
-  .input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); outline: none; }
+  .input:focus { border-color: var(--accent-border); outline: none; }
   .hint { line-height: var(--lh-snug); margin: 0; }
   .note { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
   .note :global(svg) { flex-shrink: 0; color: var(--text-dim); }

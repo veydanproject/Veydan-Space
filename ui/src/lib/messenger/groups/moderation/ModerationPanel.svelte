@@ -54,11 +54,11 @@
 
 <div class="scroll">
   {#if tabs.length > 1}
-    <div class="seg tabs" role="tablist" aria-label={$t('msg_mod_title')} use:scrollTabs={{ selected: tab, watch: widths, wheel: true, fadeStart: true }}>
+    <div class="tab-bar tabs" role="tablist" aria-label={$t('msg_mod_title')} use:scrollTabs={{ selected: tab, watch: widths, wheel: true, fadeStart: true }}>
       {#each tabs as v (v)}
         {@const label = $t(`msg_mod_tab_${v}` as 'msg_mod_tab_queue')}
         <!-- The settings are a gear: four words and two counts do not fit a panel's width. -->
-        <button class="seg-btn" class:active={tab === v} class:glyph={v === 'settings'} role="tab" aria-selected={tab === v} onclick={() => (tab = v)}
+        <button class="tab" class:active={tab === v} class:glyph={v === 'settings'} role="tab" aria-selected={tab === v} onclick={() => (tab = v)}
           title={v === 'settings' ? label : undefined} aria-label={v === 'settings' ? label : undefined}>
           {#if v === 'settings'}<Icon name="settings" size={18} />{:else}<span class="tab-name">{label}</span>{/if}
           {#if count(v)}<span class="count-pill sm quiet">{count(v) > 99 ? '99+' : count(v)}</span>{/if}
@@ -77,14 +77,13 @@
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
   /* The tabs are words on the panel's background: no track, the chosen one bold with a short mark; they scroll sideways
      when a language makes them longer and a clipped edge fades. */
-  .tabs { align-self: stretch; flex-shrink: 0; gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; overflow-x: auto; scrollbar-width: none; }
+  /* The tabs are the page's .tab-bar; here only the layout: the panel's width, scrolled sideways when a language makes
+     them longer, a clipped edge fades. */
+  .tabs { align-self: stretch; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
-  .tabs .seg-btn { position: relative; flex: 0 0 auto; justify-content: center; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
-  .tabs .seg-btn:hover:not(.active) { background: none; color: var(--text); }
-  .tabs .seg-btn.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
-  .tabs .seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  .tabs .tab { flex: 0 0 auto; justify-content: center; }
   /* The keyboard's ring inside the tab: the row clips what sticks out. */
-  .tabs .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .tabs .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
   .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
   .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }

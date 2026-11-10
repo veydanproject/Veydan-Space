@@ -103,9 +103,10 @@
   --rail-pad-x:      var(--sp-6); /* the page's inset from the window's sides */
 
   /* ── Panel / dialog widths ── */
-  --drawer-w:    440px;  /* profile detail */
-  --drawer-w-md: 480px;  /* create / edit profile forms */
-  --drawer-w-lg: 520px;  /* content-heavy drawers (notes / ssh / raw data) */
+  /* A side panel's width is its purpose, never a number in `width`: */
+  --drawer-w:    440px;  /* viewing a record (a profile, a password, a TOTP, an SSH key) */
+  --drawer-w-md: 480px;  /* any form that creates or edits */
+  --drawer-w-lg: 520px;  /* content-heavy (raw data, the shared lists of passwords and SSH) */
   --dialog-w:    440px;
 
   /* ── Z-index scale (was 20 → 9999 ad-hoc) ── */

@@ -561,11 +561,13 @@ tor_start tor desktop
 tor_status tor desktop
 tor_stop tor desktop
 totp_add pass all
+totp_copy pass desktop
 totp_delete pass all
 totp_generate_code pass all
 totp_generate_codes pass all
 totp_list pass all
 totp_preview_uri pass all
+totp_reveal pass all
 totp_update pass all
 tray_set_labels shell desktop
 tray_settings_get shell desktop

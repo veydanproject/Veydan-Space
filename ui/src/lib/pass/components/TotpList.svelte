@@ -11,22 +11,22 @@
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
   import Icon from '$lib/core/Icon.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
-  import TotpAddModal from './TotpAddModal.svelte';
   import { userLabels } from '$lib/pass/totp-tags';
 
   interface Props {
     entries: TotpEntry[];
     showProfileBadge?: boolean;
     onrequestAdd?: () => void;
+    /** The pencil: the list's owner opens the form where its list is (a side panel, in place of the list, in the tab). */
+    onedit: (entry: TotpEntry) => void;
     emptyText?: string;
     /** The search the entries are filtered by: an empty result then says nothing matched, not that there are none. */
     query?: string;
   }
 
-  let { entries, showProfileBadge = false, onrequestAdd, emptyText, query = '' }: Props = $props();
+  let { entries, showProfileBadge = false, onrequestAdd, onedit, emptyText, query = '' }: Props = $props();
 
   let codes = $state<Map<string, TotpCode>>(new Map());
-  let editing = $state<TotpEntry | null>(null);
 
   // Countdown ring
   const RADIUS = 10;
@@ -177,7 +177,7 @@
           >
             <Icon name="copy" size={13} />
           </button>
-          <button class="icon-btn" onclick={() => (editing = entry)} title={$t('common_edit')} aria-label={$t('common_edit')}>
+          <button class="icon-btn" onclick={() => onedit(entry)} title={$t('common_edit')} aria-label={$t('common_edit')}>
             <Icon name="pencil" size={13} />
           </button>
           <button
@@ -192,10 +192,6 @@
       </div>
     {/each}
   </div>
-{/if}
-
-{#if editing}
-  <TotpAddModal entry={editing} onclose={() => (editing = null)} />
 {/if}
 
 <style>

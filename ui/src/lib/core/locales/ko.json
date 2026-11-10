@@ -511,7 +511,16 @@
     "setup_progress": "{done}/{total}",
     "setup_dismiss": "숨기기",
     "setup_sync": "동기화 켜기",
-    "settings_lock_recovery_new_title": "새 복구 키"
+    "settings_lock_recovery_new_title": "새 복구 키",
+    "suggest_group_note_tag": "태그",
+    "suggest_group_note_folder": "폴더",
+    "suggest_group_workspace": "워크스페이스",
+    "suggest_group_profile": "프로필",
+    "suggest_group_proxy": "프록시",
+    "suggest_group_ssh": "SSH 연결",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "비밀번호",
+    "suggest_group_note": "노트"
   },
   "mobile": {
     "app_launcher": "앱",

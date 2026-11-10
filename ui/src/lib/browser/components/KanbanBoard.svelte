@@ -70,6 +70,12 @@
   let editColColor = $state('');
 
   const PALETTE = ['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6'];
+  const PALETTE_NAMES = ['violet', 'blue', 'green', 'amber', 'red', 'pink'] as const;
+
+  function cancelAddColumn() {
+    showAddColumn = false;
+    newColName = '';
+  }
 
   // Lookup over ALL proxies, not the workspace-filtered `proxies` prop: a
   // profile may reference a proxy tagged to another workspace, and it must
@@ -312,13 +318,13 @@
               onkeydown={(e) => e.key === 'Enter' && saveEditCol()}
             />
             <div class="col-color-row">
-              {#each PALETTE as c}
+              {#each PALETTE as c, i}
                 <button
                   class="swatch"
                   class:active={editColColor === c}
                   style="background:{c}"
                   onclick={() => (editColColor = c)}
-                  aria-label={c}
+                  aria-label={$t(`kanban_color_${PALETTE_NAMES[i]}`)}
                 ></button>
               {/each}
             </div>
@@ -363,7 +369,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="network" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}
@@ -418,7 +424,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="network" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}
@@ -463,7 +469,7 @@
                 <div class="card-meta">
                   <span class="meta-item"><Icon name="monitor" size={10} />{profile.fingerprint_preset}</span>
                   {#if proxy}
-                    <span class="meta-item accent"><Icon name="globe" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
+                    <span class="meta-item accent"><Icon name="network" size={10} />{proxyChip(proxy) ?? proxy.name}</span>
                   {:else}
                     <span class="meta-item muted"><Icon name="wifi-off" size={10} />{$t('panel_no_proxy')}</span>
                   {/if}
@@ -482,31 +488,35 @@
         <span>{$t('kanban_add_column')}</span>
       </button>
     {:else}
-      <div class="add-col-form">
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          class="col-name-input"
-          placeholder={$t('kanban_column_name_ph')}
-          bind:value={newColName}
-          onkeydown={(e) => e.key === 'Enter' && addColumn()}
-          autofocus
-        />
-        <div class="palette-row">
-          {#each PALETTE as c}
-            <button
-              class="swatch"
-              class:active={newColColor === c}
-              style="background:{c}"
-              onclick={() => (newColColor = c)}
-              aria-label={c}
-            ></button>
-          {/each}
-        </div>
-        <div class="add-col-actions">
-          <button class="btn btn-primary" onclick={addColumn} disabled={addColLoading || !newColName.trim()}>
-            {addColLoading ? '…' : $t('common_create')}
-          </button>
-          <button class="btn btn-ghost" onclick={() => { showAddColumn = false; newColName = ''; }}>{$t('common_cancel')}</button>
+      <div class="column">
+        <div class="add-col-form">
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            placeholder={$t('kanban_column_name_ph')}
+            bind:value={newColName}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') addColumn();
+              else if (e.key === 'Escape') cancelAddColumn();
+            }}
+            autofocus
+          />
+          <div class="palette-row">
+            {#each PALETTE as c, i}
+              <button
+                class="swatch"
+                class:active={newColColor === c}
+                style="background:{c}"
+                onclick={() => (newColColor = c)}
+                aria-label={$t(`kanban_color_${PALETTE_NAMES[i]}`)}
+              ></button>
+            {/each}
+          </div>
+          <div class="add-col-actions">
+            <button class="btn btn-ghost" onclick={cancelAddColumn}>{$t('common_cancel')}</button>
+            <button class="btn btn-primary" onclick={addColumn} disabled={addColLoading || !newColName.trim()}>
+              {addColLoading ? '…' : $t('common_create')}
+            </button>
+          </div>
         </div>
       </div>
     {/if}
@@ -554,12 +564,12 @@
   }
 
   .column {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    background: var(--pane); border: 1px solid var(--border); border-radius: var(--radius-lg);
     display: flex; flex-direction: column; min-height: 120px; max-height: 100%;
     overflow: hidden;
     transition: border-color 0.15s, background 0.15s;
   }
-  .column.drop-target { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+  .column.drop-target { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--pane)); }
   .column.unassigned { opacity: 0.85; }
 
   .col-header {
@@ -580,7 +590,7 @@
     flex: 1; background: var(--surface-3); border: 1px solid var(--accent); border-radius: var(--radius-field);
     color: var(--text); font-size: var(--fs-sm); padding: 0.2rem 0.4rem; outline: none;
   }
-  .col-color-row { display: flex; gap: 3px; flex-wrap: wrap; width: 100%; padding-top: var(--sp-1); }
+  .col-color-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; width: 100%; padding-top: var(--sp-1); }
 
   .col-cards {
     padding: var(--sp-3); display: flex; flex-direction: column; gap: 10px;
@@ -588,7 +598,7 @@
   }
 
   .card {
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--pane-strong); border: 1px solid var(--border); border-radius: var(--radius-md);
     padding: 0.85rem; cursor: grab; transition: border-color 0.15s, background 0.15s, opacity 0.13s;
     display: flex; gap: 0.6rem; align-items: flex-start;
     user-select: none; touch-action: none;
@@ -629,14 +639,16 @@
     position: fixed;
     pointer-events: none;
     z-index: var(--z-max);
-    background: var(--surface-2);
-    border: 1px solid var(--accent);
+    background: var(--glass-bg-raised);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-badge);
     padding: 0.4rem 0.65rem;
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     color: var(--text);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
     transform: translate(12px, -50%);
     opacity: 0.92;
     white-space: nowrap;
@@ -657,25 +669,17 @@
   }
   .add-col-btn:hover { border-color: var(--border-2); color: var(--text-2); }
 
-  .add-col-form {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2);
-  }
-  .col-name-input {
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-field);
-    color: var(--text); padding: 0.4rem 0.6rem; font-size: var(--fs-base); outline: none;
-    width: 100%;
-  }
-  .col-name-input:focus { border-color: var(--accent-border); }
-  .palette-row { display: flex; gap: 4px; flex-wrap: wrap; }
-  .add-col-actions { display: flex; gap: 0.4rem; }
+  .add-col-form { padding: var(--sp-3); display: flex; flex-direction: column; gap: 10px; }
+  .palette-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .add-col-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
+  .add-col-form input { height: 36px; min-height: 0; padding-top: 0; padding-bottom: 0; }
+  .add-col-actions .btn { height: 36px; min-height: 36px; }
 
   .swatch {
-    width: 18px; height: 18px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
-    flex-shrink: 0; transition: border-color 0.1s, transform 0.1s;
+    width: 20px; height: 20px; min-width: 20px; padding: 0; border: 0; border-radius: 50%;
+    flex: none; cursor: pointer;
   }
-  .swatch.active { border-color: var(--text); transform: scale(1.15); }
-  .swatch:hover { transform: scale(1.1); }
+  .swatch.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
 
   /* Column header hover controls (local override of the global .icon-btn) */
   .icon-btn {

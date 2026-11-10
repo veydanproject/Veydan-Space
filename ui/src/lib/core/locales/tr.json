@@ -511,7 +511,16 @@
     "setup_progress": "{done} / {total}",
     "setup_dismiss": "Gizle",
     "setup_sync": "Eşitlemeyi aç",
-    "settings_lock_recovery_new_title": "Yeni kurtarma anahtarınız"
+    "settings_lock_recovery_new_title": "Yeni kurtarma anahtarınız",
+    "suggest_group_note_tag": "Etiketler",
+    "suggest_group_note_folder": "Klasörler",
+    "suggest_group_workspace": "Çalışma alanları",
+    "suggest_group_profile": "Profiller",
+    "suggest_group_proxy": "Proxy’ler",
+    "suggest_group_ssh": "SSH bağlantıları",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Parolalar",
+    "suggest_group_note": "Notlar"
   },
   "mobile": {
     "app_launcher": "Uygulamalar",

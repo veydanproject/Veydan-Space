@@ -125,6 +125,7 @@
     "ssh_keys_count": "키 {n}개",
     "ssh_keys_add": "키 추가",
     "ssh_keys_generate": "키 생성",
+    "terminal_new_connection": "새 연결",
     "ssh_keys_empty": "아직 SSH 키가 없습니다. 키를 생성하거나 가져오세요.",
     "ssh_key_col_name": "이름",
     "ssh_key_col_type": "유형",

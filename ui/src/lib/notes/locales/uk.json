@@ -14,6 +14,7 @@
     "notes_sync_applied": "отримано змін: {n}",
     "notes_btn_open_folder": "Відкрити папку",
     "notes_btn_toggle_sidebar": "Показати/приховати панель",
+    "notes_btn_show_sidebar": "Показати панель",
     "notes_search_placeholder": "Пошук нотаток…",
     "notes_btn_new": "Нова",
     "notes_btn_empty_trash": "Очистити кошик",

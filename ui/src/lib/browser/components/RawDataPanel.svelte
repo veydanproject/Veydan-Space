@@ -210,7 +210,7 @@
           {:else}
             <div class="cookies-table-wrap">
               <table class="cookies-table">
-                <thead>
+                <thead class="data-table-head">
                   <tr>
                     <th>{$t('raw_col_host')}</th>
                     <th>{$t('raw_col_name')}</th>
@@ -342,12 +342,8 @@
   .cookies-table {
     width: 100%; border-collapse: collapse; font-size: var(--fs-sm);
   }
-  .cookies-table th {
-    text-align: left; padding: 0.4rem var(--sp-2);
-    border-bottom: 1px solid var(--border);
-    color: var(--text-3); font-weight: var(--fw-bold); font-size: var(--fs-xs);
-    background: var(--surface-2); white-space: nowrap;
-  }
+  /* The head: the common .data-table-head, no background */
+  .cookies-table th { text-align: left; padding: 0 var(--sp-2); white-space: nowrap; }
   .cookies-table td {
     padding: 0.35rem var(--sp-2);
     border-bottom: 1px solid var(--surface-2);

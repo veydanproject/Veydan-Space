@@ -21,7 +21,7 @@ import { registry } from './registry';
 const KINDS: Record<string, { icon: string; label: TranslationKey }> = {
   workspace: { icon: 'layers', label: 'ctx_kind_workspace' },
   profile: { icon: 'user-circle', label: 'ctx_kind_profile' },
-  proxy: { icon: 'globe', label: 'ctx_kind_proxy' },
+  proxy: { icon: 'network', label: 'ctx_kind_proxy' },
   ssh: { icon: 'terminal', label: 'ctx_kind_ssh' },
   totp: { icon: 'shield-lock', label: 'ctx_kind_totp' },
   password: { icon: 'lock-password', label: 'ctx_kind_password' },

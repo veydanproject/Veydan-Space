@@ -3,10 +3,13 @@
 
 <!--
   The one dropdown list of the app (design kit, Kit-06-custom-select). The field is a text field
-  of 40 (44 on a phone); the list is the glass of ContextMenu, 4 under the field, as wide as the
-  field and up to 320, its rows 36, eight of them without a scroll; the chosen row is 500 with a
-  check, no fill. ↓/↑ (round), Home/End and the first letters move between the rows, Enter picks
-  one, Escape closes and gives the focus back to the field. On a phone the rows are a bottom sheet.
+  of 40 (44 on a phone); where its place lets it, as wide as its longest row and the check's column,
+  up to 240; a longer value ends in «…» and the field's tooltip says it whole. The list is the glass
+  of ContextMenu, 4 under the field, exactly as wide as the field, edge on edge; its rows 36, eight of
+  them without a scroll, the text on the field's, a longer row in two lines; the chosen row is 500
+  with a check in a column of its own on the right, on its first line, no fill. ↓/↑ (round),
+  Home/End and the first letters move between the rows, Enter picks one, Escape closes and gives the
+  focus back to the field. On a phone the rows are a bottom sheet.
 -->
 <script lang="ts">
   import { onMount, onDestroy, tick, untrack } from 'svelte';
@@ -33,21 +36,24 @@
     title?: string;
     /** A field in error: its frame is the danger colour (aria-invalid). */
     invalid?: boolean;
+    /** A selector of an ancestor the list is laid by instead of the field: a group the field is part of. */
+    anchor?: string;
   }
 
   let {
     options, value = $bindable(), placeholder = '—', id = '', onchange,
-    disabled = false, ariaLabel, title, invalid = false,
+    disabled = false, ariaLabel, title, invalid = false, anchor,
   }: Props = $props();
 
   const uid = $props.id();
   const ROW = 36;
-  const MAX_W = 320;
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let dropdownEl = $state<HTMLDivElement | null>(null);
   let dropdownStyle = $state('');
+  let textEl = $state<HTMLSpanElement | null>(null);
+  let clipped = $state(false);
   let sheetTitle = $state('');
   let buf = '';
   let bufTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,9 +72,9 @@
       open = true;
       return;
     }
-    const rect = triggerEl?.getBoundingClientRect();
+    const rect = ((anchor && triggerEl?.closest(anchor)) || triggerEl)?.getBoundingClientRect();
     if (!rect) return;
-    dropdownStyle = `top:${rect.bottom + 4}px;left:${rect.left}px;min-width:${rect.width}px;max-width:${Math.max(rect.width, MAX_W)}px;visibility:hidden`;
+    dropdownStyle = `top:${rect.bottom + 7}px;left:${rect.left}px;width:${rect.width}px;visibility:hidden`;
     open = true;
     await tick();
     position(rect);
@@ -81,18 +87,19 @@
     if (!dropdownEl) return;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const w = dropdownEl.offsetWidth;
     const h = dropdownEl.offsetHeight;
+    // Edge on edge with the field, its width unrounded: a row as wide as the field's text fits it.
+    const w = rect.width;
     let left = rect.left;
     if (left + w > vw - 4) left = vw - w - 4;
     if (left < 4) left = 4;
-    const below = vh - rect.bottom - 8;
-    const above = rect.top - 8;
+    const below = vh - rect.bottom - 11;
+    const above = rect.top - 11;
     // Under the field; over it when it does not fit below and there is more room above.
     const up = h > below && above > below;
     const room = Math.max(ROW + 10, up ? above : below);
-    const top = up ? Math.max(4, rect.top - 4 - Math.min(h, room)) : rect.bottom + 4;
-    dropdownStyle = `top:${top}px;left:${left}px;min-width:${rect.width}px;max-width:${Math.max(rect.width, MAX_W)}px;--room:${room}px`;
+    const top = up ? Math.max(4, rect.top - 7 - Math.min(h, room)) : rect.bottom + 7;
+    dropdownStyle = `top:${top}px;left:${left}px;width:${w}px;--room:${room}px`;
   }
 
   function close(refocus = false) {
@@ -211,7 +218,7 @@
   class:mobile={isMobile}
   class:placeholder={!selected}
   {disabled}
-  {title}
+  title={clipped && selected ? selected.label : title}
   aria-label={ariaLabel}
   aria-invalid={invalid || undefined}
   aria-haspopup="listbox"
@@ -219,8 +226,14 @@
   aria-controls="{uid}-list"
   onclick={toggle}
   onkeydown={onTriggerKeydown}
+  onpointerenter={() => (clipped = !!textEl && textEl.scrollWidth > textEl.clientWidth)}
 >
-  <span class="trigger-label">{selected?.label ?? placeholder}</span>
+  <!-- Every row's label, unseen, in the label's cell: a field as wide as its words is as wide as the longest. -->
+  <span class="trigger-label">
+    <span class="trigger-text" bind:this={textEl}>{selected?.label ?? placeholder}</span>
+    {#each options as opt, i (i)}<span class="trigger-sizer" aria-hidden="true">{opt.label}</span>{/each}
+    {#if !selected}<span class="trigger-sizer" aria-hidden="true">{placeholder}</span>{/if}
+  </span>
   <svg class="chevron" class:rotated={open} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
 </button>
 
@@ -268,7 +281,7 @@
         onclick={() => select(opt)}
       >
         <span class="option-label">{opt.label}</span>
-        {#if opt.value === value}<Icon name="check" size={16} />{/if}
+        <span class="option-check">{#if opt.value === value}<Icon name="check" size={16} />{/if}</span>
       </button>
     {/each}
   </div>
@@ -300,19 +313,38 @@
   :global(:where([data-theme='dark'])) .trigger { --sel-border: var(--pane-strong-border); }
   .trigger:where(:hover:not(:disabled)) { --sel-border: var(--border-2); }
   .trigger[aria-invalid='true'] { --sel-border: var(--danger); }
+  /* Open or clicked: the border only. The ring comes with the keyboard, and the list opens 7 below (3 of it + 4). */
   .trigger:focus-visible, .trigger.open {
     outline: none;
     --sel-border: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
+  .trigger:focus-visible:not(.open) { box-shadow: 0 0 0 3px var(--accent-bg); }
   .trigger:disabled { opacity: 0.45; cursor: not-allowed; }
   .trigger.mobile { height: auto; min-height: var(--control-h-lg); font-size: var(--fs-md); }
   .trigger-label {
     flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trigger-text, .trigger-sizer {
+    grid-area: 1 / 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
+  }
+  /* The shown text takes the cell and gives it no width of its own: a chosen row longer than 240
+     ends in «…» there, the field as wide as the sizers say. */
+  .trigger-text { contain: inline-size; }
+  /* 500 like the chosen row of the list, and the room of the check's column (16 and the gap of 8):
+     the row fits the list whichever is chosen. The field by its words is up to 240 (240 - 46 of its
+     frame, padding, gap and chevron); a form's field is as wide as its place. */
+  .trigger-sizer {
+    visibility: hidden;
+    font-weight: var(--fw-medium);
+    box-sizing: content-box;
+    padding-right: calc(16px + var(--sp-2));
+    max-width: calc(240px - 46px - 16px - var(--sp-2));
   }
   .trigger.placeholder .trigger-label { color: var(--text-3); }
   :global([data-theme='dark']) .trigger.placeholder .trigger-label { color: var(--text-2); }
@@ -328,7 +360,6 @@
     --opt-hover: var(--surface-hover);
     position: fixed;
     z-index: var(--z-popover);
-    width: max-content;
     /* Eight rows of 36 and the inset of 4 above and below, inside the 1px frame; past that it scrolls. */
     max-height: min(calc(8 * 36px + 8px + 2px), var(--room, 100vh));
     overflow-y: auto;
@@ -352,18 +383,18 @@
   @media (prefers-reduced-motion: reduce) {
     .dropdown { animation: none; }
   }
-  .dropdown::-webkit-scrollbar { width: 6px; }
-  .dropdown::-webkit-scrollbar-track { background: transparent; margin: 6px 0; }
-  .dropdown::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border: 0; border-radius: var(--radius-pill); }
 
-  /* A row: the row of a menu (.menu-item). */
+  /* A row: the row of a menu (.menu-item). Its text 13 from the list's edge, as in the field
+     (1 + 4 + 8); the check's column 16 on the right, empty on the other rows, on the first line
+     of a row of two. */
   .option {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--sp-2);
     width: 100%;
     min-height: 36px;
-    padding: var(--sp-1) var(--sp-3);
+    padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-2);
+    line-height: 20px;
     border-radius: var(--radius-sm);
     background: transparent;
     border: none;
@@ -379,13 +410,18 @@
   .option:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
   .option:disabled { color: var(--text-3); cursor: default; }
   .option.selected { font-weight: var(--fw-medium); }
-  .option :global(svg) { flex-shrink: 0; color: var(--text); }
+  .option-check { display: flex; align-items: center; flex: 0 0 16px; width: 16px; height: 20px; }
+  .option-check :global(svg) { color: var(--text); }
+  /* A longer row: two lines, the second ending in «…». */
   .option-label {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
   /* The phone's sheet: rows of 44 (ContextMenu's sheet, the rows of a choice). */

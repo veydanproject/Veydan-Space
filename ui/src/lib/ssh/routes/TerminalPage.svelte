@@ -9,6 +9,7 @@
   import { formatDate, formatTime } from '$lib/core/utils';
   import type { SshConnection } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import SSHConnectionForm from '$lib/ssh/components/SSHConnectionForm.svelte';
@@ -140,8 +141,8 @@
       <p class="page-sub">{$t('terminal_sub')}</p>
     </div>
     {#if activeTab === 'connections'}
-      <button class="icon-btn create spacer" onclick={() => (panelConn = null)} title={$t('common_add')} aria-label={$t('common_add')}>
-        <Icon name="plus" size={18} />
+      <button class="btn btn-primary spacer" onclick={() => (panelConn = null)}>
+        <Icon name="plus" size={15} />{$t('terminal_new_connection')}
       </button>
     {:else}
       <button class="btn btn-ghost spacer" onclick={() => (keyFormMode = 'import')}>
@@ -218,8 +219,8 @@
       <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
-    <div class="data-table table-scroll">
-      <table class="ssh-table">
+    <div class="data-table table-scroll" use:pinnedHead>
+      <table class="ssh-table pinned-head">
         <thead class="data-table-head">
           <tr>
             <th class="col-num">#</th>
@@ -345,7 +346,7 @@
 
 <Drawer
   open={panelConn !== undefined}
-  width="440px"
+  width="var(--drawer-w-md)"
   title={panelConn ? $t('ssh_form_edit') : $t('ssh_form_new')}
   onclose={() => (panelConn = undefined)}
 >
@@ -375,10 +376,10 @@
   /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
   .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 
-  .ssh-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .ssh-table { width: 100%; font-size: var(--fs-sm); }
 
   .ssh-table th {
-    padding: var(--sp-3) var(--sp-4); text-align: left;
+    padding: 0 var(--sp-4); text-align: left;
     font: inherit; white-space: nowrap;
   }
 
@@ -443,7 +444,7 @@
       grid-template-columns: 2.5rem auto auto auto minmax(0, 1fr) auto auto;
       grid-template-areas: 'name name name name name st act' 'host host host host host st act' 'num user auth proxy last last last';
     }
-    .ssh-table td { display: block; width: auto; padding: 0; min-width: 0; }
+    .ssh-table td { display: block; width: auto; border: 0; padding: 0; min-width: 0; }
     .ssh-row .col-num { grid-area: num; }
     .ssh-row .col-status { grid-area: st; }
     .ssh-row .col-name { grid-area: name; }

@@ -66,7 +66,8 @@
     width: max-content; max-width: min(620px, calc(100vw - 24px));
     display: flex; align-items: center; gap: var(--sp-2);
     padding: 4px 4px 4px 5px; border-radius: var(--radius-pill);
-    background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
+    background: var(--glass-bg-raised); color: var(--text); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     animation: drop 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }
   .who {

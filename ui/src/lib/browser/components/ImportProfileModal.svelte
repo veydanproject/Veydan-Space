@@ -213,7 +213,7 @@
             <div class="preview-row">
               <span class="preview-label">{$t('panel_proxy')}</span>
               <span class="preview-value proxy-value">
-                <Icon name="globe" size={11} />
+                <Icon name="network" size={11} />
                 {#if preview.proxy.proxy_type === 'tor'}
                   {torLabel(preview.proxy.country, $t)}
                 {:else}
@@ -295,7 +295,6 @@
   }
   .json-input:focus {
     border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .preview {

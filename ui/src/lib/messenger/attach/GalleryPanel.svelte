@@ -398,10 +398,10 @@
 
   .viewer {
     position: absolute; inset: 0; z-index: var(--z-panel); border-radius: var(--radius-md); overflow: hidden;
-    background: var(--surface-2); display: flex; align-items: center; justify-content: center;
+    background: var(--surface-drawer); display: flex; align-items: center; justify-content: center;
   }
   .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .viewer .back { position: absolute; top: var(--sp-2); left: var(--sp-2); background: var(--glass-bg); }
+  .viewer .back { position: absolute; top: var(--sp-2); left: var(--sp-2); background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
   .viewer .pick-circle { top: var(--sp-3); right: var(--sp-3); width: var(--media-check-lg); height: var(--media-check-lg); }
   .play { position: absolute; color: #fff; filter: var(--media-icon-shadow); }
   .dur.big { left: var(--sp-3); bottom: var(--sp-3); font-size: var(--fs-xs); }

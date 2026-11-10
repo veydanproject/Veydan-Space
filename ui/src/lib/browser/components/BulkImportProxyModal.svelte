@@ -299,7 +299,6 @@
   }
   .proxy-input:focus {
     border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .form-row {

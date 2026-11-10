@@ -685,7 +685,7 @@
   .chip:hover { color: var(--text); border-color: var(--border-2); }
   .chip.on { color: var(--accent-text); background: var(--accent-bg); border-color: var(--accent-border); }
   .warn { font-size: var(--fs-sm); color: var(--warn-text); margin: 0; }
-  .input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); outline: none; }
+  .input:focus { border-color: var(--accent-border); outline: none; }
   .hint { line-height: var(--lh-snug); margin: 0; }
 
   .group { display: flex; flex-direction: column; gap: var(--sp-2); }

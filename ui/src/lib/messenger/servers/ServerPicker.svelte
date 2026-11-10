@@ -12,6 +12,7 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import { hostOf } from './serverAccept.svelte';
   import { nameOfServer, serverStore } from './serverStore.svelte';
 
@@ -33,16 +34,31 @@
   let open = $state(false);
   let query = $state('');
   let search = $state<HTMLInputElement | null>(null);
+  let list = $state<Suggest | null>(null);
+  /** The field's height when it opens: the search in its place keeps it, nothing under it moves. */
+  let fieldEl = $state<HTMLElement | null>(null);
+  let fieldH = $state(0);
+  let openEl = $state<HTMLElement | null>(null);
   const found = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (!q) return servers;
     return servers.filter((s) => nameOfServer(s).toLowerCase().includes(q) || hostOf(s.relay).toLowerCase().includes(q));
   });
 
+  const items = $derived<SuggestItem[]>([
+    ...(none !== null && !query.trim() ? [{ key: '', text: none, icon: 'world', current: value === null }] : []),
+    ...found.map((s) => ({ key: s.id, text: nameOfServer(s), icon: 'server-2', hint: hostOf(s.relay), current: value === s.id })),
+  ]);
+
   function pick(id: string | null) {
     value = id;
     open = false;
     query = '';
+  }
+
+  function show() {
+    fieldH = fieldEl?.offsetHeight ?? 0;
+    open = true;
   }
 
   $effect(() => { if (open) search?.focus(); });
@@ -60,35 +76,33 @@
     {/each}
   </div>
 {:else}
-  <div class="many">
-    <button type="button" class="field" aria-expanded={open} aria-label={label || $t('msg_srv_row_server')} {disabled} onclick={() => (open = !open)}>
-      <Icon name={chosen ? 'server-2' : 'world'} size={14} />
-      <span class="field-text">
-        <span class="name">{chosen ? nameOfServer(chosen) : (none ?? '')}</span>
-        {#if chosen}<span class="host">{hostOf(chosen.relay)}</span>{/if}
-      </span>
-      <span class="count">{servers.length}</span>
-      <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} />
-    </button>
-    {#if open}
-      <div class="list">
+  <div>
+    {#if !open}
+      <button type="button" class="field" bind:this={fieldEl} aria-expanded={false} aria-label={label || $t('msg_srv_row_server')} {disabled} onclick={show}>
+        <Icon name={chosen ? 'server-2' : 'world'} size={14} />
+        <span class="field-text">
+          <span class="name">{chosen ? nameOfServer(chosen) : (none ?? '')}</span>
+          {#if chosen}<span class="host">{hostOf(chosen.relay)}</span>{/if}
+        </span>
+        <span class="count">{servers.length}</span>
+        <Icon name="chevron-down" size={14} />
+      </button>
+    {:else}
+      <!-- The search takes the field's place; the servers are the list of suggestions under it. -->
+      <label class="field open" style:height="{fieldH}px" bind:this={openEl}>
+        <Icon name="search" size={14} />
         <input bind:this={search} class="search" type="text" bind:value={query} placeholder={$t('msg_srv_pick_search')} spellcheck="false" autocomplete="off"
-          onkeydown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); open = false; } if (e.key === 'Enter' && found.length === 1) pick(found[0].id); }} />
-        <ul role="listbox" aria-label={label || $t('msg_srv_row_server')}>
-          {#if none !== null && !query.trim()}
-            <li><button type="button" class="opt" class:on={value === null} role="option" aria-selected={value === null} onclick={() => pick(null)}>
-              <Icon name="world" size={14} /><span class="name">{none}</span>
-            </button></li>
-          {/if}
-          {#each found as s (s.id)}
-            <li><button type="button" class="opt" class:on={value === s.id} role="option" aria-selected={value === s.id} onclick={() => pick(s.id)}>
-              <Icon name="server-2" size={14} /><span class="name">{nameOfServer(s)}</span><span class="host">{hostOf(s.relay)}</span>
-            </button></li>
-          {:else}
-            <li class="empty">{$t('common_nothing_found')}</li>
-          {/each}
-        </ul>
-      </div>
+          aria-label={label || $t('msg_srv_row_server')}
+          onblur={() => { open = false; query = ''; }}
+          onkeydown={(e) => {
+            if (list?.keydown(e)) return;
+            if (e.key === 'Enter' && found.length === 1) pick(found[0].id);
+          }} />
+        <span class="count">{servers.length}</span>
+        <Icon name="chevron-up" size={14} />
+      </label>
+      <Suggest bind:this={list} {items} anchor={openEl} label={label || $t('msg_srv_row_server')} empty={$t('common_nothing_found')}
+        onpick={(item) => pick(item.key || null)} onclose={() => { open = false; query = ''; }} />
     {/if}
   </div>
 {/if}
@@ -108,7 +122,6 @@
   .srv-chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .srv-chip:disabled { opacity: 0.45; cursor: default; }
 
-  .many { display: flex; flex-direction: column; gap: 6px; }
   .field {
     display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; text-align: start; cursor: pointer;
     font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 7px 10px;
@@ -118,23 +131,11 @@
   .name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .host { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-size: var(--fs-xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
-  .list { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .field.open { cursor: text; border-color: var(--accent-border); }
   .search {
-    font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius-pill); height: var(--control-h); padding: 0 9px;
+    flex: 1; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+    font: inherit; font-size: var(--fs-sm); color: var(--text);
   }
-  .search:focus { outline: none; border-color: var(--accent-border); }
-  ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
-  .opt {
-    display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; text-align: start; cursor: pointer;
-    font: inherit; color: var(--text-2); background: none; border: 0; border-radius: var(--radius-sm); padding: 6px 8px;
-  }
-  .opt :global(svg) { flex-shrink: 0; color: var(--text-3); }
-  .opt .name { flex: 1; min-width: 0; color: var(--text); }
-  .opt .host { flex-shrink: 1; min-width: 0; max-width: 50%; }
-  .opt:hover { background: var(--surface-3); }
-  .opt.on { background: var(--accent-tint); }
-  .opt.on .name { color: var(--accent-text-2); }
-  .empty { padding: 8px; font-size: var(--fs-xs); color: var(--text-3); }
-  @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } .opt { padding: 10px 8px; } .search { font-size: var(--fs-md); } }
+  .search:focus { outline: none; box-shadow: none; }
+  @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } .search { font-size: var(--fs-md); } }
 </style>

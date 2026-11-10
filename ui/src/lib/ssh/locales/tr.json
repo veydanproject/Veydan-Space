@@ -125,6 +125,7 @@
     "ssh_keys_count": "{n} anahtar",
     "ssh_keys_add": "Anahtar ekle",
     "ssh_keys_generate": "Anahtar oluştur",
+    "terminal_new_connection": "Yeni bağlantı",
     "ssh_keys_empty": "Henüz SSH anahtarı yok. Bir tane oluşturun ya da içe aktarın.",
     "ssh_key_col_name": "Ad",
     "ssh_key_col_type": "Tür",

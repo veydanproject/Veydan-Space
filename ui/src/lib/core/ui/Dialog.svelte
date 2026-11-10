@@ -4,6 +4,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { portal } from '$lib/core/portal';
+  import { layer } from './layer';
   import { backdropDismiss } from '$lib/core/backdrop';
   import { acquireScrollLock, releaseScrollLock } from '$lib/core/scrollLock';
   import Icon from '$lib/core/Icon.svelte';
@@ -85,6 +86,7 @@
     in:backdropIn
     out:backdropOut
     use:portal
+    use:layer
     use:backdropDismiss={() => closeOnBackdrop && close()}
     role="presentation"
   >

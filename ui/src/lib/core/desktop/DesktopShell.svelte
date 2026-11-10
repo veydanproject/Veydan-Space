@@ -355,18 +355,23 @@
 <!-- The title bar's buttons (client-side decorations): nothing of the app is reachable behind the lock gate (locked, or the recovery flow before its Done). -->
 {#snippet titleButtons()}
   {#if !standaloneNotes}
-    {#if !appLock.gated}
+    {@const gated = appLock.gated}
+    {@const quick = single && !gated ? barTools.length : 0}
+    {@const last = (single ? 1 : 0) + (gated ? 0 : 1)}
+    {#if !gated}
+      {#each titleTools as tool (tool.id)}{@render toolButton(tool)}{/each}
       {#if single}
+        {#if titleTools.length && quick}{@render toolsSep()}{/if}
         {#each barTools as tool (tool.id)}{@render toolButton(tool)}{/each}
       {/if}
-      {#each titleTools as tool (tool.id)}{@render toolButton(tool)}{/each}
     {/if}
+    {#if (!gated && titleTools.length || quick) && last}{@render toolsSep()}{/if}
     {#if single}
       <button class="titlebar-btn" onclick={toggleTheme} aria-label={$t('theme_toggle')} title={$t('theme_toggle')}>
         {@render themeIcon()}
       </button>
     {/if}
-    {#if !appLock.gated}
+    {#if !gated}
       <button
         class="titlebar-btn"
         class:active={isActive('/settings')}
@@ -379,6 +384,11 @@
       </button>
     {/if}
   {/if}
+{/snippet}
+
+<!-- A hairline between two groups of the bar's buttons: the notes | the pass tools | theme and Settings. -->
+{#snippet toolsSep()}
+  <span class="tools-sep" aria-hidden="true"></span>
 {/snippet}
 
 <WindowFrame
@@ -425,28 +435,20 @@
       {/if}
 
       <div class="topbar-right" class:scrolls={navScrolls}>
-        {#if !isCsd && !single}
-          {#each titleTools as tool (tool.id)}
-            <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
-              <Icon name={tool.icon} size={15} />
-            </button>
-          {/each}
-          <button class="theme-toggle" onclick={() => goto('/settings')} title={$t('nav_settings')}>
-            <Icon name="settings" size={15} />
-          </button>
-        {/if}
-        {#if single}
+        {#if !isCsd}
           {#each titleTools as tool (tool.id)}
             <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
               <Icon name={tool.icon} size={15} />
             </button>
           {/each}
         {/if}
+        {#if !isCsd && titleTools.length && barTools.length}{@render toolsSep()}{/if}
         {#each barTools as tool (tool.id)}
           <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
             <Icon name={tool.icon} size={15} />
           </button>
         {/each}
+        {#if ((!isCsd && titleTools.length) || barTools.length)}{@render toolsSep()}{/if}
         <button class="theme-toggle" onclick={toggleTheme} title={$t('theme_toggle')}>
           {@render themeIcon()}
         </button>
@@ -455,6 +457,10 @@
           <button class="theme-toggle labelled" class:active={isActive('/settings')} onclick={toggleSettings} aria-pressed={isActive('/settings')}>
             <Icon name="settings" size={15} />
             <span>{$t('nav_settings')}</span>
+          </button>
+        {:else if !isCsd}
+          <button class="theme-toggle" onclick={() => goto('/settings')} title={$t('nav_settings')}>
+            <Icon name="settings" size={15} />
           </button>
         {/if}
       </div>
@@ -657,6 +663,7 @@
     cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
   }
+  .tools-sep { flex: none; width: 1px; height: 20px; align-self: center; background: var(--border); margin: 0 var(--sp-1); }
   .theme-toggle > :global(.icon) { width: 18px; height: 18px; }
   .theme-toggle.labelled {
     width: auto;

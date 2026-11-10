@@ -14,6 +14,7 @@
     "notes_sync_applied": "cambios recibidos: {n}",
     "notes_btn_open_folder": "Abrir carpeta",
     "notes_btn_toggle_sidebar": "Mostrar u ocultar panel",
+    "notes_btn_show_sidebar": "Mostrar barra lateral",
     "notes_search_placeholder": "Buscar notas…",
     "notes_btn_new": "Nueva",
     "notes_btn_empty_trash": "Vaciar papelera",

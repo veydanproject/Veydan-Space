@@ -66,7 +66,8 @@
 </script>
 
 <!-- One card of rules under column captions, each rule a row of four fields and its delete; the add at
-     the foot. No rules: the empty line and the add in the middle. A narrow window: a rule takes two lines. -->
+     the foot. No rules: the empty line and the add in the middle. A narrow place: the domain on a line of
+     its own, the rest under it. -->
 {#snippet add()}
   <button type="button" class="btn btn-ghost add" onclick={addRow}>
     <Icon name="plus" size={18} /> {$t('settings_capture_add')}
@@ -136,7 +137,13 @@
 
 <style>
   .rules { padding: var(--sp-3) var(--sp-4) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); container-type: inline-size; }
-  .head, .rule-row { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr 1fr var(--control-h); gap: var(--sp-2); align-items: center; }
+  /* A list is not narrower than 160, a text field than 180. */
+  .head, .rule-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(160px, 1fr) minmax(180px, 1.2fr) minmax(160px, 1fr) var(--control-h);
+    gap: var(--sp-2);
+    align-items: center;
+  }
   .head { padding: 0 var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-dim); }
   .rule-input {
     min-width: 0;
@@ -156,15 +163,16 @@
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-6) 0 var(--sp-3); }
   .empty p { margin: 0; font-size: var(--fs-base); color: var(--text-2); }
 
-  /* A narrow window: domain and folder, then tags and template; the delete on the right of the first line. */
-  @container (max-width: 640px) {
+  /* A narrow place (the four in one line would leave the domain under 160): the domain over the
+     whole width with the delete on its right, then folder, tags and template, wrapping as they fit. */
+  @container (max-width: 760px) {
     .head { display: none; }
-    .rule-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-h); padding: var(--sp-3) 0; border-bottom: 1px solid var(--divider); }
-    .domain { grid-area: 1 / 1; }
-    .folder { grid-area: 1 / 2; }
-    .del { grid-area: 1 / 3; }
-    .tags { grid-area: 2 / 1; }
-    .template { grid-area: 2 / 2; }
+    .rule-row { display: flex; flex-wrap: wrap; padding: var(--sp-3) 0; border-bottom: 1px solid var(--divider); }
+    .domain { flex: 1 1 calc(100% - var(--control-h) - var(--sp-2)); order: 0; }
+    .del { flex: 0 0 auto; order: 1; }
+    .folder { flex: 1 1 160px; min-width: 160px; order: 2; }
+    .tags { flex: 1 1 180px; min-width: 180px; order: 3; }
+    .template { flex: 1 1 160px; min-width: 160px; order: 4; }
     .foot { border-top: 0; padding-top: 0; }
   }
 </style>

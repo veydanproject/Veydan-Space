@@ -23,11 +23,13 @@
     /** The name a screen reader says when the sheet has no title (default the title). */
     label?: string;
     children: Snippet;
+    /** The most of the screen the sheet takes (default 0.95); a sheet of suggestions keeps to 0.45 and scrolls its rows inside. */
+    share?: number;
     /** The sheet's actions: under the scrolling body, always in sight (the owner's rule: the buttons stay at the foot, the middle scrolls). */
     footer?: Snippet;
   }
 
-  let { open, title = '', onclose, onback, closable = true, titleAside, expandable = false, label, children, footer }: Props = $props();
+  let { open, title = '', onclose, onback, closable = true, titleAside, expandable = false, label, share = 0.95, children, footer }: Props = $props();
 
   let sheetEl = $state<HTMLDivElement>();
   let dragY = $state(0);
@@ -38,7 +40,7 @@
   let startH = 0;
   let full = $state(false);
 
-  const cap = $derived(Math.max(160, Math.round((viewH - kb) * 0.95)));
+  const cap = $derived(Math.max(160, Math.round(Math.min(viewH * share, (viewH - kb) * 0.95))));
 
   $effect(() => {
     if (open) dragY = 0;

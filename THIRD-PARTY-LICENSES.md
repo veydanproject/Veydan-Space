@@ -245,7 +245,7 @@ Thank you to the authors of the following Cargo crates:
 | crossbeam-queue | 0.3.12 | MIT OR Apache-2.0 |
 | crossbeam-utils | 0.8.21 | MIT OR Apache-2.0 |
 | crunchy | 0.2.4 | MIT * |
-| crypto-bigint | 0.7.6 | Apache-2.0 OR MIT |
+| crypto-bigint | 0.7.10 | Apache-2.0 OR MIT |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 |
 | crypto-primes | 0.7.2 | Apache-2.0 OR MIT |
@@ -254,7 +254,7 @@ Thank you to the authors of the following Cargo crates:
 | ctor | 0.8.0 | Apache-2.0 OR MIT |
 | ctor-proc-macro | 0.0.7 | Apache-2.0 OR MIT |
 | ctr | 0.10.1 | MIT OR Apache-2.0 |
-| ctutils | 0.4.5 | Apache-2.0 OR MIT |
+| ctutils | 0.4.8 | Apache-2.0 OR MIT |
 | curve25519-dalek | 4.1.3 | BSD-3-Clause |
 | curve25519-dalek | 5.0.0-rc.1 | BSD-3-Clause |
 | curve25519-dalek-derive | 0.1.1 | MIT OR Apache-2.0 |
@@ -401,6 +401,7 @@ Thank you to the authors of the following Cargo crates:
 | hashbrown | 0.16.1 | MIT OR Apache-2.0 |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 |
 | hashlink | 0.11.1 | MIT OR Apache-2.0 |
+| hashlink | 0.12.2 | MIT OR Apache-2.0 |
 | heapless | 0.8.0 | MIT OR Apache-2.0 |
 | heapless | 0.9.3 | MIT OR Apache-2.0 |
 | heck | 0.4.1 | MIT OR Apache-2.0 |
@@ -489,7 +490,7 @@ Thank you to the authors of the following Cargo crates:
 | libdbus-sys | 0.2.7 | Apache-2.0 OR MIT |
 | libloading | 0.7.4 | ISC |
 | libredox | 0.1.18 | MIT * |
-| libsqlite3-sys | 0.37.0 | MIT |
+| libsqlite3-sys | 0.39.1 | MIT |
 | libwebrtc | 0.3.51 | Apache-2.0 |
 | link-cplusplus | 1.0.12 | MIT OR Apache-2.0 |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -665,7 +666,7 @@ Thank you to the authors of the following Cargo crates:
 | rscam | 0.5.5 | MIT OR Apache-2.0 |
 | rsqlite-vfs | 0.1.1 | MIT * |
 | rtrb | 0.3.5 | MIT OR Apache-2.0 |
-| rusqlite | 0.39.0 | MIT |
+| rusqlite | 0.41.1 | MIT |
 | russh | 0.62.1 | Apache-2.0 |
 | russh-cryptovec | 0.62.0 | Apache-2.0 |
 | russh-sftp | 2.3.0 | Apache-2.0 |
@@ -752,7 +753,6 @@ Thank you to the authors of the following Cargo crates:
 | sqlx-macros-core | 0.9.0 | MIT OR Apache-2.0 |
 | sqlx-mysql | 0.9.0 | MIT OR Apache-2.0 |
 | sqlx-postgres | 0.9.0 | MIT OR Apache-2.0 |
-| sqlx-sqlite | 0.9.0 | MIT OR Apache-2.0 |
 | ssh-cipher | 0.3.0 | Apache-2.0 OR MIT |
 | ssh-encoding | 0.3.0 | Apache-2.0 OR MIT |
 | ssh-key | 0.7.0-rc.11 | Apache-2.0 OR MIT |

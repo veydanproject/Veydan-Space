@@ -5,12 +5,13 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { api } from '$lib/pass/api';
+  import { readQr } from '$lib/pass/qr';
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import { directory } from '$lib/core/directory';
   import type { TotpEntry, TotpPreview } from '$lib/pass/types';
   import Icon from '$lib/core/Icon.svelte';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
-  import Dialog from '$lib/core/ui/Dialog.svelte';
+  import Drawer from '$lib/core/ui/Drawer.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import TermHint from '$lib/core/ui/TermHint.svelte';
   import { formatError } from '$lib/core/utils';
@@ -18,14 +19,23 @@
   import { isSystemTag, mergeTags, systemTags, userLabels } from '$lib/pass/totp-tags';
   import { notesLinkedToTotp, syncTotpNotes } from '$lib/pass/totp-notes';
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
+  import TotpSecretField, { type KeyChange } from '$lib/pass/components/TotpSecretField.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
 
   interface Props {
     initialTags?: string[];
-    /** Set to edit name, issuer, and tags. Secret stays unchanged. */
+    /** Set to edit name, issuer and tags; its key is shown, copied and replaced in `TotpSecretField`. */
     entry?: TotpEntry | null;
     onclose: () => void;
     onadded?: () => void;
+    /**
+     * `drawer`: a side panel of its own, «Отмена / Сохранить» in its footer (over a page's list);
+     * `host`: in the panel the list is in, that panel's footer calls `save` (disabled while `saving`);
+     * `end`: in a profile's tab, the buttons after the form.
+     */
+    frame?: 'drawer' | 'host' | 'end';
+    saving?: boolean;
   }
 
   const TAG_COLORS = [
@@ -33,7 +43,7 @@
     '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
   ];
 
-  let { initialTags = [], entry = null, onclose, onadded }: Props = $props();
+  let { initialTags = [], entry = null, onclose, onadded, frame = 'drawer', saving = $bindable(false) }: Props = $props();
   const editing = $derived(entry !== null);
 
   let tab = $state<'manual' | 'qr'>('manual');
@@ -72,26 +82,37 @@
   const q = $derived(query.trim().toLowerCase());
   const tagHits = $derived(
     directory.list('note_tag')
-      .filter((tag) => !labelNames.includes(tag.name) && tag.name.toLowerCase().includes(q))
-      .slice(0, 6),
+      .filter((tag) => !labelNames.includes(tag.name) && tag.name.toLowerCase().includes(q)),
   );
   const profileHits = $derived(
     q
       ? directory.list('profile')
           .filter((profile) => !chosenBindings.has(`profile:${profile.id}`) && profile.name.toLowerCase().includes(q))
-          .slice(0, 4)
       : [],
   );
   const workspaceHits = $derived(
     q
       ? directory.list('workspace')
           .filter((ws) => !chosenBindings.has(`workspace:${ws.id}`) && ws.name.toLowerCase().includes(q))
-          .slice(0, 4)
       : [],
   );
   const canCreate = $derived(
     q.length > 0 && !directory.list('note_tag').some((tag) => tag.name.toLowerCase() === q),
   );
+  let tagField = $state<HTMLInputElement | null>(null);
+  let tagList = $state<Suggest | null>(null);
+  const tagItems = $derived<SuggestItem[]>([
+    ...tagHits.map((tag) => ({ key: `tag:${tag.id}`, text: tag.name, dot: tag.color, group: $t('suggest_group_note_tag') })),
+    ...profileHits.map((profile) => ({ key: `profile:${profile.id}`, text: profile.name, mark: 'profile', group: $t('suggest_group_profile') })),
+    ...workspaceHits.map((ws) => ({ key: `workspace:${ws.id}`, text: ws.name, dot: ws.color ?? '', group: $t('suggest_group_workspace') })),
+    ...(canCreate ? [{ key: 'create', text: $t('notes_tags_add'), create: true }] : []),
+  ]);
+  /** A row of the tag field's list: a label, a link, or the new label of what is typed. */
+  function pickTag(item: SuggestItem) {
+    if (item.create) void commitQuery();
+    else if (item.key.startsWith('tag:')) addLabelName(item.text);
+    else addBinding(item.key);
+  }
 
   // QR state
   let qrPreview = $state<TotpPreview | null>(null);
@@ -100,8 +121,10 @@
   let qrLoading = $state(false);
   let fileInput: HTMLInputElement | null = $state(null);
 
-  let saving = $state(false);
   let error = $state('');
+  /** A new key of the entry being edited (null keeps the old one) and its error, under its field. */
+  let keyChange = $state<KeyChange | null>(null);
+  let keyError = $state('');
   // A required field's error stands under that field; any other error is the plate of the form.
   const nameErr = $derived(!!error && error === $t('totp_error_name'));
   const secretErr = $derived(!!error && tab === 'manual' && error === $t('totp_error_secret'));
@@ -233,23 +256,13 @@
     qrLoading = true;
 
     try {
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(bitmap, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-      const jsQR = (await import('jsqr')).default;
-      const result = jsQR(imageData.data, imageData.width, imageData.height);
-
-      if (!result) {
+      const data = await readQr(file);
+      if (!data) {
         qrError = $t('totp_qr_not_found');
         return;
       }
 
-      qrUri = result.data;
+      qrUri = data;
       qrPreview = await api.totp.previewUri(qrUri);
 
       name = qrPreview.name;
@@ -265,9 +278,25 @@
     }
   }
 
-  async function save() {
+  /** The key a save sends: none unless «Сменить ключ» is open; an empty one is an error under its field. */
+  function newKey(): { secret?: string; uri?: string } | null {
+    if (!keyChange) return {};
+    if (keyChange.tab === 'qr') return keyChange.uri ? { uri: keyChange.uri } : null;
+    return keyChange.secret.trim() ? { secret: keyChange.secret.trim() } : null;
+  }
+
+  /** The backend's word for a key that makes no codes (`normalize_secret`, `build_totp`, a QR's link). */
+  function badKey(err: unknown): boolean {
+    const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: unknown }).message) : '';
+    return /^(Invalid secret|Could not decode|Invalid URI)/.test(message);
+  }
+
+  export async function save() {
     error = '';
+    keyError = '';
     if (!name.trim()) { error = $t('totp_error_name'); return; }
+    const key = newKey();
+    if (!key) { keyError = $t('totp_error_secret'); return; }
     if (!editing && tab === 'manual' && !secret.trim()) { error = $t('totp_error_secret'); return; }
     if (!editing && tab === 'qr' && !qrUri) { error = $t('totp_error_secret'); return; }
 
@@ -276,7 +305,7 @@
       if (!(await commitQuery())) return;
       const tags = mergeTags(lockedBindings, extraBindings, labelNames);
       const saved = entry
-        ? await api.totp.update(entry.id, { name: name.trim(), issuer: issuer.trim() || null, tags })
+        ? await api.totp.update(entry.id, { name: name.trim(), issuer: issuer.trim() || null, tags, ...key })
         : tab === 'qr'
           ? await api.totp.add({ name: name.trim(), issuer: issuer.trim() || null, uri: qrUri, tags })
           : await api.totp.add({ name: name.trim(), issuer: issuer.trim() || null, secret: secret.trim(), algorithm, digits, period, tags });
@@ -285,215 +314,210 @@
       onadded?.();
       onclose();
     } catch (err) {
-      error = formatError(err);
+      if (keyChange && badKey(err)) keyError = $t('totp_error_invalid');
+      else error = formatError(err);
     } finally {
       saving = false;
     }
   }
 </script>
 
-<Dialog open title={editing ? $t('totp_edit_title') : $t('totp_add_title')} width="460px" {onclose}>
+{#if frame === 'drawer'}
+  <Drawer open title={editing ? $t('totp_edit_title') : $t('totp_add_title')} width="var(--drawer-w-md)" {onclose} {footer}>
+    {@render form()}
+  </Drawer>
+{:else}
+  {@render form()}
+  {#if frame === 'end'}<div class="end">{@render footer()}</div>{/if}
+{/if}
+
+{#snippet form()}
+  {#if !editing}
+  <div class="tab-bar">
+    <button class="tab" class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
+      <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
+    </button>
+    <button class="tab" class:active={tab === 'qr'} onclick={() => { tab = 'qr'; }}>
+      <Icon name="scan" size={13} /> {$t('totp_tab_qr')}
+    </button>
+  </div>
+  {/if}
+
+  <div class="totp-form">
+    {#if !editing && tab === 'qr'}
+      <div class="qr-section">
+        <p class="hint">{$t('totp_qr_hint')}</p>
+        <button type="button" class="btn btn-ghost" onclick={() => fileInput?.click()} disabled={qrLoading}>
+          <Icon name="image" size={14} />
+          {$t('totp_qr_select')}
+        </button>
+        <input bind:this={fileInput} type="file" accept="image/*" style="display:none" onchange={handleQrFile} />
+        {#if qrLoading}<span class="hint">{$t('loading')}</span>{/if}
+        {#if qrError}<div class="error-msg">{qrError}</div>{/if}
+        {#if qrPreview}
+          <div class="qr-detected">
+            <span style="color:var(--success);display:flex"><Icon name="check" size={14} /></span>
+            {$t('totp_qr_detected')}
+            <span class="masked mono">{$t('totp_qr_secret_masked')} {qrPreview.secret_masked}</span>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    <div class="form-group">
+      <label for="totp-name">{$t('totp_field_name')}</label>
+      <input id="totp-name" type="text" bind:value={name} placeholder={$t('totp_field_name_placeholder')} aria-invalid={nameErr} />
+      {#if nameErr}<div class="error-msg">{error}</div>{/if}
+    </div>
+
+    <div class="form-group">
+      <label for="totp-issuer">{$t('totp_field_issuer')}</label>
+      <input id="totp-issuer" type="text" bind:value={issuer} placeholder={$t('totp_field_issuer_placeholder')} />
+    </div>
+
+    {#if entry}
+      <TotpSecretField entryId={entry.id} bind:change={keyChange} error={keyError} />
+    {/if}
+
+    {#if !editing && tab === 'manual'}
+      <div class="form-group">
+        <div class="label-row">
+          <label for="totp-secret">{$t('totp_field_secret')}</label>
+          <TermHint term={$t('totp_field_secret')}>{$t('totp_hint_secret')}</TermHint>
+        </div>
+        <input id="totp-secret" class="mono" type="text" bind:value={secret} placeholder={$t('totp_field_secret_placeholder')} autocomplete="off" aria-invalid={secretErr} />
+        {#if secretErr}<div class="error-msg">{error}</div>{/if}
+      </div>
+    {/if}
 
     {#if !editing}
-    <div class="tab-bar">
-      <button class="tab" class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
-        <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
-      </button>
-      <button class="tab" class:active={tab === 'qr'} onclick={() => { tab = 'qr'; }}>
-        <Icon name="scan" size={13} /> {$t('totp_tab_qr')}
-      </button>
+    <div class="form-row">
+      <div class="form-group">
+        <div class="label-row">
+          <label for="totp-algo">{$t('totp_field_algorithm')}</label>
+          <TermHint term={$t('totp_field_algorithm')}>{$t('totp_hint_algorithm')}</TermHint>
+        </div>
+        <CustomSelect
+          id="totp-algo"
+          options={[
+            { value: 'SHA1', label: $t('totp_algo_default') },
+            { value: 'SHA256', label: 'SHA256' },
+            { value: 'SHA512', label: 'SHA512' },
+          ]}
+          bind:value={algorithm}
+        />
+      </div>
+      <div class="form-group">
+        <div class="label-row">
+          <label for="totp-digits">{$t('totp_field_digits')}</label>
+          <TermHint term={$t('totp_field_digits')}>{$t('totp_hint_digits')}</TermHint>
+        </div>
+        <CustomSelect
+          id="totp-digits"
+          options={[{ value: '6', label: '6' }, { value: '8', label: '8' }]}
+          value={String(digits)}
+          onchange={(v) => (digits = Number(v))}
+        />
+      </div>
+      <div class="form-group">
+        <div class="label-row">
+          <label for="totp-period">{$t('totp_field_period')}</label>
+          <TermHint term={$t('totp_field_period')}>{$t('totp_hint_period')}</TermHint>
+        </div>
+        <CustomSelect
+          id="totp-period"
+          options={[{ value: '30', label: '30' }, { value: '60', label: '60' }]}
+          value={String(period)}
+          onchange={(v) => (period = Number(v))}
+        />
+      </div>
     </div>
     {/if}
 
-    <div class="totp-form">
-      {#if !editing && tab === 'qr'}
-        <div class="qr-section">
-          <p class="hint">{$t('totp_qr_hint')}</p>
-          <button type="button" class="btn btn-ghost" onclick={() => fileInput?.click()} disabled={qrLoading}>
-            <Icon name="image" size={14} />
-            {$t('totp_qr_select')}
-          </button>
-          <input bind:this={fileInput} type="file" accept="image/*" style="display:none" onchange={handleQrFile} />
-          {#if qrLoading}<span class="hint">{$t('loading')}</span>{/if}
-          {#if qrError}<div class="error-msg">{qrError}</div>{/if}
-          {#if qrPreview}
-            <div class="qr-detected">
-              <span style="color:var(--success);display:flex"><Icon name="check" size={14} /></span>
-              {$t('totp_qr_detected')}
-              <span class="masked mono">{$t('totp_qr_secret_masked')} {qrPreview.secret_masked}</span>
+    <div class="form-group">
+      <label for="totp-label-input">{$t('totp_field_tags')}</label>
+      {#if lockedBindings.length > 0 || extraBindings.length > 0 || labelNames.length > 0}
+        <div class="label-chips">
+          {#each lockedBindings as tag (tag)}
+            <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
+              <ChipMark kind={bindingKind(tag)} />
+              {bindingLabel(tag)}
+            </span>
+          {/each}
+          {#each extraBindings as tag (tag)}
+            <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
+              <ChipMark kind={bindingKind(tag)} />
+              {bindingLabel(tag)}
+              <button type="button" onclick={() => removeBinding(tag)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>×</button>
+            </span>
+          {/each}
+          {#each labelNames as label (label)}
+            <span class="label-chip tinted" style:--chip={labelColor(label)}>
+              <ChipMark kind="tag" />
+              {label}
+              <button type="button" onclick={() => removeLabel(label)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>×</button>
+            </span>
+          {/each}
+        </div>
+      {/if}
+      <input
+        id="totp-label-input"
+        type="text"
+        bind:value={query}
+        placeholder={$t('notes_tags_placeholder')}
+        bind:this={tagField}
+        onfocus={() => (suggest = true)}
+        onblur={() => (suggest = false)}
+        oninput={() => (suggest = true)}
+        onkeydown={(e) => {
+          if (suggest && tagList?.keydown(e)) return;
+          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void commitQuery(); }
+        }}
+      />
+      {#if suggest && tagItems.length > 0}
+        <Suggest bind:this={tagList} items={tagItems} anchor={tagField} label={$t('totp_field_tags')} onpick={pickTag} onclose={() => (suggest = false)}>
+          {#snippet extra()}
+            <div class="color-row">
+              {#each TAG_COLORS as color (color)}
+                <button
+                  type="button"
+                  class="swatch"
+                  class:active={pickedColor === color}
+                  style:background={color}
+                  aria-label={color}
+                  onclick={() => (pickedColor = color)}
+                ></button>
+              {/each}
             </div>
-          {/if}
-        </div>
-      {/if}
-
-      <div class="form-group">
-        <label for="totp-name">{$t('totp_field_name')}</label>
-        <input id="totp-name" type="text" bind:value={name} placeholder={$t('totp_field_name_placeholder')} aria-invalid={nameErr} />
-        {#if nameErr}<div class="error-msg">{error}</div>{/if}
-      </div>
-
-      <div class="form-group">
-        <label for="totp-issuer">{$t('totp_field_issuer')}</label>
-        <input id="totp-issuer" type="text" bind:value={issuer} placeholder={$t('totp_field_issuer_placeholder')} />
-      </div>
-
-      {#if !editing && tab === 'manual'}
-        <div class="form-group">
-          <div class="label-row">
-            <label for="totp-secret">{$t('totp_field_secret')}</label>
-            <TermHint term={$t('totp_field_secret')}>{$t('totp_hint_secret')}</TermHint>
-          </div>
-          <input id="totp-secret" class="mono" type="text" bind:value={secret} placeholder={$t('totp_field_secret_placeholder')} autocomplete="off" aria-invalid={secretErr} />
-          {#if secretErr}<div class="error-msg">{error}</div>{/if}
-        </div>
-      {/if}
-
-      {#if !editing}
-      <div class="form-row">
-        <div class="form-group">
-          <div class="label-row">
-            <label for="totp-algo">{$t('totp_field_algorithm')}</label>
-            <TermHint term={$t('totp_field_algorithm')}>{$t('totp_hint_algorithm')}</TermHint>
-          </div>
-          <CustomSelect
-            id="totp-algo"
-            options={[
-              { value: 'SHA1', label: $t('totp_algo_default') },
-              { value: 'SHA256', label: 'SHA256' },
-              { value: 'SHA512', label: 'SHA512' },
-            ]}
-            bind:value={algorithm}
-          />
-        </div>
-        <div class="form-group">
-          <div class="label-row">
-            <label for="totp-digits">{$t('totp_field_digits')}</label>
-            <TermHint term={$t('totp_field_digits')}>{$t('totp_hint_digits')}</TermHint>
-          </div>
-          <CustomSelect
-            id="totp-digits"
-            options={[{ value: '6', label: '6' }, { value: '8', label: '8' }]}
-            value={String(digits)}
-            onchange={(v) => (digits = Number(v))}
-          />
-        </div>
-        <div class="form-group">
-          <div class="label-row">
-            <label for="totp-period">{$t('totp_field_period')}</label>
-            <TermHint term={$t('totp_field_period')}>{$t('totp_hint_period')}</TermHint>
-          </div>
-          <CustomSelect
-            id="totp-period"
-            options={[{ value: '30', label: '30' }, { value: '60', label: '60' }]}
-            value={String(period)}
-            onchange={(v) => (period = Number(v))}
-          />
-        </div>
-      </div>
-      {/if}
-
-      <div class="form-group">
-        <label for="totp-label-input">{$t('totp_field_tags')}</label>
-        {#if lockedBindings.length > 0 || extraBindings.length > 0 || labelNames.length > 0}
-          <div class="label-chips">
-            {#each lockedBindings as tag (tag)}
-              <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
-                <ChipMark kind={bindingKind(tag)} />
-                {bindingLabel(tag)}
-              </span>
-            {/each}
-            {#each extraBindings as tag (tag)}
-              <span class="context-chip tinted" style:--chip={bindingColor(tag)}>
-                <ChipMark kind={bindingKind(tag)} />
-                {bindingLabel(tag)}
-                <button type="button" onclick={() => removeBinding(tag)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>×</button>
-              </span>
-            {/each}
-            {#each labelNames as label (label)}
-              <span class="label-chip tinted" style:--chip={labelColor(label)}>
-                <ChipMark kind="tag" />
-                {label}
-                <button type="button" onclick={() => removeLabel(label)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>×</button>
-              </span>
-            {/each}
-          </div>
-        {/if}
-        <input
-          id="totp-label-input"
-          type="text"
-          bind:value={query}
-          placeholder={$t('notes_tags_placeholder')}
-          onfocus={() => (suggest = true)}
-          onblur={() => (suggest = false)}
-          onkeydown={(e) => {
-            if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void commitQuery(); }
-          }}
-        />
-        {#if suggest && (tagHits.length > 0 || profileHits.length > 0 || workspaceHits.length > 0 || canCreate)}
-          <!-- mousedown keeps the field focused so the list is not dismissed before the click -->
-          <div class="pick" role="presentation" onmousedown={(e) => e.preventDefault()}>
-            {#each tagHits as tag (tag.id)}
-              <button type="button" class="pick-item" onclick={() => addLabelName(tag.name)}>
-                <span class="dot" style:background={tag.color}></span>
-                {tag.name}
-              </button>
-            {/each}
-            {#each profileHits as profile (profile.id)}
-              <button type="button" class="pick-item" onclick={() => addBinding(`profile:${profile.id}`)}>
-                <ChipMark kind="profile" />
-                {profile.name}
-              </button>
-            {/each}
-            {#each workspaceHits as ws (ws.id)}
-              <button type="button" class="pick-item" onclick={() => addBinding(`workspace:${ws.id}`)}>
-                <span class="dot" style:background={ws.color}></span>
-                {ws.name}
-              </button>
-            {/each}
-            {#if canCreate}
-              <div class="color-row">
-                {#each TAG_COLORS as color (color)}
-                  <button
-                    type="button"
-                    class="swatch"
-                    class:active={pickedColor === color}
-                    style:background={color}
-                    aria-label={color}
-                    onclick={() => (pickedColor = color)}
-                  ></button>
-                {/each}
-              </div>
-              <button type="button" class="pick-item create" onclick={() => commitQuery()}>
-                {$t('notes_tags_add')}
-              </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Notes link to a TOTP entry only where the notes are (Space); Pass has none. -->
-      {#if directory.owned('note')}
-        <TotpNoteLinks notes={noteOptions} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
-      {/if}
-
-      {#if error && !nameErr && !secretErr}
-        <Notice tone="danger">{error}</Notice>
+          {/snippet}
+        </Suggest>
       {/if}
     </div>
 
-  {#snippet footer()}
-      <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
-      <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
-        {saving ? $t('loading') : $t('common_save')}
-      </button>
-  {/snippet}
+    <!-- Notes link to a TOTP entry only where the notes are (Space); Pass has none. -->
+    {#if directory.owned('note')}
+      <TotpNoteLinks notes={noteOptions} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
+    {/if}
 
-</Dialog>
+    {#if error && !nameErr && !secretErr}
+      <Notice tone="danger">{error}</Notice>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet footer()}
+  <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+  <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+    {saving ? $t('loading') : $t('common_save')}
+  </button>
+{/snippet}
 
 <style>
   /* .tab-bar / .tab styling is global (base.css); only local deltas kept below */
   .tab-bar { padding-top: 0.3rem; margin-bottom: var(--sp-4); }
   .tab { justify-content: center; }
+
+  .end { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 
   .totp-form {
     display: flex; flex-direction: column; gap: var(--sp-4);
@@ -551,44 +575,6 @@
     padding: 0;
     font-size: var(--fs-base);
     line-height: var(--lh-icon);
-  }
-
-  .pick {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    margin-top: 0.35rem;
-    padding: 0.35rem;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    max-height: 220px;
-    overflow-y: auto;
-  }
-
-  .pick-item {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    width: 100%;
-    text-align: left;
-    background: none;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    font: inherit;
-    font-size: var(--fs-sm);
-    padding: 0.35rem 0.45rem;
-    cursor: pointer;
-  }
-  .pick-item:hover { background: var(--surface-hover); }
-  .pick-item.create { color: var(--accent-text); font-weight: var(--fw-semibold); }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
 
   .color-row { display: flex; gap: 0.35rem; padding: 0.25rem 0.45rem; }

@@ -76,8 +76,9 @@
   .menu {
     position: absolute; z-index: 10; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
     width: max-content; min-width: 220px; max-width: min(360px, 80vw); max-height: 260px; overflow-y: auto;
-    padding: 6px; border-radius: var(--radius-md); background: var(--surface); color: var(--text);
-    border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg); cursor: default;
+    padding: 6px; border-radius: var(--radius-md); background: var(--glass-bg); color: var(--text);
+    border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg); cursor: default;
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   }
   .menu.below { bottom: auto; top: calc(100% + 10px); }
   .menu.note { padding: 8px 12px; font-size: var(--fs-xs); color: var(--text-2); min-width: 0; }

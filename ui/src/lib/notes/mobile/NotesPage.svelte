@@ -557,8 +557,11 @@
     bottom: 0;
     z-index: 30;
     display: flex;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
+    background: var(--glass-bg);
+    border-top: 1px solid var(--glass-border);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
     height: calc(var(--bar-plate-h) + var(--sab));
     padding-bottom: var(--sab);
   }

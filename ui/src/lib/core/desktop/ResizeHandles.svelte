@@ -35,7 +35,7 @@
 </script>
 
 {#if isTauri}
-  <div class="resize-layer">
+  <div class="resize-layer" data-layer-keep>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="edge n" onmousedown={(e) => resize('North', e)}></div>
     <!-- svelte-ignore a11y_no_static_element_interactions -->

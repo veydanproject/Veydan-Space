@@ -14,6 +14,7 @@
     "notes_sync_applied": "modifiche ricevute: {n}",
     "notes_btn_open_folder": "Apri cartella",
     "notes_btn_toggle_sidebar": "Mostra/nascondi barra laterale",
+    "notes_btn_show_sidebar": "Mostra barra laterale",
     "notes_search_placeholder": "Cerca nelle note…",
     "notes_btn_new": "Nuova",
     "notes_btn_empty_trash": "Svuota il cestino",

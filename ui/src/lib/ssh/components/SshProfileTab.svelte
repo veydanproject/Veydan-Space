@@ -11,6 +11,7 @@
   import SSHConnectionForm from './SSHConnectionForm.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import { t } from '$lib/core/i18n';
 
   interface Props {
@@ -64,6 +65,16 @@
         );
       })
   );
+
+  let searchEl = $state<HTMLInputElement | null>(null);
+  let searchRow = $state<HTMLDivElement | null>(null);
+  let pickerList = $state<Suggest | null>(null);
+  /** The list shows while the search has the focus. */
+  let searching = $state(false);
+  const pickerItems = $derived<SuggestItem[]>(
+    pickerConns.map((c) => ({ key: c.id, text: c.name, icon: 'terminal', hint: `${c.username}@${c.host}:${c.port}` })),
+  );
+  $effect(() => { if (showPicker) searchEl?.focus(); });
 
   async function link(conn: SshConnection) {
     const updated = await api.ssh.connectionUpdate(conn.id, {
@@ -131,33 +142,31 @@
     </div>
 
     {#if showPicker}
-      <div class="picker">
-        <div class="search-row">
-          <Icon name="search" size={13} />
-          <input
-            class="search-input"
-            type="text"
-            bind:value={pickerSearch}
-            placeholder={$t('ssh_search_placeholder')}
-          />
-        </div>
-        <div class="picker-list">
-          {#if pickerConns.length === 0}
-            <div class="empty-state">
-              <p>{pickerSearch ? $t('common_nothing_found') : $t('ssh_picker_all_linked')}</p>
-            </div>
-          {/if}
-          {#each pickerConns as conn (conn.id)}
-            <button class="picker-item" onclick={() => link(conn)}>
-              <div class="pi-info">
-                <span class="pi-name">{conn.name}</span>
-                <span class="pi-sub">{conn.username}@{conn.host}:{conn.port}</span>
-              </div>
-              <Icon name="plus" size={12} />
-            </button>
-          {/each}
-        </div>
+      <div class="search-row" bind:this={searchRow}>
+        <Icon name="search" size={13} />
+        <input
+          class="search-input"
+          type="text"
+          bind:this={searchEl}
+          bind:value={pickerSearch}
+          placeholder={$t('ssh_search_placeholder')}
+          onfocus={() => (searching = true)}
+          onblur={() => (searching = false)}
+          oninput={() => (searching = true)}
+          onkeydown={(e) => { pickerList?.keydown(e); }}
+        />
       </div>
+      {#if searching}
+        <Suggest
+          bind:this={pickerList}
+          items={pickerItems}
+          anchor={searchRow}
+          label={$t('ssh_btn_link')}
+          empty={pickerSearch ? $t('common_nothing_found') : $t('ssh_picker_all_linked')}
+          onpick={(item) => { const conn = pickerConns.find((c) => c.id === item.key); if (conn) void link(conn); }}
+          onclose={() => { showPicker = false; pickerSearch = ''; }}
+        />
+      {/if}
     {/if}
 
     <SSHConnectionsList
@@ -181,7 +190,7 @@
 
 <Drawer
   open={showForm}
-  width="440px"
+  width="var(--drawer-w-md)"
   title={editConn ? $t('ssh_form_edit') : $t('ssh_form_new')}
   onclose={closeForm}
 >
@@ -215,33 +224,20 @@
     height: 34px; padding: 0 13px; font-size: var(--fs-sm); border-radius: var(--radius);
   }
 
-  .picker {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
+  /* The search of the connections to link: a field; they are the list of suggestions under it. */
   .search-row {
-    display: flex; align-items: center; gap: 0.35rem;
-    padding: 0.35rem var(--sp-2);
-    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--sp-2);
+    min-height: var(--control-h); padding: 0 var(--sp-3);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field);
     color: var(--text-2);
   }
+  .search-row:focus-within { border-color: var(--accent-border); }
   .search-input {
-    flex: 1; background: none; border: none; outline: none;
+    flex: 1; min-width: 0; height: auto; padding: 0; background: none; border: none; outline: none; box-shadow: none;
     color: var(--text); font-size: var(--fs-sm); font-family: inherit;
   }
+  .search-input:focus { box-shadow: none; }
   .search-input::placeholder { color: var(--text-3); }
-  .picker-list { max-height: 160px; overflow-y: auto; }
-  .picker-item {
-    width: 100%; display: flex; align-items: center; justify-content: space-between;
-    padding: 0.35rem 0.6rem; background: none; border: none; cursor: pointer;
-    text-align: left; gap: var(--sp-2); transition: background 0.12s;
-  }
-  .picker-item:hover { background: var(--surface-hover); }
-  .pi-info { display: flex; flex-direction: column; gap: 1px; }
-  .pi-name { font-size: var(--fs-sm); color: var(--text); }
-  .pi-sub { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); }
 
   /* «Управление всеми» — вторичная 46px кнопка, прижата к низу вкладки
      (тот же паттерн, что стек действий на вкладке Info) */

@@ -6,6 +6,7 @@
   import { t } from '$lib/core/i18n';
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import { directory } from '$lib/core/directory';
+  import type { TotpEntry } from '$lib/pass/types';
   import TotpList from './TotpList.svelte';
   import TotpAddModal from './TotpAddModal.svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -28,6 +29,17 @@
 
   let search = $state('');
   let showAdd = $state(false);
+  let editing = $state<TotpEntry | null>(null);
+  const formOpen = $derived(showAdd || editing !== null);
+  /** In a drawer the form takes the list's place in it; over the page's pane it is a side panel of its own. */
+  const inPlace = $derived(as === 'drawer' && formOpen);
+  let form = $state<ReturnType<typeof TotpAddModal>>();
+  let saving = $state(false);
+
+  function closeForm() {
+    showAdd = false;
+    editing = null;
+  }
   /** null = show all; workspace id string = filter to that workspace */
   let activeWorkspace = $state<string | null>(null);
 
@@ -42,6 +54,10 @@
       activeWorkspace = context === 'workspace' && contextId ? contextId : null;
       totpStore.ensureLoaded();
     }
+  });
+
+  $effect(() => {
+    if (!open) closeForm();
   });
 
   $effect(() => {
@@ -80,20 +96,37 @@
     return list;
   });
 
+  function formTags(): string[] {
+    return !editing && context === 'workspace' && contextId ? [`workspace:${contextId}`] : [];
+  }
+
   function toggleWorkspace(id: string) {
     activeWorkspace = activeWorkspace === id ? null : id;
   }
 </script>
 
-<Frame bind:open title={$t('totp_title')}>
+<Frame
+  bind:open
+  title={inPlace ? $t(editing ? 'totp_edit_title' : 'totp_add_title') : $t('totp_title')}
+  footer={inPlace ? formActions : undefined}
+>
   {#snippet actions()}
-    <span class="count-badge">{filteredEntries.length}</span>
-    <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
-      <Icon name="plus" size={18} />
-    </button>
+    {#if !inPlace}
+      <span class="count-badge">{filteredEntries.length}</span>
+      <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
+        <Icon name="plus" size={18} />
+      </button>
+    {/if}
   {/snippet}
 
   {#snippet subheader()}
+    {#if inPlace}
+      <div class="panel-back">
+        <button type="button" class="btn btn-ghost btn-sm" onclick={closeForm}>
+          <Icon name="chevron-left" size={14} /> {$t('common_back')}
+        </button>
+      </div>
+    {:else}
       <div class="panel-search">
         <div class="search-wrap">
           <span class="search-icon"><Icon name="search" size={13} /></span>
@@ -131,23 +164,33 @@
           {/each}
         </div>
       {/if}
+    {/if}
   {/snippet}
 
-      {#if totpStore.loading && !totpStore.loaded}
+      {#if inPlace}
+        <TotpAddModal bind:this={form} bind:saving frame="host" entry={editing} initialTags={formTags()} onclose={closeForm} />
+      {:else if totpStore.loading && !totpStore.loaded}
         <div class="loading-msg">{$t('loading')}</div>
       {:else}
         <!-- No add button in the empty list: the head has it. -->
-        <TotpList entries={filteredEntries} showProfileBadge={true} query={search.trim()} />
+        <TotpList entries={filteredEntries} showProfileBadge={true} query={search.trim()} onedit={(entry) => (editing = entry)} />
       {/if}
 
 </Frame>
 
-{#if showAdd}
-  <TotpAddModal
-    initialTags={context === 'workspace' && contextId ? [`workspace:${contextId}`] : []}
-    onclose={() => (showAdd = false)}
-  />
+<!-- Keyed by the entry: another TOTP gets a fresh form, no fields carried over. -->
+{#if as === 'pane' && formOpen}
+  {#key editing?.id}
+    <TotpAddModal entry={editing} initialTags={formTags()} onclose={closeForm} />
+  {/key}
 {/if}
+
+{#snippet formActions()}
+  <button type="button" class="btn btn-ghost" onclick={closeForm}>{$t('common_cancel')}</button>
+  <button type="button" class="btn btn-primary" onclick={() => form?.save()} disabled={saving}>
+    {saving ? $t('loading') : $t('common_save')}
+  </button>
+{/snippet}
 
 <style>
   .count-badge {
@@ -160,6 +203,8 @@
     padding: 0.05rem 0.4rem;
     font-weight: var(--fw-semibold);
   }
+
+  .panel-back { padding: var(--sp-3) var(--sp-4) 0; }
 
   .panel-search {
     padding: var(--sp-3) var(--sp-4) 0;
@@ -195,7 +240,6 @@
   .search-input:focus {
     outline: none;
     border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .ws-chips {

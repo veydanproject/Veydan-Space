@@ -125,6 +125,7 @@
     "ssh_keys_count": "Chiavi: {n}",
     "ssh_keys_add": "Aggiungi chiave",
     "ssh_keys_generate": "Genera chiave",
+    "terminal_new_connection": "Nuova connessione",
     "ssh_keys_empty": "Ancora nessuna chiave SSH. Generane o importane una.",
     "ssh_key_col_name": "Nome",
     "ssh_key_col_type": "Tipo",

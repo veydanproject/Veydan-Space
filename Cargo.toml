@@ -15,6 +15,7 @@ members = ["apps/space", "crates/build-cfg", "crates/cloud", "crates/communities
 exclude = ["crates/messenger"]
 
 [patch.crates-io]
+sqlx-sqlite = { path = "vendor/sqlx-sqlite" }
 # The C++ bridge of the calls engine (crates/messenger/rtc), the same copy
 # the messenger workspace patches in; a product takes the engine through
 # messenger-runtime, and cargo wants the patch in the workspace it builds.

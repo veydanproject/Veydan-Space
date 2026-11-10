@@ -12,6 +12,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
+  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import ExportProfileModal from '$lib/browser/components/ExportProfileModal.svelte';
@@ -37,25 +38,8 @@
   // The other modules' tabs for a profile — TOTP, passwords, notes, SSH — in their declared order.
   const tabs = registry.views('profile', 'tab');
   let activeTab = $state('info');
-  let tabsEl = $state<HTMLDivElement | null>(null);
-  const drawerBase = 440;
-  let drawerWidth = $state(drawerBase);
-
-  // Grow the drawer just enough for the tab labels and their counts.
-  $effect(() => {
-    for (const tab of tabs) tab.count?.(profile.id);
-    $locale;
-    const bar = tabsEl;
-    if (!bar) return;
-    const styles = getComputedStyle(bar);
-    const pad = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-    const gap = parseFloat(styles.columnGap || styles.gap) || 0;
-    let content = pad;
-    const buttons = [...bar.children] as HTMLElement[];
-    for (const button of buttons) content += button.getBoundingClientRect().width;
-    content += gap * Math.max(0, buttons.length - 1);
-    drawerWidth = Math.min(640, Math.max(drawerBase, Math.ceil(content + 8)));
-  });
+  /** What may widen the tabs — their counts and their words: the row's faded edges are measured again. */
+  const tabCounts = $derived([$locale, ...tabs.map((tab) => tab.count?.(profile.id) ?? 0)]);
 
   const relTime = (iso: string): string => fmtRelTime(iso, $locale);
   let actionLoading = $state(false);
@@ -185,20 +169,20 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-<Drawer open title={profile.name} width="{drawerWidth}px" {onclose}>
+<Drawer open title={profile.name} {onclose}>
   {#snippet actions()}
     <span class="status-badge" class:running={isRunning}>
       {isRunning ? $t('status_running') : $t('status_stopped')}
     </span>
   {/snippet}
   {#snippet subheader()}
-    <div class="tab-bar psp-tabs" bind:this={tabsEl}>
-      <button class="tab" class:active={activeTab === 'info'} onclick={() => (activeTab = 'info')}>
+    <div class="tab-bar psp-tabs" role="tablist" use:scrollTabs={{ selected: activeTab, watch: tabCounts, wheel: true, fadeStart: true }}>
+      <button class="tab" role="tab" aria-selected={activeTab === 'info'} class:active={activeTab === 'info'} onclick={() => (activeTab = 'info')}>
         <Icon name="info" size={12} /> {$t('panel_tab_info')}
       </button>
       {#each tabs as tab (tab.id)}
         {@const count = tab.count?.(profile.id) ?? 0}
-        <button class="tab" class:active={activeTab === tab.id} onclick={() => (activeTab = tab.id)}>
+        <button class="tab" role="tab" aria-selected={activeTab === tab.id} class:active={activeTab === tab.id} onclick={() => (activeTab = tab.id)}>
           <Icon name={tab.icon} size={12} /> {$t(tab.title as TranslationKey)}
           {#if count > 0}
             <span class="tab-count">{count}</span>
@@ -229,7 +213,7 @@
           <span class="info-label">{$t('panel_proxy')}</span>
           <span class="info-value" class:no-proxy={!proxy} class:proxy-gone={!proxy && !!profile.proxy_id}>
             {#if proxy}
-              <Icon name="globe" size={12} />
+              <Icon name="network" size={12} />
               {proxy.name}
               {#if proxyChip(proxy)}
                 <span class="country-badge">{proxyChip(proxy)}</span>
@@ -452,8 +436,18 @@
     padding: var(--sp-2) 0.65rem;
   }
 
-  .psp-tabs { overflow: visible; }
+  /* The panel is 440 whatever its tabs: the row scrolls sideways in its own strip when they do not fit, a clipped
+     edge fades (scrollTabs marks it). */
+  .psp-tabs { overflow-x: auto; scrollbar-width: none; }
+  .psp-tabs::-webkit-scrollbar { display: none; }
   .psp-tabs :global(.tab) { flex-shrink: 0; }
+  .psp-tabs :global(.tab:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .psp-tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
+  .psp-tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
+  .psp-tabs:global(.fade-start.fade-end) {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+  }
 
   .panel-actions {
     display: grid;

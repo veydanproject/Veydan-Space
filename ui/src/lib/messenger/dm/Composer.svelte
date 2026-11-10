@@ -416,7 +416,7 @@
   $effect(() => {
     if (!cmdShown) return;
     const outside = (e: PointerEvent) => {
-      if (root?.contains(e.target as Node)) return;
+      if (root?.contains(e.target as Node) || cmdBox?.contains(e.target as Node)) return;
       cmdAway = text;
       cmdAll = false;
     };
@@ -437,23 +437,19 @@
     cmdAt = stepRow(cmdAt, by, cmdList.length);
     queueMicrotask(() => cmdBox?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }));
   }
-  /** A command picked goes at once; the `/` and the letters typed for it go from the field, other words stay. */
-  async function pickCommand(c: BotCommand) {
-    const typed = typedCommand(text) !== null;
-    const before = text;
+  /** A command picked goes into the field, `/name ` with the cursor after the space, for its words to be added and sent as any message: it takes the place of the `/` and the letters typed for it; other words stay after it. */
+  function pickCommand(c: BotCommand) {
+    const head = `/${c.name} `;
+    text = typedCommand(text) !== null ? head : head + text.trimStart();
     cmdAll = false;
     cmdAway = null;
-    if (typed) {
-      text = '';
-      sel = null;
-      queueMicrotask(resize);
-    }
-    try {
-      await onsend(`/${c.name}`, null);
-    } catch {
-      if (typed && !text) text = before;
-      queueMicrotask(resize);
-    }
+    sel = null;
+    queueMicrotask(() => {
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(head.length, head.length);
+      resize();
+    });
   }
 
   // The words go as Markdown: set by the format menu (or by editing a
@@ -519,6 +515,28 @@
     document.body.appendChild(node);
     return { destroy() { node.remove(); } };
   }
+
+  // A computer: the commands are in the body of the page as the context menus — inside the conversation's
+  // column the engine of Linux (WebKitGTK) blurs nothing under their glass. Fixed 8 over the composer, as wide as its field.
+  function cmdsToBody(node: HTMLElement) {
+    if (!touch) return toBody(node);
+  }
+  let cmdPlace = $state('');
+  $effect(() => {
+    if (touch || !cmdShown || !root) return;
+    const el = root;
+    const place = () => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const l = parseFloat(cs.paddingLeft) || 0, rr = parseFloat(cs.paddingRight) || 0;
+      cmdPlace = `left: ${r.left + l}px; width: ${r.width - l - rr}px; bottom: ${document.documentElement.clientHeight - r.top + 8}px`;
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    window.addEventListener('resize', place);
+    return () => { ro.disconnect(); window.removeEventListener('resize', place); };
+  });
 
   /** The phone's format menu stands under the head of the chat: its bottom edge, read when the menu comes up. */
   function barTop(): string {
@@ -634,7 +652,7 @@
       // ↑/↓ move, Enter (a computer's) or Tab picks, Esc puts the menu away.
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveCommand(e.key === 'ArrowDown' ? 1 : -1); return; }
       const c = cmdList[cmdAt];
-      if (c && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !touch))) { e.preventDefault(); void pickCommand(c); return; }
+      if (c && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !touch))) { e.preventDefault(); pickCommand(c); return; }
       if (e.key === 'Escape') { e.preventDefault(); closeCommands(); return; }
     }
     const mark = touch ? null : markOfKey(e);
@@ -702,8 +720,10 @@
 {/snippet}
 
 {#snippet slashButton()}
-  <button class="tool slash" class:on={cmdShown} tabindex="-1" {disabled} aria-expanded={cmdShown}
-    onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleCommands} title={$t('msg_bot_commands')} aria-label={$t('msg_bot_commands')}>/</button>
+  <button class="tool" class:on={cmdShown} tabindex="-1" {disabled} aria-expanded={cmdShown}
+    onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleCommands} title={$t('msg_bot_commands')} aria-label={$t('msg_bot_commands')}>
+    <Icon name="slash" size={18} />
+  </button>
 {/snippet}
 
 {#snippet expandButton()}
@@ -770,15 +790,17 @@
   {/if}
   {#if attachments}{@render attachments()}{/if}
   {#if cmdShown}
-    <!-- The commands of the bot, over the composer: a tap or Enter sends one. -->
-    <div class="cmds" role="listbox" aria-label={$t('msg_bot_commands')} bind:this={cmdBox}>
-      {#each cmdList as c, i (c.name)}
-        <button class="cmd" class:on={i === cmdAt} role="option" aria-selected={i === cmdAt} tabindex="-1"
-          onpointerdown={keepFocus} onmousedown={keepFocus} onpointerenter={() => (cmdAt = i)} onclick={() => pickCommand(c)}>
-          <span class="cmd-name">/{c.name}</span>
-          {#if c.about}<span class="cmd-about">{c.about}</span>{/if}
-        </button>
-      {/each}
+    <!-- The commands of the bot, over the composer: a tap, Enter or Tab puts one into the field. -->
+    <div class="cmds" use:cmdsToBody style={cmdPlace} bind:this={cmdBox}>
+      <div class="cmd-list" role="listbox" aria-label={$t('msg_bot_commands')}>
+        {#each cmdList as c, i (c.name)}
+          <button class="cmd" class:on={i === cmdAt} role="option" aria-selected={i === cmdAt} tabindex="-1"
+            onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => pickCommand(c)}>
+            <span class="cmd-name">/{c.name}</span>
+            {#if c.about}<span class="cmd-about">{c.about}</span>{/if}
+          </button>
+        {/each}
+      </div>
     </div>
   {/if}
   <!-- A computer: over the field. The phone has both at the top of the chat (below), so the field never moves. -->
@@ -794,11 +816,10 @@
         <TouchRecorder bind:this={heldEl} bind:phase={heldPhase} kind={held} locked={heldLocked} dx={gesture.dx} dy={gesture.dy}
           oncancel={endHeld} ondone={(c) => recorded(held!, c)} onerror={recordingFailed} />
       {/if}
-        <!-- A chat on a phone (the owner: «только переставить», c7.js): attach left of the field, the smile inside it at its end. -->
-        {#if tools && !held}<div class="side-tools">{@render tools()}</div>{/if}
-        <!-- Stays in the page while a recording goes: taking the field away would close the keyboard. -->
+        <!-- Stays in the page while a recording goes: taking the field away would close the keyboard.
+             The order of every composer (ui-unify 08): the smile · the words · «/» · the bigger editor · attach. -->
         <div class="field" class:away={!!held}>
-          {#if commands.length}{@render slashButton()}{/if}
+          {@render emojiToggle()}
           <!-- A tap on the field while the panel is open brings the keyboard back. -->
           <textarea
             bind:this={el} bind:value={text} rows="1" {disabled}
@@ -806,35 +827,37 @@
             oninput={() => { cmdAll = false; resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onpointerup={readSel} {onpaste} onfocus={() => focused(true)} onblur={() => { sel = null; focused(false); }}
             onpointerdown={() => { if (dock === 'open') { el?.removeAttribute('inputmode'); dock = 'tokb'; } }}
           ></textarea>
-          {@render emojiToggle()}
+          {#if commands.length}{@render slashButton()}{/if}
           {#if onexpand}{@render expandButton()}{/if}
+          {#if tools && !held}<div class="side-tools">{@render tools()}</div>{/if}
         </div>
       {@render mainButton()}
     {:else if recording === "voice"}
       <RecorderBar oncancel={() => (recording = null)} ondone={(c) => recorded("voice", c)} onerror={recordingFailed} />
     {:else}
-    <!-- The order of the design kit: attach · the field with the smile at its end · the main button (voice or circle, send once there is something to send). -->
-    {#if tools}{@render tools()}{/if}
+    <!-- The order of every composer (ui-unify 08): the smile · the words · «/» · «MD» · the bigger editor · attach, then the main button
+         (voice or circle, send once there is something to send). In a narrow pane the field with the smile is the first line. -->
     <div class="dfield">
       {#if emojiOpen}
         <EmojiPicker onpick={(e) => { insert(e); usageStore.used(e); }} onclose={() => (emojiOpen = false)} />
       {/if}
+      <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
+        onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
+        <Icon name="smile" size={18} />
+      </button>
       <textarea
         bind:this={el} bind:value={text} rows="1" {disabled}
         placeholder={attached ? $t('msg_attach_caption') : (placeholder ?? $t('msg_composer_placeholder'))}
         oninput={() => { cmdAll = false; resize(); readSel(); }} {onkeydown} onselect={readSel} onkeyup={readSel} onmouseup={readSel} {onpaste} {oncontextmenu} onblur={() => (sel = null)}
       ></textarea>
-      {#if commands.length}{@render slashButton()}{/if}
-      <button class="tool emoji" class:on={emojiOpen} data-emoji-toggle tabindex="-1" {disabled}
-        onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (emojiOpen = !emojiOpen)} title={$t("msg_emoji_title")}>
-        <Icon name="smile" size={18} />
-      </button>
     </div>
+    {#if commands.length}{@render slashButton()}{/if}
     {#if markdown}
       <button class="tool mdtag" class:on={md} tabindex="-1" aria-pressed={md} {disabled} onpointerdown={keepFocus} onmousedown={keepFocus}
         onclick={() => (md = !md)} title={$t(md ? 'msg_fmt_md_off' : 'msg_fmt_md_on')}>MD</button>
     {/if}
     {#if onexpand}{@render expandButton()}{/if}
+    {#if tools}{@render tools()}{/if}
     {@render mainButton()}
     {/if}
   </div>
@@ -881,32 +904,43 @@
     background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .row:focus-within { border-color: var(--accent-border); }
-  /* A computer: the field holds the smile at its end, and the emoji panel opens over it, its right edge on the smile. */
+  /* A computer: the field begins with the smile, and the emoji panel opens over it, its left edge on the field's. */
   .dfield { position: relative; flex: 1; min-width: 0; display: flex; align-items: flex-end; }
   .dfield textarea { flex: 1; min-width: 0; }
-  .dfield :global(.picker) { left: auto; right: 0; bottom: calc(100% + 14px); }
-  /* «/» beside the smile in a chat with a bot: the glyph itself, the weight of the icons beside it. */
-  .tool.slash { font: inherit; font-size: 19px; font-weight: var(--fw-semibold); line-height: var(--lh-icon); }
-  /* The commands of the bot: a menu over the composer, framed as the context menus. Opaque: inside the
-     composer no backdrop filter reaches the conversation (the glass of the composer is its backdrop root),
-     and the lines of a bubble would show through the words. */
+  .dfield :global(.picker) { left: 0; right: auto; bottom: calc(100% + 14px); }
+  /* The commands of the bot: glass over the conversation as the context menus (.context-menu), 8 over the
+     field (a computer: fixed in the body, placed by cmdPlace); six rows on a computer (44, the gaps 1, the padding 4), the rest scroll inside. */
   .cmds {
-    position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: calc(100% + 6px); z-index: 20;
-    display: flex; flex-direction: column; gap: 1px; max-height: min(288px, 45vh); overflow-y: auto; padding: 4px;
-    background: var(--surface); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    position: fixed; z-index: var(--z-popover);
+    background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
+    box-shadow: var(--glass-highlight);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     animation: menu-in var(--dur-fast) var(--ease) both;
   }
+  /* The shadow (16 down, 40 wide) ends at the menu's bottom edge: none of it falls on the field. Its own layer:
+     a clip-path on the glass itself takes its blur away in WebKit. */
+  .cmds::before {
+    content: ''; position: absolute; inset: -1px; z-index: -1; border-radius: inherit; pointer-events: none;
+    box-shadow: var(--shadow-lg); clip-path: inset(-64px -64px 0 -64px);
+  }
+  /* One grid for the menu: the column of the commands as wide as the longest of them, so every description
+     begins on one line. The bar is the app's own (base.css). */
+  .cmd-list {
+    display: grid; grid-template-columns: max-content minmax(0, 1fr); align-content: start; gap: 1px var(--sp-3);
+    max-height: calc(6 * 44px + 5px + 8px); overflow-y: auto; padding: 4px;
+    border-radius: calc(var(--radius-md) - 1px);
+  }
+  /* A row as the row of a menu (.menu-item): grey under the pointer; the one chosen by the arrows (Enter's) grey with the keyboard's ring too — the pointer does not move it. */
   .cmd {
-    display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; min-height: 36px; padding: var(--sp-1) var(--sp-3);
-    border: none; border-radius: var(--radius); background: transparent; color: var(--text);
+    grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 44px; padding: var(--sp-1) var(--sp-3);
+    border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text);
     font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer;
   }
-  /* The chosen one in the accent; the command in mono, the words beside it quieter (mockups c1.js). */
-  .cmd.on { background: var(--accent-bg); }
-  .cmd-name { flex-shrink: 0; min-width: 80px; font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--accent-text); }
-  .cmd-about { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-sm); }
-  .cmd.on .cmd-about { color: var(--text); }
+  .cmd:hover { background: var(--surface-hover); }
+  .cmd.on { background: var(--surface-hover); box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
+  /* The command in mono, the words beside it quieter. */
+  .cmd-name { grid-column: 1; min-width: 80px; font-family: var(--font-mono); font-weight: var(--fw-medium); color: var(--text); }
+  .cmd-about { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-sm); }
   @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
   @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
@@ -942,7 +976,8 @@
   /* Its right edge on the button's: the row has no padding on the right. */
   .hint {
     position: absolute; right: 0; bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
-    padding: 7px 12px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+    padding: 7px 12px; border-radius: var(--radius); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .tool { width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -1012,18 +1047,20 @@
       --attach-w: 40px; --attach-h: 40px;
     }
     .field:focus-within { border-color: transparent; }
-    /* The attach of a chat, left of the field (c7.js), the size it had inside it. */
+    /* The attach, the last button in the field. */
     .side-tools { flex: none; display: flex; align-items: flex-end; min-height: 40px; --attach-w: 40px; --attach-h: 40px; }
     .field.away { position: absolute; width: 1px; height: 1px; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; border: none; }
     .field textarea { min-width: 0; border: none; border-radius: 0; background: none; font-size: var(--fs-md); line-height: var(--lh-snug); padding: 8px 2px; min-height: 38px; max-height: 82px; }
     /* The field shows the focus, not the text inside it. */
     .field textarea:focus { outline: none; box-shadow: none; }
     .field textarea::placeholder { white-space: nowrap; }
+    /* The same space between the words and the buttons on both sides of them. */
     .field .tool { width: 40px; height: 40px; margin-left: 2px; }
-    .field .tool.slash { margin-left: 0; }
-    /* A finger's rows, the width of the bar. */
-    .cmds { left: var(--sp-2); right: var(--sp-2); }
-    .cmd { min-height: 44px; align-items: center; }
+    .field .tool[data-emoji-toggle] { margin-left: 0; margin-right: 2px; }
+    /* A finger's rows, the width of the bar: five of them, no higher than 45% of the screen over the keyboard. */
+    .cmds { position: absolute; z-index: 20; left: var(--sp-2); right: var(--sp-2); bottom: calc(100% + 8px); }
+    .cmd-list { max-height: min(calc(5 * 52px + 4px + 8px), calc(45vh - 2px)); }
+    .cmd { min-height: 52px; }
     /* Over the conversation, under its head; in the body of the page, so no glass of the composer holds it. */
     .fmt-top {
       position: fixed; left: 50%; z-index: 30; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
@@ -1062,8 +1099,8 @@
     }
   }
   /*
-   * A chat, a channel and the comments of a post (ROO-297) alike, mockups c7.js: one pill 48 — attach, the words, the smile
-   * (on a phone the field's own order) — and beside it the round main button 48. The pill is drawn under the row's buttons,
+   * A chat, a channel and the comments of a post (ROO-297) alike, mockups c7.js: one pill 48 — the smile, the words, the
+   * buttons, attach last (ui-unify 08) — and beside it the round main button 48. The pill is drawn under the row's buttons,
    * up to the send; the send keeps its states.
    */
   .composer .row {

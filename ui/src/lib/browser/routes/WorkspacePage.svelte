@@ -15,6 +15,7 @@
     ProxyCheckResult,
   } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import KanbanBoard from '$lib/browser/components/KanbanBoard.svelte';
@@ -277,7 +278,7 @@
           {$t(countKey('workspaces_profiles_n', profiles.length, $locale), { n: String(profiles.length) })}
         </span>
         <span class="badge">
-          <Icon name="globe" size={12} />
+          <Icon name="network" size={12} />
           {$t(countKey('workspaces_proxies_n', proxies.length, $locale), { n: String(proxies.length) })}
         </span>
         {#if runningCount > 0}
@@ -299,22 +300,19 @@
             <Icon name={drawer.icon} size={12} />{$t((drawer.label ?? drawer.title) as TranslationKey)}
           </button>
         {/each}
-        <button
-          class="btn btn-ghost btn-sm"
-          class:action-hidden={tab === 'proxies'}
-          style="min-height: 36px"
-          onclick={() => (showImportModal = true)}
-        >
-          <Icon name="file-import" size={18} />{$t('workspace_btn_import')}
-        </button>
-        <button
-          class="icon-btn create"
-          onclick={tab === 'proxies' ? openCreateProxy : () => (showCreatePanel = true)}
-          title={tab === 'proxies' ? $t('proxies_add') : $t('workspace_btn_add_profile')}
-          aria-label={tab === 'proxies' ? $t('proxies_add') : $t('workspace_btn_add_profile')}
-        >
-          <Icon name="plus" size={18} />
-        </button>
+        <!-- Import is the profiles' alone; the create button is the last, at the right edge on every tab -->
+        {#if tab === 'proxies'}
+          <button class="btn btn-primary" onclick={openCreateProxy}>
+            <Icon name="plus" size={15} />{$t('proxies_new')}
+          </button>
+        {:else}
+          <button class="btn btn-ghost btn-sm" style="min-height: 36px" onclick={() => (showImportModal = true)}>
+            <Icon name="file-import" size={18} />{$t('workspace_btn_import')}
+          </button>
+          <button class="btn btn-primary" onclick={() => (showCreatePanel = true)}>
+            <Icon name="plus" size={15} />{$t('workspace_btn_new_profile')}
+          </button>
+        {/if}
       </div>
     </div>
 
@@ -339,14 +337,14 @@
 
     <!-- Tabs + View Switcher (segment controls per redesign) -->
     <div class="tabs-row">
-      <div class="seg">
-        <button class="seg-btn" class:active={tab === 'board'} onclick={() => (tab = 'board')}>
+      <div class="tab-bar">
+        <button class="tab" class:active={tab === 'board'} onclick={() => (tab = 'board')}>
           <Icon name="columns" size={18} />{$t('workspace_tab_board')}
         </button>
-        <button class="seg-btn" class:active={tab === 'proxies'} onclick={() => (tab = 'proxies')}>
-          <Icon name="globe" size={18} />{$t('workspace_tab_proxies')}
+        <button class="tab" class:active={tab === 'proxies'} onclick={() => (tab = 'proxies')}>
+          <Icon name="network" size={18} />{$t('workspace_tab_proxies')}
         </button>
-        <button class="seg-btn" class:active={tab === 'topology'} onclick={() => (tab = 'topology')}>
+        <button class="tab" class:active={tab === 'topology'} onclick={() => (tab = 'topology')}>
           <Icon name="git-fork" size={18} />{$t('workspace_tab_topology')}
         </button>
       </div>
@@ -404,7 +402,7 @@
         <div class="proxies-tab">
           {#if proxies.length === 0}
             <div class="empty-state">
-              <Icon name="globe" size={36} strokeWidth={1.5} />
+              <Icon name="network" size={36} strokeWidth={1.5} />
               <p>{$t('proxies_empty')}</p>
               <button class="btn btn-primary btn-sm" onclick={openCreateProxy}>
                 <Icon name="plus" size={13} />{$t('proxies_empty_add')}
@@ -432,9 +430,9 @@
                 <p>{$t('common_nothing_found')}</p>
               </div>
             {:else}
-              <div class="proxy-table-wrap">
-                <table class="proxy-table">
-                  <thead>
+              <div class="data-table table-scroll" use:pinnedHead>
+                <table class="proxy-table pinned-head">
+                  <thead class="data-table-head">
                     <tr>
                       <th class="col-num">#</th>
                       <th>{$t('proxy_col_name')}</th>
@@ -447,7 +445,7 @@
                   <tbody>
                     {#each filteredProxies as proxy, i (proxy.id)}
                       {@const result = proxyCheckResults[proxy.id]}
-                      <tr class="proxy-row" onclick={() => (proxyPanelProxy = proxy)}>
+                      <tr class="data-table-row proxy-row" onclick={() => (proxyPanelProxy = proxy)}>
                         <td class="col-num">
                           <span class="row-num">{i + 1}</span>
                         </td>
@@ -615,8 +613,7 @@
 
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 
-  .ws-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-left: auto; }
-  .action-hidden { visibility: hidden; pointer-events: none; }
+  .ws-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-left: auto; }
 
   /* Tabs row: segment control + view switcher (both .seg primitives) */
   .tabs-row {
@@ -638,25 +635,13 @@
   /* The proxies search names four fields: the width of the SSH keys search, so it is read whole. */
   .search-field.wide { width: 300px; }
 
-  .proxy-table-wrap {
-    flex: 1; min-height: 0; overflow-y: auto;
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    background: var(--surface);
-  }
+  /* Shared .data-table gives the look; the list keeps its height by rows and scrolls inside when long. */
+  .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 
-  .proxy-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  .proxy-table thead {
-    position: sticky; top: 0; z-index: 1;
-    background: var(--surface); border-bottom: 1px solid var(--border);
-  }
-  .proxy-table th {
-    padding: var(--sp-3) var(--sp-4); text-align: left;
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); white-space: nowrap;
-  }
+  .proxy-table { width: 100%; font-size: var(--fs-sm); }
+  .proxy-table th { padding: 0 var(--sp-4); text-align: left; font: inherit; white-space: nowrap; }
   .proxy-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
-  .proxy-row { border-bottom: 1px solid var(--divider); cursor: pointer; transition: background 0.12s; }
-  .proxy-row:last-child { border-bottom: none; }
-  .proxy-row:hover { background: var(--surface-row-hover); }
+  .proxy-row { cursor: pointer; }
 
   .col-num { width: 44px; }
   .col-type { width: 90px; }

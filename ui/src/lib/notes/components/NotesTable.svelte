@@ -5,6 +5,7 @@
 <script lang="ts">
   import type { NoteFolder, NoteListItem } from '$lib/notes/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import { t, locale, type TranslationKey } from '$lib/core/i18n';
   import { relTime } from '$lib/core/utils';
   import { facetKeys, facetValue, facetsOf } from '$lib/notes/facets';
@@ -68,6 +69,8 @@
     }
   }
   let chosen = $state<ColKey[] | null>(loadCols());
+  /** The table is scrolled sideways: the pinned title gets its line on the right. */
+  let scrolled = $state(false);
   let colsOpen = $state(false);
 
   /** Tag prefixes present in the vault, most used first */
@@ -168,7 +171,7 @@
     <td>
       <div class="chips">
         {#each plainTags(n) as tg (tg.id)}
-          <span class="chip tinted" style:--chip={tg.color}>{tg.name}</span>
+          <span class="label tinted" style:--chip={tg.color}>{tg.name}</span>
         {/each}
       </div>
     </td>
@@ -192,16 +195,18 @@
   {:else}
     {@const f = facetValue(n.tags, col.slice('facet:'.length))}
     <td>
-      {#if f}<span class="chip tinted" style:--chip={f.color}>{f.value}</span>{/if}
+      {#if f}<span class="label tinted" style:--chip={f.color}>{f.value}</span>{/if}
     </td>
   {/if}
 {/snippet}
 
 <svelte:window onclick={() => (colsOpen = false)} />
 
-<div class="wrap" class:touch>
-  <table>
-    <thead>
+<!-- The pinned title has no background of its own: a column scrolled under it is cut at its edge (pinnedHead). -->
+<div class="wrap" class:touch class:data-table={!touch} class:scrolled use:pinnedHead={{ column: true, disabled: touch }}
+  onscroll={(e) => (scrolled = e.currentTarget.scrollLeft > 0)}>
+  <table class:pinned-head={!touch}>
+    <thead class:data-table-head={!touch}>
       <tr>
         {@render header('title')}
         {#each cols as col (col)}
@@ -243,11 +248,12 @@
     </thead>
     <tbody>
       {#each sorted as n (n.id)}
-        <tr class:active={n.id === activeId} onclick={() => onselect(n.id)}>
+        {@const title = n.title || $t('notes_untitled')}
+        <tr class:data-table-row={!touch} class:active={n.id === activeId} onclick={() => onselect(n.id)}>
           <td>
             <div class="title">
-              {#if n.pinned}<Icon name="pin" size={10} />{/if}
-              <span>{n.title || $t('notes_untitled')}</span>
+              <span class="pin">{#if n.pinned}<Icon name="pin" size={10} />{/if}</span>
+              <span class="title-text" title={title}>{title}</span>
             </div>
           </td>
           {#each cols as col (col)}
@@ -265,6 +271,8 @@
 
 <style>
   .wrap { overflow: auto; }
+  /* The desktop's table fills the list's column and scrolls itself (NotesPage); the phone's scrolls with its page. */
+  .wrap:not(.touch) { flex: 1; min-height: 0; }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   th { text-align: left; padding: 0 0.4rem 0.3rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .th {
@@ -280,27 +288,52 @@
   tbody tr.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   /* Flex only on wrappers: a flex `td` drops out of the table layout */
   .title { display: flex; align-items: center; gap: 0.35rem; min-width: 0; max-width: 320px; }
-  .title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The pin's place: kept on the desktop so the titles start in one line, none on the phone without a pin. */
+  .pin { display: inline-flex; flex-shrink: 0; }
+  .touch .pin:not(:has(svg)) { display: none; }
   .muted { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
   .draft { color: var(--warn-text); }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-  .chip {
-    display: inline-block; padding: 0.1rem 0.45rem; border-width: 1px; border-style: solid; border-radius: var(--radius-pill);
-    font-size: var(--fs-xs); white-space: nowrap;
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+  /* A tag: the label of the notes list (22, a pill, its text in the middle), not the toggle .chip of base.css. */
+  .label {
+    display: inline-flex; align-items: center; box-sizing: border-box; height: 22px; padding: 0 9px;
+    border-width: 1px; border-style: solid; border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1; white-space: nowrap;
   }
   .entity { display: inline-flex; align-items: center; color: var(--text-2); }
   .empty { padding: var(--sp-4); text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
   .cols-th { width: 1.6rem; text-align: right; }
   .cols { position: relative; display: inline-block; }
 
-  /* Desktop: the columns keep their width and the table scrolls sideways under a pinned title */
-  .wrap:not(.touch) td, .wrap:not(.touch) th { white-space: nowrap; }
-  .wrap:not(.touch) th:first-child, .wrap:not(.touch) td:first-child {
-    position: sticky; left: 0; z-index: 1;
-    background: var(--surface);
+  /* Desktop: the common .data-table — header 36, rows 44, everything in the middle; the columns keep their width
+     and the table scrolls sideways under a pinned title. The rows' lines are the cells' own (separate borders), so
+     they run under the pinned title too. The title is the table itself, no background of its own (the row's hover
+     and choice are the row's); what scrolls under it is cut at its edge (pinnedHead), so nothing shows through
+     it, and a line on its right only while scrolled. */
+  .wrap:not(.touch) table { border-collapse: separate; border-spacing: 0; }
+  .wrap:not(.touch) th {
+    height: 36px; padding: 0 var(--sp-4); border-bottom: 1px solid var(--border);
+    font: inherit; font-size: var(--fs-xs); vertical-align: middle;
   }
-  .wrap:not(.touch) tbody tr:hover td:first-child { background: var(--surface-2); }
-  .wrap:not(.touch) tbody tr.active td:first-child { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+  .wrap:not(.touch) .th { color: inherit; font-size: inherit; }
+  .wrap:not(.touch) .th.on { color: var(--text); }
+  .wrap:not(.touch) td { height: 44px; padding: 0 var(--sp-4); border-bottom: 1px solid var(--divider); white-space: nowrap; }
+  .wrap:not(.touch) tbody tr:last-child td { border-bottom: 0; }
+  /* The hover and the choice are the cells': a row's own background is not cut under the pinned head with them. */
+  .wrap:not(.touch) tbody tr:hover, .wrap:not(.touch) tbody tr.active { background: none; }
+  .wrap:not(.touch) td { transition: background 0.12s; }
+  .wrap:not(.touch) tbody tr:hover > td { background: var(--surface-row-hover); }
+  .wrap:not(.touch) tbody tr.active > td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .wrap:not(.touch) .chips { flex-wrap: nowrap; }
+  .wrap:not(.touch) .title { min-width: 220px; }
+  .wrap:not(.touch) .pin { width: 10px; }
+  /* The head is pinned at the top over the rows (.pinned-head); the title at the left over the other cells; the
+     title's head, the corner, at both and over everything. */
+  .wrap:not(.touch) th { z-index: 2; }
+  .wrap:not(.touch) th:first-child, .wrap:not(.touch) td:first-child { position: sticky; left: 0; z-index: 1; }
+  .wrap:not(.touch) th:first-child { top: 0; z-index: 3; }
+  .wrap.scrolled th:first-child, .wrap.scrolled td:first-child { box-shadow: inset -1px 0 0 var(--border); }
 
   /* Touch: two columns, the title takes the room and is cut with an ellipsis; rows of finger size */
   .touch table { table-layout: fixed; font-size: var(--fs-md); }

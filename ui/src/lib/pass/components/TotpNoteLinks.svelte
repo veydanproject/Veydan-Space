@@ -8,6 +8,7 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
 
   interface NoteOpt {
     id: string;
@@ -28,11 +29,14 @@
 
   let query = $state('');
   let open = $state(false);
+  let field = $state<HTMLInputElement | null>(null);
+  let list = $state<Suggest | null>(null);
 
   const q = $derived(query.trim().toLowerCase());
   const hits = $derived(
-    q ? notes.filter((n) => !selected.includes(n.id) && n.title.toLowerCase().includes(q)).slice(0, 6) : [],
+    q ? notes.filter((n) => !selected.includes(n.id) && n.title.toLowerCase().includes(q)) : [],
   );
+  const items = $derived(hits.map((n): SuggestItem => ({ key: n.id, text: n.title, mark: 'note' })));
 
   function titleOf(id: string): string {
     return notes.find((n) => n.id === id)?.title ?? id;
@@ -65,26 +69,21 @@
   <input
     id={inputId}
     type="text"
+    bind:this={field}
     bind:value={query}
     placeholder={$t('pw_bind_note_search')}
     autocomplete="off"
     onfocus={() => (open = true)}
     onblur={() => (open = false)}
+    oninput={() => (open = true)}
+    onkeydown={(e) => { if (open) list?.keydown(e); }}
   />
-  {#if open && hits.length}
-    <div class="pick" role="presentation" onmousedown={(e) => e.preventDefault()}>
-      {#each hits as note (note.id)}
-        <button type="button" class="pick-item" onclick={() => add(note.id)}>
-          <ChipMark kind="note" />
-          {note.title}
-        </button>
-      {/each}
-    </div>
+  {#if open && items.length}
+    <Suggest bind:this={list} {items} anchor={field} label={$t('pw_bind_note')} onpick={(item) => add(item.key)} onclose={() => (open = false)} />
   {/if}
 </div>
 
 <style>
-  .links { position: relative; }
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
   .chip {
     display: inline-flex;
@@ -109,33 +108,4 @@
     line-height: var(--lh-icon);
   }
   .m-field .x { min-width: 32px; min-height: 32px; }
-  .pick {
-    position: absolute;
-    z-index: 2;
-    left: 0;
-    right: 0;
-    top: 100%;
-    margin-top: var(--sp-1);
-    padding: var(--sp-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-drawer);
-    box-shadow: var(--shadow-lg);
-  }
-  .pick-item {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    width: 100%;
-    min-height: 36px;
-    padding: var(--sp-2);
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    text-align: left;
-  }
-  .m-field .pick-item { min-height: var(--touch); }
-  .pick-item:hover { background: var(--surface-hover); }
 </style>

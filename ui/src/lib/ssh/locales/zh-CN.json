@@ -125,6 +125,7 @@
     "ssh_keys_count": "{n} 个密钥",
     "ssh_keys_add": "添加密钥",
     "ssh_keys_generate": "生成密钥",
+    "terminal_new_connection": "新建连接",
     "ssh_keys_empty": "还没有 SSH 密钥。请生成或导入一个。",
     "ssh_key_col_name": "名称",
     "ssh_key_col_type": "类型",

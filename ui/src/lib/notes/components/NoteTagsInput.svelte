@@ -7,6 +7,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import { binding, type EntityKind } from '$lib/core/bindings';
   import { entityKind, entityKinds, ensureEntitiesLoaded, searchEntities, type EntitySummary } from '$lib/notes/context';
   import { labelPickerText } from '$lib/notes/label-kinds';
@@ -51,14 +52,12 @@
   const suggestions = $derived(
     allTags
       .filter((t) => !selectedNames.has(normalizeTagName(t.name)) && t.name.toLowerCase().includes(inputValue.toLowerCase()))
-      .slice(0, 6)
   );
 
   const folderSuggestions = $derived(
     inputValue.trim().length > 0
       ? folders
           .filter(f => !activeFolderIds.includes(f.id) && f.name.toLowerCase().includes(inputValue.toLowerCase()))
-          .slice(0, 4)
       : []
   );
 
@@ -66,13 +65,11 @@
   const entitySuggestions = $derived.by(() => {
     const q = inputValue.trim();
     const kinds = (q ? entityKinds().map((d) => d.kind) : ['totp', 'password']) as EntityKind[];
-    const max = q ? 3 : 6;
-    const out: { binding: string; kind: EntityKind; kindLabel: TranslationKey; entity: EntitySummary }[] = [];
+    const out: { binding: string; kind: EntityKind; entity: EntitySummary }[] = [];
     for (const kind of kinds) {
-      for (const entity of searchEntities(kind, q, max)) {
+      for (const entity of searchEntities(kind, q, Infinity)) {
         const b = binding(kind, entity.id);
-        const def = entityKind(kind);
-        if (def && !activeBindings.includes(b)) out.push({ binding: b, kind, kindLabel: def.label, entity });
+        if (entityKind(kind) && !activeBindings.includes(b)) out.push({ binding: b, kind, entity });
       }
     }
     return out;
@@ -84,6 +81,25 @@
   const isNew = $derived(
     inputValue.trim().length > 0 && !findTag(allTags, inputValue)
   );
+
+  let list = $state<Suggest | null>(null);
+  const items = $derived<SuggestItem[]>([
+    ...suggestions.map((s) => ({ key: `tag:${s.id}`, text: s.name, dot: s.color, group: $t('suggest_group_note_tag') })),
+    ...folderSuggestions.map((f) => ({ key: `folder:${f.id}`, text: f.name, dot: f.color, group: $t('suggest_group_note_folder') })),
+    ...entitySuggestions.map((s) => ({
+      key: s.binding, text: s.entity.name, group: $t(`suggest_group_${s.kind}` as TranslationKey),
+      ...(s.entity.color ? { dot: s.entity.color } : { mark: s.kind }),
+    })),
+    ...(isNew ? [{ key: 'create', text: $t('notes_tag_add'), create: true }] : []),
+  ]);
+
+  /** A row of the list: a tag, a folder, an entity to bind, or the new tag of what is typed. */
+  function pick(item: SuggestItem) {
+    if (item.create) void addTag(inputValue, selectedColor);
+    else if (item.key.startsWith('tag:')) void addTag(item.text);
+    else if (item.key.startsWith('folder:')) { onaddFolder?.(item.key.slice('folder:'.length)); close(); }
+    else { onaddBinding?.(item.key); close(); }
+  }
 
   /** The popup opens leftwards when the + is too close to the right edge of the editor (which clips it). */
   let alignRight = $state(false);
@@ -124,6 +140,7 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (list?.keydown(e)) return;
     if ((e.key === 'Enter' || e.key === ',') && inputValue.trim()) {
       e.preventDefault();
       void addTag(inputValue, selectedColor);
@@ -178,56 +195,32 @@
           <div class="hint">{pickerText.hint}</div>
         {/if}
 
-        {#if suggestions.length > 0 || folderSuggestions.length > 0 || entitySuggestions.length > 0}
-          <div class="suggestions">
-            {#each suggestions as s (s.id)}
-              <button class="sug-item" onmousedown={(e) => { e.preventDefault(); void addTag(s.name); }}>
-                <span class="sug-dot" style="background:{s.color}"></span>
-                {s.name}
-              </button>
-            {/each}
-            {#each folderSuggestions as f (f.id)}
-              <button class="sug-item" onmousedown={(e) => { e.preventDefault(); onaddFolder?.(f.id); close(); }}>
-                <span class="sug-dot" style="background:{f.color}"></span>
-                {f.name}
-                <span class="sug-folder-label">{$t('ctx_kind_note_folder')}</span>
-              </button>
-            {/each}
-            {#each entitySuggestions as s (s.binding)}
-              <button class="sug-item" onmousedown={(e) => { e.preventDefault(); onaddBinding?.(s.binding); close(); }}>
-                {#if s.entity.color}<span class="sug-dot" style="background:{s.entity.color}"></span>{:else}<ChipMark kind={s.kind} />{/if}
-                {s.entity.name}
-                <span class="sug-folder-label">{$t(s.kindLabel)}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        {#if isNew}
-          <div class="color-row">
-            {#each TAG_COLORS as c}
-              <button
-                class="color-swatch"
-                class:active={selectedColor === c}
-                style="background:{c}"
-                aria-label={$t('notes_color', { c })}
-                onclick={() => (selectedColor = c)}
-              ></button>
-            {/each}
-            <label
-              class="color-swatch color-swatch-custom"
-              class:active={!TAG_COLORS.includes(selectedColor)}
-              title={$t('notes_color_custom')}
-            >
-              <input type="color" bind:value={selectedColor} />
-              {#if !TAG_COLORS.includes(selectedColor)}
-                <span class="custom-dot" style="background:{selectedColor}"></span>
-              {/if}
-            </label>
-          </div>
-          <button class="btn btn-primary btn-sm create-btn" onclick={() => addTag(inputValue, selectedColor)}>
-            {$t('notes_tag_add')}
-          </button>
+        {#if items.length > 0}
+          <Suggest bind:this={list} {items} anchor={inputEl} label={$t('notes_label_title')} onpick={pick} onclose={close}>
+            {#snippet extra()}
+              <div class="color-row">
+                {#each TAG_COLORS as c}
+                  <button
+                    class="color-swatch"
+                    class:active={selectedColor === c}
+                    style="background:{c}"
+                    aria-label={$t('notes_color', { c })}
+                    onclick={() => (selectedColor = c)}
+                  ></button>
+                {/each}
+                <label
+                  class="color-swatch color-swatch-custom"
+                  class:active={!TAG_COLORS.includes(selectedColor)}
+                  title={$t('notes_color_custom')}
+                >
+                  <input type="color" bind:value={selectedColor} />
+                  {#if !TAG_COLORS.includes(selectedColor)}
+                    <span class="custom-dot" style="background:{selectedColor}"></span>
+                  {/if}
+                </label>
+              </div>
+            {/snippet}
+          </Suggest>
         {/if}
       </div>
     {/if}
@@ -326,47 +319,11 @@
   .popup-input:focus { border-color: var(--accent-border); }
   .hint { padding: 0 0.1rem; }
 
-  .suggestions {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .sug-item {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem var(--sp-2);
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: var(--fs-sm);
-    color: var(--text);
-    text-align: left;
-    transition: background 0.1s;
-  }
-  .sug-item:hover { background: var(--surface); }
-
-  .sug-folder-label {
-    margin-left: auto;
-    font-size: var(--fs-xs);
-    color: var(--text-3);
-    flex-shrink: 0;
-  }
-
-  .sug-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
   .color-row {
     display: flex;
     gap: 0.3rem;
     flex-wrap: wrap;
+    padding: var(--sp-1) var(--sp-2);
   }
 
   .color-swatch {
@@ -409,7 +366,4 @@
     border: 1.5px solid rgba(255,255,255,0.7);
     pointer-events: none;
   }
-
-  /* .btn.btn-primary covers colors/hover; keep only the left-aligned label delta */
-  .create-btn { justify-content: flex-start; text-align: left; }
 </style>

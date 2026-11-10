@@ -130,8 +130,8 @@
     display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3); padding: 0 var(--sp-4); flex-shrink: 0;
     background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
   }
-  /* The pill is the field: its border and halo are the one focus mark. */
-  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  /* The pill is the field: its border is the one focus mark. */
+  .search:focus-within { border-color: var(--accent-border); }
   .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }

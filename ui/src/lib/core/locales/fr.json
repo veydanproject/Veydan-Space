@@ -511,7 +511,16 @@
     "setup_progress": "{done} sur {total}",
     "setup_dismiss": "Masquer",
     "setup_sync": "Activer la synchronisation",
-    "settings_lock_recovery_new_title": "Votre nouvelle clé de récupération"
+    "settings_lock_recovery_new_title": "Votre nouvelle clé de récupération",
+    "suggest_group_note_tag": "Tags",
+    "suggest_group_note_folder": "Dossiers",
+    "suggest_group_workspace": "Espaces de travail",
+    "suggest_group_profile": "Profils",
+    "suggest_group_proxy": "Proxys",
+    "suggest_group_ssh": "Connexions SSH",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Mots de passe",
+    "suggest_group_note": "Notes"
   },
   "mobile": {
     "app_launcher": "Applications",

@@ -423,12 +423,18 @@ pub async fn password_copy(
     lock: tauri::State<'_, Lock>,
 ) -> CmdResult<()> {
     let mut revealed = password_reveal(id, "password".into(), core, lock).await?;
+    copy_secret(Zeroizing::new(std::mem::take(&mut revealed.value))).await
+}
+
+/// Put `secret` on the clipboard, out of the desktop's clipboard histories,
+/// and take it off again after 30 s unless something else was copied since.
+#[cfg(desktop)]
+pub(crate) async fn copy_secret(secret: Zeroizing<String>) -> CmdResult<()> {
     // Both copies are wiped when they go; the clipboard's own is the system's.
-    let secret = Zeroizing::new(std::mem::take(&mut revealed.value));
     let to_write = secret.clone();
     tokio::task::spawn_blocking(move || {
         let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-        // The password stays out of the clipboard histories of the desktop (KDE hint, Windows, macOS).
+        // The secret stays out of the clipboard histories of the desktop (KDE hint, Windows, macOS).
         #[cfg(target_os = "linux")]
         use arboard::SetExtLinux as _;
         #[cfg(target_os = "macos")]
@@ -1130,8 +1136,10 @@ mod tests {
             name: Some("github-work".into()),
             issuer: Some("Elsewhere".into()),
             tags: Some(vec![]),
+            secret: None,
+            uri: None,
         };
-        totp_update(totp.id.clone(), issuer, app.state())
+        totp_update(totp.id.clone(), issuer, app.state(), app.state())
             .await
             .unwrap();
         assert_eq!(label_writes(&core).await, names_only);

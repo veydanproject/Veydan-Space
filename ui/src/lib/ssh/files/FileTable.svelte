@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import { t, locale } from '$lib/core/i18n';
   import { formatBytes, formatDateTime } from '$lib/core/utils';
   import type { FileEntry } from '$lib/ssh/types';
@@ -33,6 +34,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="file-table-wrap"
+  use:pinnedHead
   oncontextmenu={(e) => {
     // Right-click on empty space (not a row) → panel-level menu
     if ((e.target as HTMLElement).closest('.file-row')) return;
@@ -40,8 +42,8 @@
     onemptycontextmenu(e.clientX, e.clientY);
   }}
 >
-  <table class="file-table">
-    <thead>
+  <table class="file-table pinned-head">
+    <thead class="data-table-head">
       <tr>
         {#each columns as col (col.key)}
           <th class={col.cls}>
@@ -95,17 +97,12 @@
 
   .file-table {
     width: 100%;
-    border-collapse: collapse;
     table-layout: fixed;
     font-size: var(--fs-sm);
   }
 
+  /* The head: the common .data-table-head, pinned, no background (.pinned-head) */
   thead th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--surface-2);
-    border-bottom: 1px solid var(--border);
     text-align: left;
     padding: 0;
   }
@@ -115,7 +112,8 @@
     align-items: center;
     gap: var(--sp-1);
     width: 100%;
-    padding: var(--sp-2) var(--sp-3);
+    height: 36px;
+    padding: 0 var(--sp-3);
     background: none;
     border: none;
     color: var(--text-2);

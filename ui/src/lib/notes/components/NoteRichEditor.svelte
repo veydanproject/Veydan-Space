@@ -290,6 +290,15 @@
   let tplFrom = 0;
   let tplPicker: PlaceholderPicker | null = $state(null);
 
+  /** Where the caret is on the screen: the list of `[[` or `{{` goes under its line (the query may wrap past the marker's). */
+  function caretBox(): { left: number; top: number; bottom: number } | null {
+    try {
+      return editor ? editor.view.coordsAtPos(editor.state.selection.from) : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Text of the current block before the caret, or null when not in a collapsed text selection. */
   function textBeforeCaret(): { before: string; caretPos: number } | null {
     if (!editor || readonly) return null;
@@ -404,9 +413,9 @@
     </form>
   {/if}
   {#if wikiOpen}
-    <WikiLinkPicker bind:this={wikiPicker} bind:index={wikiIndex} query={wikiQuery} {notes} {excludeId} onpick={pickWikiLink} />
+    <WikiLinkPicker bind:this={wikiPicker} bind:index={wikiIndex} query={wikiQuery} {notes} {excludeId} anchor={hostEl} caret={caretBox} onpick={pickWikiLink} />
   {:else if tplOpen}
-    <PlaceholderPicker bind:this={tplPicker} bind:index={tplIndex} query={tplQuery} preview={placeholderPreview} onpick={pickPlaceholder} />
+    <PlaceholderPicker bind:this={tplPicker} bind:index={tplIndex} query={tplQuery} preview={placeholderPreview} anchor={hostEl} caret={caretBox} onpick={pickPlaceholder} />
   {/if}
   {#if imgOpen}
     <div class="img-bar" style="left: {imgPos.x}px; top: {imgPos.y}px">
@@ -449,10 +458,12 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.25rem 0.4rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
     color: var(--text-3);
   }
   /* Reset the global input chrome from base.css */
@@ -486,10 +497,12 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.2rem 0.4rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
     max-width: 260px;
   }
   .img-name {
@@ -627,7 +640,9 @@
     position: relative;
   }
   .host :global(th > p), .host :global(td > p) { margin: 0; }
-  .host :global(th) { background: var(--surface-2); color: var(--text); }
+  /* The head has no background: its text is semibold and a line of 2 is under the head row, the grid of 1 stays. */
+  .host :global(th) { color: var(--text); font-weight: var(--fw-semibold); }
+  .host :global(tr:first-child > th) { border-bottom-width: 2px; }
   .host :global(.selectedCell::after) {
     content: '';
     position: absolute;

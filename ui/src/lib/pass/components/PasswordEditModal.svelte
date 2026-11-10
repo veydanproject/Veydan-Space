@@ -16,8 +16,8 @@
   import { isSystemTag, mergeTags, systemTags, userLabels } from '$lib/core/entity-tags';
   import { parseBinding, isEntityKind } from '$lib/core/bindings';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import type { PasswordEntry } from '$lib/pass/types';
-  import Dialog from '$lib/core/ui/Dialog.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
 
@@ -25,9 +25,15 @@
     entry?: PasswordEntry | null;
     initialTags?: string[];
     onclose: () => void;
+    /**
+     * Where «Отмена / Сохранить» go. `host`: the panel the form is shown in has them in its footer
+     * (a `submit` button of form `pw-edit-form`, disabled while `saving`); `end`: after the form (a profile's tab).
+     */
+    buttons?: 'host' | 'end';
+    saving?: boolean;
   }
 
-  let { entry = null, initialTags = [], onclose }: Props = $props();
+  let { entry = null, initialTags = [], onclose, buttons = 'host', saving = $bindable(false) }: Props = $props();
 
   let title = $state('');
   let username = $state('');
@@ -49,26 +55,53 @@
   let error = $state('');
   // The field the error is about: its line goes under it; any other at the end of the form.
   const errField = $derived(!error ? '' : error === $t('pw_err_title') ? 'title' : error === $t('pw_err_password') ? 'password' : '');
-  let saving = $state(false);
 
   const editing = $derived(entry !== null);
   const q = $derived(query.trim().toLowerCase());
   const chosen = $derived(new Set(tags));
   // Labels, profiles, workspaces and notes come through the catalog of entities; a product without their owner offers none.
   const tagHits = $derived(
-    directory.list('note_tag').filter((tag) => !userLabels(tags).includes(tag.name) && (!q || tag.name.toLowerCase().includes(q))).slice(0, 8),
+    directory.list('note_tag').filter((tag) => !userLabels(tags).includes(tag.name) && (!q || tag.name.toLowerCase().includes(q))),
   );
   const profileHits = $derived(
-    directory.list('profile').filter((profile) => !chosen.has(`profile:${profile.id}`) && (!q || profile.name.toLowerCase().includes(q))).slice(0, 6),
+    directory.list('profile').filter((profile) => !chosen.has(`profile:${profile.id}`) && (!q || profile.name.toLowerCase().includes(q))),
   );
   const workspaceHits = $derived(
-    directory.list('workspace').filter((ws) => !chosen.has(`workspace:${ws.id}`) && (!q || ws.name.toLowerCase().includes(q))).slice(0, 6),
+    directory.list('workspace').filter((ws) => !chosen.has(`workspace:${ws.id}`) && (!q || ws.name.toLowerCase().includes(q))),
   );
   const noteHits = $derived(
     q
-      ? directory.list('note').filter((n) => !chosen.has(`note:${n.id}`) && n.name.toLowerCase().includes(q)).slice(0, 6)
+      ? directory.list('note').filter((n) => !chosen.has(`note:${n.id}`) && n.name.toLowerCase().includes(q))
       : [],
   );
+
+  let tagField = $state<HTMLInputElement | null>(null);
+  let tagList = $state<Suggest | null>(null);
+  const tagItems = $derived<SuggestItem[]>([
+    ...tagHits.map((tag) => ({ key: `tag:${tag.id}`, text: tag.name, dot: tag.color, group: $t('suggest_group_note_tag') })),
+    ...profileHits.map((profile) => ({ key: `profile:${profile.id}`, text: profile.name, mark: 'profile', group: $t('suggest_group_profile') })),
+    ...workspaceHits.map((ws) => ({ key: `workspace:${ws.id}`, text: ws.name, dot: ws.color ?? '', group: $t('suggest_group_workspace') })),
+    ...noteHits.map((n) => ({ key: `note:${n.id}`, text: n.name, mark: 'note', group: $t('suggest_group_note') })),
+  ]);
+  /** A row of the tag field's list: a label or a link. */
+  function pickTag(item: SuggestItem) {
+    if (item.key.startsWith('tag:')) addLabel(item.text);
+    else addBinding(item.key);
+  }
+
+  const tq = $derived(totpQuery.trim().toLowerCase());
+  const totpHits = $derived(
+    totpStore.list.filter((item) => !totpIds.includes(item.id) && `${item.issuer ?? ''} ${item.name} ${item.tags.join(' ')}`.toLowerCase().includes(tq)),
+  );
+  const totpItems = $derived<SuggestItem[]>(
+    totpHits.map((item) => ({ key: item.id, text: item.issuer ? `${item.issuer} · ${item.name}` : item.name, mark: 'totp' })),
+  );
+  let totpField = $state<HTMLInputElement | null>(null);
+  let totpList = $state<Suggest | null>(null);
+  function pickTotp(id: string) {
+    totpIds = [...totpIds, id];
+    totpQuery = '';
+  }
 
   onMount(() => {
     void totpStore.ensureLoaded();
@@ -251,183 +284,155 @@
   }
 </script>
 
-<Dialog open title={editing ? $t('pw_edit_title') : $t('cmd_passwords_create')} width="460px" {onclose}>
-  <!-- A form: Enter in a field saves, as the Save button does. -->
-  <form id="pw-edit-form" class="form" onsubmit={(e) => { e.preventDefault(); void save(); }}>
-    <div class="form-group">
-      <label for="pw-title">{$t('pw_field_title')}</label>
-      <input id="pw-title" bind:value={title} autocomplete="off" aria-invalid={errField === 'title'} />
-      {#if errField === 'title'}<div class="error-msg">{error}</div>{/if}
-    </div>
-    <div class="form-group">
-      <label for="pw-user">{$t('pw_field_username')}</label>
-      <input id="pw-user" bind:value={username} autocomplete="off" />
-    </div>
-    <div class="form-group">
-      <label for="pw-url">{$t('pw_field_url')}</label>
-      <input id="pw-url" bind:value={url} autocomplete="off" />
-    </div>
-    <div class="form-group">
-      <label for="pw-secret">{$t('pw_field_password')}</label>
-      <!-- Reveal and generate sit inside the field, so the field keeps its width and its hint fits. -->
-      <span class="secret">
+<!-- A form: Enter in a field saves, as the Save button does. -->
+<form id="pw-edit-form" class="form" onsubmit={(e) => { e.preventDefault(); void save(); }}>
+  <div class="form-group">
+    <label for="pw-title">{$t('pw_field_title')}</label>
+    <input id="pw-title" bind:value={title} autocomplete="off" aria-invalid={errField === 'title'} />
+    {#if errField === 'title'}<div class="error-msg">{error}</div>{/if}
+  </div>
+  <div class="form-group">
+    <label for="pw-user">{$t('pw_field_username')}</label>
+    <input id="pw-user" bind:value={username} autocomplete="off" />
+  </div>
+  <div class="form-group">
+    <label for="pw-url">{$t('pw_field_url')}</label>
+    <input id="pw-url" bind:value={url} autocomplete="off" />
+  </div>
+  <div class="form-group">
+    <label for="pw-secret">{$t('pw_field_password')}</label>
+    <!-- Reveal and generate sit inside the field, so the field keeps its width and its hint fits. -->
+    <span class="secret">
+      <input
+        id="pw-secret"
+        class="mono"
+        type={showPassword ? 'text' : 'password'}
+        bind:value={password}
+        autocomplete="new-password"
+        placeholder={editing ? $t('pw_unchanged') : ''}
+        title={editing ? $t('pw_unchanged') : undefined}
+        aria-invalid={errField === 'password'}
+      />
+      <button
+        type="button"
+        class="icon-btn"
+        onclick={() => (showPassword = !showPassword)}
+        title={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
+        aria-label={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
+      >
+        <Icon name={showPassword ? 'eye-off' : 'eye'} size={14} />
+      </button>
+      <button type="button" class="icon-btn" onclick={generate} title={$t('pw_btn_generate')} aria-label={$t('pw_btn_generate')}>
+        <Icon name="dices" size={14} />
+      </button>
+    </span>
+    {#if errField === 'password'}<div class="error-msg">{error}</div>{/if}
+  </div>
+  <div class="form-group">
+    <label for="pw-note">{$t('pw_field_note')}</label>
+    <textarea id="pw-note" bind:value={note} rows="3" oninput={() => (noteTouched = true)}></textarea>
+  </div>
+  <div class="form-group">
+    <label for="pw-totp">{$t('pw_field_totp')}</label>
+    {#if totpIds.length}
+      <div class="chips">
+        {#each totpIds as id (id)}
+          {@const item = totpStore.list.find((t) => t.id === id)}
+          <span class="chip">
+            <ChipMark kind="totp" />
+            <span class="chip-text">{item ? (item.issuer ? `${item.issuer} · ${item.name}` : item.name) : id}</span>
+            <button type="button" class="chip-x" onclick={() => (totpIds = totpIds.filter((x) => x !== id))} aria-label={$t('pass_remove')}>
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+        {/each}
+      </div>
+    {/if}
+    {#if !addTotp}
+      <span class="row">
         <input
-          id="pw-secret"
-          class="mono"
-          type={showPassword ? 'text' : 'password'}
-          bind:value={password}
-          autocomplete="new-password"
-          placeholder={editing ? $t('pw_unchanged') : ''}
-          title={editing ? $t('pw_unchanged') : undefined}
-          aria-invalid={errField === 'password'}
+          id="pw-totp"
+          bind:this={totpField}
+          bind:value={totpQuery}
+          placeholder={$t('totp_search_placeholder')}
+          autocomplete="off"
+          onfocus={() => (totpSuggest = true)}
+          onblur={() => (totpSuggest = false)}
+          oninput={() => (totpSuggest = true)}
+          onkeydown={(e) => {
+            if (totpSuggest && totpList?.keydown(e)) return;
+            // Enter picks the first match instead of saving the form.
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (totpHits[0]) pickTotp(totpHits[0].id);
+          }}
         />
-        <button
-          type="button"
-          class="icon-btn"
-          onclick={() => (showPassword = !showPassword)}
-          title={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
-          aria-label={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
-        >
-          <Icon name={showPassword ? 'eye-off' : 'eye'} size={14} />
-        </button>
-        <button type="button" class="icon-btn" onclick={generate} title={$t('pw_btn_generate')} aria-label={$t('pw_btn_generate')}>
-          <Icon name="dices" size={14} />
+        <button type="button" class="btn btn-ghost btn-sm" onclick={() => { addTotp = true; totpName = title; }}>
+          <Icon name="plus" size={12} /> {$t('pw_add_totp')}
         </button>
       </span>
-      {#if errField === 'password'}<div class="error-msg">{error}</div>{/if}
-    </div>
-    <div class="form-group">
-      <label for="pw-note">{$t('pw_field_note')}</label>
-      <textarea id="pw-note" bind:value={note} rows="3" oninput={() => (noteTouched = true)}></textarea>
-    </div>
-    <div class="form-group picker">
-      <label for="pw-totp">{$t('pw_field_totp')}</label>
-      {#if totpIds.length}
-        <div class="chips">
-          {#each totpIds as id (id)}
-            {@const item = totpStore.list.find((t) => t.id === id)}
-            <span class="chip">
-              <ChipMark kind="totp" />
-              <span class="chip-text">{item ? (item.issuer ? `${item.issuer} · ${item.name}` : item.name) : id}</span>
-              <button type="button" class="chip-x" onclick={() => (totpIds = totpIds.filter((x) => x !== id))} aria-label={$t('pass_remove')}>
+      {#if totpSuggest && totpItems.length}
+        <Suggest bind:this={totpList} items={totpItems} anchor={totpField} label={$t('pw_field_totp')} onpick={(item) => pickTotp(item.key)} onclose={() => (totpSuggest = false)} />
+      {/if}
+    {:else}
+      <div class="draft">
+        <input bind:value={totpName} placeholder={$t('totp_field_name')} autocomplete="off" />
+        <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} autocomplete="off" />
+        <input bind:value={totpSecret} placeholder={$t('totp_field_secret')} autocomplete="off" />
+        <button type="button" class="btn btn-ghost btn-sm" onclick={() => (addTotp = false)}>{$t('common_cancel')}</button>
+      </div>
+    {/if}
+  </div>
+  <div class="form-group">
+    <label for="pw-tags">{$t('pw_field_tags')}</label>
+    {#if tags.length}
+      <div class="chips">
+        {#each tags as tag (tag)}
+          {@const locked = initialTags.includes(tag) && !editing}
+          <!-- A link to an entity this product has no owner for reads as 10.3 shows it: the kind and its name or short id. -->
+          <span class="chip tinted" title={bindingCaption(tag)} style:--chip={chipColor(tag)}>
+            <ChipMark kind={bindingKind(tag)} caption={bindingCaption(tag)} />
+            <span class="chip-text">{bindingLabel(tag)}</span>
+            {#if !locked}
+              <button type="button" class="chip-x" onclick={() => removeTag(tag)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>
                 <Icon name="x" size={11} />
               </button>
-            </span>
-          {/each}
-        </div>
-      {/if}
-      {#if !addTotp}
-        {@const tq = totpQuery.trim().toLowerCase()}
-        {@const totpHits = totpStore.list
-          .filter((item) => !totpIds.includes(item.id) && `${item.issuer ?? ''} ${item.name} ${item.tags.join(' ')}`.toLowerCase().includes(tq))
-          .slice(0, 8)}
-        <span class="row">
-          <input
-            id="pw-totp"
-            bind:value={totpQuery}
-            placeholder={$t('totp_search_placeholder')}
-            autocomplete="off"
-            onfocus={() => (totpSuggest = true)}
-            onblur={() => (totpSuggest = false)}
-            onkeydown={(e) => {
-              // Enter picks the first match instead of saving the form.
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              if (totpHits[0]) { totpIds = [...totpIds, totpHits[0].id]; totpQuery = ''; }
-            }}
-          />
-          <button type="button" class="btn btn-ghost btn-sm" onclick={() => { addTotp = true; totpName = title; }}>
-            <Icon name="plus" size={12} /> {$t('pw_add_totp')}
-          </button>
-        </span>
-        {#if totpSuggest && totpHits.length}
-          <div class="pick" role="presentation">
-            {#each totpHits as item (item.id)}
-              <button type="button" class="pick-item" onmousedown={(e) => { e.preventDefault(); totpIds = [...totpIds, item.id]; totpQuery = ''; }}>
-                <ChipMark kind="totp" />
-                {item.issuer ? `${item.issuer} · ${item.name}` : item.name}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      {:else}
-        <div class="draft">
-          <input bind:value={totpName} placeholder={$t('totp_field_name')} autocomplete="off" />
-          <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} autocomplete="off" />
-          <input bind:value={totpSecret} placeholder={$t('totp_field_secret')} autocomplete="off" />
-          <button type="button" class="btn btn-ghost btn-sm" onclick={() => (addTotp = false)}>{$t('common_cancel')}</button>
-        </div>
-      {/if}
-    </div>
-    <div class="form-group picker">
-      <label for="pw-tags">{$t('pw_field_tags')}</label>
-      {#if tags.length}
-        <div class="chips">
-          {#each tags as tag (tag)}
-            {@const locked = initialTags.includes(tag) && !editing}
-            <!-- A link to an entity this product has no owner for reads as 10.3 shows it: the kind and its name or short id. -->
-            <span class="chip tinted" title={bindingCaption(tag)} style:--chip={chipColor(tag)}>
-              <ChipMark kind={bindingKind(tag)} caption={bindingCaption(tag)} />
-              <span class="chip-text">{bindingLabel(tag)}</span>
-              {#if !locked}
-                <button type="button" class="chip-x" onclick={() => removeTag(tag)} aria-label={$t('pass_remove')} title={$t('pass_remove')}>
-                  <Icon name="x" size={11} />
-                </button>
-              {/if}
-            </span>
-          {/each}
-        </div>
-      {/if}
-      <input
-        id="pw-tags"
-        bind:value={query}
-        placeholder={$t('notes_tags_placeholder')}
-        autocomplete="off"
-        onfocus={() => (suggest = true)}
-        onblur={() => (suggest = false)}
-        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void commitQuery(); } }}
-      />
-      {#if suggest && (tagHits.length || profileHits.length || workspaceHits.length || noteHits.length)}
-        <div class="pick" role="presentation">
-          {#each tagHits as tag (tag.id)}
-            <button type="button" class="pick-item" onmousedown={(e) => { e.preventDefault(); addLabel(tag.name); }}>
-              <span class="dot" style:background={tag.color}></span>
-              {tag.name}
-            </button>
-          {/each}
-          {#each profileHits as profile (profile.id)}
-            <button type="button" class="pick-item" onmousedown={(e) => { e.preventDefault(); addBinding(`profile:${profile.id}`); }}>
-              <ChipMark kind="profile" />
-              {profile.name}
-            </button>
-          {/each}
-          {#each workspaceHits as ws (ws.id)}
-            <button type="button" class="pick-item" onmousedown={(e) => { e.preventDefault(); addBinding(`workspace:${ws.id}`); }}>
-              <span class="dot" style:background={ws.color}></span>
-              {ws.name}
-            </button>
-          {/each}
-          {#each noteHits as n (n.id)}
-            <button type="button" class="pick-item" onmousedown={(e) => { e.preventDefault(); addBinding(`note:${n.id}`); }}>
-              <ChipMark kind="note" />
-              {n.name}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
-    {#if error && !errField}<Notice tone="danger">{error}</Notice>{/if}
-  </form>
-  {#snippet footer()}
+            {/if}
+          </span>
+        {/each}
+      </div>
+    {/if}
+    <input
+      id="pw-tags"
+      bind:value={query}
+      placeholder={$t('notes_tags_placeholder')}
+      autocomplete="off"
+      bind:this={tagField}
+      onfocus={() => (suggest = true)}
+      onblur={() => (suggest = false)}
+      oninput={() => (suggest = true)}
+      onkeydown={(e) => {
+        if (suggest && tagList?.keydown(e)) return;
+        if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); void commitQuery(); }
+      }}
+    />
+    {#if suggest && tagItems.length}
+      <Suggest bind:this={tagList} items={tagItems} anchor={tagField} label={$t('pw_field_tags')} onpick={pickTag} onclose={() => (suggest = false)} />
+    {/if}
+  </div>
+  {#if error && !errField}<Notice tone="danger">{error}</Notice>{/if}
+</form>
+{#if buttons === 'end'}
+  <div class="end">
     <button class="btn btn-ghost" type="button" onclick={onclose}>{$t('common_cancel')}</button>
     <!-- mousedown keeps the focus where it is (an open suggestion list stays put); the click saves, from the mouse and the keyboard. -->
     <button class="btn btn-primary" type="submit" form="pw-edit-form" onmousedown={(e) => e.preventDefault()} disabled={saving}>{$t('common_save')}</button>
-  {/snippet}
-</Dialog>
+  </div>
+{/if}
 
 <style>
   .form { display: flex; flex-direction: column; gap: var(--sp-4); }
-  .picker { position: relative; }
+  .end { display: flex; justify-content: flex-end; gap: var(--sp-2); }
   textarea { resize: vertical; min-height: 72px; }
   .secret { position: relative; display: flex; align-items: center; }
   .secret input { padding-right: calc(2 * 28px + 3 * var(--sp-1) + var(--sp-2)); text-overflow: ellipsis; }
@@ -478,36 +483,4 @@
     opacity: var(--chip-fade);
   }
   .chip-x:hover { opacity: 1; background: var(--surface-hover); color: var(--danger-text); }
-  .pick {
-    position: absolute;
-    z-index: 2;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    display: flex;
-    flex-direction: column;
-    max-height: 220px;
-    overflow: auto;
-    padding: var(--sp-1);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-drawer);
-    box-shadow: var(--shadow-lg);
-  }
-  .pick-item {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    width: 100%;
-    padding: var(--sp-2);
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    font-size: var(--fs-sm);
-    text-align: left;
-  }
-  .pick-item:hover { background: var(--surface-hover); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 </style>

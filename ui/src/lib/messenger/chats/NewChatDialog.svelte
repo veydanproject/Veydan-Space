@@ -266,7 +266,7 @@
     display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-lg); padding: 0 var(--sp-3);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-3);
   }
-  .field:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .field:focus-within { border-color: var(--accent-border); }
   .field :global(svg) { flex-shrink: 0; }
   .field input { flex: 1; min-width: 0; align-self: stretch; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-base); color: var(--text); }
   .field input:focus { outline: none; box-shadow: none; }

@@ -70,9 +70,9 @@
   const profileHits = $derived(
     q ? profiles.filter((p) => !bindings.includes(`profile:${p.id}`) && p.name.toLowerCase().includes(q)) : [],
   );
-  // Notes are offered right away like tags; the empty query shows the first few.
+  // Notes are offered right away like tags.
   const noteHits = $derived(
-    notes.filter((n) => !bindings.includes(`note:${n.id}`) && n.title.toLowerCase().includes(q)).slice(0, 6),
+    notes.filter((n) => !bindings.includes(`note:${n.id}`) && n.title.toLowerCase().includes(q)),
   );
   // "Работа" when "работа" exists is that tag: no color to pick.
   const canCreate = $derived(query.trim().length > 0 && !findTag(tags, query.trim().replace(/^#/, '')));
@@ -87,7 +87,7 @@
     entityTimer = setTimeout(async () => {
       const lists = await Promise.all(kinds.map((kind) => api.notes.entitySearch(kind, term).catch(() => [])));
       if (term !== q) return;
-      entityHits = lists.flat().filter((s) => !bindings.includes(s.binding)).slice(0, 12);
+      entityHits = lists.flat().filter((s) => !bindings.includes(s.binding));
     }, term ? 200 : 0);
   });
 
@@ -129,7 +129,7 @@
   }
 </script>
 
-<BottomSheet {open} title={$t('notes_label_title')} {onclose}>
+<BottomSheet {open} title={$t('notes_label_title')} share={0.45} {onclose}>
   <div class="find">
     <Icon name="search" size={16} />
     <input
@@ -229,9 +229,12 @@
   }
   .find input:focus { border: 0; box-shadow: none; }
   .hint { margin: var(--sp-3) var(--sp-2) 0; }
-  .hits {
-    max-height: min(280px, 42vh);
+  /* The suggestions of a phone: rows of 44; the sheet keeps to 45% of the screen (share), they scroll inside it. */
+  .hits.hits {
+    flex: 0 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
     display: flex;

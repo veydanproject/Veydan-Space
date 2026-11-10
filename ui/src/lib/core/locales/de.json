@@ -511,7 +511,16 @@
     "setup_progress": "{done} von {total}",
     "setup_dismiss": "Ausblenden",
     "setup_sync": "Sync einschalten",
-    "settings_lock_recovery_new_title": "Dein neuer Wiederherstellungsschlüssel"
+    "settings_lock_recovery_new_title": "Dein neuer Wiederherstellungsschlüssel",
+    "suggest_group_note_tag": "Tags",
+    "suggest_group_note_folder": "Ordner",
+    "suggest_group_workspace": "Arbeitsbereiche",
+    "suggest_group_profile": "Profile",
+    "suggest_group_proxy": "Proxys",
+    "suggest_group_ssh": "SSH-Verbindungen",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Passwörter",
+    "suggest_group_note": "Notizen"
   },
   "mobile": {
     "app_launcher": "Apps",

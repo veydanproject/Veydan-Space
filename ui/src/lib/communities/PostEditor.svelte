@@ -464,7 +464,8 @@
   /* The phone: docked at the bottom, over the keyboard, a row that scrolls sideways. */
   .bar.docked {
     position: fixed; left: 0; right: 0; z-index: 1;
-    border-radius: 0; border: none; border-top: 1px solid var(--border); background: var(--surface); padding: 6px 6px calc(6px + var(--sab, 0px));
+    border-radius: 0; border: none; border-top: 1px solid var(--glass-border); background: var(--glass-bg); box-shadow: var(--glass-highlight), var(--shadow-lg);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); padding: 6px 6px calc(6px + var(--sab, 0px));
   }
   .bar.docked .tb { height: 44px; min-width: 44px; flex-shrink: 0; }
   .bar-attach { flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--border); --attach-w: 44px; --attach-h: 44px; }

@@ -8,6 +8,7 @@
   import { api } from '$lib/ssh/api';
   import type { SshKey } from '$lib/ssh/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { pinnedHead } from '$lib/core/pinnedHead';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import SshKeyForm from './SshKeyForm.svelte';
@@ -174,8 +175,8 @@
     <span>{$t('common_nothing_found_hint', { q: search.trim() })}</span>
   </div>
 {:else}
-  <div class="data-table table-scroll">
-    <table class="keys-table">
+  <div class="data-table table-scroll" use:pinnedHead>
+    <table class="keys-table pinned-head">
       <thead class="data-table-head">
         <tr>
           <th class="col-num">#</th>
@@ -259,7 +260,7 @@
 <!-- View / rename drawer -->
 <Drawer
   open={viewKey !== null}
-  width="480px"
+  width="var(--drawer-w)"
   title={viewKey?.name ?? ''}
   onclose={() => (viewKey = null)}
 >
@@ -326,9 +327,9 @@
 
   /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
   .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-  .keys-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .keys-table { width: 100%; font-size: var(--fs-sm); }
   .keys-table th {
-    padding: var(--sp-3) var(--sp-4); text-align: left;
+    padding: 0 var(--sp-4); text-align: left;
     font: inherit; white-space: nowrap;
   }
   .keys-table td { padding: var(--sp-3) var(--sp-4); vertical-align: middle; }
@@ -369,7 +370,7 @@
       grid-template-columns: 2.5rem auto auto minmax(0, 1fr) auto;
       grid-template-areas: 'name name name name act' 'fp fp fp fp act' 'num algo usage created created';
     }
-    .keys-table td { display: block; width: auto; max-width: none; padding: 0; min-width: 0; }
+    .keys-table td { display: block; width: auto; border: 0; max-width: none; padding: 0; min-width: 0; }
     .key-row .col-num { grid-area: num; }
     .key-row .col-name { grid-area: name; }
     .key-row .col-algo { grid-area: algo; }

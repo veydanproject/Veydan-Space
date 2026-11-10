@@ -511,7 +511,16 @@
     "setup_progress": "{done} de {total}",
     "setup_dismiss": "Ocultar",
     "setup_sync": "Activar la sincronización",
-    "settings_lock_recovery_new_title": "Tu nueva clave de recuperación"
+    "settings_lock_recovery_new_title": "Tu nueva clave de recuperación",
+    "suggest_group_note_tag": "Etiquetas",
+    "suggest_group_note_folder": "Carpetas",
+    "suggest_group_workspace": "Espacios de trabajo",
+    "suggest_group_profile": "Perfiles",
+    "suggest_group_proxy": "Proxies",
+    "suggest_group_ssh": "Conexiones SSH",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Contraseñas",
+    "suggest_group_note": "Notas"
   },
   "mobile": {
     "app_launcher": "Apps",

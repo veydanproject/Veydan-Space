@@ -41,6 +41,15 @@
   const canWrite = $derived(!appLock.locked && appLock.status.vault !== 'mismatch');
   const selected = $derived(passwordStore.list.find((entry) => entry.id === selectedId) ?? null);
   const editingEntry = $derived(passwordStore.list.find((entry) => entry.id === editingId) ?? null);
+  /** A password or its form is shown: in a drawer of its own over the page's pane, in place of the list in a drawer. */
+  const formOpen = $derived(creating || !!editingEntry);
+  const recordOpen = $derived(formOpen || !!selected);
+  const inPlace = $derived(as === 'drawer' && recordOpen);
+  const recordTitle = $derived(creating ? $t('cmd_passwords_create') : editingEntry ? $t('pw_edit_title') : (selected?.title ?? ''));
+  /** A locked vault: the card has no «Удалить / Изменить», its panel no footer. */
+  const hasFooter = $derived(formOpen || (!!selected && !appLock.locked));
+  let card = $state<ReturnType<typeof PasswordCard>>();
+  let saving = $state(false);
 
   onMount(() => {
     void appLock.refresh();
@@ -114,27 +123,46 @@
     activeWorkspace = activeWorkspace === id ? null : id;
   }
 
+  /** «Отмена» of the form: back to the password it was opened from, else to the list. */
+  function closeForm() {
+    creating = false;
+    editingId = null;
+  }
+
+  function closeRecord() {
+    selectedId = null;
+    closeForm();
+  }
+
   function initialTags(): string[] {
     return context === 'workspace' && contextId ? [`workspace:${contextId}`] : [];
   }
 </script>
 
-<Frame bind:open title={$t('pw_title')} width="var(--drawer-w-lg)">
+<Frame bind:open title={inPlace ? recordTitle : $t('pw_title')} width="var(--drawer-w-lg)" footer={inPlace && hasFooter ? recordActions : undefined}>
   {#snippet titleBadge()}
     <PasswordLockBadge />
   {/snippet}
 
   {#snippet actions()}
-    <span class="count">{filtered.length}</span>
-    {#if canWrite && !selected}
-      <button class="icon-btn create" title={$t('common_add')} aria-label={$t('common_add')} onclick={() => (creating = true)}>
-        <Icon name="plus" size={18} />
-      </button>
+    {#if !inPlace}
+      <span class="count">{filtered.length}</span>
+      {#if canWrite}
+        <button class="icon-btn create" title={$t('common_add')} aria-label={$t('common_add')} onclick={() => (creating = true)}>
+          <Icon name="plus" size={18} />
+        </button>
+      {/if}
     {/if}
   {/snippet}
 
   {#snippet subheader()}
-    {#if !selected}
+    {#if inPlace}
+      <div class="panel-back">
+        <button type="button" class="btn btn-ghost btn-sm" onclick={closeRecord}>
+          <Icon name="chevron-left" size={14} /> {$t('common_back')}
+        </button>
+      </div>
+    {:else}
       <div class="panel-search">
         <div class="search-wrap">
           <span class="search-icon"><Icon name="search" size={13} /></span>
@@ -159,11 +187,8 @@
     {/if}
   {/snippet}
 
-  {#if selected}
-    <button type="button" class="btn btn-ghost btn-sm back" onclick={() => (selectedId = null)}>
-      <Icon name="chevron-left" size={14} /> {$t('common_back')}
-    </button>
-    <PasswordCard entry={selected} onedit={() => (editingId = selected.id)} ondeleted={() => (selectedId = null)} />
+  {#if inPlace}
+    {@render record()}
   {:else if passwordStore.loading && !passwordStore.loaded}
     <p class="muted">{$t('loading')}</p>
   {:else if filtered.length === 0}
@@ -187,12 +212,36 @@
   {/if}
 </Frame>
 
-{#if creating}
-  <PasswordEditModal initialTags={initialTags()} onclose={() => (creating = false)} />
+<!-- The page's list stays in place: a password opens over it in a side panel, 440 to read and --drawer-w-md to change. -->
+{#if as === 'pane'}
+  <Drawer open={recordOpen} title={recordTitle} width={formOpen ? 'var(--drawer-w-md)' : 'var(--drawer-w)'} onclose={closeRecord} footer={hasFooter ? recordActions : undefined}>
+    {@render record()}
+  </Drawer>
 {/if}
-{#if editingEntry}
-  <PasswordEditModal entry={editingEntry} onclose={() => (editingId = null)} />
-{/if}
+
+{#snippet record()}
+  <!-- Keyed by the record: another password gets a fresh form and card, no fields or revealed password carried over. -->
+  {#if formOpen}
+    {#key creating ? null : editingEntry?.id}
+      <PasswordEditModal entry={creating ? null : editingEntry} initialTags={creating ? initialTags() : []} onclose={closeForm} bind:saving />
+    {/key}
+  {:else if selected}
+    {#key selected.id}
+      <PasswordCard bind:this={card} framed entry={selected} onedit={() => (editingId = selected.id)} ondeleted={closeRecord} />
+    {/key}
+  {/if}
+{/snippet}
+
+{#snippet recordActions()}
+  {#if formOpen}
+    <button class="btn btn-ghost" type="button" onclick={closeForm}>{$t('common_cancel')}</button>
+    <!-- mousedown keeps the focus where it is (an open suggestion list stays put); the click saves, from the mouse and the keyboard. -->
+    <button class="btn btn-primary" type="submit" form="pw-edit-form" onmousedown={(e) => e.preventDefault()} disabled={saving}>{$t('common_save')}</button>
+  {:else if selected}
+    <button type="button" class="btn btn-ghost" onclick={() => card?.remove()}><Icon name="trash-2" size={14} /> {$t('common_delete')}</button>
+    <button type="button" class="btn btn-primary" onclick={() => (editingId = selected.id)}><Icon name="pencil" size={14} /> {$t('common_edit')}</button>
+  {/if}
+{/snippet}
 
 <style>
   .count {
@@ -255,5 +304,5 @@
   }
   .ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .muted { color: var(--text-2); font-size: var(--fs-base); }
-  .back { margin-bottom: var(--sp-3); }
+  .panel-back { padding: var(--sp-3) var(--sp-4) 0; }
 </style>

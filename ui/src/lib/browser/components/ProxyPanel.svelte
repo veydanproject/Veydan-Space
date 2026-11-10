@@ -115,7 +115,7 @@
   }
 </script>
 
-<Drawer open title={isEdit ? $t('proxies_form_edit') : $t('proxies_form_new')} {onclose}>
+<Drawer open title={isEdit ? $t('proxies_form_edit') : $t('proxies_form_new')} width="var(--drawer-w-md)" {onclose}>
       <form id="px-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
         {#if error && !fieldsErr && !countriesErr}
           <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>

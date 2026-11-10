@@ -27,9 +27,12 @@
     entry: PasswordEntry;
     onedit: () => void;
     ondeleted: () => void;
+    /** In a side panel: its rows lie on the panel, no card around them; its head has the title and its
+        footer «Удалить / Изменить» (`remove`, `onedit`). In a profile's tab all of them stay in the card. */
+    framed?: boolean;
   }
 
-  let { entry, onedit, ondeleted }: Props = $props();
+  let { entry, onedit, ondeleted, framed = false }: Props = $props();
 
   let revealed = $state('');
   const hide = new AutoHide(() => (revealed = ''));
@@ -171,7 +174,7 @@
     toast.success($t('toast_copied'));
   }
 
-  async function remove() {
+  export async function remove() {
     if (!(await ask({ title: $t('pw_delete_confirm', { name: entry.title }) }))) return;
     try {
       await api.passwords.delete(entry.id);
@@ -183,13 +186,16 @@
   }
 </script>
 
-<article class="card">
-  <h2>{entry.title}</h2>
+<!-- A row: its name in a column of 88 on the left, the value on the right, its buttons of 32 at the end. -->
+<article class:card={!framed} class:framed>
+  {#if !framed}<h2>{entry.title}</h2>{/if}
   {#if entry.username}
     <div class="line">
       <span>{$t('pw_field_username')}</span>
       <strong>{entry.username}</strong>
-      <button type="button" class="btn btn-ghost btn-sm" onclick={copyUsername}>{$t('common_copy')}</button>
+      <button type="button" class="icon-btn" onclick={copyUsername} aria-label={$t('common_copy')} title={$t('common_copy')}>
+        <Icon name="copy" size={14} />
+      </button>
     </div>
   {/if}
   {#if entry.url}
@@ -220,7 +226,7 @@
     {#if unlocked && revealed && hide.left}<span class="autohide">{$t('pw_autohide_in', { n: String(hide.left) })}</span>{/if}
   </div>
   {#if note}
-    <div class="line">
+    <div class="line note">
       <span>{$t('pw_field_note')}</span>
       <p>{note || '—'}</p>
     </div>
@@ -237,15 +243,16 @@
     </div>
   {/if}
   {#each totps as totp, i (totp.id)}
+    {@const name = totp.issuer ? `${totp.issuer} · ${totp.name}` : totp.name}
     <div class="line">
       <span>{$t('pw_field_totp')}</span>
-      <strong class="totp-name">{totp.issuer ? `${totp.issuer} · ${totp.name}` : totp.name}</strong>
+      <strong class="totp-name" title={name}>{name}</strong>
       {#if totps.length > 1}
         {#if i === 0}
-          <span class="primary" title={$t('pw_totp_primary')}><Icon name="pin" size={12} /></span>
+          <span class="primary" title={$t('pw_totp_primary')}><Icon name="pin" size={14} /></span>
         {:else}
-          <button type="button" class="icon-btn" title={$t('pw_totp_make_primary')} onclick={() => promote(totp.id)}>
-            <Icon name="arrow-up" size={12} />
+          <button type="button" class="icon-btn" title={$t('pw_totp_make_primary')} aria-label={$t('pw_totp_make_primary')} onclick={() => promote(totp.id)}>
+            <Icon name="arrow-up" size={14} />
           </button>
         {/if}
       {/if}
@@ -254,30 +261,40 @@
   {/each}
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
-  {#if unlocked}
+  {#if unlocked && !framed}
+    <!-- As in a side panel's footer: together on the right, «Изменить» the last. -->
     <div class="actions">
-      <button type="button" class="btn btn-ghost btn-sm" onclick={onedit}><Icon name="pencil" size={12} /> {$t('common_edit')}</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick={remove}><Icon name="trash-2" size={12} /> {$t('common_delete')}</button>
+      <button type="button" class="btn btn-ghost" onclick={remove}><Icon name="trash-2" size={14} /> {$t('common_delete')}</button>
+      <button type="button" class="btn btn-primary" onclick={onedit}><Icon name="pencil" size={14} /> {$t('common_edit')}</button>
     </div>
   {/if}
 </article>
 
 <style>
-  .card { display: flex; flex-direction: column; gap: var(--sp-3); }
+  article { --label-w: 88px; display: flex; flex-direction: column; gap: var(--sp-3); }
+  /* On the panel: 24 from its edge (its body's 16 and 8). */
+  .framed { padding: var(--sp-2); }
   /* A long value without spaces wraps inside the card instead of running past its border */
   h2 { margin: 0; font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
-  .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); }
+  .line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--sp-2); min-height: 32px; font-size: var(--fs-base); }
   /* The row label only (the pin mark is a span too) */
-  .line > span:first-child { color: var(--text-2); min-width: 72px; }
-  .line > strong, .line > a, .line > p { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-  .line > p { white-space: pre-wrap; }
+  .line > span:first-child { flex: 0 0 var(--label-w); color: var(--text-2); }
+  .line > strong, .line > a, .line > span:nth-child(2), .line > p { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+  /* A note wraps inside the value's column, its name on its first line. */
+  .line.note { align-items: flex-start; }
+  .line > p { margin: 0; white-space: pre-wrap; }
   /* «Скроется через N с» under a shown password, from the value's edge. */
-  .line > .autohide { flex-basis: 100%; padding-left: calc(72px + var(--sp-2)); margin-top: -4px; font-size: var(--fs-xs); color: var(--text-2); }
-  .totp-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .primary { display: inline-flex; color: var(--accent-text); }
+  .line > .autohide { flex-basis: 100%; padding-left: calc(var(--label-w) + var(--sp-2)); margin-top: -4px; font-size: var(--fs-xs); color: var(--text-2); }
+  .line > .icon-btn { flex-shrink: 0; }
+  /* A TOTP in one line: its name ends in «…» (whole in its tooltip), the pin or the arrow, the code and its ring. */
+  .line > .totp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line > :global(.live) { flex-shrink: 0; }
+  .primary { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; color: var(--accent-text); }
   a { color: var(--text); }
-  .actions { display: flex; gap: var(--sp-2); }
-  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  /* Together on the right, the main one the last. */
+  .actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
+  /* Under the values' column. */
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; padding-left: calc(var(--label-w) + var(--sp-2)); }
   /* Shown, not clicked: a link to an entity of another module goes nowhere here. */
   .chip {
     position: relative;

@@ -390,7 +390,7 @@
             </div>
             <div class="list-actions">
               {#if !sidebarVisible}
-                <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_toggle_sidebar')}>
+                <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
                   <Icon name="sidebar" size={14} />
                 </button>
               {/if}
@@ -593,7 +593,6 @@
   .search-input:focus {
     outline: none;
     border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .search-spinner {
@@ -736,7 +735,6 @@
   .create-title:focus {
     outline: none;
     border-color: var(--accent-border);
-    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .create-actions {

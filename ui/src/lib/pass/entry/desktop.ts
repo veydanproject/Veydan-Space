@@ -38,8 +38,8 @@ export const module: ModuleDef = {
   commands: registerPassCommands,
   tray: () => ({ password_generator: get(t)('tray_password_generator') }),
   tools: [
-    { id: 'totp', title: 'totp_title', icon: 'shield-lock', quick: true, onclick: () => { passUi.totpOpen = !passUi.totpOpen; } },
     { id: 'passwords', title: 'pw_title', icon: 'lock-password', quick: true, onclick: () => { passUi.passwordsOpen = !passUi.passwordsOpen; } },
+    { id: 'totp', title: 'totp_title', icon: 'shield-lock', quick: true, onclick: () => { passUi.totpOpen = !passUi.totpOpen; } },
     { id: 'generator', title: 'pwgen_title', icon: 'dices', quick: true, onclick: () => { passUi.generatorOpen = !passUi.generatorOpen; } },
   ],
   // Quick access from the rest of Space; in Pass the window is the Pass page itself.

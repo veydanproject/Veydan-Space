@@ -39,6 +39,16 @@ const translations = {
     ctx_kind_totp: 'TOTP',
     ctx_kind_password: 'Password',
     ctx_kind_note: 'Note',
+    // The headings of the kinds in a list of suggestions (Suggest).
+    suggest_group_note_tag: 'Tags',
+    suggest_group_note_folder: 'Folders',
+    suggest_group_workspace: 'Workspaces',
+    suggest_group_profile: 'Profiles',
+    suggest_group_proxy: 'Proxies',
+    suggest_group_ssh: 'SSH connections',
+    suggest_group_totp: 'TOTP',
+    suggest_group_password: 'Passwords',
+    suggest_group_note: 'Notes',
     ctx_available_in_space: 'available in Veydan Space',
     // The dictionaries of the product's modules (platform-spec 11.5); a module's
     // keys exist only where the module is.
@@ -582,6 +592,15 @@ const translations = {
     ctx_kind_totp: 'TOTP',
     ctx_kind_password: 'Пароль',
     ctx_kind_note: 'Заметка',
+    suggest_group_note_tag: 'Теги',
+    suggest_group_note_folder: 'Папки',
+    suggest_group_workspace: 'Пространства',
+    suggest_group_profile: 'Профили',
+    suggest_group_proxy: 'Прокси',
+    suggest_group_ssh: 'SSH-подключения',
+    suggest_group_totp: 'TOTP',
+    suggest_group_password: 'Пароли',
+    suggest_group_note: 'Заметки',
     ctx_available_in_space: 'доступно в Veydan Space',
     ...moduleTranslations.ru,
     // Nav

@@ -260,7 +260,7 @@
     display: flex; align-items: center; gap: 6px; min-height: var(--control-h); padding: 0 12px; color: var(--text-3);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill);
   }
-  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .search:focus-within { border-color: var(--accent-border); }
   .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-3); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }

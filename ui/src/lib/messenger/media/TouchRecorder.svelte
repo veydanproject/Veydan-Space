@@ -281,7 +281,8 @@
     --send: 48px; --w: 40px;
     position: absolute; right: calc((var(--send) - var(--w)) / 2); bottom: calc(100% + 64px); z-index: 2; width: var(--w); padding: 10px 0 6px;
     display: flex; flex-direction: column; align-items: center; gap: 4px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); box-shadow: var(--shadow); color: var(--text-2);
+    background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-pill); box-shadow: var(--glass-highlight), var(--shadow-lg); color: var(--text-2);
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   }
   .up { display: inline-flex; color: var(--text-3); animation: rise 1.2s ease-in-out infinite; }
   @keyframes rise { 50% { transform: translateY(-4px); } }

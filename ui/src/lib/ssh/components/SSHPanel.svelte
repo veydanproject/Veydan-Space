@@ -121,7 +121,7 @@
   );
 </script>
 
-<Drawer open={open} width="480px" title={$t('ssh_title')} onclose={close} footer={showForm ? formFooter : undefined}>
+<Drawer open={open} width="var(--drawer-w-lg)" title={$t('ssh_title')} onclose={close} footer={showForm ? formFooter : undefined}>
   {#snippet actions()}
     {#if context !== 'global'}
       <div class="tab-bar">

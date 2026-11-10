@@ -511,7 +511,16 @@
     "setup_progress": "{done}/{total}",
     "setup_dismiss": "隐藏",
     "setup_sync": "开启同步",
-    "settings_lock_recovery_new_title": "你的新恢复密钥"
+    "settings_lock_recovery_new_title": "你的新恢复密钥",
+    "suggest_group_note_tag": "标签",
+    "suggest_group_note_folder": "文件夹",
+    "suggest_group_workspace": "工作区",
+    "suggest_group_profile": "配置文件",
+    "suggest_group_proxy": "代理",
+    "suggest_group_ssh": "SSH 连接",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "密码",
+    "suggest_group_note": "笔记"
   },
   "mobile": {
     "app_launcher": "应用",

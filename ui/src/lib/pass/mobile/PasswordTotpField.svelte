@@ -100,7 +100,7 @@
   {/if}
 </div>
 
-<BottomSheet {open} title={$t('pw_field_totp')} onclose={() => (open = false)}>
+<BottomSheet {open} title={$t('pw_field_totp')} share={0.45} onclose={() => (open = false)}>
   <div class="m-list create">
     <button type="button" class="m-row" onclick={startCreate}>
       <Icon name="plus" size={18} />
@@ -112,7 +112,7 @@
   {:else}
     <input class="find" bind:value={query} placeholder={$t('totp_search_placeholder')} autocomplete="off" />
     {#if hits.length}
-      <div class="m-list">
+      <div class="m-list hits">
         {#each hits as item (item.id)}
           {@const label = item.issuer || item.name}
           <button type="button" class="m-row" onclick={() => add(item.id)}>
@@ -152,5 +152,8 @@
   .cancel { align-self: flex-start; padding: 0; color: var(--text-2); }
   .create { margin-bottom: var(--sp-3); }
   .find { width: 100%; margin-bottom: var(--sp-3); }
+  /* The suggestions of a phone: rows of 44; the sheet keeps to 45% of the screen (share), they scroll inside it. */
+  .hits.hits { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .hits .m-row { min-height: 44px; }
   .m-avatar.small { width: 28px; height: 28px; font-size: var(--fs-sm); }
 </style>

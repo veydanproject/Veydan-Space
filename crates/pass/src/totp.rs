@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! TOTP entries: the secret stays in the backend, the codes leave it.
+//! TOTP entries: the codes leave the backend; the secret only to be shown
+//! or copied, unlocked (`totp_reveal`).
 
+use crate::passwords::RevealedSecret;
 use crate::{directory, KIND_TOTP};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,7 @@ pub struct TotpEntry {
     pub id: String,
     pub name: String,
     pub issuer: Option<String>,
-    // secret is never returned to frontend — see TotpEntryPublic
+    // secret is never in a list or an entry sent out — see TotpEntryPublic, totp_reveal
     #[serde(skip_serializing)]
     pub secret: String,
     pub algorithm: String,
@@ -246,7 +248,7 @@ pub async fn totp_add(
     core: tauri::State<'_, Core>,
 ) -> CmdResult<TotpEntryPublic> {
     let (name, issuer, secret, algorithm, digits, period) = if let Some(uri) = &req.uri {
-        let totp = TOTP::from_url(uri).map_err(|e| AppError::other(format!("Invalid URI: {e}")))?;
+        let totp = parse_uri(uri)?;
         let secret_b32 = totp.get_secret_base32();
         let alg = match totp.algorithm {
             Algorithm::SHA256 => "SHA256",
@@ -337,27 +339,106 @@ pub async fn totp_add(
     })
 }
 
-#[derive(Debug, Deserialize)]
+/// A new key comes as `secret` (Base32 or hex, typed) or as `uri` (an
+/// `otpauth://` of a QR, which brings its algorithm, digits and period too);
+/// neither leaves the key as it is.
+#[derive(Deserialize)]
 pub struct TotpUpdateRequest {
     pub name: Option<String>,
     pub issuer: Option<String>,
     pub tags: Option<Vec<String>>,
+    pub secret: Option<String>,
+    pub uri: Option<String>,
 }
 
+/// The key stays out of a `{:?}` print.
+impl std::fmt::Debug for TotpUpdateRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TotpUpdateRequest")
+            .field("name", &self.name)
+            .field("issuer", &self.issuer)
+            .field("tags", &self.tags)
+            .field("secret", &self.secret.as_ref().map(|_| "…"))
+            .field("uri", &self.uri.as_ref().map(|_| "…"))
+            .finish()
+    }
+}
+
+async fn load<'e>(db: impl sqlx::SqliteExecutor<'e>, id: &str) -> Result<TotpEntry, AppError> {
+    sqlx::query_as::<_, TotpEntry>("SELECT * FROM totp_entries WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db)
+        .await
+        .map_err(AppError::db)?
+        .ok_or_else(|| AppError::not_found(format!("TOTP entry {id}")))
+}
+
+/// Read an `otpauth://` link. The error names no part of it: that of
+/// totp-rs prints the secret it could not take.
+fn parse_uri(uri: &str) -> Result<TOTP, AppError> {
+    TOTP::from_url(uri)
+        .map_err(|_| AppError::other("Invalid URI: not an otpauth link of a valid key"))
+}
+
+/// Put the key of `secret` or `uri` into `entry`, refused unless it makes
+/// codes.
+fn rekey(
+    entry: &mut TotpEntry,
+    secret: Option<String>,
+    uri: Option<String>,
+) -> Result<(), AppError> {
+    let mut next = entry.clone();
+    if let Some(uri) = uri {
+        let totp = parse_uri(&uri)?;
+        next.secret = totp.get_secret_base32();
+        next.algorithm = match totp.algorithm {
+            Algorithm::SHA256 => "SHA256",
+            Algorithm::SHA512 => "SHA512",
+            _ => "SHA1",
+        }
+        .into();
+        next.digits = totp.digits as i64;
+        next.period = totp.step as i64;
+    } else if let Some(raw) = secret {
+        next.secret = normalize_secret(&raw)?;
+    }
+    build_totp(&next)?;
+    *entry = next;
+    Ok(())
+}
+
+/// Name, service and tags as given; the key only when `secret` or `uri` is,
+/// and not while the app is locked: the key is shown and copied only
+/// unlocked, and replacing it is as much.
 #[tauri::command]
 pub async fn totp_update(
     id: String,
     req: TotpUpdateRequest,
     core: tauri::State<'_, Core>,
+    lock: tauri::State<'_, Lock>,
 ) -> CmdResult<TotpEntryPublic> {
+    let rekeying = req.secret.is_some() || req.uri.is_some();
+    if rekeying && lock.is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
     let now = Utc::now().to_rfc3339();
 
-    let mut entry = sqlx::query_as::<_, TotpEntry>("SELECT * FROM totp_entries WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(&core.db)
-        .await
-        .map_err(AppError::db)?
-        .ok_or_else(|| AppError::not_found(format!("TOTP entry {id}")))?;
+    // Read and written in one transaction: one that read the entry before
+    // another saved fails to write instead of putting the old values back.
+    let mut tx = core.db.begin().await.map_err(AppError::db)?;
+    let mut entry = load(&mut *tx, &id).await?;
+    if rekeying {
+        rekey(&mut entry, req.secret, req.uri)?;
+        sqlx::query("UPDATE totp_entries SET secret=?, algorithm=?, digits=?, period=? WHERE id=?")
+            .bind(&entry.secret)
+            .bind(&entry.algorithm)
+            .bind(entry.digits)
+            .bind(entry.period)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::db)?;
+    }
 
     if let Some(name) = req.name {
         entry.name = name;
@@ -374,7 +455,6 @@ pub async fn totp_update(
     }
     entry.updated_at = now;
 
-    let mut tx = core.db.begin().await.map_err(AppError::db)?;
     sqlx::query("UPDATE totp_entries SET name=?, issuer=?, tags=?, updated_at=? WHERE id=?")
         .bind(&entry.name)
         .bind(&entry.issuer)
@@ -388,6 +468,36 @@ pub async fn totp_update(
     tx.commit().await.map_err(AppError::db)?;
 
     entry.to_public().map_err(AppError::other)
+}
+
+/// The key of the entry, as stored (Base32, or hex as it was typed); not
+/// while the app is locked, as `password_reveal`.
+#[tauri::command]
+pub async fn totp_reveal(
+    id: String,
+    core: tauri::State<'_, Core>,
+    lock: tauri::State<'_, Lock>,
+) -> CmdResult<RevealedSecret> {
+    if lock.is_locked().await {
+        return Err(AppError::VaultLocked);
+    }
+    let mut entry = load(&core.db, &id).await?;
+    Ok(RevealedSecret {
+        value: std::mem::take(&mut entry.secret),
+    })
+}
+
+/// The key onto the clipboard, as `password_copy`.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn totp_copy(
+    id: String,
+    core: tauri::State<'_, Core>,
+    lock: tauri::State<'_, Lock>,
+) -> CmdResult<()> {
+    let mut revealed = totp_reveal(id, core, lock).await?;
+    crate::passwords::copy_secret(zeroize::Zeroizing::new(std::mem::take(&mut revealed.value)))
+        .await
 }
 
 #[tauri::command]
@@ -509,8 +619,7 @@ pub async fn totp_generate_codes(
 
 #[tauri::command]
 pub async fn totp_preview_uri(uri: String) -> CmdResult<TotpPreview> {
-    let totp =
-        TOTP::from_url(&uri).map_err(|e| AppError::other(format!("Invalid otpauth URI: {e}")))?;
+    let totp = parse_uri(&uri)?;
 
     // Not a character of the secret: four of them were 20 of its bits.
     let masked = "••••".to_string();
@@ -670,5 +779,180 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(code.code.len(), 6);
+    }
+
+    fn update(secret: Option<&str>, uri: Option<&str>) -> TotpUpdateRequest {
+        TotpUpdateRequest {
+            name: None,
+            issuer: None,
+            tags: None,
+            secret: secret.map(Into::into),
+            uri: uri.map(Into::into),
+        }
+    }
+
+    /// The key is shown only unlocked, as stored; a new one (typed or of a
+    /// QR) replaces it and its codes, a wrong one or one while locked
+    /// leaves the entry as it was; the request keeps it out of `{:?}`.
+    #[tokio::test]
+    async fn the_key_is_shown_and_changed_only_unlocked_and_a_wrong_one_is_refused() {
+        use tauri::Manager;
+        let (app, _dir) = crate::testing::app().await;
+        sqlx::query(
+            "INSERT INTO totp_entries (id, name, issuer, secret, algorithm, digits, period, created_at, updated_at)
+             VALUES ('t-gh', 'github-work', NULL, 'JBSWY3DPEHPK3PXP', 'SHA1', 6, 30, 't', 't')",
+        )
+        .execute(&app.state::<Core>().db)
+        .await
+        .unwrap();
+        let lock = app.state::<Lock>();
+        lock.set(Some("4821".into()), None, Some("pin".into()), None)
+            .await
+            .unwrap();
+        let stored = || async { load(&app.state::<Core>().db, "t-gh").await.unwrap() };
+        let reveal = || totp_reveal("t-gh".into(), app.state(), app.state());
+
+        assert_eq!(reveal().await.unwrap().value, "JBSWY3DPEHPK3PXP");
+
+        lock.lock();
+        assert!(matches!(reveal().await, Err(AppError::VaultLocked)));
+        let locked = totp_update(
+            "t-gh".into(),
+            update(Some("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"), None),
+            app.state(),
+            app.state(),
+        )
+        .await;
+        assert!(matches!(locked, Err(AppError::VaultLocked)));
+        assert_eq!(stored().await.secret, "JBSWY3DPEHPK3PXP");
+        // Without a key the name changes while locked, as before.
+        let mut rename = update(None, None);
+        rename.name = Some("github".into());
+        totp_update("t-gh".into(), rename, app.state(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(stored().await.name, "github");
+
+        assert!(lock.unlock("4821").await.unwrap());
+        for wrong in ["", "not a key!", "189"] {
+            assert!(
+                totp_update(
+                    "t-gh".into(),
+                    update(Some(wrong), None),
+                    app.state(),
+                    app.state()
+                )
+                .await
+                .is_err(),
+                "{wrong}"
+            );
+        }
+        assert!(totp_update(
+            "t-gh".into(),
+            update(None, Some("otpauth://nothing")),
+            app.state(),
+            app.state()
+        )
+        .await
+        .is_err());
+        assert_eq!(stored().await.secret, "JBSWY3DPEHPK3PXP");
+
+        let typed = update(Some("gezd gnbv gy3t qojq gezd gnbv gy3t qojq"), None);
+        assert!(!format!("{typed:?}").contains("gezd"));
+        let saved = totp_update("t-gh".into(), typed, app.state(), app.state())
+            .await
+            .unwrap();
+        assert_eq!(saved.name, "github");
+        let entry = stored().await;
+        assert_eq!(entry.secret, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+        assert_ne!(entry.updated_at, "t");
+        assert_eq!(
+            code_at(
+                &{
+                    let mut e = entry.clone();
+                    e.digits = 8;
+                    e
+                },
+                59
+            )
+            .unwrap(),
+            "94287082"
+        );
+        assert_eq!(
+            reveal().await.unwrap().value,
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        );
+
+        // A QR brings its algorithm, digits and period with the key (one of
+        // 128 bits at least, as when an entry is added from a QR).
+        let uri = "otpauth://totp/GitHub:anna?secret=MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43U&issuer=GitHub&algorithm=SHA256&digits=8&period=60";
+        totp_update(
+            "t-gh".into(),
+            update(None, Some(uri)),
+            app.state(),
+            app.state(),
+        )
+        .await
+        .unwrap();
+        let entry = stored().await;
+        assert_eq!(
+            (
+                entry.secret.as_str(),
+                entry.algorithm.as_str(),
+                entry.digits,
+                entry.period
+            ),
+            ("MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43U", "SHA256", 8, 60)
+        );
+        assert_eq!(entry.name, "github");
+
+        // A link it cannot take is named without its secret (that of
+        // totp-rs prints it), on a save and on a preview of a QR alike.
+        let leaky = "otpauth://totp/test?secret=JBSWY3DPEHPK3PXP%3D";
+        let errors = [
+            totp_update(
+                "t-gh".into(),
+                update(None, Some(leaky)),
+                app.state(),
+                app.state(),
+            )
+            .await
+            .unwrap_err(),
+            totp_preview_uri(leaky.into()).await.unwrap_err(),
+        ];
+        for e in errors {
+            let shown = format!("{e} {e:?} {}", serde_json::to_string(&e).unwrap());
+            assert!(!shown.contains("JBSWY3DP"), "{shown}");
+            assert!(e.to_string().contains("Invalid URI"), "{shown}");
+        }
+
+        // A rename without a key leaves the key as stored, even one saved
+        // after the form was opened.
+        sqlx::query("UPDATE totp_entries SET secret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', algorithm='SHA1', digits=6, period=30 WHERE id='t-gh'")
+            .execute(&app.state::<Core>().db)
+            .await
+            .unwrap();
+        let mut rename = update(None, None);
+        rename.name = Some("github-2".into());
+        totp_update("t-gh".into(), rename, app.state(), app.state())
+            .await
+            .unwrap();
+        let entry = stored().await;
+        assert_eq!(
+            (
+                entry.name.as_str(),
+                entry.secret.as_str(),
+                entry.algorithm.as_str(),
+                entry.digits,
+                entry.period
+            ),
+            (
+                "github-2",
+                "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+                "SHA1",
+                6,
+                30
+            )
+        );
     }
 }

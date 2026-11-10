@@ -46,6 +46,10 @@ export interface TotpUpdateRequest {
   name?: string;
   issuer?: string | null;
   tags?: string[];
+  /** A new key, typed (Base32 or hex); unlocked only. */
+  secret?: string;
+  /** A new key from a QR's `otpauth://` link, with its algorithm, digits and period; unlocked only. */
+  uri?: string;
 }
 
 export interface PasswordEntry {

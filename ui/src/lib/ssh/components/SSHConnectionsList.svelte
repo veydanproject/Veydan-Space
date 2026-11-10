@@ -205,7 +205,7 @@
     padding: 0 var(--sp-3);
     color: var(--text-2);
   }
-  .search-row:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .search-row:focus-within { border-color: var(--accent-border); }
   .search-input {
     flex: 1;
     background: none;

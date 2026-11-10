@@ -511,7 +511,16 @@
     "setup_progress": "{done} di {total}",
     "setup_dismiss": "Nascondi",
     "setup_sync": "Attiva la sincronizzazione",
-    "settings_lock_recovery_new_title": "La tua nuova chiave di recupero"
+    "settings_lock_recovery_new_title": "La tua nuova chiave di recupero",
+    "suggest_group_note_tag": "Tag",
+    "suggest_group_note_folder": "Cartelle",
+    "suggest_group_workspace": "Spazi di lavoro",
+    "suggest_group_profile": "Profili",
+    "suggest_group_proxy": "Proxy",
+    "suggest_group_ssh": "Connessioni SSH",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Password",
+    "suggest_group_note": "Note"
   },
   "mobile": {
     "app_launcher": "App",

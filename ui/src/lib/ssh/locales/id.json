@@ -125,6 +125,7 @@
     "ssh_keys_count": "Kunci: {n}",
     "ssh_keys_add": "Tambah kunci",
     "ssh_keys_generate": "Buat kunci",
+    "terminal_new_connection": "Koneksi baru",
     "ssh_keys_empty": "Belum ada kunci SSH. Buat atau impor kunci.",
     "ssh_key_col_name": "Nama",
     "ssh_key_col_type": "Jenis",

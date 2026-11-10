@@ -81,9 +81,9 @@ select {
   cursor: pointer;
 }
 
+/* A field in focus shows only its border, by the mouse and by the keyboard alike: the ring is for buttons. */
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 /* A checkbox or a radio is a mark, not a field: the rules above would stretch
@@ -811,9 +811,25 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-2);
   border-bottom: 1px solid var(--border);
 }
+.data-table-head th { height: 36px; vertical-align: middle; }
 .data-table-row { border-bottom: 1px solid var(--surface-2); transition: background 0.12s; }
 .data-table-row:last-child { border-bottom: none; }
 .data-table-row:hover { background: var(--surface-row-hover); }
+
+/* A table whose head stays at the top while its rows scroll (`use:pinnedHead` on the scroller). The head has no
+   background: what scrolls under it is cut at its edge by the helper. Separate borders: the lines are the cells' own
+   and are cut with them — a collapsed line is the table's and would show through the head. */
+.pinned-head { border-collapse: separate; border-spacing: 0; }
+.pinned-head > thead th { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid var(--border); }
+.pinned-head .data-table-row > td { border-bottom: 1px solid var(--surface-2); }
+.pinned-head .data-table-row:last-child > td { border-bottom: none; }
+/* The row's hover is the cells': a row's own background is drawn under its cells and is not cut with them. A
+   narrow window folds the rows (up to 900) and hides the head: nothing is cut, the hover stays the row's. */
+@media (min-width: 901px) {
+  .pinned-head .data-table-row:hover { background: none; }
+  .pinned-head .data-table-row > td { transition: background 0.12s; }
+  .pinned-head .data-table-row:hover > td { background: var(--surface-row-hover); }
+}
 
 /* ── Loading / spinner ── */
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -860,7 +876,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--surface-2);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
   color: var(--text-2);
   opacity: 0.35;
   transform: translateY(-50%) scale(0.6);

@@ -3,7 +3,7 @@
 
 <!-- Autocomplete for `{{placeholder}}` while editing a template note. -->
 <script lang="ts">
-  import Icon from '$lib/core/Icon.svelte';
+  import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import { t } from '$lib/core/i18n';
   import { searchPlaceholders, placeholderMarkup } from '$lib/notes/templates';
 
@@ -13,80 +13,37 @@
     index?: number;
     /** Current value shown next to the name; omitted inside template notes */
     preview?: (name: string) => string;
+    /** The editor: the list's floor is its dialog's footer. */
+    anchor: HTMLElement | null | undefined;
+    /** The line of the caret on the screen: the list goes under it. */
+    caret: () => { left: number; top: number; bottom: number } | null;
     onpick: (name: string) => void;
   }
 
-  let { query, index = $bindable(0), preview, onpick }: Props = $props();
+  let { query, index = $bindable(0), preview, anchor, caret, onpick }: Props = $props();
 
-  // A short editor pane caps the list (it scrolls): the row picked by the keys stays in view.
-  let listEl = $state<HTMLDivElement | null>(null);
-  $effect(() => {
-    void index;
-    listEl?.querySelector('.row.active')?.scrollIntoView({ block: 'nearest' });
-  });
+  let list = $state<Suggest | null>(null);
 
-  const rows = $derived(searchPlaceholders(query).slice(0, 10));
+  const rows = $derived(searchPlaceholders(query));
+  const items = $derived(rows.map((name): SuggestItem => ({
+    key: name, text: placeholderMarkup(name), icon: 'code', mono: true,
+    ...(preview ? { hint: preview(name) || '—' } : {}),
+  })));
 
   /** Arrow navigation and Enter/Tab pick; returns true when the key was consumed. */
   export function handleKeydown(e: KeyboardEvent): boolean {
-    if (!rows.length) return false;
-    if (e.key === 'ArrowDown') { e.preventDefault(); index = (index + 1) % rows.length; return true; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); index = (index - 1 + rows.length) % rows.length; return true; }
-    if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
-      onpick(rows[index]);
-      return true;
-    }
-    return false;
+    if (e.key === 'Tab' && rows[index]) { e.preventDefault(); onpick(rows[index]); return true; }
+    return list?.keydown(e) ?? false;
   }
 </script>
 
-<div class="picker" role="listbox" bind:this={listEl}>
-  {#each rows as name, i (name)}
-    <button class="row" class:active={i === index} role="option" aria-selected={i === index} onmousedown={(e) => { e.preventDefault(); onpick(name); }}>
-      <Icon name="code" size={12} />
-      <span class="title">{placeholderMarkup(name)}</span>
-      {#if preview}
-        {@const value = preview(name)}
-        <span class="value" class:missing={!value}>{value || '—'}</span>
-      {/if}
-    </button>
-  {/each}
-  {#if rows.length === 0}
-    <div class="row empty">{$t('note_placeholder_none')}</div>
-  {/if}
-</div>
-
-<style>
-  .picker {
-    position: absolute;
-    left: var(--sp-4);
-    bottom: var(--sp-3);
-    z-index: 5;
-    /* Inside the editor pane, whatever its height: the pane clips what sticks out. */
-    max-height: calc(100% - 2 * var(--sp-3));
-    overflow-y: auto;
-    min-width: 260px;
-    max-width: 420px;
-    padding: 0.25rem;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-  .row {
-    display: flex; align-items: center; gap: 0.4rem; width: 100%;
-    padding: 0.35rem 0.5rem; border: 0; border-radius: var(--radius-xs);
-    background: transparent; color: var(--text); font-size: var(--fs-sm);
-    font-family: var(--font-mono); text-align: left; cursor: pointer;
-  }
-  .row.active, .row:hover { background: var(--surface-2); }
-  .row.empty { color: var(--text-3); cursor: default; font-family: inherit; }
-  .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .value {
-    margin-left: auto; padding-left: 0.6rem; max-width: 180px;
-    font-family: inherit; font-size: var(--fs-xs); color: var(--text-2);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .value.missing { color: var(--text-3); }
-</style>
+<Suggest
+  bind:this={list}
+  bind:active={index}
+  first={0}
+  {items}
+  {anchor}
+  {caret}
+  empty={$t('note_placeholder_none')}
+  onpick={(item) => onpick(item.key)}
+/>

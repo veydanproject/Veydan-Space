@@ -40,6 +40,7 @@
   import { t, locale } from '$lib/core/i18n';
   import { relTime, formatError, formatBytes, hasErrorCode } from '$lib/core/utils';
   import { onMount, tick, untrack } from 'svelte';
+  import { textareaCaret } from '$lib/core/ui/caret';
 
   interface Props {
     allTags: NoteTag[];
@@ -935,6 +936,8 @@
               query={wikiQuery}
               notes={notesStore.list}
               excludeId={note.id}
+              anchor={textareaEl}
+              caret={() => (textareaEl ? textareaCaret(textareaEl, textareaEl.selectionStart) : null)}
               onpick={pickWikiLink}
             />
           {:else if tplOpen}
@@ -943,6 +946,8 @@
               bind:index={tplIndex}
               query={tplQuery}
               preview={isTemplateNote ? undefined : previewPlaceholder}
+              anchor={textareaEl}
+              caret={() => (textareaEl ? textareaCaret(textareaEl, textareaEl.selectionStart) : null)}
               onpick={pickPlaceholder}
             />
           {/if}

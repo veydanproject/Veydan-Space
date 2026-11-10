@@ -208,7 +208,7 @@
     display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h); padding: 0 var(--sp-3); color: var(--text-3);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill);
   }
-  .search:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .search:focus-within { border-color: var(--accent-border); }
   .search :global(svg) { flex-shrink: 0; }
   .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .listbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding-left: var(--sp-1); }

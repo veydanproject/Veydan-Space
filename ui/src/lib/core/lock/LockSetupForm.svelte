@@ -152,7 +152,7 @@
 
       <div class="foot">
         {#if enabled}
-          <button type="button" class="btn btn-ghost off" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
+          <button type="button" class="btn btn-ghost" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
         {/if}
         <button type="button" class="btn btn-primary" disabled={busy || !canSave} onclick={save}>
           {enabled ? $t('settings_lock_change') : $t('settings_lock_enable')}
@@ -259,7 +259,6 @@
   }
   .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
   .foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
-  .off { margin-right: auto; color: var(--danger-text); }
   .card.rows { padding: var(--sp-1); display: flex; flex-direction: column; }
   .row-item { position: relative; display: flex; align-items: center; gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-4); }
   /* A straight line between rows: a shadow would follow the rounded corners. */
@@ -287,7 +286,6 @@
   .mobile .lock-field { height: auto; min-height: var(--sp-12); font-size: var(--fs-md); }
   .mobile .foot { flex-direction: column-reverse; align-items: stretch; }
   .mobile .foot .btn { width: 100%; min-height: var(--control-h-lg); justify-content: center; }
-  .mobile .off { margin-right: 0; }
   .mobile .timeout { flex: 0 0 140px; }
   .mobile .recovery { flex-direction: column; align-items: stretch; }
   .mobile .recovery .btn { width: 100%; min-height: var(--control-h-lg); justify-content: center; }

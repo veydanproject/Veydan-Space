@@ -511,7 +511,16 @@
     "setup_progress": "{done} з {total}",
     "setup_dismiss": "Сховати",
     "setup_sync": "Увімкнути синхронізацію",
-    "settings_lock_recovery_new_title": "Ваш новий ключ відновлення"
+    "settings_lock_recovery_new_title": "Ваш новий ключ відновлення",
+    "suggest_group_note_tag": "Теги",
+    "suggest_group_note_folder": "Папки",
+    "suggest_group_workspace": "Робочі простори",
+    "suggest_group_profile": "Профілі",
+    "suggest_group_proxy": "Проксі",
+    "suggest_group_ssh": "SSH-підключення",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Паролі",
+    "suggest_group_note": "Нотатки"
   },
   "mobile": {
     "app_launcher": "Застосунки",

@@ -9,6 +9,7 @@
   import TotpAddModal from './TotpAddModal.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
+  import type { TotpEntry } from '$lib/pass/types';
 
   interface Props {
     profileId: string;
@@ -17,6 +18,13 @@
   let { profileId }: Props = $props();
 
   let showAdd = $state(false);
+  let editing = $state<TotpEntry | null>(null);
+  const formOpen = $derived(showAdd || editing !== null);
+
+  function closeForm() {
+    showAdd = false;
+    editing = null;
+  }
 
   const profileTag = $derived(`profile:${profileId}`);
   const entries = $derived(totpStore.byProfile(profileId));
@@ -26,31 +34,31 @@
   });
 </script>
 
+<!-- The form is shown in the tab in place of the list, its buttons at its end. -->
 <div class="totp-panel">
   <div class="panel-toolbar">
     <span class="toolbar-count">{entries.length} TOTP</span>
-    <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
-      <Icon name="plus" size={18} />
-    </button>
+    {#if !formOpen}
+      <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
+        <Icon name="plus" size={18} />
+      </button>
+    {/if}
   </div>
 
-  {#if totpStore.loading && !totpStore.loaded}
+  {#if formOpen}
+    <button type="button" class="btn btn-ghost btn-sm" onclick={closeForm}>{$t('common_back')}</button>
+    <TotpAddModal frame="end" entry={editing} initialTags={editing ? [] : [profileTag]} onclose={closeForm} />
+  {:else if totpStore.loading && !totpStore.loaded}
     <Skeleton rows={4} height={64} avatar="square" trailing />
   {:else}
     <TotpList
       {entries}
       emptyText={$t('totp_empty_profile')}
       onrequestAdd={() => (showAdd = true)}
+      onedit={(entry) => (editing = entry)}
     />
   {/if}
 </div>
-
-{#if showAdd}
-  <TotpAddModal
-    initialTags={[profileTag]}
-    onclose={() => (showAdd = false)}
-  />
-{/if}
 
 <style>
   .totp-panel {

@@ -511,7 +511,16 @@
     "setup_progress": "{done} dari {total}",
     "setup_dismiss": "Sembunyikan",
     "setup_sync": "Aktifkan sinkronisasi",
-    "settings_lock_recovery_new_title": "Kunci pemulihan baru Anda"
+    "settings_lock_recovery_new_title": "Kunci pemulihan baru Anda",
+    "suggest_group_note_tag": "Tag",
+    "suggest_group_note_folder": "Folder",
+    "suggest_group_workspace": "Ruang kerja",
+    "suggest_group_profile": "Profil",
+    "suggest_group_proxy": "Proxy",
+    "suggest_group_ssh": "Koneksi SSH",
+    "suggest_group_totp": "TOTP",
+    "suggest_group_password": "Kata sandi",
+    "suggest_group_note": "Catatan"
   },
   "mobile": {
     "app_launcher": "Aplikasi",

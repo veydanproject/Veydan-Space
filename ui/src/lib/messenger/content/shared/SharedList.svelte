@@ -68,9 +68,9 @@
 <div class="panel">
   <PanelHead title={$t('msg_shared_title')} {onback} />
 
-  <div class="seg tabs" role="tablist">
+  <div class="tab-bar tabs" role="tablist">
     {#each SECTION_ORDER as s (s)}
-      <button class="seg-btn" class:active={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
+      <button class="tab" class:active={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
         {$t(SECTIONS[s].label)}
       </button>
     {/each}
@@ -123,10 +123,10 @@
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  /* The sections: one row of segments under the head (design book, «Медиа и файлы»). */
-  .tabs { display: flex; flex-shrink: 0; gap: 2px; margin: var(--sp-3) var(--sp-4) 0; overflow-x: auto; scrollbar-width: none; }
-  .tabs .seg-btn { flex: 1 0 auto; justify-content: center; height: 34px; padding: 0 var(--sp-1); font-size: var(--fs-sm); white-space: nowrap; }
-  .tabs .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  /* The sections: the page's .tab-bar under the head; here only the layout. */
+  .tabs { align-self: stretch; margin: var(--sp-3) var(--sp-4) 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs .tab { flex: 1 0 auto; justify-content: center; }
+  .tabs .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
   .month { font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
   .month:first-child { padding-top: 0; }
@@ -143,13 +143,13 @@
   .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6, 32px) var(--sp-4); color: var(--text-3); font-size: var(--fs-xs); text-align: center; }
   .empty :global(svg) { opacity: 0.7; }
   .end { display: flex; justify-content: center; padding: var(--sp-2) 0; }
-  @media (pointer: coarse) { .tabs .seg-btn { height: 40px; } }
+  @media (pointer: coarse) { .tabs .tab { min-height: 40px; } }
   /* On a phone the sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
   :global(.msg-m) .panel { background: transparent; }
-  :global(.msg-m) .tabs { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; margin: 0; padding-inline: var(--sp-4); }
-  :global(.msg-m) .tabs .seg-btn { position: relative; flex: 0 0 auto; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
-  :global(.msg-m) .tabs .seg-btn:hover:not(.active) { background: none; color: var(--text); }
-  :global(.msg-m) .tabs .seg-btn.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
-  :global(.msg-m) .tabs .seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
+  :global(.msg-m) .tabs { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; margin: 0; align-self: auto; padding-inline: var(--sp-4); }
+  :global(.msg-m) .tabs .tab { position: relative; flex: 0 0 auto; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
+  :global(.msg-m) .tabs .tab:hover:not(.active) { background: none; color: var(--text); }
+  :global(.msg-m) .tabs .tab.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
+  :global(.msg-m) .tabs .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
   :global(.msg-m) .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
 </style>

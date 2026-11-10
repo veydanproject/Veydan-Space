@@ -999,6 +999,6 @@
     font-size: var(--fs-base); color: var(--text); font-family: inherit;
     outline: none; transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   }
-  .settings-main :global(.field-input:focus) { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .settings-main :global(.field-input:focus) { border-color: var(--accent-border); }
 
 </style>

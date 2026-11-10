@@ -46,7 +46,10 @@
     try { localStorage.setItem(VIEW_KEY, m); } catch {}
   }
 
-  // Resizable columns; the table has a width of its own: its columns need more room than the cards
+  // Resizable columns; the table has a width of its own: its columns need more room than the cards.
+  // The sidebar is a share of the page but never under SIDEBAR_MIN: dragged narrower, it stops there.
+  // It is hidden only by «Свернуть панель» and comes back by «Показать панель» in the list's header.
+  const SIDEBAR_MIN = 200;
   const COL_DEFAULTS = { sidebar: 20, list: 27, table: 50 };
   function loadColWidths(): { sidebar: number; list: number; table: number } {
     try {
@@ -74,7 +77,7 @@
       const rect = pageBodyEl.getBoundingClientRect();
       const pct = ((ev.clientX - rect.left) / rect.width) * 100;
       if (col === 'sidebar') {
-        colWidths.sidebar = Math.max(10, Math.min(30, pct));
+        colWidths.sidebar = Math.max((SIDEBAR_MIN / rect.width) * 100, Math.min(30, pct));
       } else if (viewMode === 'table') {
         colWidths.table = Math.max(25, Math.min(70, pct - (sidebarVisible ? colWidths.sidebar : 0)));
       } else {
@@ -353,11 +356,27 @@
 
     <div class="on-glass list-col" style="width: {viewMode === 'table' ? colWidths.table : colWidths.list}%">
       <div class="list-header">
-        <div class="list-title-group">
-          <h2 class="list-title" title={listTitle}>{listTitle}</h2>
-          <p class="list-sub">
-            {$t(countKey('panel_notes_count', displayList.length, $locale), { n: String(displayList.length) })}
-          </p>
+        <div class="list-head-row">
+          <div class="list-title-group">
+            <h2 class="list-title" title={listTitle}>{listTitle}</h2>
+            <p class="list-sub">
+              {$t(countKey('panel_notes_count', displayList.length, $locale), { n: String(displayList.length) })}
+            </p>
+          </div>
+          <div class="list-head-actions">
+            {#if !sidebarVisible}
+              <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
+                <Icon name="sidebar" size={18} />
+              </button>
+            {/if}
+            {#if isTrash}
+              <ListBulkActions {isTrash} notes={displayList} />
+            {:else}
+              <button class="icon-btn create" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
+                <Icon name="plus" size={18} />
+              </button>
+            {/if}
+          </div>
         </div>
         <div class="list-actions">
           <!-- Looks like an input; the palette's own field takes focus once open -->
@@ -366,16 +385,12 @@
             <span class="palette-placeholder">{$t('cmd_placeholder')}</span>
             <kbd>Ctrl+P</kbd>
           </button>
-          {#if !sidebarVisible}
-            <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_toggle_sidebar')}>
-              <Icon name="sidebar" size={18} />
-            </button>
-          {/if}
           <div class="sort-ctl" title={$t('notes_sort')}>
             <div class="sort-select">
               <CustomSelect
                 options={SORT_KEYS.map((key) => ({ value: key, label: $t(`notes_sort_${key}`) }))}
                 value={sort.key}
+                anchor=".sort-ctl"
                 onchange={(v) => setSort({ ...sort, key: (v ?? 'updated_at') as SortKey })}
               />
             </div>
@@ -394,16 +409,9 @@
           >
             <Icon name={viewMode === 'list' ? 'table' : 'layout-list'} size={18} />
           </button>
-          {#if isTrash}
-            <ListBulkActions {isTrash} notes={displayList} />
-          {:else}
-            <button class="icon-btn create" onclick={() => (showCreate = true)} title={$t('notes_btn_new')} aria-label={$t('notes_btn_new')}>
-              <Icon name="plus" size={18} />
-            </button>
-          {/if}
         </div>
       </div>
-      <div class="list-scroll">
+      <div class="list-scroll" class:table-view={viewMode === 'table'}>
         {#if viewMode === 'table'}
           <NotesTable
             notes={displayList}
@@ -560,7 +568,7 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    min-width: 100px;
+    min-width: 200px;
     border-radius: var(--radius-pane);
     background: var(--pane);
     border: 1px solid var(--pane-border);
@@ -575,7 +583,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    min-width: 140px;
+    min-width: 280px;
     container-type: inline-size;
     border-radius: var(--radius-pane);
     background: var(--pane);
@@ -585,18 +593,20 @@
     backdrop-filter: var(--pane-filter);
   }
 
+  /* Always two rows: the title with its buttons (back the sidebar, create or the trash's), then the
+     field, the sort and the view on one line that never wraps. */
   .list-header {
     padding: var(--sp-5) var(--sp-4) var(--sp-3);
     display: flex;
-    flex-wrap: wrap;
-    /* Field and buttons sit on one line, vertically centred against the two-line title */
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2) var(--sp-3);
+    flex-direction: column;
+    gap: var(--sp-3);
     flex-shrink: 0;
   }
+  .list-head-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .list-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+  .list-head-actions .icon-btn { width: 36px; height: 36px; }
 
-  .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
   .list-title {
     font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
@@ -606,27 +616,33 @@
   }
   .list-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
-  /* The palette field grows; the controls after it keep their size and wrap as a group when the column is narrow */
-  .list-actions {
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
-    gap: 6px; flex: 1 1 240px; min-width: 0;
-  }
-  /* One group like .seg: a shared frame and fill, a thin line between the select and the arrow */
+  /* The palette field takes the rest; the controls after it keep their size */
+  .list-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  /* One group like .palette-field: its fill and frame, 36 high; the select and the arrow inside are
+     bare, a line between them. Focus inside and the open list frame the whole group; the keyboard rings it. */
   .sort-ctl {
-    display: flex; align-items: center; flex-shrink: 0; overflow: hidden;
-    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2);
+    display: flex; align-items: center; flex-shrink: 0; height: 36px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-3);
+    transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   }
-  .list-actions .sort-ctl .icon-btn { border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--bg-2); width: 36px; height: 34px; }
-  /* Compact CustomSelect matching the 36px header controls (34 inside the 1px group border); as wide as its label, never cut */
-  .sort-select { width: auto; min-width: 104px; }
-  .sort-select :global(.trigger) { gap: var(--sp-2); }
-  .sort-select :global(.trigger-label) { overflow: visible; }
+  .sort-ctl:hover { border-color: var(--border-2); }
+  .sort-ctl:focus-within, .sort-ctl:has(:global(.trigger.open)) { border-color: var(--accent-border); }
+  .sort-ctl:has(:global(:focus-visible)):not(:has(:global(.trigger.open))) { box-shadow: 0 0 0 3px var(--accent-bg); }
+  .list-actions .sort-ctl .icon-btn {
+    position: relative; width: 36px; height: 34px;
+    border: 0; border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0; background: transparent;
+  }
+  .list-actions .sort-ctl .icon-btn::before {
+    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+    border-left: 1px solid var(--border);
+  }
+  .list-actions .sort-ctl .icon-btn:focus-visible { outline: none; box-shadow: none; }
+  .sort-select { width: auto; }
   .sort-select :global(.trigger) {
-    min-height: 34px; height: 34px; padding: 0 0.6rem;
-    border: 0; border-radius: 0;
-    background: var(--bg-2); color: var(--text-2); font-size: var(--fs-sm);
+    height: 34px; border: 0; border-radius: 0;
+    background: transparent; color: var(--text); font-size: var(--fs-base);
   }
-  .sort-select :global(.trigger:focus), .sort-select :global(.trigger.open) { box-shadow: none; }
+  .sort-select :global(.trigger:focus-visible), .sort-select :global(.trigger.open) { box-shadow: none; }
   .palette-field {
     flex: 1 1 120px;
     min-width: 0;
@@ -651,11 +667,7 @@
   }
   .list-actions .icon-btn { width: 36px; height: 36px; }
 
-  /* Narrow list column: title on its own line, the field shrinks to an icon */
-  @container (max-width: 560px) {
-    .list-title-group { flex: 1 1 100%; }
-    .list-actions { margin-left: auto; }
-  }
+  /* Narrow list column: the field shrinks to an icon */
   @container (max-width: 500px) {
     .palette-field kbd { display: none; }
   }
@@ -668,6 +680,14 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--sp-2);
+  }
+  /* The table scrolls itself, down and sideways, under its pinned head: the column only gives it the room left
+     under the list's header, so the sideways bar is at the table's bottom on the screen. */
+  .list-scroll.table-view {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* A note keeps room to be read and edited next to the wide table. */
