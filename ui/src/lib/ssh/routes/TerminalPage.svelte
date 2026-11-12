@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { t, locale } from '$lib/core/i18n';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
@@ -254,22 +255,23 @@
               </td>
               <td class="col-auth">
                 <div class="auth-tags">
-                  <span class="badge tag {conn.auth_type === 'key_password' ? 'badge-warn' : 'badge-accent'}">{authLabel(conn.auth_type)}</span>
+                  <Pill class="tag" tone={conn.auth_type === 'key_password' ? 'warn' : 'accent'} text={authLabel(conn.auth_type)} />
                   {#if conn.has_password && conn.auth_type !== 'password'}
-                    <span class="badge tag badge-accent">{$t('ssh_auth_badge_password')}</span>
+                    <Pill class="tag" tone="accent" text={$t('ssh_auth_badge_password')} />
                   {/if}
                   {#if conn.requires_2fa}
-                    <span class="badge tag badge-ok">2FA</span>
+                    <Pill class="tag" tone="ok" text="2FA" />
                   {/if}
                 </div>
               </td>
               <td class="col-proxy">
                 {#if conn.proxy_id}
-                  <button
-                    class="badge tag proxy-chip"
+                  <Pill
+                    class="tag proxy-chip"
                     title={proxyName(conn.proxy_id)}
+                    text={proxyName(conn.proxy_id)}
                     onclick={(e) => { e.stopPropagation(); editProxy(conn.proxy_id!); }}
-                  >{proxyName(conn.proxy_id)}</button>
+                  />
                 {:else}
                   <span class="text-muted">—</span>
                 {/if}
@@ -404,7 +406,7 @@
   }
 
   /* A word in a chip (the common .badge): 24 high, the interface's font. */
-  .tag { height: 24px; padding-block: 0; box-sizing: border-box; }
+  .data-table :global(.tag) { height: 24px; padding-block: 0; box-sizing: border-box; }
 
   .status-dot {
     display: inline-block;
@@ -427,8 +429,8 @@
   .time-part { color: var(--text-4, var(--text-3)); font-size: var(--fs-xs); opacity: 0.75; }
 
   /* The proxy: a neutral chip of an entity that opens its editor. */
-  .proxy-chip { display: inline-block; max-width: 100%; line-height: 22px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; font-family: inherit; }
-  .proxy-chip:hover { border-color: var(--border-2); color: var(--text); }
+  .data-table :global(.proxy-chip) { display: inline-block; max-width: 100%; line-height: 22px; overflow: hidden; text-overflow: ellipsis; cursor: pointer; font-family: inherit; }
+  .data-table :global(.proxy-chip:hover) { border-color: var(--border-2); color: var(--text); }
 
   .text-muted { color: var(--text-3); font-size: var(--fs-xs); }
   .row-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }

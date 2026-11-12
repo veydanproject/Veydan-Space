@@ -18,6 +18,7 @@
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import { startIosKeyboard } from '$lib/core/mobile/ios-keyboard';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import LinkInbox from '$lib/core/links/LinkInbox.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { leavesOff, registry } from '$lib/core/registry';
@@ -102,8 +103,12 @@
         {#snippet failed(_error, reset)}
           <div class="m-page">
             <div class="m-empty">
+              <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
               <p>{$t('screen_failed')}</p>
-              <button type="button" class="m-btn-grad" onclick={() => goHome(reset)}>{$t('nav_home')}</button>
+              <div class="actions">
+                <button type="button" class="btn btn-ghost btn-sm" onclick={reset}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>
+                <button type="button" class="btn btn-ghost btn-sm" onclick={() => goHome(reset)}>{$t('nav_home')}</button>
+              </div>
             </div>
           </div>
         {/snippet}
@@ -156,6 +161,8 @@
     min-height: 0;
     overflow: hidden;
   }
+  /* Retry first, the way home beside it. */
+  .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); }
   .screen > :global(.editor) {
     flex: 1;
     min-height: 0;

@@ -55,6 +55,7 @@ pub fn live(notice: &messenger_core::Notice, face: Face, settings: &Settings, lo
         body: notice.body.clone().filter(|_| settings.content == Content::SenderText),
         hide_on_lockscreen: settings.lockscreen_hidden,
         count: 1,
+        muted: false,
     })
 }
 

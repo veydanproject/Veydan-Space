@@ -135,7 +135,7 @@
           <h2>{title}</h2>
           {#if titleAside}<span class="aside" role="presentation" onpointerdown={(e) => e.stopPropagation()}>{@render titleAside()}</span>{/if}
         </div>
-        {#if closable}<button type="button" class="m-ibtn" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
+        {#if closable}<button type="button" class="win-close" onclick={onclose} aria-label={$t('common_close')} onpointerdown={(e) => e.stopPropagation()}>
           <Icon name="x" size={18} />
         </button>{/if}
       </div>
@@ -183,6 +183,8 @@
     gap: var(--sp-2);
     min-height: 64px;
     margin-bottom: var(--sp-2);
+    /* The × 12 from the sheet's right edge, as in Dialog and Drawer: the head steps out of the sheet's 20 by 8. */
+    margin-right: calc(var(--sp-3) - var(--sp-5));
     touch-action: none;
     flex-shrink: 0;
   }

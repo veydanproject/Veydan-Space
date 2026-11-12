@@ -18,5 +18,9 @@
   .group { display: flex; flex-direction: column; }
   h2 { margin: 0; }
   .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-2); }
-  .rows { padding: 0; overflow: hidden; }
+  /* Not clipped: the keyboard's ring of a row stands outside it, as a button's; the first and the last row
+     take the card's corners for their hover instead. */
+  .rows { padding: 0; }
+  .rows > :global(:first-child) { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+  .rows > :global(:last-child) { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
 </style>

@@ -37,7 +37,7 @@ pub const KEPT_TABLES: [&str; 7] = [
 ];
 
 /// The tables of the account, emptied by `wipe`.
-pub const ACCOUNT_TABLES: [&str; 47] = [
+pub const ACCOUNT_TABLES: [&str; 48] = [
     "msg_events_raw",
     "msg_outbox",
     "msg_sync_cursors",
@@ -85,6 +85,7 @@ pub const ACCOUNT_TABLES: [&str; 47] = [
     "msg_archive_queue",
     "msg_archive_forgotten",
     "msg_groups_forgotten",
+    "msg_drafts",
 ];
 
 /// The areas of the settings of the account (`<area>.<name>`): what the

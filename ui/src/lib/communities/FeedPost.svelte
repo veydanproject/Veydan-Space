@@ -186,8 +186,8 @@
   {#if failure !== null}
     <div class="mark danger unsent-mark" role="alert" title={failure || undefined}>
       <Icon name="alert-triangle" size={14} />{$t('chan_not_sent')}
-      {#if onretry}<button class="retry" onclick={() => onretry?.(item)}><Icon name="arrow-forward-up" size={11} />{$t('common_retry')}</button>{/if}
     </div>
+    {#if onretry}<button class="btn btn-ghost btn-sm retry" onclick={() => onretry?.(item)}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>{/if}
   {/if}
 {/snippet}
 
@@ -374,7 +374,7 @@
   }
   .comment .head { display: contents; }
   .comment > :not(.head) { grid-column: 2 / -1; min-width: 0; }
-  .comment > .mark { justify-self: start; }
+  .comment > .mark, .comment > .retry { justify-self: start; }
   /* Mine that waits or was given up keeps an edge, so it reads apart. */
   .post.comment.pending, .post.comment.unsent { padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--warn-border); border-radius: var(--radius-lg); }
   .post.comment.unsent { border-style: solid; border-color: var(--danger-border); }
@@ -386,10 +386,8 @@
   .post.unsent { border-color: var(--danger-border); }
   .sending-mark { display: inline-flex; margin-left: 4px; color: var(--text-3); }
   .unsent-mark { gap: 6px; }
-  .retry {
-    display: inline-flex; align-items: center; gap: 3px; margin-left: 2px; padding: 0 2px; border: none; background: none; cursor: pointer;
-    font: inherit; font-weight: var(--fw-bold); color: inherit; text-decoration: underline; text-underline-offset: 2px;
-  }
+  /* The way to send it again under the mark, as in a toast (T8-06). */
+  .retry { align-self: flex-start; gap: var(--sp-1); color: var(--text); }
 
   /* A comment's head: who and when on top. */
   .head { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }

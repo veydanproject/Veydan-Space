@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { api } from '$lib/browser/api';
@@ -273,19 +274,19 @@
       </div>
 
       <div class="ws-meta">
-        <span class="badge">
+        <Pill>
           <Icon name="folder-open" size={12} />
           {$t(countKey('workspaces_profiles_n', profiles.length, $locale), { n: String(profiles.length) })}
-        </span>
-        <span class="badge">
+        </Pill>
+        <Pill>
           <Icon name="network" size={12} />
           {$t(countKey('workspaces_proxies_n', proxies.length, $locale), { n: String(proxies.length) })}
-        </span>
+        </Pill>
         {#if runningCount > 0}
-          <span class="badge badge-ok">
+          <Pill tone="ok">
             <span class="dot"></span>
             {$t(countKey('workspaces_active_n', runningCount, $locale), { n: String(runningCount) })}
-          </span>
+          </Pill>
         {/if}
       </div>
 

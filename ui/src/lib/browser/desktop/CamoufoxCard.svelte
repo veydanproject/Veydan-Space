@@ -4,6 +4,7 @@
 <!-- The Camoufox section of the settings: what is installed, the download or the update with its progress, the check for a newer release; one primary button, only when there is something to install. -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { t } from '$lib/core/i18n';
   import { api } from '$lib/browser/api';
   import type { CamoufoxStatus } from '$lib/browser/types';
@@ -154,9 +155,7 @@
       {/if}
     </span>
     {#if camoufox}
-      <span class="badge" class:badge-ok={camoufox.installed} class:badge-warn={!camoufox.installed}>
-        {camoufox.installed ? $t('settings_camoufox_installed') : $t('settings_camoufox_not_installed')}
-      </span>
+      <Pill tone={camoufox.installed ? 'ok' : 'warn'} text={camoufox.installed ? $t('settings_camoufox_installed') : $t('settings_camoufox_not_installed')} />
     {/if}
   </div>
 

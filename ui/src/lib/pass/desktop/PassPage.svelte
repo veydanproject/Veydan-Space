@@ -51,7 +51,7 @@
         >
           <Icon name={s.icon} size={14} />
           {$t(s.title)}
-          {#if n > 0}<span class="tab-count">{n}</span>{/if}
+          {#if n > 0}<span class="count-pill sm quiet">{n}</span>{/if}
         </button>
       {/each}
     </div>

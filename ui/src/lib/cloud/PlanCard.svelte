@@ -4,6 +4,7 @@
 <!-- The plan of the account (vcloud-plan.md 4.2, 4.5): its name and state, the day it is paid until, the plan that waits for that day, the three numbers a person feels (room, a file of a chat, how long media stay), and the two ways to change it: the plans and a key. How old the numbers are is said when the server could not be asked. -->
 <script lang="ts">
   import { t, locale } from '$lib/core/i18n';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { isMobile } from '$lib/core/platform';
   import { dateOf, formatBytes, type ShownAccount } from '$lib/cloud/account';
@@ -47,9 +48,7 @@
       <span class="label" id="cloud-plan-title">{$t('cloud_plan_title')}</span>
       <span class="name">{name}</span>
     </div>
-    <span class="badge" class:badge-ok={account.state === 'paid' || account.state === 'free'} class:badge-warn={account.state === 'grace'} class:badge-danger={account.state === 'suspended'}>
-      {$t(stateKey)}
-    </span>
+    <Pill tone={account.state === 'paid' || account.state === 'free' ? 'ok' : account.state === 'grace' ? 'warn' : account.state === 'suspended' ? 'bad' : 'neutral'} text={$t(stateKey)} />
   </div>
 
   {#if account.state === 'grace' && account.grace_until}

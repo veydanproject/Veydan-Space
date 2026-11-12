@@ -5,6 +5,7 @@
 //! contact told me that key, and only when it is newer than the last one.
 
 use crate::heartbeat::ONLINE_TTL_SECS;
+use crate::sight;
 use async_trait::async_trait;
 use messenger_core::traits::UiEvent;
 use messenger_core::presence::KEY_PRESENCE;
@@ -37,14 +38,21 @@ impl Handler<MetaInbound> for PresenceHandler {
         if !settings::get_bool(&self.store, KEY_PRESENCE, true).await? {
             return Ok(vec![]);
         }
-        // A key nobody told me: a stranger, or a contact that rotated away.
-        let Some(peer) = presence::peer_of(&self.store, author.as_hex()).await? else {
-            return Ok(vec![]);
-        };
         // A beat counts no further than my clock: one dated ahead by a fast
         // clock would hold back the honest beats after it, and no beat
         // promises more than two of ours.
         let seen_at = created_at.secs().min(ctx.clock.now().secs());
+        // My own key: another device of mine is in sight, or this one beat.
+        // Kept for a push, shown to nobody.
+        if sight::is_mine(&self.store, author.as_hex()).await? {
+            let until = expires_at.map_or(seen_at + ONLINE_TTL_SECS, |t| t.secs()).min(seen_at + ONLINE_TTL_SECS);
+            sight::heard_mine(&self.store, seen_at, until).await?;
+            return Ok(vec![]);
+        }
+        // A key nobody told me: a stranger, or a contact that rotated away.
+        let Some(peer) = presence::peer_of(&self.store, author.as_hex()).await? else {
+            return Ok(vec![]);
+        };
         // No expiration: the beat is taken to say what ours say.
         let online_until = expires_at.map_or(seen_at + ONLINE_TTL_SECS, |t| t.secs()).min(seen_at + 2 * ONLINE_TTL_SECS);
         if !presence::seen(&self.store, author.as_hex(), seen_at, online_until).await? {
@@ -155,6 +163,32 @@ mod tests {
         // A beat that says "online for a year" is taken for two of ours.
         let out = h.handle(beat(&key, now + 60, Some(now + 365 * 86_400)), &ctx_at(now + 60)).await.unwrap();
         assert_eq!(emitted(&out)[0]["online_until"], now + 60 + 2 * ONLINE_TTL_SECS);
+    }
+
+    /// A beat of my own key is kept for a push when another device made
+    /// it, and shown to nobody; this device's own is passed over.
+    #[tokio::test]
+    async fn a_beat_of_my_own_key_is_kept_for_a_push_only() {
+        let store = Store::open_in_memory().await.unwrap();
+        let mine = "ee".repeat(32);
+        let h = PresenceHandler::new(store.clone());
+        let now = 1_759_700_000;
+        assert!(h.handle(beat(&mine, now, Some(now + 80)), &ctx_at(now)).await.unwrap().is_empty());
+        assert!(!sight::elsewhere(&store, now + 1).await.unwrap(), "not watched as mine: a stranger");
+
+        sight::watching_mine(&store, &mine).await.unwrap();
+        sight::beating(&store, now).await.unwrap();
+        assert!(h.handle(beat(&mine, now, Some(now + 80)), &ctx_at(now)).await.unwrap().is_empty());
+        assert!(!sight::elsewhere(&store, now + 1).await.unwrap(), "this device's own beat");
+
+        assert!(h.handle(beat(&mine, now + 20, Some(now + 365 * 86_400)), &ctx_at(now + 20)).await.unwrap().is_empty());
+        assert!(sight::elsewhere(&store, now + 30).await.unwrap(), "the computer beat");
+        assert!(!sight::elsewhere(&store, now + 20 + ONLINE_TTL_SECS).await.unwrap(), "no longer than a beat promises");
+        assert!(crate::view::snapshot(&store).await.unwrap().is_empty(), "nobody is shown");
+
+        settings::set_bool(&store, KEY_PRESENCE, false).await.unwrap();
+        assert!(h.handle(beat(&mine, now + 50, Some(now + 130)), &ctx_at(now + 50)).await.unwrap().is_empty());
+        assert!(!sight::elsewhere(&store, now + 20 + ONLINE_TTL_SECS).await.unwrap(), "presence off: not kept");
     }
 
     #[tokio::test]

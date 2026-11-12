@@ -140,6 +140,15 @@ impl MessengerRuntime {
         crate::calls::end_calls_of(self.calls(), self.group_calls(), &going.chats, &going.groups).await;
         // What arrives for its groups is done or waits: a welcome writes the
         // row of a group and then its chat, and never around the removal.
+        // So does a message of its chats: one applied writes its row of
+        // seen before the removal forgets what came by the server, else the
+        // server put in again would not ask for it (`Ingress::hold`). The
+        // ingress first, as it takes the lock of a group after it.
+        let ingress = self.archive.session_ingress();
+        let held = match &ingress {
+            Some(ingress) => Some(ingress.hold().await),
+            None => None,
+        };
         let mut locks = Vec::new();
         for group in &going.groups {
             locks.push(self.groups().lock_of(group).await);
@@ -150,6 +159,7 @@ impl MessengerRuntime {
         }
         let removed = servers::remove_by_me(self.store(), id, now).await?;
         drop(guards);
+        drop(held);
         if removed.is_none() {
             return Err(MessengerError::Invalid(servers::ERR_SERVER_UNKNOWN.into()));
         }

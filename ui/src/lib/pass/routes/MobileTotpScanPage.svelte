@@ -77,15 +77,15 @@
   <div class="body">
   {#if denied}
     <div class="msg">
-      <Icon name="alert-triangle" size={32} />
+      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
       <p>{$t('totp_scan_denied')}</p>
       <button class="btn btn-ghost" onclick={() => openAppSettings()}>{$t('totp_scan_open_settings')}</button>
     </div>
   {:else if error}
     <div class="msg">
-      <Icon name="alert-triangle" size={32} />
+      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
       <p>{error}</p>
-      <button class="btn btn-primary" onclick={() => { error = ''; start(); }}>{$t('common_try_again')}</button>
+      <button class="btn btn-ghost btn-sm" onclick={() => { error = ''; start(); }}><Icon name="arrow-forward-up" size={16} />{$t('common_try_again')}</button>
     </div>
   {:else}
     <div class="frame"></div>

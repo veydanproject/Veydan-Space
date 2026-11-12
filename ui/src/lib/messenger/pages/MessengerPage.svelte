@@ -32,9 +32,6 @@
   import SettingsView from './SettingsView.svelte';
   import { SETTINGS_TABS, SETTINGS_ICONS, settingsUi } from './settingsTab.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
-  import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
-  import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
-  import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
   import RequestsList from '../requests/RequestsList.svelte';
   import RequestView from '../requests/RequestView.svelte';
   import { requestStore, requestsUi } from '../requests/requestStore.svelte';
@@ -498,9 +495,6 @@
   </Dialog>
   <Dialer />
   <ReportHost />
-  <ServerAcceptDialog />
-  <ServerInfoDialog />
-  <PrivateInviteDialog />
 {/if}
 
 <style>

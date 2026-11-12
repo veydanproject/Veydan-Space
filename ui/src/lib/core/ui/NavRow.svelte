@@ -14,7 +14,7 @@
   - `list` — a row of a list of the cloud: 64, a hairline under it, the tile
     in the accent by default, the end in place of the chevron.
   - `compact` — a line of a block (what a chat has shared): 46 (50 on touch),
-    the icon without a tile, the count as a quiet number.
+    the icon without a tile.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -29,13 +29,14 @@
     variant?: 'panel' | 'list' | 'compact';
     /** The colour of the tile; `plain` in a panel, `accent` in a list. */
     tone?: TileTone;
-    /** The title in the danger colour: a row that ends something. */
+    /** A row that ends something: the title and the icon in the danger colour, the hover in its tint, as a
+     *  `.danger` item of ContextMenu; in every variant. */
     danger?: boolean;
     /** The line under the title. */
     sub?: Snippet | string;
     /** What stands at the end, before the chevron. */
     end?: Snippet;
-    /** A count at the end: a quiet `.count-pill`, a quiet number in `compact`. */
+    /** A count at the end: a quiet `.count-pill.sm`, the one count of rows and tabs. */
     count?: number | string;
     /** The chevron; by default, when the row leads somewhere. */
     chevron?: boolean;
@@ -58,7 +59,7 @@
   const link = $derived(!!href && !disabled);
   const button = $derived(!link && !!onclick && !disabled);
   const chev = $derived(chevron ?? !!(href || onclick));
-  const tileTone = $derived(tone ?? (variant === 'list' ? 'accent' : 'plain'));
+  const tileTone = $derived(tone ?? (danger ? 'bad' : variant === 'list' ? 'accent' : 'plain'));
 </script>
 
 {#snippet body()}
@@ -72,7 +73,7 @@
     {#if sub}<span class="sub">{#if typeof sub === 'string'}{sub}{:else}{@render sub()}{/if}</span>{/if}
   </span>
   {#if count !== undefined}
-    {#if variant === 'compact'}<span class="count">{count}</span>{:else}<b class="count-pill quiet">{count}</b>{/if}
+    <b class="count-pill sm quiet">{count}</b>
   {/if}
   {#if end}
     {#if variant === 'list'}<span class="trailing">{@render end()}</span>{:else}{@render end()}{/if}
@@ -95,8 +96,9 @@
   }
   .hit { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
   .hit:hover { background: var(--surface-row-hover); }
-  .hit:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .off { opacity: 0.55; }
+  .navrow.danger .title, .navrow.danger .ico { color: var(--danger-text); }
+  .danger.hit:hover { background: var(--danger-bg); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .title.nowrap { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -111,7 +113,6 @@
   .list:last-child { border-bottom: 0; }
   .list.m { padding: var(--sp-3) var(--sp-4); }
   .list .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-snug); }
-  .list.danger .title { color: var(--danger-text); }
   .list .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .trailing { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-2); }
 
@@ -119,7 +120,6 @@
   .compact { min-height: 46px; padding: 0 var(--sp-3); border-radius: 0; font-size: var(--fs-sm); }
   .compact .ico { display: inline-flex; color: var(--accent-text-2); }
   .compact .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .compact .count { color: var(--text-3); font-variant-numeric: tabular-nums; }
 
   @media (pointer: coarse) {
     .panel { min-height: 60px; }

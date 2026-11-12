@@ -10,7 +10,7 @@
   import { pinnedHead } from '$lib/core/pinnedHead';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
-  import StatePill, { type PillTone } from '$lib/core/ui/StatePill.svelte';
+  import Pill, { type PillTone } from '$lib/core/ui/Pill.svelte';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import ProxyPanel from '$lib/browser/components/ProxyPanel.svelte';
   import BulkImportProxyModal from '$lib/browser/components/BulkImportProxyModal.svelte';
@@ -252,7 +252,7 @@
                 <ProxyAddress {proxy} {result} />
               </td>
               <td class="col-status">
-                <StatePill text={$t(`proxies_filter_${proxy.status}`)} tone={STATUS_TONE[proxy.status] ?? 'neutral'} />
+                <Pill kind="state" text={$t(`proxies_filter_${proxy.status}`)} tone={STATUS_TONE[proxy.status] ?? 'neutral'} />
               </td>
               <td class="col-geo">
                 {#if proxy.country}
@@ -325,8 +325,8 @@
 
 <style>
   /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.count-badge из base.css */
-  /* The placeholder names four fields: the width of the SSH keys search, so it is read whole. */
-  .filter-bar .search-field { width: 300px; }
+  /* The placeholder names four fields: the field takes all the room the filters leave, 300 at least, so it is read whole (T8-08). */
+  .filter-bar .search-field { flex: 1 1 300px; width: auto; min-width: 300px; }
 
   .page-title-group { display: flex; flex-direction: column; gap: 6px; }
 

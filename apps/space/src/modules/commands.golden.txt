@@ -372,6 +372,8 @@ messenger_social_platforms messenger all
 messenger_status messenger all
 messenger_ui_prefs_get messenger all
 messenger_ui_prefs_set messenger all
+messenger_drafts_get messenger all
+messenger_draft_set messenger all
 modules_choose shell all
 modules_first_run_done shell all
 modules_list shell all

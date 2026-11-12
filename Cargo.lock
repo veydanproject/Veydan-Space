@@ -4399,6 +4399,7 @@ dependencies = [
  "messenger-dm",
  "messenger-groups",
  "messenger-ingress",
+ "messenger-presence",
  "messenger-store",
  "messenger-transport",
  "messenger-vlink",

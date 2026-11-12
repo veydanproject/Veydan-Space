@@ -4,6 +4,7 @@
 <!-- One Tor instance as a card: its exit and state with the marks of a hand start and a pending restart, the progress of its start, its address and users, and its actions and log under a line. -->
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import Pill, { type PillTone } from '$lib/core/ui/Pill.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { formatError } from '$lib/core/utils';
@@ -22,12 +23,12 @@
     stopping: 'tor_state_stopping',
     failed: 'tor_state_failed',
   };
-  const STATE_BADGE: Record<InstanceState, string> = {
-    starting: 'badge-accent',
-    ready: 'badge-ok',
-    restarting: 'badge-accent',
-    stopping: 'badge-warn',
-    failed: 'badge-danger',
+  const STATE_TONE: Record<InstanceState, PillTone> = {
+    starting: 'accent',
+    ready: 'ok',
+    restarting: 'accent',
+    stopping: 'warn',
+    failed: 'bad',
   };
 
   const LOG_POLL_MS = 2000;
@@ -93,10 +94,10 @@
 <div class="card instance">
   <div class="head">
     <span class="title">{label ?? $t('tor_exit_any')}</span>
-    <span class="badge {STATE_BADGE[info.state]}">{$t(STATE_LABEL[info.state])}</span>
+    <Pill tone={STATE_TONE[info.state]} text={$t(STATE_LABEL[info.state])} />
     <span class="spacer"></span>
-    {#if info.kept}<span class="badge badge-accent">{$t('tor_kept')}</span>{/if}
-    {#if info.restart_needed}<span class="badge badge-warn">{$t('tor_restart_needed')}</span>{/if}
+    {#if info.kept}<Pill tone="accent" text={$t('tor_kept')} />{/if}
+    {#if info.restart_needed}<Pill tone="warn" text={$t('tor_restart_needed')} />{/if}
   </div>
 
   {#if showBar}

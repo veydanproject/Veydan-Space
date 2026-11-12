@@ -290,7 +290,7 @@
 <style>
   /* The field: a text field of the forms (base.css input), with a chevron. */
   .trigger {
-    --sel-border: var(--border);
+    --sel-border: var(--control-border);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -309,16 +309,16 @@
     outline: none;
     transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   }
-  /* Rest < dark rest < hover < error < focus: the first three weigh the same, the order decides. */
-  :global(:where([data-theme='dark'])) .trigger { --sel-border: var(--pane-strong-border); }
-  .trigger:where(:hover:not(:disabled)) { --sel-border: var(--border-2); }
+  /* Rest < hover < error < focus: the first two weigh the same, the order decides. */
+  .trigger:where(:hover:not(:disabled)) { --sel-border: var(--text-3); }
   .trigger[aria-invalid='true'] { --sel-border: var(--danger); }
-  /* Open or clicked: the border only. The ring comes with the keyboard, and the list opens 7 below (3 of it + 4). */
+  /* Open or clicked: the border only. The ring comes with the keyboard (the one of base.css), and the list opens
+     7 below (4 of it + 3). */
   .trigger:focus-visible, .trigger.open {
     outline: none;
     --sel-border: var(--accent-border);
   }
-  .trigger:focus-visible:not(.open) { box-shadow: 0 0 0 3px var(--accent-bg); }
+  .trigger:focus-visible:not(.open) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .trigger:disabled { opacity: 0.45; cursor: not-allowed; }
   .trigger.mobile { height: auto; min-height: var(--control-h-lg); font-size: var(--fs-md); }
   .trigger-label {

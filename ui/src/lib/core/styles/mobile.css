@@ -351,7 +351,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   border-radius: var(--radius-card);
   box-shadow: var(--m-card-shadow);
 }
-/* What sits on a glass card takes its glass: the rule is `.card` / `.glass-card` of base.css; `.m-card` is the shell's own. */
+/* What sits on a glass card takes its glass: the rule is `.card` of base.css; `.m-card` is the shell's own. */
 .m-card {
   --surface: var(--pane-strong);
   --surface-2: var(--pane-strong);

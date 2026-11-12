@@ -6,7 +6,7 @@
   group or a card of a server opens. A private server is run by a company
   or a person, not by Veydan, which has nothing to do with it: whoever
   talks there trusts its owner. Then every server a chat there goes
-  through (ServerRows). Mount once per page, beside ServerAcceptDialog.
+  through (ServerRows). Mount once per window, beside ServerAcceptDialog.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';

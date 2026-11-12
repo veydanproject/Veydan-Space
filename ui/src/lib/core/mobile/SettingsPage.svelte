@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { get } from 'svelte/store';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
@@ -292,7 +293,7 @@
     <a class="m-row set-row" href="/settings/lock">
         <span class="set-tile"><Icon name="lock" size={20} /></span>
         <span class="set-text">
-          <span class="m-row-label">{$t('settings_lock_section')} <span class="badge badge-warn">{$t('settings_sync_beta')}</span></span>
+          <span class="m-row-label">{$t('settings_lock_section')} <Pill tone="warn" text={$t('settings_sync_beta')} /></span>
           <span class="m-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>

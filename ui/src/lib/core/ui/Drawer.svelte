@@ -27,6 +27,8 @@
     subheader?: Snippet;
     children: Snippet;
     footer?: Snippet;
+    /** A dense window on --surface-drawer without the glass's blur: what is under it does not show through. */
+    solid?: boolean;
   }
 
   let {
@@ -41,6 +43,7 @@
     subheader,
     children,
     footer,
+    solid = false,
   }: Props = $props();
 
   $effect(() => {
@@ -76,6 +79,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
     <div
       class="drawer on-glass {side}"
+      class:solid
       out:drawerOut={{ side }}
       style={width ? `width:${width}` : undefined}
       role="dialog"
@@ -89,7 +93,7 @@
           {@render titleBadge?.()}
           <div class="drawer-actions">
             {@render actions?.()}
-            <button class="drawer-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
+            <button class="win-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
               <Icon name="x" size={18} />
             </button>
           </div>
@@ -139,6 +143,7 @@
     -webkit-backdrop-filter: var(--glass-filter);
     backdrop-filter: var(--glass-filter);
   }
+  .drawer.solid { background: var(--surface-drawer); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .drawer.right { border-left: 1px solid var(--border); animation: drawer-in-right var(--dur-drawer) var(--ease-drawer); }
   .drawer.left  { border-right: 1px solid var(--border); animation: drawer-in-left  var(--dur-drawer) var(--ease-drawer); }
 
@@ -171,20 +176,7 @@
     gap: var(--sp-2);
     margin-left: auto;
   }
-  .drawer-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--text-2);
-    border: none;
-    flex-shrink: 0;
-  }
-  .drawer-close:hover { background: var(--surface-hover); color: var(--text); }
+  /* The × is the .win-close of base.css, 12 from the head's right edge. */
 
   .drawer-subheader {
     flex-shrink: 0;

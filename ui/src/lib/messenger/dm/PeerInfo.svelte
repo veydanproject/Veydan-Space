@@ -83,7 +83,7 @@
       </section>
 
       {#if profile?.socials?.length || website}
-        <section class="box glass-card">
+        <section class="box card">
           {#if profile?.socials?.length}
             <span class="label">{$t('msg_peer_links')}</span>
             <SocialLinks socials={profile.socials} />
@@ -98,7 +98,7 @@
       {/if}
 
       {#if phone || chat.peer_npub}
-        <section class="box glass-card keys">
+        <section class="box card keys">
           {#if phone}
             <div class="field">
               <CopyField label={$t('msg_peer_phone')} value={phone} />

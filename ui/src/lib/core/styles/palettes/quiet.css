@@ -42,6 +42,7 @@
   --text-soft:   #c3c5cc;  /* metric text, default icon-button glyphs */
   --text-faint:  #adb0b6;  /* field labels, sublabels */
   --text-dim:    #979aa0;  /* "без прокси", stopped status, em-dashes */
+  --control-border: #979aa0;  /* the frame of a field, a checkbox, a radio: 6.3:1 on bg, 5.5:1 on surface */
 
   --accent:        #7066c6;
   --accent-hover:  #655cb2;
@@ -213,7 +214,8 @@
   --text-body:   #2b3546;  /* long-form body text */
   --text-soft:   #414959;  /* metric text, default icon-button glyphs */
   --text-faint:  #5b6478;  /* field labels, sublabels */
-  --text-dim:    #6c7588;  /* stopped status, em-dashes */
+  --text-dim:    #626b7e;  /* stopped status, em-dashes: 4.6:1 on bg */
+  --control-border: #80858f;  /* the frame of a field, a checkbox, a radio: 3.7:1 on a field, 3.2:1 on bg */
 
   --accent:        #7066c6;  /* brand purple, darker step for light bg */
   --accent-hover:  #655cb2;

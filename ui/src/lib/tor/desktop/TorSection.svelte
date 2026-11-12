@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { watchInstances } from '$lib/tor/instances';
@@ -66,11 +67,9 @@
       {/if}
     </span>
     {#if status}
-      <span class="badge" class:badge-ok={status.installed} class:badge-warn={!status.installed}>
-        {status.installed ? $t('tor_installed') : $t('tor_not_installed')}
-      </span>
+      <Pill tone={status.installed ? 'ok' : 'warn'} text={status.installed ? $t('tor_installed') : $t('tor_not_installed')} />
       {#if status.installed && status.source === 'manual'}
-        <span class="badge badge-warn">{$t('tor_installed_by_hand')}</span>
+        <Pill tone="warn" text={$t('tor_installed_by_hand')} />
       {/if}
     {/if}
   </div>

@@ -42,12 +42,12 @@
       aria-current={activeId === it.id ? 'page' : undefined}
       data-sveltekit-replacestate={isTab(it.href) ? '' : undefined}
     >
-      <span class="m-bar-ico"><Icon name={it.icon} size={21} />{@render count(it)}</span>
+      <span class="m-bar-ico"><Icon name={it.icon} size={20} />{@render count(it)}</span>
       <span class="m-bar-label">{$t(it.title)}</span>
     </a>
   {:else}
     <button type="button" class="m-bar-item" class:active={activeId === it.id} onclick={it.onclick}>
-      <span class="m-bar-ico"><Icon name={it.icon} size={21} />{@render count(it)}</span>
+      <span class="m-bar-ico"><Icon name={it.icon} size={20} />{@render count(it)}</span>
       <span class="m-bar-label">{$t(it.title)}</span>
     </button>
   {/if}

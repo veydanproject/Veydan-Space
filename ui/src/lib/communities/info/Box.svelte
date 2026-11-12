@@ -5,8 +5,8 @@
   A box of a channel's info (its contents, its pages, a reader's blocks):
   rows with a hairline between two (`rows`; `fromText` starts the line at
   the text of a row with a tile, as in the contents), or a card of text and
-  buttons (`text`; `tight` for the keeper's). Its own class, not the global
-  `.card`, whose shadow and motion are a pane's.
+  buttons (`text`; `tight` for the keeper's). The global `.card`, with a
+  class of its own for its layout.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -24,7 +24,7 @@
   let { tag = 'div', kind = 'rows', fromText = false, tight = false, start = false, children, ...rest }: Props = $props();
 </script>
 
-<svelte:element this={tag} {...rest} class="box glass-card {kind}" class:from-text={fromText} class:tight class:start>{@render children()}</svelte:element>
+<svelte:element this={tag} {...rest} class="box card {kind}" class:from-text={fromText} class:tight class:start>{@render children()}</svelte:element>
 
 <style>
   .box { --line-left: var(--sp-3); display: flex; flex-direction: column; border-radius: var(--radius-lg); }

@@ -264,6 +264,8 @@ pub fn module() -> Module {
                 commands::messenger_own_private_set,
                 commands::messenger_ui_prefs_get,
                 commands::messenger_ui_prefs_set,
+                commands::messenger_drafts_get,
+                commands::messenger_draft_set,
                 commands::messenger_contact_private_get,
                 commands::messenger_card_send,
                 commands::messenger_card_accept,

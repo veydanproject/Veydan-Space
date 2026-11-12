@@ -8,6 +8,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import dialogSource from './ServerAcceptDialog.svelte?raw';
 import listSource from './PrivateServers.svelte?raw';
+import desktopSource from '../entry/desktop.ts?raw';
+import pageSource from '../pages/MessengerPage.svelte?raw';
+import frameSource from '../mobile/MobileFrame.svelte?raw';
 import { messengerTranslations } from '../i18n';
 import type { ServerPreview } from '../api';
 
@@ -150,5 +153,22 @@ describe('adding a server', () => {
     expect(serverAcceptState.current?.servers).toEqual([VEYDAN]);
     serverAcceptState.answer(true);
     expect(await second).toBe(true);
+  });
+});
+
+describe('where the dialog is', () => {
+  const mounts = (src: string, tag: string) => src.split(`<${tag} />`).length - 1;
+  const dialogs = ['ServerAcceptDialog', 'ServerInfoDialog', 'PrivateInviteDialog'];
+
+  it('is one for the window on a computer: an overlay of the module, so the core\'s Settings ask it too, not the page of the chats (ROO-1075)', () => {
+    for (const d of dialogs) {
+      expect(desktopSource.match(new RegExp(`component: ${d}, place: 'window'`, 'g'))?.length).toBe(1);
+      expect(mounts(pageSource, d)).toBe(0);
+      expect(pageSource).not.toContain(`import ${d} `);
+    }
+  });
+
+  it('stays in the frame of each screen on a phone', () => {
+    for (const d of dialogs) expect(mounts(frameSource, d)).toBe(1);
   });
 });

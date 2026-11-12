@@ -185,7 +185,7 @@
         <button class="tab" role="tab" aria-selected={activeTab === tab.id} class:active={activeTab === tab.id} onclick={() => (activeTab = tab.id)}>
           <Icon name={tab.icon} size={12} /> {$t(tab.title as TranslationKey)}
           {#if count > 0}
-            <span class="tab-count">{count}</span>
+            <span class="count-pill sm quiet">{count}</span>
           {/if}
         </button>
       {/each}

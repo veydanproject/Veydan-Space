@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { drafts, markdownDrafts } from '../shared/drafts.svelte';
+  import { drafts, draftsLoaded, markdownDrafts, setDraft } from '../shared/drafts.svelte';
   import { applyMark, markOfKey, type Mark } from './format';
   import { commandsFor, stepRow, typedCommand } from './bot-commands';
   import { readingOf } from '../content/markdown';
@@ -491,9 +491,19 @@
   });
   $effect(() => {
     if (!draftKey || editing) return;
-    if (text.trim()) drafts.set(draftKey, text);
-    else drafts.delete(draftKey);
-    if (text.trim() && md) markdownDrafts.add(draftKey); else markdownDrafts.delete(draftKey);
+    setDraft(draftKey, text, md);
+  });
+  // The drafts kept on the device came in after the field opened empty.
+  $effect(() => {
+    void draftsLoaded.n;
+    untrack(() => {
+      if (!draftKey || editing || text) return;
+      const kept = drafts.get(draftKey);
+      if (!kept) return;
+      text = kept;
+      md = markdownDrafts.has(draftKey);
+      queueMicrotask(resize);
+    });
   });
 
   // The format menu stands while a part of the field is selected. The
@@ -1038,7 +1048,6 @@
       border-radius: var(--radius-bar);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    .row:focus-within { border-color: var(--pane-strong-border); }
     .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
     .field {
       flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: var(--radius-pill);
@@ -1117,7 +1126,6 @@
   .composer .row > .send { width: 48px; height: 48px; margin: calc(-1 * var(--sp-1)) 0 calc(-1 * var(--sp-1)) var(--sp-3); }
   @media (pointer: coarse) {
     .composer .row::before { -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
-    .composer .row:focus-within::before { border-color: var(--pane-strong-border); }
   }
   @media not (pointer: coarse) {
     @container (max-width: 440px) {

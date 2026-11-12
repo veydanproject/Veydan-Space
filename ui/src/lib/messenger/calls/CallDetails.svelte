@@ -100,7 +100,7 @@
       </button>
     </div>
 
-    <section class="block glass-card">
+    <section class="block card">
       <h3>{$t('msg_calls_history')}</h3>
       <ul class="calls">
       {#each calls as e (e.call_id)}

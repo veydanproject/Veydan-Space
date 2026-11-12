@@ -16,6 +16,7 @@
   import { t } from '$lib/core/i18n';
   import { EMOJI, loadRecent, pushRecent, type EmojiGroup } from './data';
   import { usageStore } from './usageStore.svelte';
+  import { freeze, shown, takeSnapshot } from './snapshot';
 
   interface Props {
     onpick: (emoji: string) => void;
@@ -30,14 +31,17 @@
 
   /** Recents of this device: shown only until the runtime names popular ones. */
   let local = $state<string[]>([]);
+  /** The row as it was at opening: a pick moves emoji in the store, not in an open panel. */
+  let snap = $state<string[] | null>(null);
   const popular = $derived(usageStore.popular.length > 0);
-  const recent = $derived(popular ? usageStore.popular : local);
+  const recent = $derived(shown(snap, popular ? usageStore.popular : local));
   let active = $state<EmojiGroup['id'] | 'recent'>('smileys');
   let root = $state<HTMLDivElement | null>(null);
   let body = $state<HTMLDivElement | null>(null);
 
   onMount(() => {
     local = loadRecent();
+    snap = takeSnapshot(usageStore.popular, local);
     if (recent.length) active = 'recent';
     if (variant !== 'popover') return;
     // A tap outside closes the panel; taps inside never steal the focus.
@@ -55,6 +59,7 @@
   });
 
   function pick(e: string) {
+    snap = freeze(snap, recent);
     local = pushRecent(e);
     onpick(e);
   }

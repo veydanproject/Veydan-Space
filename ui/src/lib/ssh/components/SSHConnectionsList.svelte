@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import type { SshConnection, SshSessionInfo } from '$lib/ssh/types';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { api } from '$lib/ssh/api';
   import { sshStore } from '$lib/ssh/store/ssh.svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -107,26 +108,24 @@
             <div class="item-sub">{conn.username}@{conn.host}:{conn.port}</div>
             <div class="item-badges">
               {#if conn.workspace_ids.length === 0}
-                <span class="badge">{$t('ssh_ctx_global')}</span>
+                <Pill text={$t('ssh_ctx_global')} />
               {:else}
                 {#each conn.workspace_ids.slice(0, 2) as wid}
-                  <span class="badge badge-accent">{workspaceNames[wid] ?? wid.slice(0, 6)}</span>
+                  <Pill tone="accent" text={workspaceNames[wid] ?? wid.slice(0, 6)} />
                 {/each}
                 {#if conn.workspace_ids.length > 2}
-                  <span class="badge">+{conn.workspace_ids.length - 2}</span>
+                  <Pill text="+{conn.workspace_ids.length - 2}" />
                 {/if}
               {/if}
               {#if conn.proxy_id && conn.proxy_name}
-                <span class="badge badge-accent">{conn.proxy_name}</span>
+                <Pill tone="accent" text={conn.proxy_name} />
               {:else if conn.proxy_id}
                 <!-- Proxy row is gone: the connect fails closed rather than going
                      out directly, so say that instead of claiming a live proxy. -->
-                <span class="badge badge-danger" title={$t('ssh_proxy_missing_hint')}>
-                  {$t('ssh_proxy_missing')}
-                </span>
+                <Pill tone="bad" title={$t('ssh_proxy_missing_hint')} text={$t('ssh_proxy_missing')} />
               {/if}
               {#if conn.requires_2fa}
-                <span class="badge badge-accent">2FA</span>
+                <Pill tone="accent" text="2FA" />
               {/if}
               {#if conn.last_connected_at}
                 <span class="last">{formatDate(conn.last_connected_at, $locale)}</span>
@@ -260,7 +259,7 @@
   .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .item-sub { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
   .item-badges { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 3px; align-items: center; }
-  .item-badges .badge { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 0.15rem 0.45rem; }
+  .item-badges :global(.badge) { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 0.15rem 0.45rem; }
   .last { font-size: var(--fs-xs); color: var(--text-3); }
   .item-actions { display: flex; gap: 0.2rem; flex-shrink: 0; }
 </style>

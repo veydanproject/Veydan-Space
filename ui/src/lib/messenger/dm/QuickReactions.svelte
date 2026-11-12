@@ -12,6 +12,7 @@
   import EmojiPicker from '../shared/emoji/EmojiPicker.svelte';
   import { usageStore } from '../shared/emoji/usageStore.svelte';
   import type { MessengerMessage } from '../api';
+  import { freeze, shown, takeSnapshot } from '../shared/emoji/snapshot';
   import { quickSet } from './quick-reactions';
 
   interface Props {
@@ -23,7 +24,14 @@
   }
   let { message: m, more, onmore, onreact }: Props = $props();
 
-  const quick = $derived(quickSet(usageStore.popular));
+  // Read when the menu opens: a reaction moves its emoji first in the store, not under the finger.
+  let snap = $state<string[] | null>(takeSnapshot(usageStore.popular));
+  const quick = $derived(quickSet(shown(snap, usageStore.popular)));
+
+  function react(e: string) {
+    snap = freeze(snap, usageStore.popular);
+    onreact(e);
+  }
   const mine = $derived(new Set(m.reactions.filter((r) => r.mine).map((r) => r.emoji)));
 </script>
 
@@ -32,7 +40,7 @@
 {:else}
   <div class="strip msg-font" role="group" aria-label={$t('msg_react_title')}>
     {#each quick as e (e)}
-      <button class="quick" class:mine={mine.has(e)} aria-pressed={mine.has(e)} onclick={() => onreact(e)}>{e}</button>
+      <button class="quick" class:mine={mine.has(e)} aria-pressed={mine.has(e)} onclick={() => react(e)}>{e}</button>
     {/each}
     <button class="quick other" onclick={onmore} title={$t('msg_react_more')} aria-label={$t('msg_react_more')}>
       <Icon name="smile-plus" size={16} />

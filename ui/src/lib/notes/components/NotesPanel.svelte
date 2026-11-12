@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { portal } from '$lib/core/portal';
   import { backdropDismiss } from '$lib/core/backdrop';
   import { acquireScrollLock, releaseScrollLock } from '$lib/core/scrollLock';
@@ -328,7 +329,7 @@
         <div class="header-title">
           <Icon name="notes" size={16} />
           <h3>{$t('notes_title')}</h3>
-          <span class="badge badge-accent">{displayList.length}</span>
+          <Pill tone="accent" text={String(displayList.length)} />
         </div>
         <div class="header-actions">
           <button class="close-btn" onclick={() => (open = false)}>

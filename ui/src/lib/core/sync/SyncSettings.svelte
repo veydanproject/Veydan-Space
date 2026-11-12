@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { api, LARGE_FILE_LIMITS, largeFilePeakMib } from '$lib/core/api';
@@ -342,7 +343,7 @@
   {#if status?.joined}
     <div class="card status">
       <div class="status-head">
-        <span class="state"><span class="state-title">{$t('settings_sync_status')}</span><span class="badge badge-ok">{$t('settings_sync_status_joined')}</span></span>
+        <span class="state"><span class="state-title">{$t('settings_sync_status')}</span><Pill tone="ok" text={$t('settings_sync_status_joined')} /></span>
         <span class="acts">
           <button type="button" class="btn btn-ghost" disabled={busy || !isTauri || status.running} onclick={syncNow}>
             <Icon name="refresh-cw" size={18} />
@@ -463,7 +464,7 @@
     <!-- Not joined: the status alone, as the joined device's head says it. -->
     <div class="card status">
       <div class="status-head">
-        <span class="state"><span class="state-title">{$t('settings_sync_status')}</span><span class="badge">{$t('settings_sync_status_not_joined')}</span></span>
+        <span class="state"><span class="state-title">{$t('settings_sync_status')}</span><Pill text={$t('settings_sync_status_not_joined')} /></span>
       </div>
     </div>
   {/if}

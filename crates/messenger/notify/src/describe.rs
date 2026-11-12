@@ -10,6 +10,7 @@
 
 use crate::bundle::KeyBundle;
 use crate::fetch;
+use crate::sight;
 use crate::notice::{Body, CallEnd, CallNotice, ChatKind, Notice, Outcome, Plain, Reason};
 use crate::push::{PushData, PushKind};
 use crate::settings::{Content, Settings};
@@ -49,10 +50,33 @@ pub async fn describe(data_dir: &Path, bundle: Option<&KeyBundle>, push: &PushDa
 /// are no request and whose cards are told without a word of theirs, as
 /// the app takes them (`DmService::with_bot`).
 pub async fn describe_as(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
+    describe_in(config, bundle, push, false).await
+}
+
+/// [`describe_as`] for a phone a push woke: a message to show is shown
+/// without a sound while another device of mine is in sight
+/// ([`crate::sight`], read from the store, no relay asked), so the phone
+/// does not ring for a chat the user is reading on the computer. A call
+/// rings as it does.
+pub async fn describe_on_phone(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
+    describe_in(config, bundle, push, true).await
+}
+
+/// `on_phone`: a message to show is muted while I am in sight elsewhere.
+async fn describe_in(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData, on_phone: bool) -> Result<Outcome> {
     let store = Store::open_read_only(config).await?;
     let out = match bundle {
         Some(bundle) => match bundle.keys() {
-            Ok(keys) => Describe::new(store.clone(), keys, config.bot_pubkey.as_deref(), config.push_inbox_dir()).run(bundle, push).await,
+            Ok(keys) => {
+                let describe = Describe::new(store.clone(), keys, config.bot_pubkey.as_deref(), config.push_inbox_dir());
+                match (describe.run(bundle, push).await, on_phone) {
+                    (Ok(Outcome::Show(mut notice)), true) => {
+                        notice.muted = sight::in_sight(&store, SystemClock.now().secs()).await;
+                        Ok(Outcome::Show(notice))
+                    }
+                    (out, _) => out,
+                }
+            }
             Err(e) => Err(e),
         },
         None if push.call => Ok(Outcome::Quiet { reason: Reason::NoKeys }),
@@ -402,6 +426,7 @@ impl Describe {
             body: body.filter(|_| settings.content == Content::SenderText),
             hide_on_lockscreen: settings.lockscreen_hidden,
             count,
+            muted: false,
         }))
     }
 
@@ -511,6 +536,7 @@ impl Describe {
             body: body.filter(|_| settings.content == Content::SenderText),
             hide_on_lockscreen: settings.lockscreen_hidden,
             count,
+            muted: false,
         }))
     }
 }

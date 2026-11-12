@@ -214,7 +214,7 @@
 
 <!-- The page's list stays in place: a password opens over it in a side panel, 440 to read and --drawer-w-md to change. -->
 {#if as === 'pane'}
-  <Drawer open={recordOpen} title={recordTitle} width={formOpen ? 'var(--drawer-w-md)' : 'var(--drawer-w)'} onclose={closeRecord} footer={hasFooter ? recordActions : undefined}>
+  <Drawer solid open={recordOpen} title={recordTitle} width={formOpen ? 'var(--drawer-w-md)' : 'var(--drawer-w)'} onclose={closeRecord} footer={hasFooter ? recordActions : undefined}>
     {@render record()}
   </Drawer>
 {/if}

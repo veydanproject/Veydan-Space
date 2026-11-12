@@ -107,7 +107,7 @@
         <div class="dialog-header">
           <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
           <div class="dialog-title-row"><h2 class="dialog-title">{title}</h2>{@render titleAside?.()}</div>
-          <button class="dialog-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
+          <button class="win-close" onclick={close} aria-label={$t('common_close')} title={$t('common_close')}>
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -181,21 +181,8 @@
     letter-spacing: var(--ls-tight);
     color: var(--text);
   }
-  .dialog-close {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border-radius: var(--radius);
-    background: transparent;
-    color: var(--text-2);
-    border: none;
-    flex-shrink: 0;
-  }
-  .dialog-close:hover { background: var(--surface-hover); color: var(--text); }
+  /* The × is the .win-close of base.css, 12 from the head's right edge. */
+  .dialog-header > .win-close { margin-left: auto; }
 
   .dialog-body {
     flex: 1;

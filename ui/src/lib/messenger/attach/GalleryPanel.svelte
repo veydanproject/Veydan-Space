@@ -307,8 +307,9 @@
       {/if}
       {#if model.failed}
         <div class="empty-state none">
+          <div class="empty-icon"><Icon name="alert-triangle" size={24} /></div>
           <span>{$t('msg_attach_gallery_failed')}</span>
-          <button type="button" class="m-link" onclick={() => model.more()}>{$t('msg_xfer_retry')}</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick={() => model.more()}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>
         </div>
       {/if}
     </div>

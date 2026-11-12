@@ -48,7 +48,7 @@
   import Box from './info/Box.svelte';
   import Tile from '$lib/core/ui/Tile.svelte';
   import Chev from '$lib/core/ui/Chev.svelte';
-  import StatePill from '$lib/core/ui/StatePill.svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
@@ -427,7 +427,7 @@
     <div class="keeper-head">
       <Tile icon="key" tone="ok" />
       <span class="keeper-name">{$t('chan_keeper')}</span>
-      <StatePill text={keeperState} tone={keeperOnline ? 'ok' : 'warn'} />
+      <Pill kind="state" text={keeperState} tone={keeperOnline ? 'ok' : 'warn'} />
     </div>
     <p class="text" class:moving={move.place === 'handing' || move.place === 'taking'}>
       {#if move.place === 'handing' || move.place === 'taking'}<Icon name="loader" size={14} />{/if}
@@ -648,7 +648,7 @@
             {/if}
             <NavRow icon="key" page="keeper" title={$t('chan_keeper')} onclick={() => openPage('keeper')}>
               {#snippet sub()}{moveText}{/snippet}
-              {#snippet end()}<StatePill text={keeperState} tone={keeperOnline ? 'ok' : 'warn'} />{/snippet}
+              {#snippet end()}<Pill kind="state" text={keeperState} tone={keeperOnline ? 'ok' : 'warn'} />{/snippet}
             </NavRow>
           </Box>
         {/if}

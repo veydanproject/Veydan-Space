@@ -7,7 +7,7 @@
   opened for, «Отправить приглашение» (my card with the server in our
   chat); to anyone, «Скопировать ссылку» (my link of the private chat,
   with an invitation: 5 people, 30 days) or «Отправить в чат». Mount once
-  per page, beside ServerInfoDialog.
+  per window, beside ServerInfoDialog.
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';

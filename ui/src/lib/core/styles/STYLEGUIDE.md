@@ -15,7 +15,7 @@ token or primitive already exists.**
 | `src/lib/core/styles/base.css` | Global reset + reusable primitives (`.btn`, `.icon-btn`, `.badge`, `.page`, `.card`, `.tab-bar`, `.empty-state`, `.spinner`, `.vtip`, …). |
 | `src/lib/core/styles/mobile.css` | Phone layer on top of the two: `--m-*` colours, `--touch`, `--nav-h`, safe-area insets `--sat`/`--sab`/`--sal`/`--sar`, `.m-*` primitives. Loaded by the mobile shell only — its tokens do not exist on a computer. |
 | `src/lib/core/theme.ts` | `data-theme` (dark / light) × `data-palette` (`quiet`), and the one colour a user may choose: the accent (`applyAccent`). |
-| `src/lib/core/ui/*` | The shared components: `Dialog`, `Modal`, `Drawer`, `ContextMenu`, `CustomSelect`, `Pane`, `Skeleton`, `ToastHost`/`toast.svelte.ts`, `ConfirmHost`/`confirm.svelte.ts`, `tooltip.ts`, `motion.ts`, and the shared rows (`NavRow`, `Tile`, `Chev`, `StatePill`, `ToggleRow`, `ChoiceRow`, `TermHint`, the action `scrollTabs`, see «Shared rows»). |
+| `src/lib/core/ui/*` | The shared components: `Dialog`, `Modal`, `Drawer`, `ContextMenu`, `CustomSelect`, `Pane`, `Skeleton`, `ToastHost`/`toast.svelte.ts`, `ConfirmHost`/`confirm.svelte.ts`, `tooltip.ts`, `motion.ts`, and the shared rows (`NavRow`, `Tile`, `Chev`, `Pill`, `ToggleRow`, `ChoiceRow`, `TermHint`, the action `scrollTabs`, see «Shared rows»). |
 
 `tokens.css` and `base.css` are imported by each shell (`DesktopShell.svelte`,
 `MobileShell.svelte`) and by `StartErrorScreen.svelte`; `mobile.css` by
@@ -59,7 +59,9 @@ no picker yet.
   become opaque (the palette does it; components do nothing).
 - Surfaces: `--chrome`/`--bg-2` < `--surface` < `--surface-2`; fields
   `--surface-3`; hovers `--surface-hover` / `--surface-row-hover`; drawers
-  `--surface-drawer(-footer)`; borders `--border` / `--border-2`.
+  `--surface-drawer(-footer)`; borders `--border` / `--border-2`; the frame of a
+  field, a checkbox and a radio `--control-border` (3:1 or more on a field and the page;
+  under the pointer a field's frame is `--text-3`, a disabled one fades to 0.45 as a button).
 - Text: `--text` / `--text-2` / `--text-3`; long-form `--text-body`; extras
   `--text-soft` (icons, metrics) · `--text-faint` (field labels) · `--text-dim` (caps labels, «—»).
 - Accent: `--accent` is the **fill** (primary buttons, the active switch, a
@@ -68,7 +70,10 @@ no picker yet.
   `--accent-text-3`; fills `--accent-bg` / `--accent-tint`(+`-border`) ·
   `--accent-border` (the frame of the chosen) · `--focus-ring` (the keyboard focus ring: solid, 3:1 or more on the backgrounds; the accent text colour) · `--accent-grad` ·
   `--shadow-accent`. A chosen accent recomputes all of them (`applyAccent`).
-  Controls without a ring of their own get it from a zero-specificity rule in `base.css` (2px, offset 2px, `--focus-ring`).
+  The keyboard's ring is one for every control, fields too: 2px of `--focus-ring`, 2px off the control, rounded
+  as it is — a zero-specificity rule in `base.css`; a text field takes it only while the keyboard moves the focus
+  (`html.kbd-focus`, `core/focusMode.ts`). A row that clips (a scrolling row of tabs, a list) leaves 4px of room
+  around its controls so the ring is whole; no ring is drawn inside a control.
 - Touch (phone layer): `--touch` 44 is the least size of a finger zone; a control smaller than it grows an invisible `::before` to it per axis (`mobile.css`), capped by `--hit-max`, which a control with close neighbours lowers.
 - Chat: `--bubble-in-*` / `--bubble-out-*`; a held row or bubble `--press-tint`.
 - Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`).
@@ -90,7 +95,7 @@ no picker yet.
 
 A computer: the module's columns are panes 12 apart and 12 from the window's
 edges (`fullWidth` routes), a pane's head is 64 high with its title 20/700,
-the top navigation is one floating plate. A card on the window background (`.card`, `.glass-card`, the phone's `.m-card`) is the glass `--pane-strong` on both a computer and a phone; what lies on it (fields, chips, tiles, quiet buttons) takes the same glass through one token rule in `base.css`; the same rule is given by the panes and floating layers themselves (`core/ui/Pane`, `Drawer`, `Dialog`, `Modal`, the messenger and notes columns, `.data-table`) and by a local block that draws its own look through the class `.on-glass` (tokens only, no box). A field, a quiet button (`.btn-ghost`), the tile of an empty state (`.empty-icon`), the segments (`.tab-bar`, `.seg`) and a checkbox are glass by default, not `--surface-3`: a solid surface is black over the glow. In the dark their line is `--pane-strong-border`, in the light `--border`. A phone: a floating head, cards of
+the top navigation is one floating plate. A card on the window background (`.card`, the phone's `.m-card`) is the glass `--pane-strong` on both a computer and a phone; what lies on it (fields, chips, tiles, quiet buttons) takes the same glass through one token rule in `base.css`; the same rule is given by the panes and floating layers themselves (`core/ui/Pane`, `Drawer`, `Dialog`, `Modal`, the messenger and notes columns, `.data-table`) and by a local block that draws its own look through the class `.on-glass` (tokens only, no box). A field, a quiet button (`.btn-ghost`), the tile of an empty state (`.empty-icon`), the segments (`.tab-bar`, `.seg`) and a checkbox are glass by default, not `--surface-3`: a solid surface is black over the glow. Their line is `--pane-strong-border` in the dark and `--border` in the light; a field's, a checkbox's and a radio's is `--control-border`. A phone: a floating head, cards of
 rows on the glowing background, a floating tab bar, a 56 capsule (`.m-bar--nav`; `--nav-h` is its slot: 56 plus 12 of air for the counts that stand on its edge; the bar has no logo, a tab's header carries it (`core/ui/HubButton`), and Space's Home has no bar; `--nav-gap` keeps the last
 row above it). A list row is 56–64 high with `--radius-lg`; the active one is
 `--accent-bg` with `--accent-text`; segment controls are `.tab-bar`; a search
@@ -98,10 +103,10 @@ field is a pill.
 
 ## Primitives
 
-`.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`(+`.card--hover`)/`.card-title`
+`.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`/`.card-title`
 · `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-danger-soft/-sm`)
-· `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`) · `.chip`(+`.active`)
-· `.tab-bar`/`.tab`(+`.active`)/`.tab-count` · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
+· `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
+· `.tab-bar`/`.tab`(+`.active`: `--accent-text` over a bar of `--accent`; its count a `.count-pill.sm.quiet`) · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
 · `.list-rows` > `li` > `.list-row`(+`.active/.unread`) — the one row of a list pane (chats, groups, channels, calls,
@@ -137,23 +142,27 @@ A row that repeats in several modules is one component of `core/ui`; a module
 keeps no copy of its own.
 
 - **`NavRow`** — a row that leads somewhere: a tile with the icon, the title,
-  a line `sub` (text or a snippet), at its end `count` (a quiet `.count-pill`)
-  or `end` (a snippet: a `StatePill`, a word, a control), the chevron
+  a line `sub` (text or a snippet), at its end `count` (a `.count-pill.sm.quiet`)
+  or `end` (a snippet: a `Pill`, a word, a control), the chevron
   (`chevron`; by default when it has `href` or `onclick`). The whole row is the
   link (`href`) or the button (`onclick`); `disabled` fades it. `tone` colours
-  the tile, `danger` the title, `nowrap` cuts the title with «…», `page` sets
+  the tile, `danger` the title and the icon (`--danger-text`, the hover
+  `--danger-bg`, as a danger item of ContextMenu; every variant), `nowrap` cuts the title with «…», `page` sets
   `data-page` so the focus comes back to the row from its page, `id` is an
   anchor. `variant`: `panel` (the default: the contents of «О канале» /
   «О группе», 56 / 60 on touch, in a card of rows, the root `.nav`), `list`
   (the lists of the cloud: 64, a hairline under it, the tile in the accent,
   `end` in place of the chevron), `compact` (a line of a block, «Медиа и
-  файлы»: 46 / 50, the icon without a tile, the count a quiet number).
+  файлы»: 46 / 50, the icon without a tile).
 - **`Tile`** — the square of an icon at the start of a row: 36, `--radius`,
   the icon 18; `tone` `plain` · `ok` · `warn` · `bad` · `accent` · `clear` ·
   `dashed` (the place of a new one).
 - **`Chev`** — the chevron of a row that leads further: 16, `--text-3`.
-- **`StatePill`** — a state at the end of a row or a head: 22, `--fs-xs`
-  semibold; `ok` · `warn` · `bad`.
+- **`Pill`** — a word in a pill, the one for the whole interface: `kind`
+  `badge` (the default: a mark beside a name or in a cell, framed, the look of
+  `.badge` in base.css — markup goes through the component) or `state` (a state
+  at the end of a row or a head: 22, `--fs-xs` semibold, no frame); `tone`
+  `ok` · `warn` · `bad` · `accent` · `neutral`; `onclick` makes it a button.
 - **`ToggleRow`** — a yes / no setting as a card, the whole card the
   `button role="switch"` (`aria-checked`), the `.toggle` inside only drawn:
   `title`, `hint`, `on` (bindable), `onclick` (what the press does; without it

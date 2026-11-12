@@ -18,3 +18,15 @@ pub const PRESENCE_D: &str = "veydan";
 /// my devices and the runtime all read it; my devices carry it between
 /// them (`own.presence`).
 pub const KEY_PRESENCE: &str = "privacy.presence";
+
+/// When this device last beat (unix seconds, the `created_at` of the beat),
+/// written by the runtime before the beat goes, so a copy of it is never
+/// taken for my other device's (`messenger_presence::sight`).
+pub const KEY_PRESENCE_LAST_BEAT: &str = "presence.last_beat";
+
+/// My presence key now (hex), watched by the runtime with my contacts'.
+pub const KEY_PRESENCE_MINE: &str = "presence.mine";
+
+/// The newest beat of my presence key another device of mine made:
+/// `"<seen_at> <online_until>"`, read by a phone woken by a push.
+pub const KEY_PRESENCE_ELSEWHERE: &str = "presence.elsewhere";

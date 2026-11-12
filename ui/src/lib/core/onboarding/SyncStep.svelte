@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { api } from '$lib/core/api';
   import { accountSource, loadAccount } from '$lib/core/account';
   import Icon from '$lib/core/Icon.svelte';
@@ -127,7 +128,7 @@
       <button type="button" class="ob-opt" class:on={pick === 'cloud'} role="radio" aria-checked={pick === 'cloud'} disabled={busy} onclick={() => (pick = 'cloud')}>
         <span class="ob-opt-ic"><Icon name="cloud" size={20} /></span>
         <span class="ob-opt-b">
-          <span class="ob-opt-t">{$t('settings_sync_backend_cloud')} <span class="badge badge-ok">{$t('ob_sync_recommended')}</span></span>
+          <span class="ob-opt-t">{$t('settings_sync_backend_cloud')} <Pill tone="ok" text={$t('ob_sync_recommended')} /></span>
           <span class="ob-opt-s">{$t('ob_sync_cloud_text')}</span>
         </span>
         <span class="ob-radio" aria-hidden="true"></span>

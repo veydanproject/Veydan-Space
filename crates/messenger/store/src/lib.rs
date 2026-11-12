@@ -23,6 +23,7 @@ pub mod dm_held;
 pub mod dm_invites;
 pub mod dm_relations;
 pub mod dm_routes;
+pub mod drafts;
 pub mod emoji_usage;
 pub mod events_raw;
 pub mod group_avatar;

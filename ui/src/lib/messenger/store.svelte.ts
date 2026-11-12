@@ -34,6 +34,7 @@ import { archiveStore } from "./archive/archiveStore.svelte";
 import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
 import { uiPrefs } from "./shared/uiPrefs.svelte";
+import { loadDrafts, resetDrafts } from "./shared/drafts.svelte";
 import { presenceStore } from "./presence/presenceStore.svelte";
 import { typingStore } from "./typing/typingStore.svelte";
 import { privacyStore } from "./privacy/privacyStore.svelte";
@@ -147,6 +148,8 @@ class MessengerStore {
           usageStore.load().catch(() => {});
           // How wide I made the panes, the same on every computer of mine.
           uiPrefs.load().catch(() => {});
+          // The unsent text of each chat, kept on this device.
+          loadDrafts().catch(() => {});
           // Who of my contacts is online; the clock of "last seen" starts with it.
           presenceStore.load().catch(() => {});
           presenceStore.start();
@@ -181,6 +184,7 @@ class MessengerStore {
         callNodesStore.reset();
         usageStore.reset();
         uiPrefs.reset();
+        resetDrafts();
         presenceStore.reset();
         typingStore.reset();
         transferStore.reset();
@@ -226,6 +230,7 @@ class MessengerStore {
     callNodesStore.reset();
     usageStore.reset();
     uiPrefs.reset();
+    resetDrafts();
     presenceStore.reset();
     typingStore.reset();
     transferStore.reset();

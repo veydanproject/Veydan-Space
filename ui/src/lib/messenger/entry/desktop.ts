@@ -14,6 +14,9 @@ import DesktopNotices from '../push/DesktopNotices.svelte';
 import CallOverlay from '../calls/CallOverlay.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
 import ArchiveGate from '../archive/ArchiveGate.svelte';
+import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
+import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
+import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
 import { chatSettingsSections } from '../pages/chatSettingsSections';
 import { messengerPalette } from '../palette.svelte';
 
@@ -39,6 +42,11 @@ export const module: ModuleDef = {
     { id: 'incoming-link', component: IncomingLink, place: 'window' },
     // The first screen after a restore or a linking, while the newest months of the archive come back.
     { id: 'archive-gate', component: ArchiveGate, place: 'window' },
+    // The questions of a server, one each for the window: a chat asks them, and so do the core's Settings,
+    // where the messenger's page is not mounted (ROO-1075).
+    { id: 'server-accept', component: ServerAcceptDialog, place: 'window' },
+    { id: 'server-info', component: ServerInfoDialog, place: 'window' },
+    { id: 'private-invite', component: PrivateInviteDialog, place: 'window' },
   ],
   // New chat, new group, contacts, settings and every chat by name in the palette.
   palette: messengerPalette,

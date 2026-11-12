@@ -87,10 +87,10 @@
     {#if closable || !error}
       <div class="actions">
         {#if closable}
-          <button class="btn btn-ghost" onclick={closeWindow}>{$t('common_close')}</button>
+          <button class="btn btn-ghost btn-sm" onclick={closeWindow}>{$t('common_close')}</button>
         {/if}
         {#if !error && !hostOs}
-          <button class="btn btn-primary" onclick={() => location.reload()}>{$t('common_try_again')}</button>
+          <button class="btn btn-ghost btn-sm" onclick={() => location.reload()}><Icon name="arrow-forward-up" size={16} />{$t('common_try_again')}</button>
         {/if}
       </div>
     {/if}

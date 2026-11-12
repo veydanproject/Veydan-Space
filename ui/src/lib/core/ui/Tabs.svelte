@@ -52,18 +52,17 @@
 </div>
 
 <style>
-  .tabs { display: flex; gap: var(--sp-5); padding: 0; overflow-x: auto; scrollbar-width: none; }
+  /* The row scrolls and clips: 4px of room around the tabs for the keyboard's ring, given back by the margin. */
+  .tabs { display: flex; gap: var(--sp-5); padding: var(--sp-1); margin: calc(-1 * var(--sp-1)); overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .ctab {
     position: relative; flex-shrink: 0; min-height: var(--control-h-lg); padding: 0;
-    border: 0; border-radius: 0; background: none;
+    border: 0; border-radius: var(--radius-sm); background: none;
     color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
     transition: color var(--dur-fast);
   }
   .ctab:hover { color: var(--text); }
-  /* The row scrolls and clips: the keyboard's ring drawn inside the tab. */
-  .ctab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-  .ctab[aria-selected='true'] { color: var(--text); font-weight: var(--fw-bold); }
+  .ctab[aria-selected='true'] { color: var(--accent-text); font-weight: var(--fw-bold); }
   /* The short mark under the chosen word. */
   .ctab[aria-selected='true']::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
   .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
@@ -72,6 +71,6 @@
     -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
     mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
   }
-  .m { margin: 0 calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: 0 var(--sp-4); }
+  .m { margin: calc(-1 * var(--sp-1)) calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: var(--sp-1) var(--sp-4); }
   .m .ctab { min-height: var(--sp-12); font-size: var(--fs-body); }
 </style>

@@ -3,8 +3,9 @@
 
 //! Presence in motion (internal/messenger-wire.md, "Присутствие"). Every few
 //! seconds of a session the driver watches the presence keys of my
-//! approved contacts, tells each of them my own key when it has not been
-//! told the current one, and beats while the app is in sight.
+//! approved contacts and my own (for my other device's beat), tells each
+//! contact my key when it has not been told the current one, and beats
+//! while the app is in sight.
 //!
 //! "In sight" is a lease the page renews (`presence_foreground`): a page
 //! frozen by the system without a word stops the beats within
@@ -31,7 +32,7 @@ use messenger_core::{Clock, Envelope, Outbound, PubKey, Result, Scope, SubId, Tr
 use messenger_dm::wrap::{wrap_note, wrap_own};
 use messenger_dm::{presence_proof, DmService};
 use messenger_ingress::{filters, Outbox};
-use messenger_presence::{heartbeat, key, view, PresenceView, BEAT_JITTER_SECS, BEAT_SECS};
+use messenger_presence::{heartbeat, key, sight, view, PresenceView, BEAT_JITTER_SECS, BEAT_SECS};
 use messenger_store::{presence, settings, Store};
 use messenger_transport::RelayPool;
 use nostr::key::Keys;
@@ -201,6 +202,12 @@ impl PresenceDriver {
         let allowed: HashSet<&str> = approved.iter().map(|p| p.as_hex()).collect();
         let mut watched: Vec<String> =
             presence::keys(&self.store).await?.into_iter().filter(|(peer, _)| allowed.contains(peer.as_str())).map(|(_, k)| k).collect();
+        // My own key in the same subscription: the beat of my other device
+        // tells a push on this phone not to ring (`messenger_presence::sight`).
+        // Known as mine before the relays bring it.
+        let mine = self.presence_keys(keys).await?.1.public_key().to_hex();
+        sight::watching_mine(&self.store, &mine).await?;
+        watched.push(mine);
         watched.sort();
         watched.dedup();
         self.announce_if_due(keys, &approved, now).await?;
@@ -300,6 +307,13 @@ impl PresenceDriver {
                 return false;
             }
         };
+        // Written down before it goes: its copy from a relay, in this
+        // process or the next, is never taken for my other device's.
+        if let Err(e) = sight::beating(&self.store, now).await {
+            eprintln!("messenger presence: no beat, not written down: {e}");
+            undo();
+            return false;
+        }
         match pool.send(Outbound::PublishOwn { event }).await {
             Ok(ack) if !ack.accepted_by.is_empty() || !ack.rejected_by.is_empty() => {
                 self.beats.fetch_add(1, Ordering::SeqCst);
@@ -706,6 +720,34 @@ mod tests {
         assert!(rt.dm().fill_book_once().await.unwrap().is_empty());
         assert!(!rt.contacts().is_contact(&pk_of(&bob)).await.unwrap());
         assert!(rt.presence().approved(&me.public_key().to_hex()).await.unwrap().is_empty());
+        rt.shutdown().await;
+    }
+
+    /// My own key is watched with my contacts' and known as mine, so the
+    /// beat of my other device reaches a push here; presence off, nothing.
+    #[tokio::test]
+    async fn my_own_key_is_watched_for_my_other_device() {
+        use messenger_core::presence::KEY_PRESENCE_MINE;
+        let (_dir, rt, me) = started().await;
+        let mine = |epoch| key::derive(&me, epoch).public_key().to_hex();
+        let now = SystemClock.now().secs();
+        let watched = {
+            let _turn = rt.presence().turn().await;
+            rt.presence().look_around(&me, now).await.unwrap()
+        };
+        assert_eq!(watched, vec![mine(0)], "no contact yet: my key alone");
+        assert_eq!(settings::get(rt.store(), KEY_PRESENCE_MINE).await.unwrap(), Some(mine(0)));
+
+        let epoch = rt.presence_rotate().await.unwrap();
+        rt.presence_tick().await.unwrap();
+        assert_eq!(settings::get(rt.store(), KEY_PRESENCE_MINE).await.unwrap(), Some(mine(epoch)), "the key moved on");
+
+        rt.privacy_set(crate::privacy::PrivacySettings { presence: false, ..rt.privacy_settings().await.unwrap() }).await.unwrap();
+        let watched = {
+            let _turn = rt.presence().turn().await;
+            rt.presence().look_around(&me, now + 10).await.unwrap()
+        };
+        assert!(watched.is_empty(), "presence off: nothing watched");
         rt.shutdown().await;
     }
 

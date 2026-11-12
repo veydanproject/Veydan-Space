@@ -144,6 +144,8 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_own_private_set", r3(crate::commands::messenger_own_private_set)));
     v.push(("messenger_ui_prefs_get", r1(crate::commands::messenger_ui_prefs_get)));
     v.push(("messenger_ui_prefs_set", r3(crate::commands::messenger_ui_prefs_set)));
+    v.push(("messenger_drafts_get", r1(crate::commands::messenger_drafts_get)));
+    v.push(("messenger_draft_set", r4(crate::commands::messenger_draft_set)));
     v.push(("messenger_contact_private_get", r2(crate::commands::messenger_contact_private_get)));
     v.push(("messenger_card_send", r5(crate::commands::messenger_card_send)));
     v.push(("messenger_card_accept", r2(crate::commands::messenger_card_accept)));

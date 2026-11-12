@@ -123,14 +123,14 @@
   <PeerChats pubkey={contact.pubkey} onopen={(id) => (onopenchat ? onopenchat(id) : onchat(contact.pubkey))} />
 
   {#if contact.profile?.bio?.length || contact.profile?.about || contact.profile?.socials?.length}
-    <section class="block glass-card">
+    <section class="block card">
       <h3>{$t('msg_own_about')}</h3>
       {#if contact.profile?.bio?.length}<BioView spans={contact.profile.bio} />{:else if contact.profile?.about}<div class="about"><MessageContent text={contact.profile.about} cards={false} /></div>{/if}
       {#if contact.profile?.socials?.length}<SocialLinks socials={contact.profile.socials} compact />{/if}
     </section>
   {/if}
 
-  <section class="block glass-card">
+  <section class="block card">
     <h3>{$t('msg_id_npub')}</h3>
     <div class="key">
       <code>{contact.npub}</code>
@@ -138,7 +138,7 @@
     </div>
   </section>
 
-  <section class="block glass-card">
+  <section class="block card">
     <h3>{$t('msg_contacts_book')}</h3>
     <div class="grid">
       <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={nick} disabled={busy} placeholder={contact.profile?.display_name || contact.profile?.name || ''} /></label>

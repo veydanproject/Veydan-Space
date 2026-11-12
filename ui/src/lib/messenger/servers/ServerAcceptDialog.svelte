@@ -4,8 +4,8 @@
 <!--
   «Добавить сервер?» (askServers): what will be added, server by server —
   its name, whether it is private or Veydan's, and its lines (ServerRows) — with
-  «Добавить» and «Отмена». Mount once per page, beside ConfirmHost; every
-  path that adds a server asks here first, and nothing is added on «Отмена».
+  «Добавить» and «Отмена». Mount once per window (an overlay of the desktop
+  module, the frame of a phone's screen); every path that adds a server asks here first, and nothing is added on «Отмена».
 -->
 <script lang="ts">
   import { get } from 'svelte/store';

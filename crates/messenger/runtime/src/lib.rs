@@ -20,6 +20,8 @@ pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod avatars;
 mod banned;
 pub mod dm_history;
+/// The unsent text of each conversation, on this device only.
+pub mod drafts;
 pub mod bindings;
 pub mod call_nodes;
 pub mod calls;
@@ -111,6 +113,7 @@ pub use servers::ManifestRemote;
 pub use messenger_transport::{Manifest, ManifestFetcher};
 pub use shared::{SharedCounts, SharedSection};
 pub use dm_history::DmHistoryPage;
+pub use drafts::DraftView;
 
 /// Facts for the host's status screen. Never contains secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]

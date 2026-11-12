@@ -1243,6 +1243,7 @@ mod tests {
             body,
             hide_on_lockscreen: false,
             count: 1,
+            muted: false,
         })
     }
 
@@ -1453,6 +1454,7 @@ mod tests {
             body: None,
             hide_on_lockscreen: false,
             count: 1,
+            muted: false,
         });
         assert_eq!(caller(shown, &w), ("Alice".to_string(), Some("https://x/a.png".to_string())));
         // A PIN on the app: only the app's name, and no face.

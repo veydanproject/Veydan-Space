@@ -15,6 +15,7 @@
 -->
 <script lang="ts">
   import { t, locale } from '$lib/core/i18n';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { isMobile } from '$lib/core/platform';
@@ -108,8 +109,8 @@
   {@const saved = price && price.period_days === period ? savingOf(plan, currency, period) : null}
   <span class="name-row">
     <span class="name">{plan.name}</span>
-    {#if plan.id === current}<span class="badge badge-ok">{$t('cloud_plan_current')}</span>
-    {:else if plan.id === recommended}<span class="badge badge-accent">{$t('cloud_plan_recommended')}</span>{/if}
+    {#if plan.id === current}<Pill tone="ok" text={$t('cloud_plan_current')} />
+    {:else if plan.id === recommended}<Pill tone="accent" text={$t('cloud_plan_recommended')} />{/if}
   </span>
   {#if !viewOnly}
   <span class="price-row">

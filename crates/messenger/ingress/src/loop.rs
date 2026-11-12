@@ -122,6 +122,15 @@ pub struct Ingress {
 }
 
 impl Ingress {
+    /// Nothing goes through while the guard is held, and what goes
+    /// through is done, its row of seen written: the removal of a server
+    /// (`MessengerRuntime::server_remove_private`) takes it, so an event
+    /// of it applied around the removal neither lands after it nor stays
+    /// seen without its message.
+    pub async fn hold(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.gate.lock().await
+    }
+
     /// One wire event, as a relay brings it, or as the archive replays it
     /// (`EventSource::Archive`).
     pub async fn process(&self, raw: RawEvent) -> Processed {
@@ -161,6 +170,17 @@ impl Ingress {
             // the archive was heard there by the device that kept it.
             if !servers::group_heard_on(&self.store, &g.group_id, &g.envelope.source).await.unwrap_or(true) {
                 eprintln!("messenger ingress: an event of a group by a relay not of the group's server, dropped");
+                st.ignored.fetch_add(1, Ordering::Relaxed);
+                return Processed::Ignored;
+            }
+        }
+        // A wrap of a private chat on a server this device does not have
+        // (one just removed, or not yet put in again) has no chat here:
+        // it is not taken, nor kept as seen, so the history of the server
+        // put in again brings it.
+        if let Inbound::Dm(dm) = &inbound {
+            if !servers::dm_heard_on(&self.store, dm.srv.as_deref(), &dm.envelope.source).await.unwrap_or(true) {
+                eprintln!("messenger ingress: a wrap of a private chat on a server this device does not have, left unseen");
                 st.ignored.fetch_add(1, Ordering::Relaxed);
                 return Processed::Ignored;
             }
@@ -634,6 +654,55 @@ mod tests {
         assert_eq!((received, dups, dm), (2, 1, 1));
         assert_eq!(handler.calls.load(Ordering::SeqCst), 1);
         assert_eq!(events_raw::count(&store).await.unwrap(), 1);
+        drop(lp);
+    }
+
+    /// A wrap of a private chat on a server this device does not have (one
+    /// just removed, its copy late) is neither handled nor kept as seen,
+    /// so the history of the server put in again brings it; so is a wrap
+    /// without `srv` by the relay of a removed server.
+    #[tokio::test]
+    async fn a_wrap_of_a_server_not_here_is_not_taken_nor_kept() {
+        let store = Store::open_in_memory().await.unwrap();
+        let alice = Keys::generate();
+        let bob = Keys::generate();
+        let handler = Arc::new(Flaky { calls: Default::default(), fail: 0 });
+        let dispatcher = Arc::new(Dispatcher::new().with_dm(handler.clone()));
+        let sink = Arc::new(Sink(Mutex::new(vec![])));
+        let row = servers::ServerRow {
+            id: String::new(),
+            kind: servers::KIND_PRIVATE.into(),
+            name: None,
+            relay_url: "wss://s1.example".into(),
+            relay_key: None,
+            media_url: None,
+            call_node: None,
+            push_mode: servers::PUSH_OFF.into(),
+            source: None,
+            added_at: 0,
+            access: "open".into(),
+        };
+        let s1 = servers::put_private(&store, &row).await.unwrap();
+        let srv = Tag::parse([messenger_core::envelope::TAG_SERVER, s1.as_str()]).unwrap();
+        let wrap = PrivateDirectMessageBuilder::new(bob.public_key(), "kept on s1").rumor_extra_tags([srv]).finalize(&alice).unwrap();
+        let bare = PrivateDirectMessageBuilder::new(bob.public_key(), "by s1").finalize(&alice).unwrap();
+        let by_s1 = |event: &Event| RawEvent { source: EventSource::Relay { url: RelayUrl::parse("wss://s1.example").unwrap() }, ..raw_of(event) };
+        servers::remove_by_me(&store, &s1, 10).await.unwrap().unwrap();
+
+        let (tx, rx) = mpsc::channel(8);
+        let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink, None);
+        tx.send(raw_of(&wrap)).await.unwrap();
+        tx.send(by_s1(&bare)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.calls.load(Ordering::SeqCst), 0, "no chat to file them under");
+        assert_eq!(events_raw::count(&store).await.unwrap(), 0, "not seen");
+
+        assert_eq!(servers::put_private(&store, &row).await.unwrap(), s1);
+        tx.send(by_s1(&wrap)).await.unwrap();
+        tx.send(by_s1(&bare)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(handler.calls.load(Ordering::SeqCst), 2, "put in again: taken");
+        assert_eq!(events_raw::count(&store).await.unwrap(), 2);
         drop(lp);
     }
 

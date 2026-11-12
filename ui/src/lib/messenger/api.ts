@@ -153,6 +153,13 @@ export type ChatMode =
   /** Not a relationship: the chat is a group. */
   | 'group';
 
+/** The unsent text of a conversation (`messenger_drafts_get`): `chat` is the composer's key. */
+export interface MessengerDraft {
+  chat: string;
+  text: string;
+  md: boolean;
+}
+
 export interface MessengerChat {
   id: string;
   kind: 'dm' | 'group' | string;
@@ -1043,6 +1050,7 @@ const mockAvatars = new Map<string, string | null>();
 let mockAvatarPick: { token: string; preview: string } | null = null;
 let mockOwnPrivate: OwnPrivateView = { phone: demo ? '+79991234567' : null, share_phone: true };
 // The widths of the panes in the browser preview: `?side=420` starts the channel column at 420 px.
+const mockDrafts = new Map<string, MessengerDraft>();
 const mockUiPrefs: Record<string, number> = (() => {
   const px = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('side')) : 0;
   return px ? { 'channels.side': px, 'chats.side': px } : ({} as Record<string, number>);
@@ -1667,6 +1675,12 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     if (a?.px == null) delete mockUiPrefs[key];
     else mockUiPrefs[key] = Number(a.px);
     return { ...mockUiPrefs };
+  },
+  messenger_drafts_get: () => [...mockDrafts.values()],
+  messenger_draft_set: (a) => {
+    const chat = String(a?.chat);
+    const text = String(a?.text ?? '');
+    if (text.trim()) mockDrafts.set(chat, { chat, text, md: !!a?.md }); else mockDrafts.delete(chat);
   },
   messenger_dm_edit: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.text = String(a?.text); m.fmt = a?.fmt === 'md' ? 'md' : null; m.rich = null; m.edited_at = Math.floor(Date.now() / 1000); } return m; },
   messenger_dm_delete: (a) => { const m = mockFind(String(a?.messageId)); if (m) { m.deleted = true; m.text = null; } },
@@ -2593,6 +2607,16 @@ export const messengerApi = {
    * computer of mine: `ui_prefs.updated {w}` follows a change made on
    * another. Use `uiPrefs` (shared/uiPrefs.svelte.ts), not this.
    */
+  /**
+   * The unsent text of each conversation, kept on this device only (never
+   * sent, wiped with the account). Use `drafts` (shared/drafts.svelte.ts), not this.
+   */
+  drafts: {
+    get: () => invoke<MessengerDraft[]>('messenger_drafts_get'),
+    /** An empty `text` forgets the draft. Error: `draft_invalid`. */
+    set: (chat: string, text: string, md: boolean) => invoke<void>('messenger_draft_set', { chat, text, md }),
+  },
+
   uiPrefs: {
     get: () => invoke<Record<string, number>>('messenger_ui_prefs_get'),
     /** `null` forgets the width: the pane takes its default. Error: `ui_pref_invalid`. */

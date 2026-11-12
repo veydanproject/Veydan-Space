@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import type { MergeBlock, MergeResult } from '$lib/notes/types';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
   import MergeHunk from './MergeHunk.svelte';
@@ -160,15 +161,15 @@
       <div class="conflicts-summary">
         <div class="summary-top">
           {#if unresolvedCount > 0}
-            <span class="badge badge-warn">
+            <Pill tone="warn">
               <Icon name="alert-triangle" size={12} />
               {$t('notes_merge_unresolved', { n: String(unresolvedCount) })}
-            </span>
+            </Pill>
           {:else}
-            <span class="badge badge-ok">
+            <Pill tone="ok">
               <Icon name="check" size={12} />
               {$t('notes_merge_resolved')}
-            </span>
+            </Pill>
           {/if}
         </div>
         <div class="summary-actions">

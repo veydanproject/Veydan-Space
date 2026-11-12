@@ -40,6 +40,10 @@ pub struct Notice {
     pub body: Option<Body>,
     pub hide_on_lockscreen: bool,
     pub count: u32,
+    /// Shown without a sound: another device of mine is in sight, so the
+    /// user is reading there (`sight`). Absent in what an older core said.
+    #[serde(default)]
+    pub muted: bool,
 }
 
 /// Something came, and that is all the phone may or can say.

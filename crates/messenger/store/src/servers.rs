@@ -291,6 +291,27 @@ pub async fn group_heard_on(store: &Store, group_id: &str, source: &messenger_co
     }
 }
 
+/// Whether a wrap of a personal message has a chat here to be filed under
+/// (`DmService::server_of_inbound`): `srv`, the private server its rumor
+/// names, is a server of mine; without one, it did not come by the relay
+/// of a private server removed on purpose. The ingress leaves the wrap
+/// that has none unseen, so the server put in again brings it back.
+pub async fn dm_heard_on(store: &Store, srv: Option<&str>, source: &messenger_core::EventSource) -> Result<bool> {
+    if let Some(id) = srv {
+        return Ok(get(store, id).await?.is_some());
+    }
+    match source {
+        messenger_core::EventSource::Relay { url } | messenger_core::EventSource::Sync { url } => {
+            match private_of_relay(store, url.as_str()).await {
+                Ok(_) => Ok(true),
+                Err(e) if is_unknown(&e) => Ok(false),
+                Err(e) => Err(e),
+            }
+        }
+        messenger_core::EventSource::Server { .. } | messenger_core::EventSource::Archive => Ok(true),
+    }
+}
+
 /// The groups whose relay is the relay of server `id` (in any spelling of
 /// it), every membership: what `of_group` gives `id` for.
 async fn groups_on<'e, E>(db: E, id: &str) -> Result<Vec<String>>

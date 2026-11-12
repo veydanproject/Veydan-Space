@@ -19,6 +19,8 @@ messenger-dm.workspace = true
 messenger-groups.workspace = true
 messenger-transport.workspace = true
 messenger-vlink.workspace = true
+# What the runtime heard of my other device's beat (sight.rs).
+messenger-presence.workspace = true
 nostr.workspace = true
 nostr-sdk.workspace = true
 serde.workspace = true

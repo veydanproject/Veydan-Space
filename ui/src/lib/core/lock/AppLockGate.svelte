@@ -163,7 +163,7 @@
     padding: 0 10px;
     font: inherit;
     text-align: center;
-    border: 1px solid var(--border);
+    border: 1px solid var(--control-border);
     border-radius: var(--radius);
     background: var(--surface-3);
     color: var(--text);

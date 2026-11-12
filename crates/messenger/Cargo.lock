@@ -2186,6 +2186,7 @@ dependencies = [
  "messenger-groups",
  "messenger-ingress",
  "messenger-media",
+ "messenger-presence",
  "messenger-store",
  "messenger-testkit",
  "messenger-transport",

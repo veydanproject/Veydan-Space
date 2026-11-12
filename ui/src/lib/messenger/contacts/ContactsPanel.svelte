@@ -97,6 +97,48 @@
 
   {#if messengerStore.contacts.length === 0}
     <div class="muted small empty">{$t('msg_contacts_empty')}</div>
+  {:else if compact}
+    <!-- The phone: the rows are the .list-row of a computer's list (64, an avatar of 48, a hairline from the text);
+         the open one is a card with the head of ContactDetails: NIP-05 with its ✓/✗ and the «following» mark (T8-09). -->
+    <ul class="list-rows">
+      {#each messengerStore.contacts as c (c.pubkey)}
+        <li>
+          {#if openId === c.pubkey}
+            <div class="open-card">
+              <button class="list-row" aria-expanded="true" onclick={() => toggle(c)}>
+                <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={48} />
+                <span class="list-row-body">
+                  <span class="list-row-top"><span class="list-row-name">{contactLabel(c)}</span></span>
+                  <span class="list-row-bottom">
+                    {#if c.profile?.nip05}
+                      <!-- The result of Verify stays here: the sheet that ran it is closed by then. -->
+                      {@const checked = c.pubkey in nip05Result ? nip05Result[c.pubkey] : null}
+                      {@const ok = checked ?? c.profile.nip05_verified}
+                      <span class="nip05" class:ok class:bad={checked === false} aria-live="polite"
+                        title={ok ? $t('msg_contacts_nip05_ok') : checked === false ? $t('msg_contacts_nip05_failed') : undefined}>
+                        <span class="nip05-text">{c.profile.nip05}</span>{#if ok}<span class="mark" role="img" aria-label={$t('msg_contacts_nip05_ok')}><Icon name="check" size={14} /></span>{:else if checked === false}<span class="mark" role="img" aria-label={$t('msg_contacts_nip05_failed')}><Icon name="x" size={14} /></span>{/if}
+                      </span>
+                    {:else}
+                      <span class="list-row-line">{c.npub.slice(0, 16)}…</span>
+                    {/if}
+                    {#if c.followed}<span class="follow-tag">{$t('msg_contacts_following')}</span>{/if}
+                  </span>
+                </span>
+              </button>
+              {@render details(c)}
+            </div>
+          {:else}
+            <button class="list-row" aria-expanded="false" onclick={() => toggle(c)}>
+              <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={48} />
+              <span class="list-row-body">
+                <span class="list-row-top"><span class="list-row-name">{contactLabel(c)}</span></span>
+                <span class="list-row-bottom"><span class="list-row-line">{c.profile?.nip05 || `${c.npub.slice(0, 16)}…`}</span></span>
+              </span>
+            </button>
+          {/if}
+        </li>
+      {/each}
+    </ul>
   {:else}
     <ul class="list divided">
       {#each messengerStore.contacts as c (c.pubkey)}
@@ -110,7 +152,6 @@
               </span>
               <span class="meta">
                 {#if c.profile?.nip05}
-                  <!-- The result of Verify stays here: on the phone the sheet that ran it is closed by then. -->
                   {@const checked = c.pubkey in nip05Result ? nip05Result[c.pubkey] : null}
                   {@const ok = checked ?? c.profile.nip05_verified}
                   <span
@@ -125,59 +166,61 @@
             </span>
           </button>
 
-          {#if openId === c.pubkey}
-            <div class="details">
-              {#if c.profile?.bio?.length}<BioView spans={c.profile.bio} />{:else if c.profile?.about}<div class="about"><MessageContent text={c.profile.about} cards={false} /></div>{/if}
-              {#if c.profile?.socials?.length}<SocialLinks socials={c.profile.socials} compact />{/if}
-              <div class="grid">
-                <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={editNick} disabled={busy} /></label>
-                <label><span>{$t('msg_contacts_note')}</span><input type="text" bind:value={editNote} disabled={busy} /></label>
-              </div>
-              <div class="actions">
-                {#if onchat}
-                  <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => onchat(c.pubkey)}>
-                    <Icon name="message-circle" size={12} />{$t('msg_contacts_write')}
-                  </button>
-                {/if}
-                <button class="btn btn-ghost btn-sm" disabled={busy}
-                  onclick={() => run(() => messengerStore.updateContact(c.pubkey, { nickname: editNick.trim() || null, note: editNote.trim() || null }))}>
-                  {$t('common_save')}
-                </button>
-                {#if compact}
-                  <span class="spacer"></span>
-                  <button class="btn btn-ghost btn-sm more" disabled={busy} onclick={() => (moreFor = c)} aria-label={$t('msg_contacts_more')} title={$t('msg_contacts_more')}>
-                    <Icon name="more-horizontal" size={16} />
-                  </button>
-                {:else}
-                <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => { sharing = c.pubkey; shareOpen = true; }}>
-                  <Icon name="share" size={12} />{$t('msg_share_contact')}
-                </button>
-                <button class="btn btn-ghost btn-sm" disabled={busy}
-                  onclick={() => run(() => messengerStore.setFollowed(c.pubkey, !c.followed))}>
-                  {c.followed ? $t('msg_contacts_unfollow') : $t('msg_contacts_follow')}
-                </button>
-                <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => run(() => messengerStore.requestProfile(c.pubkey))}>
-                  <Icon name="refresh-cw" size={12} />{$t('msg_contacts_refresh')}
-                </button>
-                {#if c.profile?.nip05}
-                  <button class="btn btn-ghost btn-sm" disabled={busy}
-                    onclick={() => run(async () => { nip05Result = { ...nip05Result, [c.pubkey]: await messengerStore.verifyNip05(c.pubkey) }; })}>
-                    {$t('msg_contacts_verify_nip05')}{c.pubkey in nip05Result ? (nip05Result[c.pubkey] ? ' ✓' : ' ✗') : ''}
-                  </button>
-                {/if}
-                <span class="spacer"></span>
-                <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={() => remove(c)}>
-                  <Icon name="user-minus" size={12} />{$t('common_remove')}
-                </button>
-                {/if}
-              </div>
-            </div>
-          {/if}
+          {#if openId === c.pubkey}{@render details(c)}{/if}
         </li>
       {/each}
     </ul>
   {/if}
 </div>
+
+{#snippet details(c: MessengerContact)}
+  <div class="details">
+    {#if c.profile?.bio?.length}<BioView spans={c.profile.bio} />{:else if c.profile?.about}<div class="about"><MessageContent text={c.profile.about} cards={false} /></div>{/if}
+    {#if c.profile?.socials?.length}<SocialLinks socials={c.profile.socials} compact />{/if}
+    <div class="grid">
+      <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={editNick} disabled={busy} /></label>
+      <label><span>{$t('msg_contacts_note')}</span><input type="text" bind:value={editNote} disabled={busy} /></label>
+    </div>
+    <div class="actions">
+      {#if onchat}
+        <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => onchat(c.pubkey)}>
+          <Icon name="message-circle" size={12} />{$t('msg_contacts_write')}
+        </button>
+      {/if}
+      <button class="btn btn-ghost btn-sm" disabled={busy}
+        onclick={() => run(() => messengerStore.updateContact(c.pubkey, { nickname: editNick.trim() || null, note: editNote.trim() || null }))}>
+        {$t('common_save')}
+      </button>
+      {#if compact}
+        <span class="spacer"></span>
+        <button class="btn btn-ghost btn-sm more" disabled={busy} onclick={() => (moreFor = c)} aria-label={$t('msg_contacts_more')} title={$t('msg_contacts_more')}>
+          <Icon name="more-horizontal" size={16} />
+        </button>
+      {:else}
+      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => { sharing = c.pubkey; shareOpen = true; }}>
+        <Icon name="share" size={12} />{$t('msg_share_contact')}
+      </button>
+      <button class="btn btn-ghost btn-sm" disabled={busy}
+        onclick={() => run(() => messengerStore.setFollowed(c.pubkey, !c.followed))}>
+        {c.followed ? $t('msg_contacts_unfollow') : $t('msg_contacts_follow')}
+      </button>
+      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => run(() => messengerStore.requestProfile(c.pubkey))}>
+        <Icon name="refresh-cw" size={12} />{$t('msg_contacts_refresh')}
+      </button>
+      {#if c.profile?.nip05}
+        <button class="btn btn-ghost btn-sm" disabled={busy}
+          onclick={() => run(async () => { nip05Result = { ...nip05Result, [c.pubkey]: await messengerStore.verifyNip05(c.pubkey) }; })}>
+          {$t('msg_contacts_verify_nip05')}{c.pubkey in nip05Result ? (nip05Result[c.pubkey] ? ' ✓' : ' ✗') : ''}
+        </button>
+      {/if}
+      <span class="spacer"></span>
+      <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={() => remove(c)}>
+        <Icon name="user-minus" size={12} />{$t('common_remove')}
+      </button>
+      {/if}
+    </div>
+  </div>
+{/snippet}
 
 {#if moreFor}
   <ContextMenu open x={0} y={0} items={moreItems} onclose={() => (moreFor = null)} />
@@ -220,20 +263,26 @@
   .actions { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
   .spacer { flex: 1; }
 
-  /* The phone: one grouped list of full-width rows, like the shell's lists (mobile.css .m-list). */
-  .compact .muted { font-size: var(--fs-base); line-height: var(--lh-snug); padding: 0 var(--sp-1); }
+  /* The phone: the rows lie on the screen's background as a computer's .list-row; the hint above them is 13 px --text-3. */
+  .compact .muted { font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); padding: 0 var(--sp-3); }
   .compact .empty { text-align: center; padding: var(--sp-6) var(--sp-4); font-size: var(--fs-sm); }
-  .compact .list {
-    gap: 0; overflow: hidden; background: var(--m-card, var(--surface));
-    border: 1px solid var(--m-card-border, var(--border)); border-radius: var(--radius-lg);
+  .compact .list-rows { padding: 0; }
+  /* The open one: a card, its head the row, then what ContactDetails has under its head. */
+  .open-card {
+    margin: var(--sp-1) 0; overflow: hidden; border-radius: var(--radius-lg);
+    background: var(--m-card, var(--surface)); border: 1px solid var(--m-card-border, var(--border));
   }
-  .compact .row { border: none; border-radius: 0; background: none; }
-  .compact .row + .row { border-top: 1px solid var(--m-card-border, var(--border)); }
-  .compact .row.open { background: var(--surface-2); }
-  .compact .head { min-height: 64px; padding: var(--sp-2) var(--sp-4); border-radius: 0; }
-  .compact .head:active { background: var(--surface-2); }
-  .compact .name { font-size: var(--fs-body); }
-  .compact .meta { font-size: var(--fs-sm); }
+  .open-card .list-row { border-radius: 0; }
+  .open-card .list-row:hover { background: none; }
+  .open-card .list-row:active { background: var(--surface-hover); }
+  .open-card .list-row-bottom { flex-wrap: wrap; row-gap: 2px; }
+  .nip05 { display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+  .nip05-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nip05 .mark { display: inline-flex; flex-shrink: 0; }
+  .nip05.ok { color: var(--success-text); }
+  .nip05.bad { color: var(--danger-text); }
+  .follow-tag { flex-shrink: 0; line-height: var(--lh-snug); padding: 3px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text); }
+  .follow-tag::first-letter { text-transform: uppercase; }
   .compact .details { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top-color: var(--m-card-border, var(--border)); }
   .compact .grid input { font-size: var(--fs-md); padding: 8px 10px; }
 </style>

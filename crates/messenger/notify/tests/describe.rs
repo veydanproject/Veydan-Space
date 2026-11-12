@@ -1045,3 +1045,48 @@ async fn the_protocol_of_groups_is_not_held_by_the_gate_of_requests() {
     assert_eq!(n.kind, ChatKind::Dm);
     assert_eq!(n.body, Some(Body::JoinRequest { group_name: "Team".into() }));
 }
+
+// ─── Another device in sight ─────────────────────────────────────────────────
+
+/// While my computer is in sight (its beat, as the runtime of the app
+/// wrote it down) the phone shows a message without a sound, and a call
+/// rings as ever. A beat grown old, my own beat, presence switched off and
+/// a phone asked as before (`describe`) ring. Nothing asks a relay: the
+/// phone has none.
+#[tokio::test]
+async fn a_message_comes_without_a_sound_while_my_computer_is_in_sight() {
+    use messenger_core::presence::KEY_PRESENCE;
+    use messenger_notify::describe_on_phone;
+    use messenger_presence::sight;
+
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
+    let config = MessengerConfig::new(phone.dir.path().join("messenger"));
+    let bundle = phone.bundle().await;
+    let on_phone = |push: PushData| {
+        let (config, bundle) = (config.clone(), bundle.clone());
+        async move { describe_on_phone(&config, Some(&bundle), &push).await.unwrap() }
+    };
+    let text = dm_push(&dm_from(&alice, &phone, &Envelope::text("hi"), 1_000_000));
+
+    assert!(!shown(on_phone(text.clone()).await).muted, "nobody in sight");
+
+    let at = now();
+    assert!(sight::heard_mine(&phone.store, at - 200, at - 120).await.unwrap());
+    assert!(!shown(on_phone(text.clone()).await).muted, "the beat is old");
+    assert!(sight::heard_mine(&phone.store, at - 5, at + 75).await.unwrap());
+    assert!(shown(on_phone(text.clone()).await).muted, "the computer is in sight");
+    assert!(!shown(phone.describe(text.clone()).await).muted, "describe reads nothing of it");
+    let invite = dm_from(&alice, &phone, &Envelope::call_invite("0123456789abcdef0123456789abcdef", "audio", "v=0", vec![], false), now());
+    assert!(matches!(on_phone(dm_push(&invite)).await, Outcome::Call(_)), "a call rings");
+
+    messenger_store::settings::set_bool(&phone.store, KEY_PRESENCE, false).await.unwrap();
+    assert!(!shown(on_phone(text.clone()).await).muted, "presence switched off");
+    messenger_store::settings::set_bool(&phone.store, KEY_PRESENCE, true).await.unwrap();
+
+    sight::beating(&phone.store, at).await.unwrap();
+    assert!(!shown(on_phone(text.clone()).await).muted, "this phone beat since");
+
+}

@@ -191,6 +191,11 @@ impl ArchiveBridge {
         }
     }
 
+    /// The ingress of the running session, if one runs.
+    pub(crate) fn session_ingress(&self) -> Option<Arc<Ingress>> {
+        self.ingress.read().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
     fn ingress(&self) -> Result<(Arc<Ingress>, PubKey)> {
         let ingress = self.ingress.read().unwrap_or_else(|p| p.into_inner()).clone().ok_or(MessengerError::NotLoggedIn)?;
         let me = self.me.read().unwrap_or_else(|p| p.into_inner()).clone().ok_or(MessengerError::NotLoggedIn)?;

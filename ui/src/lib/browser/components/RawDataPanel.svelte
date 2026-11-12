@@ -86,7 +86,7 @@
       <button class="tab" class:active={tab === 'cookies'} onclick={() => (tab = 'cookies')}>
         {$t('raw_tab_cookies')}
         {#if data}
-          <span class="tab-count">{data.cookies.length}</span>
+          <span class="count-pill sm quiet">{data.cookies.length}</span>
         {/if}
       </button>
     </div>
@@ -244,20 +244,9 @@
 
 <style>
 
-  /* .tab-bar / .tab / .tab-count styling is global (base.css); only local deltas kept below */
+  /* .tab-bar / .tab / .count-pill styling is global (base.css); only local deltas kept below */
   .tab-bar { padding-top: 0.3rem; }
   .tab { justify-content: center; }
-
-  .tab-count {
-    font-weight: var(--fw-semibold);
-    border: 1px solid var(--border);
-    line-height: var(--lh-snug);
-  }
-  .tab.active .tab-count {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-  }
 
   .rd-body {
     display: flex;

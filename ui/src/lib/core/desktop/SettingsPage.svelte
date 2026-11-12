@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { get } from 'svelte/store';
   import { LANGUAGES, locale, t, taglineOf, type Locale, type TranslationKey } from '$lib/core/i18n';
   import {
@@ -356,7 +357,7 @@
       <div class="card" id={section.id}>
         <div class="card-title">
           {$t(section.title as TranslationKey)}
-          {#if section.badge}<span class="badge badge-warn">{$t(section.badge as TranslationKey)}</span>{/if}
+          {#if section.badge}<Pill tone="warn" text={$t(section.badge as TranslationKey)} />{/if}
         </div>
         {#if section.hint}<p class="muted">{$t(section.hint as TranslationKey)}</p>{/if}
         <section.component {...section.props} />
@@ -377,7 +378,7 @@
   <section class="settings-pane">
   <header class="pane-head">
     <h2 class="pane-title">{activeLabel}</h2>
-    {#if activeBadge}<span class="badge badge-warn">{$t(activeBadge as TranslationKey)}</span>{/if}
+    {#if activeBadge}<Pill tone="warn" text={$t(activeBadge as TranslationKey)} />{/if}
   </header>
   <div class="pane-scroll" bind:this={scrollEl}>
   <div class="settings-main">
@@ -818,7 +819,7 @@
     display: flex; flex-direction: column; gap: var(--sp-4);
   }
 
-  /* badges use global .badge / .badge-ok / .badge-warn */
+  /* a section's mark is core/ui/Pill */
 
   /* .muted uses global color; keep font-size delta */
   .settings-main :global(.muted) { font-size: var(--fs-base); }
@@ -978,12 +979,11 @@
   }
 
   .settings-main :global(.dir-input) {
-    flex: 1; height: 44px; background: var(--surface-3); border: 1px solid var(--border);
+    flex: 1; height: 44px; background: var(--surface-3);
     border-radius: var(--radius); padding: 0 var(--sp-3);
     font-size: var(--fs-sm); color: var(--text-body); font-family: var(--font-mono);
-    outline: none; text-overflow: ellipsis;
+    text-overflow: ellipsis;
   }
-  .settings-main :global(.dir-input:focus) { border-color: var(--accent-border); }
   .settings-main :global(.error-msg) { font-size: var(--fs-sm); color: var(--danger-text); }
 
   /* Form fields of the cards */
@@ -994,11 +994,9 @@
   /* Standard form input (password / number / time) — matches CustomSelect box */
   .settings-main :global(.field-input) {
     width: 100%; height: var(--control-h-lg);
-    background: var(--surface-3); border: 1px solid var(--border);
+    background: var(--surface-3);
     border-radius: var(--radius-field); padding: 0 var(--sp-3);
     font-size: var(--fs-base); color: var(--text); font-family: inherit;
-    outline: none; transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   }
-  .settings-main :global(.field-input:focus) { border-color: var(--accent-border); }
 
 </style>

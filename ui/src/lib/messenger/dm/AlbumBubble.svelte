@@ -163,8 +163,8 @@
   <!-- Reactions hang under the bubble, on its side, as under a single message. -->
   {#if !reacted.deleted && reacted.reactions?.length}<div class="reactions"><Reactions message={reacted} onerror={onreacterror} onadd={actions?.react} /></div>{/if}
   {#each failed.filter((m) => out && !m.deleted && !m.id.startsWith('local:')) as m (m.id)}
-    <button class="retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
-      <Icon name="arrow-forward-up" size={12} />{$t('common_retry')}
+    <button class="btn btn-ghost btn-sm retry" onclick={() => onretry(m)} title={$t(sendFailureKey(m.failure_reason))}>
+      <Icon name="arrow-forward-up" size={16} />{$t('common_retry')}
     </button>
   {/each}
 </div>
@@ -234,11 +234,8 @@
   .status.read { color: var(--accent-text); }
   .meta.on-picture .status { color: #fff; }
   .status.failed { color: var(--danger-text); }
-  .retry {
-    display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; border: none; background: none;
-    color: var(--danger-text); font: inherit; font-size: var(--fs-xs); cursor: pointer; padding: 2px 4px;
-  }
-  .retry:hover { text-decoration: underline; }
+  /* The way to send it again, as in a toast and under a single message (T8-06). */
+  .retry { gap: var(--sp-1); margin-top: var(--sp-1); color: var(--text); }
   @media (pointer: coarse) {
     .bubble { -webkit-touch-callout: none; }
     /* As wide as on a computer at most (a tablet), the bubble's share of a phone. */

@@ -488,7 +488,8 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    padding: 0.2rem 0.25rem;
+    /* The text keeps --sp-3 from the window's left edge, as in the other windows (T8-08). */
+    padding: 0.2rem 0.25rem 0.2rem var(--sp-3);
     /* Always dark to match the fixed xterm palette — no light seams around the canvas */
     background: var(--term-bg);
     color-scheme: dark;

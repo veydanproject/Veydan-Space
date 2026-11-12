@@ -508,6 +508,8 @@ fn spawn_ui_event_forwarder(
                         unread_changed();
                         #[cfg(desktop)]
                         desktop.clear(ev.payload["chat_id"].as_str());
+                        #[cfg(mobile)]
+                        push::read_elsewhere(&app, ev.payload["chat_id"].as_str());
                     }
                     let _ = app.emit(EVENT_RUNTIME, &ev);
                 }
@@ -983,6 +985,27 @@ pub async fn messenger_ui_prefs_set(
     messenger: tauri::State<'_, MessengerState>,
 ) -> CmdResult<std::collections::BTreeMap<String, u32>> {
     messenger.runtime()?.ui_prefs_set(&key, px).await.map_err(map_err)
+}
+
+/// The unsent text of each conversation, as this device keeps it: the
+/// newest first. Never sent anywhere.
+#[tauri::command]
+pub async fn messenger_drafts_get(
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<Vec<messenger_runtime::DraftView>> {
+    messenger.runtime()?.drafts_get().await.map_err(map_err)
+}
+
+/// Keep `text` as the draft of `chat` (`md`: written in Markdown); an
+/// empty text forgets it. Error: `draft_invalid`.
+#[tauri::command]
+pub async fn messenger_draft_set(
+    chat: String,
+    text: String,
+    md: bool,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<()> {
+    messenger.runtime()?.draft_set(&chat, &text, md).await.map_err(map_err)
 }
 
 /// The phone a contact sent me in its own card.

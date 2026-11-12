@@ -26,6 +26,7 @@
   import ConfirmHost from '$lib/core/ui/ConfirmHost.svelte';
   import ToastHost from '$lib/core/ui/ToastHost.svelte';
   import { installTooltips } from '$lib/core/ui/tooltip';
+  import { installFocusMode } from '$lib/core/focusMode';
   import { appLock } from '$lib/core/lock/store.svelte';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import LinkInbox from '$lib/core/links/LinkInbox.svelte';
@@ -174,6 +175,7 @@
       document.body.dataset.theme = val;
     });
     const uninstallTooltips = installTooltips();
+    const uninstallFocusMode = installFocusMode();
 
     // Notes popout: only theme + window chrome. Main window owns tray / dock / updater,
     // and starts the modules (their stores, subscriptions and tray entries).
@@ -206,6 +208,7 @@
 
     return () => {
       uninstallTooltips();
+      uninstallFocusMode();
       unsub();
       if (updateTimer) clearTimeout(updateTimer);
       window.removeEventListener('keydown', handleKeyBack);

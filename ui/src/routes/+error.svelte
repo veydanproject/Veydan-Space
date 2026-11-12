@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
+  import Icon from '$lib/core/Icon.svelte';
 
   // The way out is shown only when the start screen is slow to come: an
   // address that goes on at once does not flash it.
@@ -20,6 +21,7 @@
 
 {#if late}
   <div class="lost">
+    <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
     <p>{$t('screen_failed')}</p>
     <a href="/" data-sveltekit-replacestate>{$t('screen_to_start')}</a>
   </div>

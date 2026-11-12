@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { onMount } from 'svelte';
   import { api } from '$lib/ssh/api';
@@ -197,7 +198,7 @@
               {#if k.comment}<span class="key-comment">{k.comment}</span>{/if}
             </td>
             <td class="col-algo">
-              <span class="badge badge-accent tag">{algoLabel(k)}</span>
+              <Pill class="tag" tone="accent" text={algoLabel(k)} />
               {#if k.has_passphrase}
                 <span class="pass-badge" title={$t('ssh_key_selected_passphrase_hint')}>
                   <Icon name="lock" size={18} />
@@ -209,7 +210,7 @@
             </td>
             <td class="col-usage">
               {#if k.usage_count > 0}
-                <span class="badge badge-ok tag">{$t('ssh_key_usage_n', { n: String(k.usage_count) })}</span>
+                <Pill class="tag" tone="ok" text={$t('ssh_key_usage_n', { n: String(k.usage_count) })} />
               {:else}
                 <span class="text-muted">{$t('ssh_key_unused')}</span>
               {/if}
@@ -267,7 +268,7 @@
   {#if viewKey}
     <div class="view-body">
       <div class="view-meta">
-        <span class="badge badge-accent tag">{algoLabel(viewKey)}</span>
+        <Pill class="tag" tone="accent" text={algoLabel(viewKey)} />
         {#if viewKey.fingerprint}<code class="fp">{viewKey.fingerprint}</code>{/if}
       </div>
 
@@ -351,7 +352,7 @@
   }
 
   /* A word in a chip (the common .badge): 24 high, the interface's font. */
-  .tag { height: 24px; padding-block: 0; box-sizing: border-box; }
+  :is(.data-table, .view-meta) :global(.tag) { height: 24px; padding-block: 0; box-sizing: border-box; }
   .pass-badge {
     display: inline-flex; align-items: center; margin-left: var(--sp-1); vertical-align: middle;
     color: var(--warn-text);

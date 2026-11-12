@@ -29,6 +29,7 @@
 pub mod handler;
 pub mod heartbeat;
 pub mod key;
+pub mod sight;
 pub mod view;
 
 pub use handler::{PresenceHandler, UI_EVENT_PRESENCE_UPDATED};

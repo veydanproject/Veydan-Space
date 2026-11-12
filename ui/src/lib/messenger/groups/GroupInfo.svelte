@@ -29,7 +29,7 @@
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import Tile, { type TileTone } from '$lib/core/ui/Tile.svelte';
   import Chev from '$lib/core/ui/Chev.svelte';
-  import StatePill, { type PillTone } from '$lib/core/ui/StatePill.svelte';
+  import Pill, { type PillTone } from '$lib/core/ui/Pill.svelte';
   import { groupStore } from './groupStore.svelte';
   import { nameStore, shortKey } from './names.svelte';
   import { canMute, canRemove, canTrust, checksMessages, hasModeration, isManager, isModerator, isOwner, losesModeration, mutedNow, rolesFor, seesModeration } from './permissions';
@@ -387,12 +387,12 @@
 <!-- The key of the group: its version, cipher, state, who changed it and when, its fingerprint. -->
 {#snippet keyCard(k: MessengerGroupKey)}
   {@const tone = keyTone(k)}
-  <section class="box glass-card key {tone}" aria-label={$t('msg_group_key')}
+  <section class="box card key {tone}" aria-label={$t('msg_group_key')}
     title={k.source === 'link' ? $t('msg_group_key_source_link', { n: String(k.link_epoch + 1) }) : $t('msg_group_key_source_random')}>
     <div class="key-head">
       <Tile icon="key" tone={KEY_TILE[tone]} />
       <span class="key-name">{$t('msg_group_key')} <b>v{k.version}</b></span>
-      <StatePill text={$t(keyLabel(k))} tone={KEY_PILL[tone]} />
+      <Pill kind="state" text={$t(keyLabel(k))} tone={KEY_PILL[tone]} />
     </div>
     <p class="key-cipher">{k.cipher}</p>
     <p class="key-meta">
@@ -411,7 +411,7 @@
 {#snippet membersBody()}
   <section class="block" aria-label={$t('msg_group_members')}>
     {#if manager}<button class="btn btn-ghost wide" onclick={() => (inviting = true)}><Icon name="mail" size={18} />{$t('msg_group_invite')}</button>{/if}
-    <ul class="box glass-card rows">
+    <ul class="box card rows">
       {#each group.members as m (m.pubkey)}
         <li>
           <button class="person as-button" class:still={!entriesFor(m).length} oncontextmenu={(e) => openMenu(e, m)} onclick={(e) => openMenu(e, m)}
@@ -435,7 +435,7 @@
 
 {#snippet bannedBody()}
   <section class="block" aria-label={$t('msg_group_banned')}>
-    <ul class="box glass-card rows">
+    <ul class="box card rows">
       {#each group.banned as b (b)}
         <li class="person">
           <Avatar url={nameStore.picture(b)} label={nameStore.label(b)} seed={b} size={36} />
@@ -543,13 +543,13 @@
 
     <!-- The contents: each row opens the page of what it names. -->
     {#if pages.key || pages.link}
-      <div class="nav-group glass-card">
+      <div class="nav-group card">
         {#if pages.key && group.key}
           {@const k = group.key}
           {@const tone = keyTone(k)}
           <NavRow icon="key" title={`${$t('msg_group_key')} v${k.version}`} page="key" nowrap tone={tone === 'ok' ? 'plain' : KEY_TILE[tone]} onclick={() => openPage('key')}>
             {#snippet sub()}{k.cipher} · {$t('msg_group_key_since')} {when(k.since)}{/snippet}
-            {#snippet end()}<StatePill text={$t(keyLabel(k))} tone={KEY_PILL[tone]} />{/snippet}
+            {#snippet end()}<Pill kind="state" text={$t(keyLabel(k))} tone={KEY_PILL[tone]} />{/snippet}
           </NavRow>
         {/if}
         {#if pages.link}
@@ -563,7 +563,7 @@
     <!-- What the group shared: the block of the panel about a person too. -->
     <SharedMedia {chatId} onopen={(s) => (section = s)} />
 
-    <div class="nav-group glass-card">
+    <div class="nav-group card">
       <NavRow icon="users" title={$t('msg_group_members')} page="members" onclick={() => openPage('members')} count={group.members.length}>
         {#snippet sub()}<span class="stack">{#each group.members.slice(0, 7) as m (m.pubkey)}<span class="stack-av"><Avatar url={nameStore.picture(m.pubkey)} label={nameStore.label(m.pubkey)} seed={m.pubkey} size={22} /></span>{/each}</span>{/snippet}
       </NavRow>

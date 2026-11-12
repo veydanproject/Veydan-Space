@@ -50,7 +50,7 @@
 
 <section class="shared">
   <div class="label">{$t('msg_shared_title')}</div>
-  <div class="box glass-card">
+  <div class="box card">
     {#if strip.length}
       <div class="strip">
         {#each strip as m (m.id)}
@@ -72,7 +72,10 @@
   .shared { display: flex; flex-direction: column; gap: var(--sp-2); }
   /* The title of the block in sentence case, as the other headings of the panel. */
   .label { font-size: var(--fs-base); color: var(--text); font-weight: var(--fw-bold); }
-  .box { border-radius: var(--radius-lg); overflow: hidden; }
+  /* Not clipped: the keyboard's ring of a row stands outside it; the outer rows take the corners for their hover. */
+  .box { border-radius: var(--radius-lg); }
+  .box > .rows:first-child > li:first-child > :global(.navrow) { border-top-left-radius: var(--radius-lg); border-top-right-radius: var(--radius-lg); }
+  .rows > li:last-child > :global(.navrow) { border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
   .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .cell { aspect-ratio: 1; border-radius: var(--radius-sm); overflow: hidden; }
   /* Small places: the picture or its colour, no file names. */

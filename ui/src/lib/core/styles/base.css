@@ -63,14 +63,16 @@ input, select, textarea {
   font-family: inherit;
   font-size: var(--fs-base);
   background: var(--pane-strong);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   color: var(--text);
   border-radius: var(--radius);
   padding: 0.5rem 0.75rem;
   width: 100%;
-  outline: none;
   transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
+
+/* No ring of the engine's own: the keyboard's is drawn below. */
+:where(input, select, textarea) { outline: none; }
 
 select {
   appearance: none;
@@ -81,7 +83,10 @@ select {
   cursor: pointer;
 }
 
-/* A field in focus shows only its border, by the mouse and by the keyboard alike: the ring is for buttons. */
+/* A field under the pointer lights its frame; one disabled fades as a button does. In focus its frame is the
+   accent's; reached by the keyboard it also takes the ring every control takes (below). */
+:is(input, select, textarea):where(:hover:not(:focus, :disabled, [type="checkbox"], [type="radio"])) { border-color: var(--text-3); }
+:is(input, select, textarea):disabled { opacity: 0.45; cursor: not-allowed; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-border);
 }
@@ -98,7 +103,7 @@ input[type="checkbox"], input[type="radio"] {
   min-height: 0;
   padding: 0;
   flex: none;
-  border: 1px solid var(--border-2);
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-xs);
   background: var(--pane-strong) center / 75% no-repeat;
   vertical-align: middle;
@@ -122,18 +127,18 @@ input[type="radio"]:checked {
   background-size: 100%;
 }
 input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--accent-border); }
-input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: 0.45; cursor: not-allowed; }
 input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
-input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-/* The ring of every other control that draws none of its own (zero specificity: any local rule or `outline: none` wins). */
-:where(button, a[href], summary, [role="tab"], [role="switch"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* The keyboard's ring, one for every control: 2px of --focus-ring, 2px off the control, rounded as it is
+   (an outline follows the border-radius). A field takes it too: a text field is :focus-visible under the
+   mouse as well, so it is drawn only while the keyboard moves the focus (html.kbd-focus, core/focusMode.ts).
+   Zero specificity: a control that draws its own ring, or sets `outline: none`, keeps it. A row or a list
+   that clips its overflow leaves 4px of room around its controls so the ring is not cut. */
+:where(input[type="checkbox"], input[type="radio"], button, a[href], summary, [role="tab"], [role="switch"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible,
+:where(html.kbd-focus) :where(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 input::placeholder, textarea::placeholder { color: var(--text-3); }
-/* A field is the window's glass, not a solid surface (which is black over the glow): its line in the dark is the
-   glass's own, and a hint keeps 4.5:1 on the lighter glow. A dialog's fields are the same glass over its own. */
-[data-theme='dark'] :is(input, select, textarea):where(:not([type="checkbox"], [type="radio"], :focus)) { border-color: var(--pane-strong-border); }
-/* A checkbox or a radio not chosen keeps an edge of 3:1 on any glass. */
-[data-theme='dark'] input:where([type="checkbox"], [type="radio"]):where(:not(:checked, :indeterminate)) { border-color: var(--text-dim); }
+/* A field is the window's glass, not a solid surface (which is black over the glow): a hint in the dark keeps
+   4.5:1 on the lighter glow. A dialog's fields are the same glass over its own. */
 [data-theme='dark'] :is(input, textarea)::placeholder { color: var(--text-2); }
 select option { background: var(--surface); color: var(--text); }
 [data-theme='dark'] :is(.tab-bar, .seg, .seg-btn-lg) { border-color: var(--pane-strong-border); }
@@ -288,8 +293,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .page-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
 /* ── Card / section ── */
-.card,
-.glass-card {
+.card {
   background: var(--pane-strong);
   border: 1px solid var(--pane-strong-border);
   border-radius: var(--radius-card);
@@ -299,10 +303,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 /* What sits on a card (fields, chips, tiles, segments, quiet buttons) takes the card's own glass, not the solid
    surfaces, which are black over the glow: one rule for every card, on a computer and on a phone, the settings' and
-   the info panels' alike. `.glass-card` is the same card for a block that has a class of its own (a box of an info
-   panel); `.on-glass` only gives the tokens (a local block that draws its own look). In the dark the lines on it are the glass's own; in the light they stay --border, or a white field on a white card has no edge. */
+   the info panels' alike. `.on-glass` only gives the tokens (a local block that draws its own look). In the dark the lines on it are the glass's own; in the light they stay --border, or a white field on a white card has no edge. */
 .card,
-.glass-card,
 .data-table,
 .on-glass {
   --surface: var(--pane-strong);
@@ -311,7 +313,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   --m-field: var(--pane-strong);
   --m-seg: var(--pane-strong);
 }
-[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) {
+[data-theme='dark'] :is(.card, .data-table, .on-glass) {
   --surface-hover: var(--pane-strong-border);
   --border: var(--pane-strong-border);
   --border-2: var(--pane-strong-border);
@@ -321,9 +323,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   --toggle-off: var(--text-dim);
 }
 /* The glow under a card is lighter than the page: a hint in a field and the active segment keep 4.5:1 on it. */
-[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) :is(input, textarea)::placeholder { color: var(--text-2); }
-[data-theme='dark'] :is(.card, .glass-card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
-.card--hover:hover { border-color: var(--border-2); transform: translateY(-2px); }
+[data-theme='dark'] :is(.card, .data-table, .on-glass) :is(input, textarea)::placeholder { color: var(--text-2); }
+[data-theme='dark'] :is(.card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
 .card-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 
 .section { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -336,7 +337,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .muted { color: var(--text-2); }
 
-/* ── Badges (static status pills) ── */
+/* ── Badges (static status pills) ── the look of core/ui/Pill, kind `badge`: markup goes through the component. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -551,7 +552,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-3);
 }
 [data-theme='dark'] .empty-icon { box-shadow: inset 0 0 0 1px var(--pane-strong-border); color: var(--text-2); }
-.empty-icon svg { opacity: 1; }
+.empty-icon svg, .empty-state .btn svg { opacity: 1; }
+
+/* ── The × of a window ── one for Dialog, Drawer and BottomSheet: 40×40, the icon 18 (<Icon name="x" size={18} />),
+   --text-2, a zone of 44 to press. Their head is 64, the title on the left, the × 12 from its right edge. */
+.win-close {
+  position: relative; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; border: none; border-radius: var(--radius);
+  background: transparent; color: var(--text-2); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.win-close::before { content: ''; position: absolute; inset: -2px; }
+.win-close:hover { background: var(--surface-hover); color: var(--text); }
+.win-close:active { background: var(--surface-hover); }
 
 /* ── Tabs ── the sections of a page: the kit's segmented control */
 .tab-bar {
@@ -566,6 +579,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   flex-shrink: 0;
 }
 .tab {
+  position: relative;
   min-height: 32px;
   padding: 0 var(--sp-3);
   border: none;
@@ -582,14 +596,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: all var(--dur-fast);
 }
 .tab:hover { color: var(--text); }
-.tab.active { color: var(--text); background: var(--surface-hover); }
-.tab-count {
-  font-size: var(--fs-xs);
-  background: var(--surface-2);
-  border-radius: var(--radius-pill);
-  padding: 0.05rem 0.4rem;
-  color: var(--text-2);
-}
+.tab.active { color: var(--accent-text); }
+/* The chosen one: no fill, no frame; a bar of the accent under its contents (icon, word, count), as under a tab of Tabs.
+   Its count is a `.count-pill.sm.quiet` (a total), the accent when it counts what is unread. */
+.tab.active::after { content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
 
 /* ── A row of a list pane ── one row for the chats, the groups, the channels, the calls, the contacts and the
    requests: 64 high, an avatar of 48, the text column right of it — the name over the line, the marks of the
@@ -599,7 +609,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
    rows a hairline of --divider from the text (72 from the left) to 12 from the right, hidden beside a
    hovered or chosen row. `.unread`: the name heavier, the line bright and bold, the time in the accent;
    the count is a `.count-pill.lg`. */
-.list-rows { --list-avatar: 48px; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.list-rows { --list-avatar: 48px; list-style: none; margin: 0; padding: var(--sp-1) 0; display: flex; flex-direction: column; }
 .list-row {
   position: relative; display: flex; align-items: center; gap: var(--sp-3); box-sizing: border-box; width: 100%;
   min-height: 64px; padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-lg);
@@ -607,7 +617,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: background var(--dur-fast) var(--ease);
 }
 .list-row:hover { background: var(--surface-hover); }
-.list-row:focus-visible, .list-row-main:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .list-row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
 .list-rows > li:has(> .list-row) + li > .list-row::before {
   content: ''; position: absolute; top: -0.5px; left: calc(var(--sp-3) * 2 + var(--list-avatar)); right: var(--sp-3); height: 1px;
@@ -696,7 +705,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
 .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
-.seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* `.seg-fill`: the control across its card, the options of one width, their words wrapped on a narrow screen. */
 .seg.seg-fill { display: flex; width: 100%; box-sizing: border-box; }
@@ -854,6 +862,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   font-size: var(--fs-sm);
   text-align: center;
 }
+/* A loading place shows a spinner of 24, not of the text's size (T8-06). */
+.loading .spinner { width: 24px; height: 24px; }
 
 /* ── Touch feedback ── (design kit M17, M18)
    A long press resting on a row or a bubble: it sinks a little under the

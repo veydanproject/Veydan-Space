@@ -523,6 +523,22 @@ pub async fn messenger_push_clear(key: Option<String>, app: tauri::AppHandle) ->
     }
 }
 
+/// A chat read on another device of mine: its notification on this phone
+/// goes at once. From here and not from the page, which the system may
+/// hold still while the app is in the background with its process alive.
+#[cfg(mobile)]
+pub fn read_elsewhere(app: &tauri::AppHandle, chat_id: Option<&str>) {
+    let Some(chat_id) = chat_id.map(str::to_string) else { return };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(push) = bridge(&app) {
+            if let Err(e) = push.cancel(Some(&chat_id)).await {
+                eprintln!("messenger push: the notification of a chat read elsewhere stays: {e}");
+            }
+        }
+    });
+}
+
 // Used on a phone only; named here so that a desktop build does not warn.
 #[cfg(not(mobile))]
 #[allow(dead_code)]

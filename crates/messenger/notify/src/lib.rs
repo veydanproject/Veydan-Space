@@ -24,10 +24,11 @@ pub mod notice;
 pub mod push;
 pub mod sealed;
 pub mod settings;
+pub mod sight;
 
 pub use bundle::{GroupKeyEntry, KeyBundle};
 pub use sealed::{is_sealed, unseal_as, Unsealed};
-pub use describe::{call_over, describe, describe_as, invite_expired, invite_times, CALL_INVITE_TTL_SECS};
+pub use describe::{call_over, describe, describe_as, describe_on_phone, invite_expired, invite_times, CALL_INVITE_TTL_SECS};
 pub use live::{live, Face};
 pub use notice::{Body, CallEnd, CallNotice, ChatKind, LinkKind, Notice, Outcome, Plain, Reason};
 pub use push::{PushData, PushKind};

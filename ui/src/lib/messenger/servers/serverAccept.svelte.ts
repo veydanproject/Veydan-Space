@@ -6,7 +6,7 @@
 // link of a person or a group with the card of its server, a contact card
 // with a server, a link pasted into «Новый чат» or «Новая группа», a QR —
 // goes through `acceptServer`, which shows `ServerAcceptDialog` (mounted
-// once per page, beside ConfirmHost) and adds nothing unless the user says
+// once per window) and adds nothing unless the user says
 // «Добавить». What the dialog says is the server's name,
 // whether it is private or Veydan's, and its lines (`serverRows`).
 
