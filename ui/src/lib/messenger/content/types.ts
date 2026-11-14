@@ -18,9 +18,11 @@ export type ExternalUrl = string & { readonly [kind]: 'external' };
 export type Segment =
   | { type: 'text'; text: string }
   | { type: 'external'; text: string; url: ExternalUrl }
-  | { type: 'internal'; text: string; link: InternalLinkText };
+  | { type: 'internal'; text: string; link: InternalLinkText }
+  /** Words the search of the conversation found (`tokenize` with a query). */
+  | { type: 'mark'; text: string };
 
-export type LinkSegment = Exclude<Segment, { type: 'text' }>;
+export type LinkSegment = Exclude<Segment, { type: 'text' | 'mark' }>;
 
 /** What an album holds: pictures and videos, files, or both (pictures on top, files under them). */
 export type AlbumVariant = 'visual' | 'files' | 'mixed';

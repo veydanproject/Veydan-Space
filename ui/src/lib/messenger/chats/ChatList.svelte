@@ -4,9 +4,9 @@
 <script lang="ts">
   import { drafts } from '../shared/drafts.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
-  import { t, type TranslationKey } from '$lib/core/i18n';
+  import { t, locale, countKey, type TranslationKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { chatStore } from './chatStore.svelte';
@@ -15,17 +15,17 @@
   import { listStamp } from '../shared/time';
   import { confirmStore } from '../shared/confirm.svelte';
   import { longpress } from '../shared/longpress';
-  import { chatMatches, contactHaystacks } from '../shared/search';
+  import { chatMatches, contactHaystacks, excerpt } from '../shared/search';
   import { messengerStore } from '../store.svelte';
   import { botCardLineKey } from '../content/botCard';
   import { bodyLine } from '../push/wording';
   import { botCards } from '../seams/cards.svelte';
-  import type { MessengerChat } from '../api';
+  import { messengerApi, type ChatHit, type MessengerChat, type MessengerMessage } from '../api';
   import { goto } from '$app/navigation';
   import { requestStore, requestsUi } from '../requests/requestStore.svelte';
   import { requestsHref } from '../mobile/routes';
   import { onPhone } from '../shared/phone';
-  import { inSection, type ChatSection } from './sections';
+  import { chatKind, inSection, type ChatSection } from './sections';
   import { groupStore } from '../groups/groupStore.svelte';
   import { answersRequests } from '../groups/permissions';
   import ServerLabel from '../servers/ServerLabel.svelte';
@@ -37,6 +37,8 @@
     /** The section listed while nothing is typed: the chats between two, the groups, or a section a module gives (seams/sections). */
     kind?: ChatSection | string;
     onopen: (chat: MessengerChat) => void;
+    /** A chat of «Сообщения» pressed: it opens filtered by `query`. By default `chatStore.openSearch`, then `onopen`. */
+    onopenfound?: (chat: MessengerChat, query: string) => void;
     /** A row of a module's section opened, by its chat id. */
     onopenrow?: (chatId: string) => void;
     /** The row of a module's section open now. */
@@ -46,7 +48,7 @@
     /** What scrolls with the rows above them (the offers of a phone's list), so nothing stands over the rows. */
     top?: Snippet;
   }
-  let { query, kind = 'dm', onopen, onopenrow, selected = null, covers = false, top }: Props = $props();
+  let { query, kind = 'dm', onopen, onopenfound, onopenrow, selected = null, covers = false, top }: Props = $props();
 
   /** The section a module gives, when `kind` names one: its rows instead of the messenger's chats. */
   const host = $derived(kind === 'dm' || kind === 'group' ? null : chatSections.get(kind));
@@ -93,6 +95,61 @@
   const archived = $derived(chatStore.chats.filter((c) => c.archived && !isRequest(c) && matches(c)));
   // The requests of strangers are chats between two: their row is of «Чаты».
   const requests = $derived(kind === 'dm' ? requestStore.count : 0);
+
+  // «Сообщения»: the chats of this section whose messages hold the words typed (the index of this device,
+  // messenger_search_chats), under those found by their name. Asked 250 ms after the typing; an answer to
+  // an older question is dropped, so a fast typing never draws what was asked before. Asked again as the
+  // chats change (a message came) and, while the index is still being written, every 3 s.
+  let found = $state<{ query: string; hits: ChatHit[]; partial: boolean } | null>(null);
+  /** A question is on its way for what is typed now: «Ничего не найдено» waits for it. */
+  let waiting = $state(false);
+  let foundGen = 0;
+  let again = $state(0);
+  const searchable = $derived(kind === 'dm' || kind === 'group');
+  $effect(() => {
+    const asked = searchable ? q : '';
+    void chatStore.chats;
+    void again;
+    const gen = ++foundGen;
+    if (!asked) { found = null; waiting = false; return; }
+    if (untrack(() => found?.query) !== asked) waiting = true;
+    const timer = setTimeout(() => {
+      messengerApi.search.chats(asked)
+        .then((r) => { if (gen === foundGen) found = { query: asked, hits: r.hits, partial: r.partial }; })
+        .catch(() => { if (gen === foundGen) found = null; })
+        .finally(() => { if (gen === foundGen) waiting = false; });
+    }, 250);
+    return () => clearTimeout(timer);
+  });
+  $effect(() => {
+    if (!found?.partial) return;
+    const timer = setTimeout(() => again++, 3000);
+    return () => clearTimeout(timer);
+  });
+  /** The hits of this section's own chats, as the list knows them (a request of a stranger and a module's chat are not). */
+  const hits = $derived.by(() => {
+    const byId = new Map(chatStore.chats.map((c) => [c.id, c]));
+    return (found?.hits ?? []).flatMap((hit) => {
+      const chat = byId.get(hit.chat_id);
+      const ours = chat && !isRequest(chat) && chatKind(chat) === kind && !chatSections.ofChat(chat.id) && !chatSections.isOff(chat.id);
+      return ours ? [{ chat, hit }] : [];
+    });
+  });
+  const foundBlock = $derived(!!found && (hits.length > 0 || found.partial));
+
+  /** What of a found message the row shows: its text, or the file's name and its caption. */
+  function foundText(m: MessengerMessage): string {
+    const media = m.media as { name?: unknown; kind?: unknown } | null;
+    const name = typeof media?.name === 'string' && media.kind !== 'voice' && media.kind !== 'circle' ? media.name : '';
+    return [name, m.text ?? ''].filter(Boolean).join(' · ');
+  }
+
+  function openFound(c: MessengerChat) {
+    const asked = found?.query ?? q;
+    if (onopenfound) return onopenfound(c, asked);
+    chatStore.openSearch = { chatId: c.id, query: asked };
+    onopen(c);
+  }
 
   /** The desktop shows the requests in the rail in place of the chats; a phone goes to their screen. */
   function openRequests() {
@@ -198,6 +255,44 @@
   </li>
 {/snippet}
 
+<!-- A chat of «Сообщения»: its newest match, the words marked, and how many match, a magnifier on the count
+     (not the unread's pill); pressed, the chat opens filtered by the words. -->
+{#snippet foundRow(c: MessengerChat, hit: ChatHit)}
+  {@const line = excerpt(foundText(hit.last), found?.query ?? q)}
+  {@const count = $t(countKey('msg_search_matches', hit.count, $locale), { n: String(hit.count) })}
+  <li>
+    <button class="chat list-row" onclick={() => openFound(c)} oncontextmenu={(e) => openMenu(e, c)}
+      use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={48} />
+      <span class="list-row-body">
+        <span class="list-row-top">
+          <span class="list-row-name">{c.title}</span>
+          {#if c.kind === "group"}<span class="list-row-mark"><Icon name="users" size={14} /></span>{/if}
+          {#if c.archived}<span class="list-row-mark" title={$t('msg_search_archived')}><Icon name="archive" size={14} /></span>{/if}
+          <span class="list-row-time">{listStamp(hit.last.created_at)}</span>
+        </span>
+        <span class="list-row-bottom">
+          <span class="list-row-line">{@render marked(line)}</span>
+          <span class="count-pill lg found-count" title={count} aria-label={count}><Icon name="search" size={11} />{hit.count > 99 ? '99+' : hit.count}</span>
+        </span>
+      </span>
+    </button>
+  </li>
+{/snippet}
+
+{#snippet marked(line: { text: string; ranges: [number, number][] })}{#each line.ranges as [from, to], i}{line.text.slice(i ? line.ranges[i - 1][1] : 0, from)}<mark>{line.text.slice(from, to)}</mark>{/each}{line.text.slice(line.ranges.at(-1)?.[1] ?? 0)}{/snippet}
+
+{#snippet foundCover(c: MessengerChat, hit: ChatHit)}
+  {@const words = `${c.title} — ${excerpt(foundText(hit.last), found?.query ?? q).text}`}
+  <li>
+    <button class="list-cover" title={words} aria-label={words} onclick={() => openFound(c)} oncontextmenu={(e) => openMenu(e, c)}
+      use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
+      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={42} />
+      <span class="list-cover-corner found-corner"><Icon name="search" size={10} /></span>
+    </button>
+  </li>
+{/snippet}
+
 <!-- The pinned are told by the pin on their row and a line after them. -->
 {#snippet pinRule()}
   <li class="pin-rule" aria-hidden="true"></li>
@@ -240,7 +335,7 @@
       {/if}
       {#if host && shown.length === 0 && folded === 0 && !q && host.loading?.()}
         <div class="list-cover-empty" role="status"><span class="spinner" aria-hidden="true"></span></div>
-      {:else if shown.length === 0 && folded === 0}
+      {:else if shown.length === 0 && folded === 0 && !hits.length && !(q && waiting)}
         {@const icon = q ? 'search' : host ? host.icon : kind === 'group' ? 'users' : 'message-circle'}
         {@const words = q ? $t('common_nothing_found') : host ? $t(host.emptyTitle) : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}
         <div class="list-cover-empty" role="status" aria-label={words} title={words}><Icon name={icon} size={22} /></div>
@@ -251,6 +346,11 @@
         {#if showArchived && folded}
           <ul class="covers-list folded">
             {#if host}{#each hostArchived as r (r.chatId)}{@render extCover(r)}{/each}{:else}{#each archived as c (c.id)}{@render chatCover(c)}{/each}{/if}
+          </ul>
+        {/if}
+        {#if hits.length}
+          <ul class="covers-list folded" aria-label={$t('msg_search_block')}>
+            {#each hits as h (h.chat.id)}{@render foundCover(h.chat, h.hit)}{/each}
           </ul>
         {/if}
       {/if}
@@ -310,11 +410,13 @@
       {/if}
     {/if}
   {:else if visible.length === 0 && archived.length === 0}
+    {#if !foundBlock && !(q && waiting)}
     <div class="empty-state list-empty">
       <div class="empty-icon"><Icon name={q ? 'search' : kind === 'group' ? 'users' : 'message-circle'} size={22} /></div>
       <p>{q ? $t('common_nothing_found') : kind === 'group' ? $t('msg_groups_empty') : $t('msg_chats_empty')}</p>
       <span>{q ? $t('common_nothing_found_hint', { q: q.trim() }) : kind === 'group' ? $t('msg_groups_empty_hint') : $t('msg_chats_empty_hint')}</span>
     </div>
+    {/if}
   {:else}
     <ul class="list-rows">
       {#each visible as c, i (c.id)}
@@ -334,6 +436,17 @@
         </ul>
       {/if}
     {/if}
+  {/if}
+  {#if !host && foundBlock}
+    <section class="found" aria-label={$t('msg_search_block')}>
+      <h3 class="found-head">{$t('msg_search_block')}</h3>
+      {#if found?.partial}<p class="found-note" role="status">{$t('msg_search_indexing')}</p>{/if}
+      {#if hits.length}
+        <ul class="list-rows">
+          {#each hits as h (h.chat.id)}{@render foundRow(h.chat, h.hit)}{/each}
+        </ul>
+      {/if}
+    </section>
   {/if}
 </div>
 {/if}
@@ -377,5 +490,12 @@
   .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
   .covers-list.folded { padding-top: var(--sp-1); border-top: 1px solid var(--divider); }
   .list-cover.on { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); color: var(--accent-text); }
+  /* «Сообщения»: a head over the block, the words found marked as in the filtered chat. */
+  .found-head { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+  .found-note { margin: 0 var(--sp-3) var(--sp-2); font-size: var(--fs-xs); color: var(--text-3); }
+  .found mark { background: color-mix(in srgb, var(--warn) 40%, transparent); color: inherit; border-radius: 3px; }
+  /* How many match: a quiet pill with a magnifier, so it is not taken for the unread. */
+  .found-count { gap: 3px; background: var(--surface-3); color: var(--text-2); }
+  .found-corner { background: var(--surface-3); color: var(--text-2); display: inline-flex; align-items: center; justify-content: center; }
   .list-cover.arch { width: 44px; height: 44px; border-radius: var(--radius-md); }
 </style>

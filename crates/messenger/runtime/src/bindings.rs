@@ -26,6 +26,7 @@ use crate::moderation::{
 use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
 use crate::report::{ReportContext, ReportInput, ReportReason, ReportResult, ReportStatus, ReportSubReason, ReportTarget};
 use crate::dm_history::DmHistoryPage;
+use crate::search::{ChatHit, ChatSearchResult, SearchCursor, SearchPage};
 use crate::shared::{SharedCounts, SharedSection};
 use messenger_avatar::CropRect;
 use messenger_media::{Progress, TransferStage, TransferView};
@@ -46,6 +47,7 @@ pub const CALLS_FILE: &str = "../../../ui/src/lib/messenger/generated/calls.ts";
 pub const BOT_FILE: &str = "../../../ui/src/lib/messenger/generated/bot.ts";
 pub const MODERATION_FILE: &str = "../../../ui/src/lib/messenger/generated/moderation.ts";
 pub const MARKDOWN_FILE: &str = "../../../ui/src/lib/messenger/generated/markdown.ts";
+pub const SEARCH_FILE: &str = "../../../ui/src/lib/messenger/generated/search.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -223,8 +225,22 @@ pub fn moderation_ts() -> String {
     out
 }
 
+/// The search of the conversation, as the list of chats and the filter of
+/// a chat read it. A message is the UI's `MessengerMessage` (`api.ts`):
+/// `MessageView` is no type of ts-rs.
+pub fn search_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += "\nimport type { MessengerMessage } from '../api';\n";
+    out += &export::<SearchCursor>(&cfg, "Where a page of `messenger_search_messages` ends: its `next_before`, passed as `before` for the next page.");
+    out += &export::<SearchPage>(&cfg, "What the search found in one chat, as `messenger_search_messages` answers: a page, the newest first, and how many match in all; `partial` while the index of this device is still being written.");
+    out += &export::<ChatHit>(&cfg, "A chat whose messages hold the words: how many, and the newest of them.");
+    out += &export::<ChatSearchResult>(&cfg, "What the search found across the chats, as `messenger_search_chats` answers: the chat with the newest match first.");
+    out
+}
+
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 9] {
+pub fn files() -> [(&'static str, String); 10] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
@@ -235,6 +251,7 @@ pub fn files() -> [(&'static str, String); 9] {
         (BOT_FILE, bot_ts()),
         (MODERATION_FILE, moderation_ts()),
         (MARKDOWN_FILE, markdown_ts()),
+        (SEARCH_FILE, search_ts()),
     ]
 }
 

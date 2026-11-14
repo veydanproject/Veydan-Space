@@ -22,7 +22,9 @@ export const contactsHref = () => `${BASE}/contacts`;
 /** «Профиль и ключ» alone: behind my avatar where the app's settings hold the chat's others (Space). */
 export const profileHref = () => `${BASE}/profile`;
 
-export const chatHref = (chatId: string) => `${BASE}/chat?id=${encodeURIComponent(chatId)}`;
+/** `query`: the chat opens filtered by it (a match of the search across the chats). */
+export const chatHref = (chatId: string, query = '') =>
+  `${BASE}/chat?id=${encodeURIComponent(chatId)}${query ? `&q=${encodeURIComponent(query)}` : ''}`;
 
 /** Where a chat opened from elsewhere is shown: a row of a module's section (`owned`, seams/sections) on its own screen. */
 export const openHref = (chatId: string, owned: boolean) => (owned ? sectionItemHref(chatId) : chatHref(chatId));

@@ -158,6 +158,8 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_chats_list", r2(crate::commands::messenger_chats_list)));
     v.push(("messenger_chat_open", r2(crate::commands::messenger_chat_open)));
     v.push(("messenger_chat_messages", r5(crate::commands::messenger_chat_messages)));
+    v.push(("messenger_search_messages", r5(crate::commands::messenger_search_messages)));
+    v.push(("messenger_search_chats", r3(crate::commands::messenger_search_chats)));
     v.push(("messenger_chat_shared_counts", r2(crate::commands::messenger_chat_shared_counts)));
     v.push(("messenger_chat_shared", r5(crate::commands::messenger_chat_shared)));
     v.push(("messenger_privacy_get", r1(crate::commands::messenger_privacy_get)));

@@ -12,6 +12,14 @@ const at = (url: string) => {
 const A = `dm:${'a'.repeat(64)}`;
 const B = `group:${'b'.repeat(64)}`;
 
+describe('chatHref', () => {
+  it('carries the search the chat opens filtered by', () => {
+    expect(chatHref(A)).toBe(`${BASE}/chat?id=${encodeURIComponent(A)}`);
+    const u = new URL(chatHref(A, 'ёлка & co'), 'http://app');
+    expect([u.searchParams.get('id'), u.searchParams.get('q')]).toEqual([A, 'ёлка & co']);
+  });
+});
+
 describe('openHref', () => {
   it('sends a row of a module section to its own screen, any other chat to the chat', () => {
     const C = `channel:${'c'.repeat(64)}`;

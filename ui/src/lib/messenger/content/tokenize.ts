@@ -9,6 +9,7 @@
 // Only what a link looks like is decided here. What an internal link
 // means is decided by the runtime (`messengerApi.links.inspect`).
 
+import { highlightRanges } from '../shared/search';
 import type { ExternalUrl, InternalLinkText, LinkSegment, Segment } from './types';
 
 const MAX_LINK_LEN = 2048;
@@ -47,13 +48,18 @@ function external(text: string): ExternalUrl | null {
   }
 }
 
-export function tokenize(text: string): Segment[] {
+/**
+ * `highlight`: what the search of the conversation asked; the words it
+ * found in the plain parts are parts of their own (`mark`). A link is not
+ * taken apart for them.
+ */
+export function tokenize(text: string, highlight = ''): Segment[] {
   const out: Segment[] = [];
   let last = 0;
   let plain = '';
   const flush = (upTo: number) => {
     plain += text.slice(last, upTo);
-    if (plain) out.push({ type: 'text', text: plain });
+    if (plain) out.push(...marked(plain, highlight));
     plain = '';
   };
 
@@ -88,12 +94,27 @@ export function tokenize(text: string): Segment[] {
   return out;
 }
 
+/** A plain part, the words the search found in it apart. */
+function marked(text: string, highlight: string): Segment[] {
+  const ranges = highlight ? highlightRanges(text, highlight) : [];
+  if (!ranges.length) return [{ type: 'text', text }];
+  const out: Segment[] = [];
+  let at = 0;
+  for (const [from, to] of ranges) {
+    if (from > at) out.push({ type: 'text', text: text.slice(at, from) });
+    out.push({ type: 'mark', text: text.slice(from, to) });
+    at = to;
+  }
+  if (at < text.length) out.push({ type: 'text', text: text.slice(at) });
+  return out;
+}
+
 /** Links of a text, each once, in the order they appear. */
 export function linksOf(segments: Segment[]): LinkSegment[] {
   const seen = new Set<string>();
   const out: LinkSegment[] = [];
   for (const s of segments) {
-    if (s.type === 'text' || seen.has(s.text)) continue;
+    if (s.type === 'text' || s.type === 'mark' || seen.has(s.text)) continue;
     seen.add(s.text);
     out.push(s);
   }

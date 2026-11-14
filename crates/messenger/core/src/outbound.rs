@@ -58,6 +58,7 @@ pub enum Outbound {
     Unsubscribe { id: SubId },
     /// History reconciliation: Negentropy (NIP-77) against `local` when the
     /// relay supports it, otherwise a plain bounded REQ. Events found this
-    /// way arrive on the event stream with `EventSource::Sync`.
+    /// way arrive on the event stream with `EventSource::Sync`. The ack's
+    /// `accepted_by`: the relays that answered.
     Sync { scope: Scope, filter: Filter, local: Vec<SyncItem> },
 }

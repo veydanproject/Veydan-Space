@@ -8,6 +8,8 @@ import type {
   BotCard, CardView, ChatMode, Color, LogEntry, MessageStatus, MessengerChat, MessengerContact, MessengerGroup, MessengerGroupInvite, MessengerGroupMember, MessengerIdentity,
   MessengerMessage, MessengerProfile, MessengerTransfer, SocialLink, SocialView, Span, Style, InviteView, PrivateServerView,
 } from './api';
+import type { ChatSearchResult, SearchCursor, SearchPage } from './generated/search';
+import { fold } from './shared/search';
 
 const ME = 'ab'.repeat(32);
 const hex = (c: string) => c.repeat(64).slice(0, 64);
@@ -179,6 +181,41 @@ export function demoCard(p: MessengerProfile, phone: string | null, flags: { is_
 
 /** Pictures of the demo's people: these URLs "are cached" in the preview. */
 export const DEMO_PICTURE_BASE = 'https://node-1.veydan.net/media/';
+
+// ── The search of the conversation (messenger_store::search) ─────────────
+
+/** Every word of the query starts a word of the text, the caption or the file's name; folded alike. */
+function demoSearchMatches(m: MessengerMessage, query: string): boolean {
+  if (m.deleted || (m.content_type !== 'text' && m.content_type !== 'media')) return false;
+  const media = m.media as { name?: unknown; kind?: unknown } | null;
+  const name = typeof media?.name === 'string' && media.kind !== 'voice' && media.kind !== 'circle' ? media.name : '';
+  const words = fold(`${m.text ?? ''}\n${name}`).split(/[^\p{L}\p{N}]+/u);
+  const asked = fold(query).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return asked.length > 0 && asked.every((part) => words.some((w) => w.startsWith(part)));
+}
+
+/** `messenger_search_messages` of the preview: the newest first by (time, id), past `before`. */
+export function demoSearchMessages(all: MessengerMessage[], query: string, before: SearchCursor | null, limit: number): SearchPage {
+  if (!query.trim()) return { messages: [], total: 0, partial: false };
+  const newer = (a: MessengerMessage, b: MessengerMessage) => b.created_at - a.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+  const hits = all.filter((m) => demoSearchMatches(m, query)).sort(newer);
+  const past = (m: MessengerMessage) => !before || m.created_at < before.created_at || (m.created_at === before.created_at && m.id < before.id);
+  const rest = hits.filter(past);
+  const page = rest.slice(0, limit);
+  const last = rest.length > limit ? page[page.length - 1] : undefined;
+  return { messages: page, total: hits.length, partial: false, ...(last ? { next_before: { created_at: last.created_at, id: last.id } } : {}) };
+}
+
+/** `messenger_search_chats` of the preview: the chat with the newest match first. */
+export function demoSearchChats(byChat: Record<string, MessengerMessage[]>, chats: string[], query: string, limit: number): ChatSearchResult {
+  if (!query.trim()) return { hits: [], partial: false };
+  const hits = chats
+    .map((id) => ({ id, found: demoSearchMessages(byChat[id] ?? [], query, null, 1) }))
+    .filter((h) => h.found.messages.length > 0)
+    .map((h) => ({ chat_id: h.id, count: h.found.total, last: h.found.messages[0] }))
+    .sort((a, b) => b.last.created_at - a.last.created_at);
+  return { hits: hits.slice(0, limit), partial: false };
+}
 
 export interface DemoData {
   identity: MessengerIdentity;

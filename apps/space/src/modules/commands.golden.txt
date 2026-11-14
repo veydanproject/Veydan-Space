@@ -201,6 +201,8 @@ messenger_card_send messenger all
 messenger_chat_delete messenger all
 messenger_chat_mark_read messenger all
 messenger_chat_messages messenger all
+messenger_search_messages messenger all
+messenger_search_chats messenger all
 messenger_chat_open messenger all
 messenger_chat_set_archived messenger all
 messenger_chat_set_muted messenger all

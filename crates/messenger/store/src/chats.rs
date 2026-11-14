@@ -465,6 +465,8 @@ pub async fn delete(store: &Store, id: &str, now: i64) -> Result<()> {
     .execute(&mut *tx)
     .await
     .map_err(storage)?;
+    // Its words leave the search with it.
+    crate::search::forget_chat_in(&mut tx, id).await?;
     // Held rows of the DM gate were never shown: gone as if dropped, not
     // remembered (as `dm_held::purge`).
     sqlx::query("DELETE FROM msg_messages WHERE id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?) AND is_hidden = 1")
@@ -551,14 +553,19 @@ pub async fn delete_copy(store: &Store, id: &str, cleared_at: i64, peer_upto: i6
     .execute(&mut *tx)
     .await
     .map_err(storage)?;
-    sqlx::query(
-        "DELETE FROM msg_messages WHERE id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?1 AND created_at <= ?2) AND is_hidden = 1",
-    )
-    .bind(id)
-    .bind(peer_upto)
-    .execute(&mut *tx)
-    .await
-    .map_err(storage)?;
+    const HELD_GONE: &str = "id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?1 AND created_at <= ?2) AND is_hidden = 1";
+    sqlx::query(sqlx::AssertSqlSafe(crate::search::forget_sql(HELD_GONE)))
+        .bind(id)
+        .bind(peer_upto)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM msg_messages WHERE {HELD_GONE}")))
+        .bind(id)
+        .bind(peer_upto)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
     sqlx::query("DELETE FROM msg_dm_held WHERE chat_id = ?1 AND created_at <= ?2")
         .bind(id)
         .bind(peer_upto)
@@ -586,6 +593,13 @@ pub async fn delete_copy(store: &Store, id: &str, cleared_at: i64, peer_upto: i6
     .execute(&mut *tx)
     .await
     .map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(crate::search::forget_sql(GONE)))
+        .bind(id)
+        .bind(cleared_at)
+        .bind(peer_upto)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage)?;
     sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM msg_messages WHERE {GONE}")))
         .bind(id)
         .bind(cleared_at)

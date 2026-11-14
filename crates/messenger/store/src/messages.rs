@@ -125,6 +125,7 @@ pub const SHOWN_TO_MEMBER: &str = "m.is_hidden = 0 AND (m.mod_state = '' OR (m.r
 pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
     let fmt = format_of(&m.envelope_json);
     let plain = plain_of(m.text.as_deref(), fmt);
+    let mut tx = store.pool().begin().await.map_err(storage)?;
     let res = sqlx::query(
         "INSERT OR IGNORE INTO msg_messages (id, chat_id, wire_id, direction, status, content_type, text, envelope_json, sender_pubkey, reply_to_id, target_id, created_at, received_at, edited_at, deleted_at, is_hidden, outbox_local_id, failure_reason, media_json, mod_state, review, fmt, plain)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, '', 'ok', ?, ?)",
@@ -147,10 +148,15 @@ pub async fn insert(store: &Store, m: &NewMessage) -> Result<bool> {
     .bind(&m.media_json)
     .bind(fmt.name())
     .bind(plain)
-    .execute(store.pool())
+    .execute(&mut *tx)
     .await
     .map_err(storage)?;
-    Ok(res.rows_affected() == 1)
+    let inserted = res.rows_affected() == 1;
+    if inserted {
+        crate::search::index_in(&mut tx, &m.id).await?;
+    }
+    tx.commit().await.map_err(storage)?;
+    Ok(inserted)
 }
 
 pub async fn get(store: &Store, id: &str) -> Result<Option<MessageRow>> {
@@ -611,27 +617,32 @@ fn plain_of(text: Option<&str>, fmt: TextFormat) -> Option<String> {
 
 /// An edit: the text and how it is written, both from the edit.
 pub async fn set_text(store: &Store, id: &str, text: &str, fmt: TextFormat, edited_at: i64) -> Result<()> {
+    let mut tx = store.pool().begin().await.map_err(storage)?;
     sqlx::query("UPDATE msg_messages SET text = ?, fmt = ?, plain = ?, edited_at = ? WHERE id = ?")
         .bind(text)
         .bind(fmt.name())
         .bind(plain_of(Some(text), fmt))
         .bind(edited_at)
         .bind(id)
-        .execute(store.pool())
+        .execute(&mut *tx)
         .await
         .map_err(storage)?;
-    Ok(())
+    crate::search::index_in(&mut tx, id).await?;
+    tx.commit().await.map_err(storage)
 }
 
-/// Tombstone: content is dropped, the row stays so the order is stable.
+/// Tombstone: content is dropped, the row stays so the order is stable;
+/// its words leave the index.
 pub async fn mark_deleted(store: &Store, id: &str, deleted_at: i64) -> Result<()> {
+    let mut tx = store.pool().begin().await.map_err(storage)?;
     sqlx::query("UPDATE msg_messages SET text = NULL, plain = NULL, media_json = NULL, deleted_at = ? WHERE id = ?")
         .bind(deleted_at)
         .bind(id)
-        .execute(store.pool())
+        .execute(&mut *tx)
         .await
         .map_err(storage)?;
-    Ok(())
+    crate::search::forget_in(&mut tx, id).await?;
+    tx.commit().await.map_err(storage)
 }
 
 pub async fn set_status(store: &Store, id: &str, status: &str, failure_reason: Option<&str>) -> Result<()> {
@@ -741,18 +752,27 @@ pub const STATUS_UPLOADING: &str = "uploading";
 
 /// Remove one row for good (placeholders of uploads).
 pub async fn delete(store: &Store, id: &str) -> Result<()> {
-    sqlx::query("DELETE FROM msg_messages WHERE id = ?").bind(id).execute(store.pool()).await.map_err(storage)?;
-    Ok(())
+    // Held for writing from the first statement: it reads the row's words
+    // before it writes, and a write of another between them would fail it
+    // (SQLITE_BUSY_SNAPSHOT, which no busy timeout waits out).
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
+    crate::search::forget_in(&mut tx, id).await?;
+    sqlx::query("DELETE FROM msg_messages WHERE id = ?").bind(id).execute(&mut *tx).await.map_err(storage)?;
+    tx.commit().await.map_err(storage)
 }
 
+/// The details of a file or of a line of a call; the name of a file is
+/// searched (`search::body_of`).
 pub async fn set_media_json(store: &Store, id: &str, media_json: &str) -> Result<()> {
+    let mut tx = store.pool().begin().await.map_err(storage)?;
     sqlx::query("UPDATE msg_messages SET media_json = ? WHERE id = ?")
         .bind(media_json)
         .bind(id)
-        .execute(store.pool())
+        .execute(&mut *tx)
         .await
         .map_err(storage)?;
-    Ok(())
+    crate::search::index_in(&mut tx, id).await?;
+    tx.commit().await.map_err(storage)
 }
 
 /// What the placeholder of an upload keeps of the envelope to come

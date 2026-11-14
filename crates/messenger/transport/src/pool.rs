@@ -515,9 +515,11 @@ impl RelayPool {
     /// History catch-up. Per connected relay of `scope`: Negentropy against
     /// `local`; when the relay does not speak NIP-77 (or the attempt
     /// fails), a plain REQ with the same filter. Everything found is pushed
-    /// onto the event stream with `EventSource::Sync`. Returns how many
-    /// events were forwarded.
-    async fn reconcile(&self, scope: &Scope, filter: Filter, local: Vec<messenger_core::SyncItem>) -> Result<usize> {
+    /// onto the event stream with `EventSource::Sync`. Returns the relays
+    /// that answered: Negentropy carried through, or the REQ answered as
+    /// `ask` judges it (events, EOSE or a clean CLOSED; not a timeout, not a
+    /// link dropped under it).
+    async fn reconcile(&self, scope: &Scope, filter: Filter, local: Vec<messenger_core::SyncItem>) -> Result<Vec<RelayUrl>> {
         let items: Vec<(nostr_sdk::prelude::EventId, nostr_sdk::prelude::Timestamp)> = local
             .iter()
             .filter_map(|i| {
@@ -531,7 +533,7 @@ impl RelayPool {
         let opts = SyncOptions::default()
             .direction(SyncDirection::Down)
             .initial_timeout(NEGENTROPY_PROBE_TIMEOUT);
-        let mut forwarded = 0usize;
+        let mut answered = Vec::new();
         let mut any_relay = false;
         let sink = self.sink_of(scope);
         // Negentropy names what is missing and leaves the events to the
@@ -544,47 +546,41 @@ impl RelayPool {
             }
             any_relay = true;
             let source = EventSource::Sync { url: to_core_url(&url) };
-            if routed {
-                let Ok(events) = relay.fetch_events(filter.clone()).timeout(HISTORY_FETCH_TIMEOUT).await else { continue };
-                for ev in events.into_iter().filter(|ev| !known.contains(&ev.id.to_hex())) {
-                    if let Some(raw) = to_raw(&ev, source.clone()) {
-                        if sink.send(raw).await {
-                            forwarded += 1;
+            let fetch = || ask(&relay, filter.clone(), HISTORY_FETCH_TIMEOUT);
+            let events: Vec<Event> = if routed {
+                let Some(events) = fetch().await else { continue };
+                events
+            } else {
+                match relay.sync(filter.clone()).items(items.clone()).opts(opts.clone()).await {
+                    Ok(summary) => {
+                        let mut found = Vec::with_capacity(summary.received.len());
+                        for id in &summary.received {
+                            if let Ok(Some(ev)) = self.client.database().event_by_id(id).await {
+                                found.push(ev);
+                            }
                         }
+                        found
+                    }
+                    Err(_) => {
+                        let Some(events) = fetch().await else { continue };
+                        events
                     }
                 }
-                continue;
-            }
-            let events: Vec<Event> = match relay.sync(filter.clone()).items(items.clone()).opts(opts.clone()).await {
-                Ok(summary) => {
-                    let mut found = Vec::with_capacity(summary.received.len());
-                    for id in &summary.received {
-                        if let Ok(Some(ev)) = self.client.database().event_by_id(id).await {
-                            found.push(ev);
-                        }
-                    }
-                    found
-                }
-                Err(_) => match relay.fetch_events(filter.clone()).timeout(HISTORY_FETCH_TIMEOUT).await {
-                    Ok(events) => events.into_iter().collect(),
-                    Err(_) => continue,
-                },
             };
+            answered.push(to_core_url(&url));
             for ev in events {
                 if known.contains(&ev.id.to_hex()) {
                     continue;
                 }
                 if let Some(raw) = to_raw(&ev, source.clone()) {
-                    if sink.send(raw).await {
-                        forwarded += 1;
-                    }
+                    sink.send(raw).await;
                 }
             }
         }
         if !any_relay {
             return Err(none_connected(scope));
         }
-        Ok(forwarded)
+        Ok(answered)
     }
 
     /// Connect urls of the relays of `scope` that are connected and accept
@@ -719,10 +715,8 @@ impl RelayPool {
     /// event found goes onto the event stream as history
     /// (`EventSource::Sync` with the relay it came by), exactly as the
     /// catch-up's do, so the ingress takes it the same way. Per relay: what
-    /// it sent. A relay that did not answer in time with anything is left
-    /// out (a REQ cut by its timeout ends as quietly as one at EOSE, so an
-    /// empty answer counts only when it came before `patience` ran out);
-    /// none answering is an error, never an empty page.
+    /// it sent. A relay that did not answer (`ask`) is left out; none
+    /// answering is an error, never an empty page.
     pub async fn fetch_page(
         &self,
         filter: &messenger_core::outbound::Filter,
@@ -737,20 +731,13 @@ impl RelayPool {
         }
         let asks = members.iter().map(|m| {
             let f = f.clone();
-            async move {
-                let started = tokio::time::Instant::now();
-                let answer = m.relay.fetch_events(f).timeout(patience).await;
-                (to_core_url(&m.address), answer, started.elapsed() < patience)
-            }
+            async move { (to_core_url(&m.address), ask(&m.relay, f, patience).await) }
         });
         let mut pages = Vec::new();
         let mut forwarded: HashSet<String> = HashSet::new();
         let sink = self.sink_of(scope);
-        for (url, answer, in_time) in futures_util::future::join_all(asks).await {
-            let Ok(events) = answer else { continue };
-            if events.is_empty() && !in_time {
-                continue;
-            }
+        for (url, answer) in futures_util::future::join_all(asks).await {
+            let Some(events) = answer else { continue };
             let source = EventSource::Sync { url: url.clone() };
             let mut page = RelayPage { relay: url, ids: Vec::new(), oldest: None };
             for ev in events.into_iter().filter(|ev| ev.verify().is_ok()) {
@@ -773,6 +760,69 @@ impl RelayPool {
         }
         Ok(pages)
     }
+}
+
+/// A plain REQ with `filter` to one relay until EOSE or `patience`: the
+/// events it sent, or `None` when it did not answer. nostr-sdk ends the REQ
+/// as quietly at EOSE as when `patience` runs out or the link drops under
+/// it, so an empty answer counts only when the relay said it was done: EOSE,
+/// or a CLOSED with no error (a relay that refused, timed out or went away
+/// said nothing of its past). A relay that sends more than `ASK_LIMIT`
+/// events, whatever the filter's limit, is asked no further and counts as
+/// no answer, as `fetch_events` it stood for did: the client's memory is not
+/// the relay's to fill.
+async fn ask(relay: &Relay, filter: Filter, patience: Duration) -> Option<Vec<Event>> {
+    ask_at_most(relay, filter, patience, ASK_LIMIT).await
+}
+
+/// The most events one `ask` holds: nostr-sdk's own for `fetch_events`.
+const ASK_LIMIT: usize = 10_000;
+
+async fn ask_at_most(relay: &Relay, filter: Filter, patience: Duration, limit: usize) -> Option<Vec<Event>> {
+    use futures_util::FutureExt;
+    let id = SubscriptionId::generate();
+    // Taken before the REQ goes, so its answer cannot pass unseen.
+    let mut notes = relay.notifications();
+    let done = async {
+        while let Some(note) = notes.next().await {
+            match note {
+                RelayNotification::Message { message } => match *message {
+                    RelayMessage::EndOfStoredEvents(sub) if sub.as_ref() == &id => return true,
+                    RelayMessage::Closed { subscription_id, message } if subscription_id.as_ref() == &id => {
+                        return MachineReadablePrefix::parse(&message).is_none();
+                    }
+                    _ => {}
+                },
+                RelayNotification::RelayStatus { status } if !status.is_connected() => return false,
+                _ => {}
+            }
+        }
+        false
+    };
+    let fetch = async {
+        let mut stream = relay.stream_events(filter).with_id(id.clone()).timeout(patience).await.ok()?;
+        let mut events = std::collections::BTreeSet::new();
+        while let Some(ev) = stream.next().await {
+            let ev = ev.ok()?;
+            // Dropped here, the stream closes the REQ.
+            if events.len() >= limit && !events.contains(&ev) {
+                return None;
+            }
+            events.insert(ev);
+        }
+        Some(events)
+    };
+    futures_util::pin_mut!(done, fetch);
+    let mut said = None;
+    let events = loop {
+        tokio::select! {
+            ended = &mut done, if said.is_none() => said = Some(ended),
+            events = &mut fetch => break events?,
+        }
+    };
+    // The EOSE that ended the stream is already among the notifications.
+    let said = said.or_else(|| done.now_or_never()).unwrap_or(false);
+    (!events.is_empty() || said).then(|| events.into_iter().collect())
 }
 
 /// Core relay identity is the base url: the `?key=` query used for gated
@@ -859,8 +909,10 @@ impl Transport for RelayPool {
             }
             Outbound::Sync { scope, filter, local } => {
                 let f = Self::parse_filter(&filter)?;
-                self.reconcile(&scope, f, local).await?;
-                Ok(Ack { accepted_by: vec![], rejected_by: vec![] })
+                // Who answered: the caller tells a relay with nothing from
+                // a link that died under a «connected» status.
+                let answered = self.reconcile(&scope, f, local).await?;
+                Ok(Ack { accepted_by: answered, rejected_by: vec![] })
             }
         }
     }
@@ -1412,6 +1464,86 @@ mod tests {
             }
         });
         (RelayUrl::parse(&format!("ws://127.0.0.1:{port}")).unwrap(), swallow)
+    }
+
+    /// A relay that takes the REQ and then does as `answer` says: `eose`
+    /// says it has nothing, `flood` sends 5 notes and EOSE, `drop` closes
+    /// the link without a word, `mute` keeps it open and says nothing. Negentropy it refuses, so a catch-up
+    /// falls back to the REQ.
+    async fn scripted_relay(answer: &'static str) -> RelayUrl {
+        use futures_util::SinkExt;
+        use tokio_tungstenite::tungstenite::Message as WsMessage;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((tcp, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(tcp).await else { return };
+                    while let Some(Ok(frame)) = ws.next().await {
+                        let WsMessage::Text(text) = frame else { continue };
+                        let msg: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                        let (verb, sub) = (msg[0].as_str().unwrap_or(""), msg[1].clone());
+                        let replies = match (verb, answer) {
+                            ("NEG-OPEN", _) => vec![serde_json::json!(["NEG-ERR", sub, "error: no negentropy"])],
+                            ("REQ", "eose") => vec![serde_json::json!(["EOSE", sub])],
+                            ("REQ", "flood") => {
+                                let keys = Keys::generate();
+                                let notes = (0..5).map(|i| serde_json::json!(["EVENT", sub, signed_note(&keys, &i.to_string()).json]));
+                                notes.chain([serde_json::json!(["EOSE", sub])]).collect()
+                            }
+                            ("REQ", "drop") => return,
+                            _ => continue,
+                        };
+                        for reply in replies {
+                            if ws.send(WsMessage::Text(reply.to_string().into())).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        RelayUrl::parse(&format!("ws://127.0.0.1:{port}")).unwrap()
+    }
+
+    /// An empty answer is the relay's only when it said so: a REQ the link
+    /// dropped under, or one that ran out of time, ends as quietly in
+    /// nostr-sdk as one at EOSE, and neither is a relay that answered
+    /// (ROO-1170: two such windows ended a group's past for good).
+    #[tokio::test]
+    async fn an_empty_answer_counts_only_at_eose() {
+        let filter = CoreFilter(serde_json::json!({ "kinds": [1], "until": 1_000_000 }));
+        for (answer, answered) in [("eose", true), ("drop", false), ("mute", false)] {
+            let url = scripted_relay(answer).await;
+            let pool = RelayPool::new(None);
+            pool.set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }])
+                .await
+                .unwrap();
+            assert!(wait_connected(&pool, 5).await, "{answer}: never connected {:?}", pool.status().await);
+            let page = pool.fetch_page(&filter, &Scope::Own, Duration::from_secs(2)).await;
+            assert_eq!(page.is_ok(), answered, "{answer}: fetch_page {page:?}");
+            if answer != "mute" {
+                assert!(wait_connected(&pool, RETRY_INTERVAL.as_secs() + 3).await, "{answer}: never connected again");
+                let ack = pool.send(Outbound::Sync { scope: Scope::Own, filter: filter.clone(), local: vec![] }).await.unwrap();
+                assert_eq!(ack.accepted_by.is_empty(), !answered, "{answer}: catch-up {ack:?}");
+            }
+            pool.shutdown().await;
+        }
+    }
+
+    /// A relay that sends more events than an ask holds is asked no further
+    /// and is no answer, as `fetch_events` had it; up to the limit it is.
+    #[tokio::test]
+    async fn an_answer_past_the_limit_is_no_answer() {
+        let url = scripted_relay("flood").await;
+        let relay = Relay::new(nostr::types::url::RelayUrl::parse(url.as_str()).unwrap());
+        relay.connect();
+        relay.wait_for_connection(Duration::from_secs(5)).await;
+        let filter = Filter::new().kind(Kind::TextNote);
+        let held = ask_at_most(&relay, filter.clone(), Duration::from_secs(2), 5).await;
+        assert_eq!(held.map(|evs| evs.len()), Some(5), "at the limit");
+        assert!(ask_at_most(&relay, filter, Duration::from_secs(2), 4).await.is_none(), "past it");
+        relay.disconnect();
     }
 
     async fn wait_connected(pool: &RelayPool, secs: u64) -> bool {

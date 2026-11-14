@@ -17,6 +17,8 @@
 //! messenger-cli [--data-dir DIR] chats
 //! messenger-cli [--data-dir DIR] history <npub|hex>[@<server id>]
 //! messenger-cli [--data-dir DIR] read <npub|hex>[@<server id>] [SECONDS]
+//! messenger-cli [--data-dir DIR] search <npub|hex>[@<server id>]|group:ID <query…> [--before TIME:ID] [--limit N]   (the messages of a chat that hold the words, as I see the chat, newest first)
+//! messenger-cli [--data-dir DIR] search-chats <query…> [--limit N] | search-index   (the chats that hold them; the index written up to the last message, with the time it took)
 //! messenger-cli [--data-dir DIR] privacy [on|off|presence-on|presence-off]
 //! messenger-cli [--data-dir DIR] presence [SECONDS] | presence-on | presence-rotate
 //! messenger-cli [--data-dir DIR] edit <message-id> <text…>
@@ -108,7 +110,7 @@ use std::time::Duration;
 fn usage() -> ! {
     eprintln!(
         "usage: messenger-cli [--data-dir DIR] <keygen [--password PW] | import <nsec|ncryptsec> <secret> [--password PW] \
-         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] [--server <id>] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | push-tickets | push-ticket-rm <8 hex> | push-unseal <data.json> | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | server-add <wss-url|card> [--key K] [--media URL] [--node REF] [--name N] [--push veydan|off] [--push-url URL] [--access open|team|channel] [--invite CODE] | server-join <id> <code> | server-access <id> | link <uri> | link-open <uri> [note…] | contact-link [<key>] [--server <id>] | open-private <key> <server id> [--invite SECRET] | server-rm <id> | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
+         | whoami | relays | relay-add <url> [--key K] | send <to> <text…> | tail | notify-tail | sync [secs] | chats | history <peer> | read <peer> [secs] | search <peer|group:id> <query…> [--before TIME:ID] [--limit N] | search-chats <query…> [--limit N] | search-index | privacy [on|off|presence-on|presence-off] | presence [secs] | presence-on | presence-rotate | shared <peer|group:id> [visual|files|links|voice] | edit <id> <text…> | delete <id> | react <id> <emoji> | emoji-top [n] | phone [<number>|none [--share]] | contact-phone <peer> | card-send <peer|group:id> [me|<key>] [--phone] [--server <id>] | cards <peer|group:id> [secs] | card-accept <id> | relation <peer> | request <peer> [--invite SECRET] [--text TEXT] | accept|decline|block|unblock|remove <peer> | blocked | requests [--before N] [--limit N] | request-accept|request-decline|request-block <peer> | dm-settings [--from anyone|contacts] [--keep-days N] | group-queue <group:id> [--author <key>] [--text T] [--each] [--before N] [--limit N] | group-log <group:id> [--before N] [--limit N] | group-hide|group-unhide <group:id> <id>… | group-hide-author <group:id> <key> [--from N] [--to N] | group-mod-approve <group:id> <id> <version> | group-mod-reject <group:id> <id> | group-spam <group:id> <key> [<id>] | group-mod-mute <group:id> <key> [--until N] | group-mod-unmute <group:id> <key> | group-trust <group:id> <key> on|off | group-mod-settings <group:id> [--post-mode all|managers] [--premod off|newcomers|all] [--schedule TZ:DAYS:HH:MM-HH:MM|none] | group-inherit <group:id> <key> | group-picture <group:id> <file|none> | group-link <group:id> | invite-create link|code|qr [--max-uses N] [--ttl SECS] [--for <key>] [--label L] | invite-list | invite-revoke <id> | push-on <token> [--server URL] | push-status | push-test | push-off | push-tickets | push-ticket-rm <8 hex> | push-unseal <data.json> | profile-set <name> | wrap <to|group:ID|stranger:ID> <text…> [--send] [--raw <envelope json>] [--at SECS] | notify-describe <event.json> [--type dm|group] [--group ID] | servers [veydan|own|refresh] | server-add <wss-url|card> [--key K] [--media URL] [--node REF] [--name N] [--push veydan|off] [--push-url URL] [--access open|team|channel] [--invite CODE] | server-join <id> <code> | server-access <id> | link <uri> | link-open <uri> [note…] | contact-link [<key>] [--server <id>] | open-private <key> <server id> [--invite SECRET] | server-rm <id> | net [off|on|auto|check|add <bridge>|remove <id>] | nodes [refresh] [--probe] | node-add <link|ref> [--key K] | node-rm <id> | trust [any|project_and_own|own_only] | send-file <to> <path> [caption…] [--batch ID] [--original] [--pause-after N] [--cancel-after N] | download <msg> [--pause-after N] [--cancel-after N] | transfers | resume <transfer> [--pause-after N] [--cancel-after N] | pause|cancel <transfer> | call <peer> [--video] [--relay-only] [--node <ref>[,…]] [--audio-in tone[:HZ]|<wav>] [--audio-out <wav>] [--secs N] | call-answer [--wait N] [--secs N] [the flags of call] | call-wait [the flags of call] | gcall <group:id> [the flags of call] | gcall-join <group:id> [--wait N] [the flags of call] | gcall-wait <group:id> [the flags of call] | group-node <group:id> <ref|none> [--key K] | manifest-keygen <file> | manifest-sign --key-file F <doc.json> <signed.json>>"
     );
     std::process::exit(2)
 }
@@ -537,6 +539,65 @@ async fn main() {
                     format_args!("  #{}", m.id),
                 );
             }
+        }
+        "search" => {
+            // As `history` reads a chat: a moderator of a group finds what
+            // waits for a check too, a member does not.
+            let before = take_flag(&mut args, "--before").map(|v| {
+                let (at, id) = v.split_once(':').unwrap_or_else(|| usage());
+                messenger_runtime::SearchCursor { created_at: at.parse().unwrap_or_else(|_| usage()), id: id.into() }
+            });
+            let limit = take_flag(&mut args, "--limit").map(|v| v.parse().unwrap_or_else(|_| usage()));
+            if args.len() < 2 {
+                usage();
+            }
+            let chat_id = match args[0].strip_prefix("group:") {
+                Some(short) => format!("group:{}", group_id(&rt, short).await),
+                None => rt.chat_open(&args[0]).await.unwrap_or_else(die).id,
+            };
+            let page = rt.search_messages(&chat_id, &args[1..].join(" "), before, limit).await.unwrap_or_else(die);
+            println!("{} found in {chat_id}{}", page.total, if page.partial { " (the index is still being written)" } else { "" });
+            for m in page.messages {
+                println!(
+                    "{} {} {}{}  #{}",
+                    m.created_at,
+                    if m.direction == "out" { "->" } else { "<-" },
+                    body_line(&m),
+                    if m.review != "ok" { format!(" [{}]", m.review) } else { String::new() },
+                    m.id
+                );
+            }
+            if let Some(next) = page.next_before {
+                println!("next --before {}:{}", next.created_at, next.id);
+            }
+        }
+        "search-chats" => {
+            let limit = take_flag(&mut args, "--limit").map(|v| v.parse().unwrap_or_else(|_| usage()));
+            if args.is_empty() {
+                usage();
+            }
+            let found = rt.search_chats(&args.join(" "), limit).await.unwrap_or_else(die);
+            println!("{} chats{}", found.hits.len(), if found.partial { " (the index is still being written)" } else { "" });
+            for h in found.hits {
+                println!("{}  {} found  last {}: {}  #{}", h.chat_id, h.count, h.last.created_at, body_line(&h.last), h.last.id);
+            }
+        }
+        "search-index" => {
+            // Killed half way, it goes on from where it stopped the next time.
+            // The run of the start goes first: what it put in, it says on
+            // stderr, and this one finds the rest.
+            let t = std::time::Instant::now();
+            let done = rt
+                .search_backfill(|rows| println!("{rows} rows, {} ms", t.elapsed().as_millis()))
+                .await
+                .unwrap_or_else(die);
+            println!(
+                "{} rows in {} batches, {} ms, {}",
+                done.rows,
+                done.batches,
+                t.elapsed().as_millis(),
+                if done.whole { "the index is whole" } else { "stopped: the store is another owner's now" }
+            );
         }
         "read" => {
             // Stay a little first: what came while away is read too.

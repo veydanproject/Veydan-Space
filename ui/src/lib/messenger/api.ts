@@ -8,6 +8,8 @@
 // Types the runtime writes for itself (`make msg-types`); never by hand.
 export type { GroupMembership, LinkGroupKind, LinkPreview, LinkView, PrivateServerView, ServerAccess, ServerPreview } from './generated/links';
 export type { DmHistoryPage, SharedCounts, SharedSection } from './generated/shared';
+export type { ChatHit, ChatSearchResult, SearchCursor, SearchPage } from './generated/search';
+import type { ChatSearchResult, SearchCursor, SearchPage } from './generated/search';
 export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
 import type { MdBlock } from './generated/markdown';
@@ -947,8 +949,8 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 const NOT_COMPILED: MessengerStatus = { compiled: false, enabled: false, runtime: null, error: null };
 
 import {
-  buildDemo, demoBioParse, demoCard, demoEnabled, demoPhone, demoPicture, demoSocialLink, demoSocialView, demoStrip,
-  DEMO_PICTURE_BASE, DEMO_PLATFORMS,
+  buildDemo, demoBioParse, demoCard, demoEnabled, demoPhone, demoPicture, demoSearchChats, demoSearchMessages, demoSocialLink, demoSocialView,
+  demoStrip, DEMO_PICTURE_BASE, DEMO_PLATFORMS,
 } from './devDemo';
 import type { ExternalUrl, InternalLinkText } from './content/types';
 import type { GroupMembership, LinkPreview, LinkView, PrivateServerView, ServerPreview } from './generated/links';
@@ -1641,6 +1643,10 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
     const before = (a?.before as number | null) ?? Number.MAX_SAFE_INTEGER;
     return all.filter((m) => m.created_at < before).slice(-((a?.limit as number) ?? 50));
   },
+  messenger_search_messages: (a): SearchPage =>
+    demoSearchMessages(mockMessages[String(a?.chatId)] ?? [], String(a?.query ?? ''), (a?.before as SearchCursor | null) ?? null, (a?.limit as number | null) ?? 50),
+  messenger_search_chats: (a): ChatSearchResult =>
+    demoSearchChats(mockMessages, mockChats.map((c) => c.id), String(a?.query ?? ''), (a?.limit as number | null) ?? 50),
   messenger_chat_shared_counts: (a): SharedCounts => {
     const all = mockMessages[String(a?.chatId)] ?? [];
     const n = (s: SharedSection) => all.filter((m) => inSection(m, s)).length;
@@ -2512,6 +2518,19 @@ export const messengerApi = {
     /** Direct chats and groups alike: a muted chat is still counted and shown, only quietly. */
     setMuted: (chatId: string, muted: boolean) => invoke<void>('messenger_chat_set_muted', { chatId, muted }),
     delete: (chatId: string) => invoke<void>('messenger_chat_delete', { chatId }),
+  },
+
+  /**
+   * The search of the conversation, read from the index of this device (nothing of the query leaves it). Every word of
+   * `query` must start a word of a message (its text, caption or file name), in any case, with or without marks. A query
+   * of blanks finds nothing; error `search_invalid` past 256 bytes. `partial`: the index is still being written.
+   */
+  search: {
+    /** The messages of a chat that match, as the chat shows them: the newest first, past `before` (the `next_before` of the page before). */
+    messages: (chatId: string, query: string, before?: SearchCursor, limit = 50) =>
+      invoke<SearchPage>('messenger_search_messages', { chatId, query, before: before ?? null, limit }),
+    /** The chats whose messages match, the one with the newest match first. */
+    chats: (query: string, limit = 50) => invoke<ChatSearchResult>('messenger_search_chats', { query, limit }),
   },
 
   dm: {

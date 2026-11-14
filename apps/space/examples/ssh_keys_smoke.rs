@@ -25,7 +25,7 @@ impl client::Handler for AcceptAll {
 
     fn check_server_key(
         &mut self,
-        _key: &russh::keys::PublicKey,
+        _key: &russh::keys::PublicKeyOrCertificate,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
         std::future::ready(Ok(true))
     }

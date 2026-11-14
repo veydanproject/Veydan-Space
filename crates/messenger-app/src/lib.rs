@@ -158,6 +158,8 @@ pub fn module() -> Module {
                 commands::messenger_chats_list,
                 commands::messenger_chat_open,
                 commands::messenger_chat_messages,
+                commands::messenger_search_messages,
+                commands::messenger_search_chats,
                 commands::messenger_chat_shared_counts,
                 commands::messenger_chat_shared,
                 commands::messenger_chat_mark_read,

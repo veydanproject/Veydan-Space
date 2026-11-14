@@ -102,7 +102,7 @@
     {:else if kind !== 'dm'}
       <InvitesBar />
     {/if}
-    <ChatList {query} {kind} onopen={open} onopenrow={(id) => goto(sectionItemHref(id))} top={!host && kind === 'dm' ? offers : undefined} />
+    <ChatList {query} {kind} onopen={open} onopenfound={(c, q) => goto(chatHref(c.id, q))} onopenrow={(id) => goto(sectionItemHref(id))} top={!host && kind === 'dm' ? offers : undefined} />
     {#if host}
       <button class="m-fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
     {:else if kind === 'group'}

@@ -56,6 +56,10 @@ ts-rs = { version = "12", default-features = false, features = ["serde-compat"] 
 # Messages written in Markdown (messenger-richtext::md): the events of the
 # parser only, never its HTML, which is left out with the default features.
 pulldown-cmark = { version = "0.13", default-features = false }
+# The search of the conversation (messenger-store::search): words folded
+# as the UI folds them (NFD, marks dropped); already in the tree through
+# nostr.
+unicode-normalization = "0.1"
 # Avatar pictures (messenger-avatar): the formats a phone or a desktop hands
 # over, decoded with limits and written back as a plain JPEG.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }

@@ -277,9 +277,9 @@ impl client::Handler for TerminalHandler {
 
     fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
-        let fp = crate::proxy::ssh::compute_fingerprint(server_public_key);
+        let fp = crate::proxy::ssh::compute_fingerprint(&server_public_key.public_key());
         if let Ok(mut slot) = self.received_fingerprint.lock() {
             *slot = Some(fp.clone());
         }
@@ -421,6 +421,7 @@ fn method_name(m: russh::MethodKind) -> &'static str {
         russh::MethodKind::PublicKey => "Public key",
         russh::MethodKind::KeyboardInteractive => "Keyboard-interactive",
         russh::MethodKind::HostBased => "Host-based",
+        russh::MethodKind::GssapiWithMic => "GSSAPI with MIC",
         russh::MethodKind::None => "None",
     }
 }

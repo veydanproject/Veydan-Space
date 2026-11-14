@@ -1140,6 +1140,35 @@ pub async fn messenger_chat_messages(
     messenger.runtime_unlocked().await?.messages(&chat_id, before, limit.unwrap_or(50)).await.map_err(map_err)
 }
 
+/// The messages of a chat that hold every word of `query`, each as the
+/// start of a word, in any case, with or without marks: a page, the newest
+/// first, past `before` (the `next_before` of the page before); `total` counts them all, `partial`
+/// while the index is still being written. A query of blanks finds
+/// nothing; error `search_invalid` past 256 bytes. Read on this device
+/// alone.
+#[tauri::command]
+pub async fn messenger_search_messages(
+    chat_id: String,
+    query: String,
+    before: Option<messenger_runtime::SearchCursor>,
+    limit: Option<u32>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::SearchPage> {
+    messenger.runtime_unlocked().await?.search_messages(&chat_id, &query, before, limit).await.map_err(map_err)
+}
+
+/// The chats whose messages hold every word of `query`, the one with the
+/// newest match first: how many match and the newest of them. As
+/// `messenger_search_messages` for the query and its errors.
+#[tauri::command]
+pub async fn messenger_search_chats(
+    query: String,
+    limit: Option<u32>,
+    messenger: tauri::State<'_, MessengerState>,
+) -> CmdResult<messenger_runtime::ChatSearchResult> {
+    messenger.runtime_unlocked().await?.search_chats(&query, limit).await.map_err(map_err)
+}
+
 /// How many messages each section of what a chat has shared holds.
 #[tauri::command]
 pub async fn messenger_chat_shared_counts(

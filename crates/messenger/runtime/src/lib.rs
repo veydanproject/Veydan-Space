@@ -46,6 +46,8 @@ pub mod relays;
 /// A report of a person to the moderators of the project, with the proofs
 /// of the messages it attaches (messenger-evidence).
 pub mod report;
+/// The search of the conversation, in a chat and across the chats.
+pub mod search;
 mod scopes;
 pub mod servers;
 pub mod session;
@@ -114,6 +116,7 @@ pub use messenger_transport::{Manifest, ManifestFetcher};
 pub use shared::{SharedCounts, SharedSection};
 pub use dm_history::DmHistoryPage;
 pub use drafts::DraftView;
+pub use search::{Backfilled, ChatHit, ChatSearchResult, SearchCursor, SearchPage};
 
 /// Facts for the host's status screen. Never contains secrets.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -192,6 +195,9 @@ pub struct MessengerRuntime {
     reports: report::Reports,
     /// «Load earlier» in a direct chat: one ask per server at a time (`crate::dm_history`).
     dm_history_state: dm_history::DmHistoryState,
+    /// One writer of the index of the search at a time: the run of the
+    /// start and one asked for (`search_backfill`).
+    search_backfill: Arc<tokio::sync::Mutex<()>>,
     /// The archive of the conversation (`crate::archive`).
     archive: Arc<archive::ArchiveBridge>,
 }
@@ -364,6 +370,7 @@ impl MessengerRuntime {
             group_calls,
             reports: report::Reports::default(),
             dm_history_state: dm_history::DmHistoryState::default(),
+            search_backfill: Arc::default(),
             archive,
         };
         // Before any session: what came while the app was off is judged by
@@ -378,6 +385,22 @@ impl MessengerRuntime {
         if let Err(e) = rt.seed_call_nodes().await {
             eprintln!("messenger: call nodes from the manifest not applied: {e}");
         }
+        // The index of the search: what came before it is put in, in the
+        // background, batch by batch; a kill leaves it where it was.
+        tokio::spawn({
+            let (store, lock) = (rt.store.clone(), rt.search_backfill.clone());
+            async move {
+                let _one = lock.lock().await;
+                let t = std::time::Instant::now();
+                match search::backfill(&store, |_| {}).await {
+                    Ok(done) if done.rows > 0 => {
+                        eprintln!("messenger: the index of the search: {} rows put in, {} ms", done.rows, t.elapsed().as_millis())
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("messenger: the index of the search not written: {e}"),
+                }
+            }
+        });
         // In the background: the start waits for nothing it does not need.
         tokio::spawn({
             let (store, outgoing) = (rt.store.clone(), rt.config.data_dir().join("outgoing"));
@@ -1973,15 +1996,34 @@ mod tests {
     }
 
     /// `who` writes `text` to `me` at `at`, as the relay has it before any
-    /// device of mine is on.
-    async fn stranger_wrote(relay: &LocalRelay, who: &Keys, me: &PubKey, text: &str, at: i64) {
+    /// device of mine is on: the id of the wrap.
+    async fn stranger_wrote(relay: &LocalRelay, who: &Keys, me: &PubKey, text: &str, at: i64) -> EventId {
         let url = RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
         pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
         connected(&pool).await;
         let w = messenger_dm::wrap::wrap_as(who, me, &messenger_core::Envelope::text(text).encode(), at, None, messenger_dm::wrap::Wake::Peer).unwrap();
+        let id = w.to_peer.id.clone();
         pool.send(Outbound::PublishOwn { event: w.to_peer }).await.unwrap();
         pool.shutdown().await;
+        id
+    }
+
+    /// Until the ingress of `rt` has applied every event of `ids`: the
+    /// history is synced once the relays answered, and what they sent may
+    /// still be on its way through the loop.
+    async fn applied(rt: &MessengerRuntime, ids: &[EventId]) {
+        for _ in 0..200 {
+            let mut all = true;
+            for id in ids {
+                all &= messenger_store::events_raw::contains(rt.store(), id).await.unwrap();
+            }
+            if all {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("the history was not applied within 10 s");
     }
 
     /// Until `rt` published revision `rev` of its list and the outbox is empty.
@@ -2042,11 +2084,12 @@ mod tests {
         let (spammer_pk, friend_pk, quiet_pk) = (pk_of(&spammer), pk_of(&friend), pk_of(&quiet));
         // Before any device of mine: a stranger wrote three times, a friend twice.
         let t = SystemClock.now().secs() - 600;
+        let mut wrote = Vec::new();
         for i in 0..3 {
-            stranger_wrote(&relay, &spammer, &me, &format!("buy {i}"), t + i).await;
+            wrote.push(stranger_wrote(&relay, &spammer, &me, &format!("buy {i}"), t + i).await);
         }
-        stranger_wrote(&relay, &friend, &me, "hi", t + 10).await;
-        stranger_wrote(&relay, &friend, &me, "it's me", t + 11).await;
+        wrote.push(stranger_wrote(&relay, &friend, &me, "hi", t + 10).await);
+        wrote.push(stranger_wrote(&relay, &friend, &me, "it's me", t + 11).await);
 
         // The first device: no list on the relay yet, so it publishes its
         // own (empty) one; then it blocks the stranger and adds the friend
@@ -2070,6 +2113,7 @@ mod tests {
         assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(rev), Some(true)));
         assert_eq!(rt2.dm().relations_known(), messenger_dm::RelationsKnown::Complete);
         event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
+        applied(&rt2, &wrote).await;
         let spam = rt2.dm_relation(spammer_pk.as_hex()).await.unwrap();
         assert!(spam.blocked);
         assert_eq!(visible(&rt2, &spammer_pk).await, 0, "a blocked stranger's old history is dropped");

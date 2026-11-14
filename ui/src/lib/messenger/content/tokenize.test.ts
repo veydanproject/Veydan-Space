@@ -120,3 +120,20 @@ describe('tokenize', () => {
     expect(linksOf(parts).map((s) => s.text)).toEqual(['https://a.example', GROUP, 'https://b.example']);
   });
 });
+
+describe('tokenize with a query', () => {
+  it('puts the words found apart in the plain parts, not in a link', () => {
+    expect(tokenize('Ёлка на https://ёлка.example/ёлка и ёлки', 'елк')).toEqual([
+      { type: 'mark', text: 'Ёлк' },
+      { type: 'text', text: 'а на ' },
+      { type: 'external', text: 'https://ёлка.example/ёлка', url: 'https://ёлка.example/ёлка' },
+      { type: 'text', text: ' и ' },
+      { type: 'mark', text: 'ёлк' },
+      { type: 'text', text: 'и' },
+    ]);
+  });
+
+  it('gives no marks to the links of a text', () => {
+    expect(linksOf(tokenize('ёлка https://a.example', 'ёлка'))).toEqual([{ type: 'external', text: 'https://a.example', url: 'https://a.example' }]);
+  });
+});

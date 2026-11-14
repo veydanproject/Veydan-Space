@@ -42,6 +42,7 @@ pub mod reactions;
 pub mod receipts;
 pub mod relays;
 pub mod reports;
+pub mod search;
 pub mod servers;
 pub mod settings;
 pub mod shared;

@@ -738,7 +738,8 @@ impl Removed {
 
 /// The rows of a chat, by its column `chat_id` (`{CHAT}`, a condition the
 /// caller binds as `?1`) or by the messages of it.
-const OF_A_CHAT: [&str; 12] = [
+const OF_A_CHAT: [&str; 13] = [
+    crate::search::FORGET_OF_A_CHAT,
     "DELETE FROM msg_dm_delivered WHERE message_id IN (SELECT id FROM msg_messages WHERE chat_id {CHAT})",
     "DELETE FROM msg_own_hidden WHERE message_id IN (SELECT id FROM msg_messages WHERE chat_id {CHAT})",
     "DELETE FROM msg_reactions WHERE chat_id {CHAT}",

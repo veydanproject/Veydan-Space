@@ -52,6 +52,12 @@ describe('reaching a message of the open chat', () => {
     expect(await chatStore.reach('gone')).toBe(false);
     expect(chatStore.messages).toHaveLength(120);
   });
+
+  it('reads no more than the pages it is given', async () => {
+    expect(await chatStore.reach('m5', 1)).toBe(false);
+    expect(api.messages).toHaveBeenCalledTimes(2);
+    expect(chatStore.messages.some((m) => m.id === 'm5')).toBe(false);
+  });
 });
 
 describe('the page before the first message shown', () => {

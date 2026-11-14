@@ -85,7 +85,7 @@ futures-util = "0.3"
 rusqlite = "0.41"
 # Escape proxy credentials when building proxy URLs (already in the tree via reqwest/url)
 percent-encoding = "2"
-russh = "0.62"
+russh = "0.65"
 russh-sftp = "2"
 tokio-util = "0.7"
 # Full-app backup: streaming tar + passphrase (scrypt) authenticated encryption.

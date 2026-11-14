@@ -11,6 +11,7 @@
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { portal } from '$lib/core/ui/portal';
   import { isTauriHost, messengerApi } from '../api';
   import { saveFilters } from '../shared/format';
   import { viewer } from './viewer.svelte';
@@ -211,8 +212,10 @@
 <svelte:window onkeydown={key} />
 
 {#if viewer.item}
+  <!-- In the body, over everything: where it is mounted the chat's pane holds fixed layers to itself
+       (a backdrop filter) and a phone hides the chat under its info panel. -->
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="viewer" role="dialog" aria-modal="true" aria-label={viewer.item.name} tabindex="-1" onclick={backdrop}>
+  <div class="viewer" use:portal role="dialog" aria-modal="true" aria-label={viewer.item.name} tabindex="-1" onclick={backdrop}>
     <header role="toolbar" tabindex="-1"
       onclick={(e) => { e.stopPropagation(); if (!(e.target instanceof Element && e.target.closest('.zoom'))) levels = false; }}>
       <span class="name">{viewer.item.name}</span>

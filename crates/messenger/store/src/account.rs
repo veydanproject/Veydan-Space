@@ -37,7 +37,7 @@ pub const KEPT_TABLES: [&str; 7] = [
 ];
 
 /// The tables of the account, emptied by `wipe`.
-pub const ACCOUNT_TABLES: [&str; 48] = [
+pub const ACCOUNT_TABLES: [&str; 49] = [
     "msg_events_raw",
     "msg_outbox",
     "msg_sync_cursors",
@@ -86,6 +86,7 @@ pub const ACCOUNT_TABLES: [&str; 48] = [
     "msg_archive_forgotten",
     "msg_groups_forgotten",
     "msg_drafts",
+    "msg_search",
 ];
 
 /// The areas of the settings of the account (`<area>.<name>`): what the
@@ -197,6 +198,9 @@ pub async fn wipe(store: &Store) -> Result<()> {
         .await
         .map_err(storage)?;
     crate::groups::set_secrets_owed_in(&mut tx, &owed).await?;
+    // The index of the search is empty with the messages, and whole: a
+    // backfill under way stops at its next batch, finding it so.
+    crate::search::set_in(&mut tx, crate::search::KEY_BACKFILLED_TO, crate::search::BACKFILL_WHOLE).await?;
     tx.commit().await.map_err(storage)
 }
 
@@ -226,7 +230,9 @@ mod tests {
 
     /// Every table of the messenger is the device's or the account's: a
     /// table a later migration adds is put in one list, so that a wipe
-    /// never leaves the account's rows behind by not knowing them.
+    /// never leaves the account's rows behind by not knowing them. The
+    /// tables an FTS5 table keeps its index in (`<name>_data`, `_idx`,
+    /// `_content`, `_docsize`, `_config`) are its own: they go with it.
     #[tokio::test]
     async fn every_table_is_the_devices_or_the_accounts() {
         let store = Store::open_in_memory().await.unwrap();
@@ -236,7 +242,16 @@ mod tests {
         .fetch_all(store.pool())
         .await
         .unwrap();
-        for table in &tables {
+        let virtual_tables: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM sqlite_master WHERE type = 'table' AND sql LIKE 'CREATE VIRTUAL TABLE%'")
+                .fetch_all(store.pool())
+                .await
+                .unwrap();
+        assert!(virtual_tables.iter().any(|t| t == "msg_search"));
+        let shadow = |t: &str| {
+            virtual_tables.iter().any(|v| ["data", "idx", "content", "docsize", "config"].iter().any(|s| t == format!("{v}_{s}")))
+        };
+        for table in tables.iter().filter(|t| !shadow(t)) {
             assert!(
                 KEPT_TABLES.contains(&table.as_str()) || ACCOUNT_TABLES.contains(&table.as_str()),
                 "the table {table} is in neither list of account.rs"

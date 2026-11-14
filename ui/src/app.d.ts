@@ -27,6 +27,8 @@ declare namespace App {
     attachSheet?: boolean;
     /** The mode of choosing messages of a chat is on (messenger/dm/ChatWindow.svelte). */
     chooseMessages?: boolean;
+    /** The search of a chat filters its conversation (messenger/dm/ChatWindow.svelte). */
+    searchMessages?: boolean;
     /** The sheet of a forward is open (messenger/content/ForwardDialog.svelte). */
     forwardSheet?: boolean;
     /** The emoji panel of a phone is open in the keyboard's place (messenger/dm/Composer.svelte). */

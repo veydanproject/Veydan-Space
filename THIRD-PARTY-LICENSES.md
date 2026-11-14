@@ -9,9 +9,9 @@ Veydan Space, together with its license. It is provided to satisfy the
 attribution requirements of the MIT, Apache-2.0, BSD, ISC, MPL-2.0 and other
 licenses under which these components are distributed.
 
-- **Rust / Cargo crates:** 898
+- **Rust / Cargo crates:** 897
 - **JavaScript / npm packages:** 156
-- **Total third-party components:** 1054
+- **Total third-party components:** 1053
 
 > Entries marked with an asterisk (`*`) are platform-specific dependencies
 > (Windows / macOS / Android / WASM targets) that are **not** compiled into the
@@ -50,8 +50,8 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 | BSD-3-Clause | 10 |
 | Unlicense OR MIT | 10 |
 | Apache-2.0 OR MIT (platform dep) | 7 |
-| ISC | 6 |
 | Apache-2.0 (platform dep) | 5 |
+| ISC | 5 |
 | MIT OR Apache-2.0 OR Zlib | 5 |
 | MPL-2.0 | 5 |
 | Apache-2.0 OR ISC OR MIT | 3 |
@@ -103,7 +103,7 @@ their file-level copyleft imposes no obligations on Veydan Space's own code.
 
 ---
 
-## Full acknowledgements — Rust crates (898)
+## Full acknowledgements — Rust crates (897)
 
 Thank you to the authors of the following Cargo crates:
 
@@ -256,7 +256,7 @@ Thank you to the authors of the following Cargo crates:
 | ctr | 0.10.1 | MIT OR Apache-2.0 |
 | ctutils | 0.4.8 | Apache-2.0 OR MIT |
 | curve25519-dalek | 4.1.3 | BSD-3-Clause |
-| curve25519-dalek | 5.0.0-rc.1 | BSD-3-Clause |
+| curve25519-dalek | 5.0.0 | BSD-3-Clause |
 | curve25519-dalek-derive | 0.1.1 | MIT OR Apache-2.0 |
 | cxx | 1.0.202 | MIT OR Apache-2.0 |
 | cxx-build | 1.0.202 | MIT OR Apache-2.0 |
@@ -302,7 +302,7 @@ Thank you to the authors of the following Cargo crates:
 | dyn-clone | 1.0.20 | MIT OR Apache-2.0 |
 | ecdsa | 0.17.0 | Apache-2.0 OR MIT |
 | ed25519 | 3.0.0 | Apache-2.0 OR MIT |
-| ed25519-dalek | 3.0.0-rc.1 | BSD-3-Clause |
+| ed25519-dalek | 3.0.0 | BSD-3-Clause |
 | either | 1.16.0 | MIT OR Apache-2.0 |
 | elliptic-curve | 0.14.1 | Apache-2.0 OR MIT |
 | elliptic-curve-tools | 0.3.0 | Apache-2.0 OR MIT |
@@ -452,7 +452,6 @@ Thank you to the authors of the following Cargo crates:
 | inotify-sys | 0.1.7 | ISC |
 | inout | 0.1.4 | MIT OR Apache-2.0 |
 | inout | 0.2.2 | MIT OR Apache-2.0 |
-| internal-russh-num-bigint | 0.5.0 | MIT OR Apache-2.0 |
 | intl_pluralrules | 7.0.2 | Apache-2.0 OR MIT |
 | intl-memoizer | 0.5.3 | Apache-2.0 OR MIT |
 | io_tee | 0.1.1 | MIT OR Apache-2.0 |
@@ -539,7 +538,6 @@ Thank you to the authors of the following Cargo crates:
 | notify-types | 2.1.0 | MIT OR Apache-2.0 |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 * |
 | num_enum_derive | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 * |
-| num-bigint | 0.4.7 | MIT OR Apache-2.0 |
 | num-bigint | 0.5.1 | MIT OR Apache-2.0 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 |
 | num-integer | 0.1.46 | MIT OR Apache-2.0 |
@@ -574,9 +572,9 @@ Thank you to the authors of the following Cargo crates:
 | os_pipe | 1.2.3 | MIT |
 | osakit | 0.3.1 | MIT OR Apache-2.0 * |
 | oslog | 0.2.0 | MIT * |
-| p256 | 0.14.0-rc.15 | Apache-2.0 OR MIT |
-| p384 | 0.14.0-rc.15 | Apache-2.0 OR MIT |
-| p521 | 0.14.0-rc.15 | Apache-2.0 OR MIT |
+| p256 | 0.14.0 | Apache-2.0 OR MIT |
+| p384 | 0.14.0 | Apache-2.0 OR MIT |
+| p521 | 0.14.0 | Apache-2.0 OR MIT |
 | pageant | 0.2.1 | Apache-2.0 * |
 | pango | 0.18.3 | MIT |
 | pango-sys | 0.18.0 | MIT |
@@ -667,7 +665,7 @@ Thank you to the authors of the following Cargo crates:
 | rsqlite-vfs | 0.1.1 | MIT * |
 | rtrb | 0.3.5 | MIT OR Apache-2.0 |
 | rusqlite | 0.41.1 | MIT |
-| russh | 0.62.1 | Apache-2.0 |
+| russh | 0.65.1 | Apache-2.0 |
 | russh-cryptovec | 0.62.0 | Apache-2.0 |
 | russh-sftp | 2.3.0 | Apache-2.0 |
 | russh-util | 0.52.0 | Apache-2.0 |
@@ -731,6 +729,7 @@ Thank you to the authors of the following Cargo crates:
 | sha2 | 0.10.9 | MIT OR Apache-2.0 |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 |
 | sha3 | 0.11.0 | MIT OR Apache-2.0 |
+| sha3 | 0.12.0 | MIT OR Apache-2.0 |
 | shlex | 2.0.1 | MIT OR Apache-2.0 |
 | signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 |
 | signature | 3.0.0 | Apache-2.0 OR MIT |
@@ -746,6 +745,7 @@ Thank you to the authors of the following Cargo crates:
 | soup3-sys | 0.5.0 | MIT |
 | spin | 0.9.8 | MIT |
 | spki | 0.8.0 | Apache-2.0 OR MIT |
+| sponge-cursor | 0.1.0 | MIT OR Apache-2.0 |
 | sqlite-wasm-rs | 0.5.5 | MIT * |
 | sqlx | 0.9.0 | MIT OR Apache-2.0 |
 | sqlx-core | 0.9.0 | MIT OR Apache-2.0 |
@@ -862,7 +862,6 @@ Thank you to the authors of the following Cargo crates:
 | universal-hash | 0.5.1 | MIT OR Apache-2.0 |
 | universal-hash | 0.6.1 | MIT OR Apache-2.0 |
 | universal-time | 0.3.1 | MIT |
-| untrusted | 0.7.1 | ISC |
 | untrusted | 0.9.0 | ISC |
 | url | 2.5.8 | MIT OR Apache-2.0 |
 | urlencoding | 2.1.3 | MIT |

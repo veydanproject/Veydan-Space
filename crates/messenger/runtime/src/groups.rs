@@ -40,15 +40,25 @@ const KIND_GROUP_EVENT: u16 = 9;
 
 /// Where «load earlier» of a group stands (`msg_settings`): the oldest
 /// bound asked for and how many windows in a row brought nothing, as
-/// `<before> <misses>`.
+/// `<before> <misses>`. Not `group.<id>.oldest_fetched` of before
+/// ROO-1170, which counted a window no relay answered as a miss too: a
+/// group's past ended there by two drops of the link is asked again, and
+/// that key, never read, goes with the group.
 fn oldest_fetched_key(group_id: &str) -> String {
-    format!("group.{group_id}.oldest_fetched")
+    format!("group.{group_id}.past_answered")
 }
 
 async fn oldest_fetched(store: &Store, group_id: &str) -> Option<(i64, u32)> {
     let value = settings::get(store, &oldest_fetched_key(group_id)).await.ok()??;
     let mut parts = value.split(' ');
     Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+/// The group's place in its past goes with it, the key of before
+/// ROO-1170 too: a later join starts over.
+async fn forget_past(store: &Store, group_id: &str) {
+    let _ = settings::delete(store, &oldest_fetched_key(group_id)).await;
+    let _ = settings::delete(store, &format!("group.{group_id}.oldest_fetched")).await;
 }
 
 /// A window of the past was answered: a full one moves the bound down and
@@ -120,13 +130,33 @@ pub(crate) async fn request_window(
     group_id: &str,
     before: i64,
     limit: u32,
-) -> Result<usize> {
+) -> Result<(usize, bool)> {
     let local = events_raw::items_tagged_until(store, KIND_GROUP_EVENT, group_id, before).await?;
     let known = local.len();
     let local = local.into_iter().map(|(id, at)| SyncItem { id, created_at: Timestamp(at) }).collect();
     let filter = filters::group_events_until(&[group_id.to_string()], Timestamp(before), limit as usize);
-    transport.send(Outbound::Sync { scope, filter, local }).await?;
-    Ok(known)
+    let ack = transport.send(Outbound::Sync { scope, filter, local }).await?;
+    Ok((known, !ack.accepted_by.is_empty()))
+}
+
+/// One window of the past asked of `transport` and counted. A window no
+/// relay answered (a link dead under a «connected» status, a timeout) says
+/// nothing of the group's past: it is no miss, and an error.
+async fn window_of_past(
+    store: &Store,
+    transport: &dyn Transport,
+    scope: Scope,
+    group_id: &str,
+    before: i64,
+    limit: u32,
+) -> Result<u32> {
+    let (known, answered) = request_window(store, transport, scope, group_id, before, limit).await?;
+    let received = settle_window(store, group_id, before, known).await;
+    if !answered && received == 0 {
+        return Err(MessengerError::Transport("no relay answered".into()));
+    }
+    note_window(store, group_id, before, received).await;
+    Ok(received)
 }
 
 /// What the relays sent arrives on the stream and reaches the store once
@@ -503,7 +533,8 @@ impl GroupsDriver {
     /// events up to `before`, from the relays. How many of them this
     /// device did not have. A bound the relays twice had nothing under is
     /// not asked again (the UI stops offering it after the same two
-    /// answers); a new join forgets that (`group_forget`).
+    /// answers); a new join forgets that (`group_forget`). A window no
+    /// relay answered is an error and no miss.
     pub(crate) async fn history_before(&self, group_id: &str, before: i64, limit: u32) -> Result<u32> {
         if self.groups.signer().is_none() {
             return Err(MessengerError::NotLoggedIn);
@@ -525,9 +556,7 @@ impl GroupsDriver {
         }
         let pool = self.relays.pool().await;
         let scope = scopes::of_server(scopes::server_of_group(&self.store, group_id).await?.as_deref());
-        let known = request_window(&self.store, pool.as_ref(), scope, group_id, before, limit).await?;
-        let received = settle_window(&self.store, group_id, before, known).await;
-        note_window(&self.store, group_id, before, received).await;
+        let received = window_of_past(&self.store, pool.as_ref(), scope, group_id, before, limit).await?;
         self.maintain_now(group_id).await;
         Ok(received)
     }
@@ -861,8 +890,7 @@ impl MessengerRuntime {
         let _guard = lock.lock().await;
         let outcome = self.groups().forget(group_id).await?;
         self.group_driver.synced.lock().await.remove(group_id);
-        // Its events are forgotten with it: a later join starts over.
-        let _ = settings::delete(&self.store, &oldest_fetched_key(group_id)).await;
+        forget_past(&self.store, group_id).await;
         let _ = self.ui.send(UiEvent { name: "chats.updated".into(), payload: serde_json::json!({}) });
         self.group_driver.apply(outcome).await
     }
@@ -1044,7 +1072,7 @@ mod tests {
         fill(&store, &mine, 1_000, 100).await;
         fill(&store, &other, 1_000, 100).await;
         let t = FakeTransport::new();
-        let known = request_window(&store, &t, Scope::Own, &mine, 1_049, 200).await.unwrap();
+        let (known, _) = request_window(&store, &t, Scope::Own, &mine, 1_049, 200).await.unwrap();
         assert_eq!(known, 50);
         let sent = t.sent();
         let (filter, local) = sync_of(&sent[0]);
@@ -1052,6 +1080,54 @@ mod tests {
         assert_eq!(local.len(), 50);
         assert!(local.iter().all(|i| i.created_at.secs() <= 1_049));
         assert_eq!(settle_window(&store, &mine, 1_049, known).await, 0, "nothing came");
+    }
+
+    /// The pool as the relays answer a window: `answered` names one that
+    /// carried it through, or none (a link dead under «connected»).
+    struct Relays {
+        inner: FakeTransport,
+        answered: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl Transport for Relays {
+        async fn send(&self, out: Outbound) -> Result<messenger_core::Ack> {
+            let mut ack = self.inner.send(out).await?;
+            if self.answered {
+                ack.accepted_by.push(RelayUrl::parse("wss://relay.example").unwrap());
+            }
+            Ok(ack)
+        }
+
+        fn events(&self) -> mpsc::Receiver<messenger_core::RawEvent> {
+            self.inner.events()
+        }
+
+        async fn status(&self) -> messenger_core::traits::RelayStatusSnapshot {
+            self.inner.status().await
+        }
+    }
+
+    /// Empty windows no relay answered are no misses, however many: the
+    /// past is asked again once the link is back. Two the relays answered
+    /// empty are its end, as ever.
+    #[tokio::test]
+    async fn an_empty_window_counts_only_when_the_relays_answered_it() {
+        let store = Store::open_in_memory().await.unwrap();
+        let g = "a".repeat(64);
+        fill(&store, &g, 1_000, 100).await;
+        let dead = Relays { inner: FakeTransport::new(), answered: false };
+        for _ in 0..WINDOW_MISSES_ENOUGH + 1 {
+            let err = window_of_past(&store, &dead, Scope::Own, &g, 1_049, 200).await.unwrap_err();
+            assert!(matches!(err, MessengerError::Transport(_)), "{err:?}");
+        }
+        assert_eq!(dead.inner.sent().len(), WINDOW_MISSES_ENOUGH as usize + 1, "asked each time, the relays' requests as before");
+        assert_eq!(oldest_fetched(&store, &g).await, None, "no miss noted");
+        let live = Relays { inner: FakeTransport::new(), answered: true };
+        assert_eq!(window_of_past(&store, &live, Scope::Own, &g, 1_049, 200).await.unwrap(), 0);
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_049, 1)));
+        assert_eq!(window_of_past(&store, &live, Scope::Own, &g, 1_049, 200).await.unwrap(), 0);
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_049, WINDOW_MISSES_ENOUGH)), "the end");
     }
 
     /// Two empty windows in a row mark the past as fetched; a full one
@@ -1067,7 +1143,24 @@ mod tests {
         assert_eq!(oldest_fetched(&store, &g).await, Some((1_020, 2)));
         note_window(&store, &g, 1_030, 7).await;
         assert_eq!(oldest_fetched(&store, &g).await, Some((1_020, 0)));
-        settings::delete(&store, &oldest_fetched_key(&g)).await.unwrap();
+        settings::set(&store, &format!("group.{g}.oldest_fetched"), "1049 2").await.unwrap();
+        forget_past(&store, &g).await;
         assert_eq!(oldest_fetched(&store, &g).await, None, "forgotten with the group");
+        assert_eq!(settings::get(&store, &format!("group.{g}.oldest_fetched")).await.unwrap(), None, "the old key too");
+    }
+
+    /// The end an older version noted, drops of the link counted, is not
+    /// believed: the past is asked of the relays again.
+    #[tokio::test]
+    async fn the_end_noted_before_the_answers_counted_is_asked_again() {
+        let store = Store::open_in_memory().await.unwrap();
+        let g = "b".repeat(64);
+        fill(&store, &g, 1_000, 100).await;
+        settings::set(&store, &format!("group.{g}.oldest_fetched"), "1049 2").await.unwrap();
+        assert_eq!(oldest_fetched(&store, &g).await, None);
+        let live = Relays { inner: FakeTransport::new(), answered: true };
+        assert_eq!(window_of_past(&store, &live, Scope::Own, &g, 1_049, 200).await.unwrap(), 0);
+        assert_eq!(live.inner.sent().len(), 1, "asked");
+        assert_eq!(oldest_fetched(&store, &g).await, Some((1_049, 1)));
     }
 }

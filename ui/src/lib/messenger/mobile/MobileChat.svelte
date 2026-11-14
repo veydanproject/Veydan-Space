@@ -22,6 +22,15 @@
   markPhone();
 
   const id = $derived(page.url.searchParams.get('id') ?? '');
+  /** The chat opens filtered by this search (`chatHref(id, query)`): asked once per address. */
+  const query = $derived(page.url.searchParams.get('q') ?? '');
+  let searchedFor = '';
+  $effect(() => {
+    const key = `${id}\n${query}`;
+    if (!id || !query || searchedFor === key) return;
+    searchedFor = key;
+    chatStore.openSearch = { chatId: id, query };
+  });
   /** The chat that is not on this device. */
   let missingId = $state<string | null>(null);
   let loading = $state(false);

@@ -35,7 +35,7 @@
   import { presenceStore } from '../presence/presenceStore.svelte';
   import { typingStore } from '../typing/typingStore.svelte';
   import TypingLine from '../typing/TypingLine.svelte';
-  import { dmErrorCode, isTauriHost, MAX_PASTE_BYTES, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage } from '../api';
+  import { dmErrorCode, isTauriHost, messengerError, MAX_PASTE_BYTES, MAX_SEND_BYTES, mediaErrorCode, messengerApi, type DmAction, type MessengerChat, type MessengerMessage, type SearchCursor } from '../api';
   import { classifyPaste, clipboardPicture, RECEIVED_CONTENT } from '../media/clipboard';
   import { mediaErrorText, tooLargeName } from '../media/errors';
   import { bytes } from '../shared/format';
@@ -47,6 +47,9 @@
   import { buildTimeline } from '../content/timeline';
   import { holdBack } from '$lib/core/ui/sheetBack';
   import ArchiveEarlier from '../archive/ArchiveEarlier.svelte';
+  import { askRounds, GROUP_EMPTY_END, relaysUnreached, windowsEmpty } from './askServer';
+  import { archiveStore } from '../archive/archiveStore.svelte';
+  import { scopeOfChat } from '../archive/archive';
   import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
 
   interface Props {
@@ -134,6 +137,8 @@
   // A promise, as the dot: shown as connected until the runtime takes it
   // back after a while without relays.
   const link = $derived(messengerStore.status?.runtime?.link ?? 'ok');
+  /** The relays can be asked: the link is up and they are not silenced (the link says «ok» while they are, being quiet on purpose). */
+  const linked = $derived(link === 'ok' && !messengerStore.manifest?.silent_mode);
   const sessionActive = $derived(!!messengerStore.status?.runtime?.session_active);
   // A DM's peer: online now, or when last seen; nothing for groups or when unknown.
   const presence = $derived(chat.kind === 'dm' ? presenceStore.status(chat.peer_pubkey) : null);
@@ -146,7 +151,7 @@
   // Leaving a chat drops reply/edit state, and a picture it had open.
   let lastChat = '';
   $effect(() => {
-    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); stopChoosing(); forward.open = false; }
+    if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; earlierFailed = false; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); stopChoosing(); forward.open = false; untrack(() => closeSearch(false)); }
   });
 
   /**
@@ -232,12 +237,257 @@
     return () => window.removeEventListener('keydown', onkey, true);
   });
 
+  /**
+   * The search of the conversation (the magnifier of the head): a field
+   * under the head; while it asks something the conversation shows only
+   * the messages the search found, as the chat draws them, the words
+   * marked, the newest at the bottom, and no composer. A press on one
+   * leaves the search and brings it into view; ×, Esc, the system «Назад»
+   * and another chat leave it, and the view goes back where it was.
+   */
+  let searching = $state(false);
+  /** The field. */
+  let searchText = $state('');
+  /** What is asked: the field after a pause in the typing. */
+  let asked = $state('');
+  /** What the search found for `asked`, the newest first, as pages of it came; `next`: where the page after them starts. */
+  let found = $state<{ messages: MessengerMessage[]; total: number; next: SearchCursor | null; partial: boolean } | null>(null);
+  let searchBusy = $state(false);
+  /** A message pressed is being read into the conversation. */
+  let reaching = $state(false);
+  /** Raised by every question: the answer to an older one is dropped. */
+  let searchGen = 0;
+  /** The messages of the chat the last answer was asked over: when they change, the search is asked again. */
+  let searchSeen: MessengerMessage[] | null = null;
+  /** Where the conversation was when the search opened: by the message in view, not the pixel (pages read to reach a message lengthen it). */
+  let searchFrom: ViewMark | null = null;
+  let searchField = $state<HTMLInputElement | null>(null);
+  const filtering = $derived(searching && !!asked);
+  /** The conversation drawn in order of time. */
+  const foundShown = $derived(found ? [...found.messages].reverse() : []);
+  const SEARCH_DELAY_MS = 250;
+  // The field takes 64 characters: four bytes each at most, within the 256 bytes the runtime takes (search_invalid).
+  const SEARCH_PAGE = 50;
+  /** Pages of the chat read to bring a found message into view (50 each); one further is not looked for. */
+  const REACH_PAGES = 40;
+  /** The most the runtime gives in one page (SEARCH_LIMIT_MAX). */
+  const SEARCH_PAGE_MAX = 200;
+
+  /** The message at the top of the view and how far below the view's top it stands; `atBottom`: the view was at the end. */
+  type ViewMark = { id: string | null; offset: number; top: number; atBottom: boolean };
+
+  function viewMark(): ViewMark | null {
+    if (!scroller) return null;
+    const top = scroller.getBoundingClientRect().top;
+    for (const el of scroller.querySelectorAll<HTMLElement>('[data-mid]')) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > top) return { id: el.dataset.mid ?? null, offset: r.top - top, top: scroller.scrollTop, atBottom };
+    }
+    return { id: null, offset: 0, top: scroller.scrollTop, atBottom };
+  }
+
+  /** The view put back on `mark`: its message where it stood; the pixel only when that message is not drawn. */
+  function toMark(mark: ViewMark) {
+    if (!scroller) return;
+    if (mark.atBottom) { scrollToBottom(); return; }
+    const el = mark.id ? scroller.querySelector<HTMLElement>(`[data-mid="${mark.id}"]`) : null;
+    if (el) scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - mark.offset;
+    else scroller.scrollTop = mark.top;
+    seenHeight = scroller.scrollHeight;
+  }
+
+  /** `a` is older than `b` or the same: the order of the search's pages (time, then id). */
+  function notNewer(a: SearchCursor, b: SearchCursor) {
+    return a.created_at < b.created_at || (a.created_at === b.created_at && a.id <= b.id);
+  }
+
+  function openSearch(query = '') {
+    menu.open = false;
+    stopChoosing();
+    if (!searching) {
+      searchFrom = viewMark();
+      searching = true;
+    }
+    if (query) { searchText = query; asked = query.trim(); }
+    tick().then(() => searchField?.focus());
+  }
+
+  /** `restore`: the view goes back where it was before the search. */
+  function closeSearch(restore = true) {
+    if (!searching) return;
+    searching = false;
+    searchText = '';
+    asked = '';
+    found = null;
+    searchBusy = false;
+    searchPending = false;
+    searchGen++;
+    const from = searchFrom;
+    searchFrom = null;
+    if (!restore || !from) return;
+    atBottom = from.atBottom;
+    tick().then(() => toMark(from));
+  }
+
+  $effect(() => {
+    if (!searching) return;
+    return untrack(() => holdBack(() => closeSearch(), 'searchMessages'));
+  });
+
+  // The field is asked after a pause; emptied, it is let go at once.
+  $effect(() => {
+    if (!searching) return;
+    const q = searchText.trim();
+    const timer = setTimeout(() => (asked = q), q ? SEARCH_DELAY_MS : 0);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    const q = asked;
+    const id = chat.id;
+    if (!q) { untrack(() => { found = null; searchGen++; searchBusy = false; searchPending = false; }); return; }
+    untrack(() => runSearch(id, q));
+  });
+
+  /**
+   * The first page for `q`. `upTo`: asked again under the same question, it reads pages down to that
+   * match, the oldest shown, so nothing read is lost, and the message in view stays where it is.
+   */
+  async function runSearch(id: string, q: string, upTo: SearchCursor | null = null) {
+    const gen = ++searchGen;
+    searchBusy = true;
+    searchSeen = chatStore.messages;
+    try {
+      let page = await messengerApi.search.messages(id, q, undefined, upTo ? SEARCH_PAGE_MAX : SEARCH_PAGE);
+      if (gen !== searchGen) return;
+      const messages = [...page.messages];
+      while (upTo && page.next_before && !notNewer(page.next_before, upTo)) {
+        const before = page.next_before;
+        page = await messengerApi.search.messages(id, q, before, SEARCH_PAGE_MAX);
+        if (gen !== searchGen) return;
+        const known = new Set(messages.map((m) => m.id));
+        messages.push(...page.messages.filter((m) => !known.has(m.id)));
+      }
+      if (gen !== searchGen) return;
+      const mark = upTo ? viewMark() : null;
+      found = { messages, total: page.total, next: page.next_before ?? null, partial: page.partial };
+      if (mark) tick().then(() => toMark(mark));
+      else { atBottom = true; tick().then(scrollToBottom); }
+    } catch (e) {
+      if (gen !== searchGen) return;
+      found = { messages: [], total: 0, next: null, partial: false };
+      error = explain(e);
+    } finally {
+      if (gen === searchGen) searchDone();
+    }
+  }
+
+  /** A search asked again while another was under way: asked once that one is over, for it may have read too early. */
+  let searchPending = false;
+
+  /** The search asked again for as much as is shown, now or, while one is under way, after it. */
+  function searchAgain(id: string) {
+    if (searchBusy) { searchPending = true; return; }
+    searchPending = false;
+    const oldest = found?.messages.at(-1);
+    if (chat.id === id && filtering && found) runSearch(id, asked, oldest ? { created_at: oldest.created_at, id: oldest.id } : null);
+  }
+
+  function searchDone() {
+    searchBusy = false;
+    if (searchPending) searchAgain(chat.id);
+  }
+
+  /** The page of what was found before the oldest shown: the scroll reached the top. */
+  async function searchOlder() {
+    const f = found;
+    if (!f?.next || searchBusy) return;
+    const gen = searchGen;
+    const id = chat.id;
+    searchBusy = true;
+    holdView();
+    try {
+      const page = await messengerApi.search.messages(id, asked, f.next, SEARCH_PAGE);
+      if (gen !== searchGen) return;
+      const known = new Set(f.messages.map((m) => m.id));
+      found = { messages: [...f.messages, ...page.messages.filter((m) => !known.has(m.id))], total: page.total, next: page.next_before ?? null, partial: page.partial };
+      await tick();
+      keepView();
+    } catch (e) {
+      if (gen === searchGen) error = explain(e);
+    } finally {
+      anchor = null;
+      if (gen === searchGen) searchDone();
+    }
+  }
+
+  // What the chat shows changed under the search (a message came, was edited, removed or let through): it is
+  // asked again for as much as is shown. While the index is still being written, it is asked again after a while too.
+  $effect(() => {
+    const list = chatStore.messages;
+    const partial = !!found?.partial;
+    if (!filtering || reaching || (list === searchSeen && !partial)) return;
+    const id = chat.id;
+    const q = untrack(() => asked);
+    const timer = setTimeout(() => untrack(() => {
+      const oldest = found?.messages.at(-1);
+      if (asked === q && found && !searchBusy) runSearch(id, q, oldest ? { created_at: oldest.created_at, id: oldest.id } : null);
+    }), partial && list === searchSeen ? 3000 : 1000);
+    return () => clearTimeout(timer);
+  });
+
+  /** A found message pressed: the search is left and the conversation shows it, unless it is too far up to read. */
+  async function goToFound(messageId: string) {
+    if (reaching) return;
+    const id = chat.id;
+    reaching = true;
+    try {
+      const shown = await chatStore.reach(messageId, REACH_PAGES).catch(() => false);
+      if (chat.id !== id || chatStore.activeId !== id) return;
+      if (!shown) { toast.info($t('msg_search_far')); return; }
+      closeSearch(false);
+      atBottom = false;
+      await tick();
+      jumpTo(messageId, false);
+    } finally {
+      reaching = false;
+    }
+  }
+
+  /** A tap on a found message goes to it; one on what it holds (a link, a picture, a button) stays that one's. */
+  function pressFound(e: MouseEvent, messageId: string) {
+    const at = e.target as Element | null;
+    if (at?.closest('a, button, input, audio, video, [role="button"]:not(.found-row)')) return;
+    if (window.getSelection()?.toString()) return;
+    void goToFound(messageId);
+  }
+
+  $effect(() => {
+    const onkey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !searching || choosing || e.defaultPrevented || forward.open || menu.open || viewer.item) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      closeSearch();
+    };
+    window.addEventListener('keydown', onkey, true);
+    return () => window.removeEventListener('keydown', onkey, true);
+  });
+
+  // A match of the search across the chats was pressed: the chat opens filtered by it.
+  $effect(() => {
+    const want = chatStore.openSearch;
+    if (!want || want.chatId !== chat.id) return;
+    chatStore.openSearch = null;
+    untrack(() => openSearch(want.query));
+  });
+
   // The list of transfers asked for a message of this chat: shown once the
   // chat has it, older pages read until it does.
   $effect(() => {
     const want = chatStore.jumpTo;
     if (!want || want.chatId !== chat.id || chatStore.loading || chatStore.activeId !== chat.id) return;
     chatStore.jumpTo = null;
+    untrack(() => closeSearch(false));
     untrack(() => chatStore.reach(want.messageId))
       .then((shown) => {
         if (!shown || chatStore.activeId !== want.chatId) return;
@@ -287,6 +537,13 @@
       else anchor.fromBottom = scroller.scrollHeight - scroller.scrollTop;
       return;
     }
+    // What the search found: its next page, not the chat's.
+    if (filtering) {
+      seenHeight = scroller.scrollHeight;
+      atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+      if (scroller.scrollTop < 120) void searchOlder();
+      return;
+    }
     // Up, by the reader: the view put at the end of a chat a little
     // longer than the screen asks the relays nothing.
     const up = scroller.scrollTop < lastTop;
@@ -311,20 +568,24 @@
    * inbox): when the pages on the device are over, older messages are
    * asked of the relays — by the button, by scrolling to the top, or by
    * pulling past it (the wheel, a finger) when everything fits on one
-   * screen. A group stops after two asks in a row that bring nothing; a
-   * direct chat when its server says it has nothing older (`end`). An
+   * screen. A group stops after two asks in a row the relays answered
+   * with nothing (`windowsEmpty`); an ask no relay took is no miss: the
+   * button stays, and scrolling asks again only once the link is back. A
+   * direct chat stops when its server says it has nothing older (`end`). An
    * empty direct chat (an old contact on a new device) asks once by
    * itself.
    */
   let earlierEmpty = $state(0);
   let earlierBusy = $state(false);
+  /** The last ask failed: scrolling to the top does not ask again until the link comes back or the button is pressed. */
+  let earlierFailed = false;
   let historyEnd = $state(false);
   /** This direct chat asked its server already, here: an ask that found nothing yet leaves the button to ask on. */
   let historyAsked = $state(false);
   const isDirect = $derived(chat.kind === 'dm' && chat.id.startsWith('dm:'));
   const canLoadEarlier = $derived(
     !chatStore.hasMore && !chatStore.loading && chatStore.activeId === chat.id && (
-      isGroup ? moreHistory && chatStore.messages.length > 0 && earlierEmpty < 2 : isDirect && sessionActive && !historyEnd
+      isGroup ? moreHistory && chatStore.messages.length > 0 && earlierEmpty < GROUP_EMPTY_END : isDirect && sessionActive && !historyEnd
     ),
   );
   /** A group offers its button; a direct chat asks by itself at the top, and offers it after an ask that found nothing yet. */
@@ -350,7 +611,17 @@
   }
 
   function pullEarlier() {
-    if (canLoadEarlier && !earlierBusy) loadEarlier();
+    if (canLoadEarlier && !earlierBusy && !searching && !earlierFailed) loadEarlier();
+  }
+
+  // The link back: scrolling to the top asks again.
+  $effect(() => {
+    if (linked) earlierFailed = false;
+  });
+
+  /** What a failed ask of the relays says: no relay took it — no connection, try again later. */
+  function askFailed(e: unknown): string {
+    return e === OFFLINE || relaysUnreached(messengerError(e)) ? $t('msg_search_ask_offline') : explain(e);
   }
 
   async function loadEarlier() {
@@ -370,6 +641,8 @@
       const before = first?.created_at ?? Math.floor(Date.now() / 1000);
       let got: number;
       if (isGroup) {
+        // Without the relays a window comes back empty, as if they had nothing older: it is not asked.
+        if (!linked) throw OFFLINE;
         got = await messengerApi.groups.history(id.slice(6), before, 200);
       } else {
         if (chat.id === id) historyAsked = true;
@@ -381,11 +654,13 @@
       added = await chatStore.loadOlder(true);
       await tick();
       keepView();
-      if (isGroup) earlierEmpty = got === 0 && added === 0 ? earlierEmpty + 1 : 0;
+      if (isGroup) earlierEmpty = windowsEmpty(earlierEmpty, got, linked, added);
+      earlierFailed = false;
     } catch (e) {
       if (chat.id !== id) return;
-      error = explain(e);
-      earlierEmpty++;
+      // No miss: the button stays for when the link is back.
+      error = askFailed(e);
+      earlierFailed = true;
     } finally {
       earlierBusy = false;
       anchor = null;
@@ -397,6 +672,165 @@
       }
     }
   }
+
+  /**
+   * «Запросить с сервера» under «Ничего не найдено» (askServer.ts): older
+   * messages of the chat come the way «Загрузить раньше» brings them — a
+   * direct chat's `dm_history` before the oldest message the device holds
+   * (one ask per server at a time in the runtime: another chat waits for it
+   * and finds what it brought), a group's window of 1000 events — and the
+   * search is asked again. Cancelled, an ask begun runs out in the runtime,
+   * its messages stay, and nothing more is begun; the next press waits for
+   * the last one to be over. While the archive brings
+   * this chat's months back, it is waited for instead.
+   */
+  /** Messages of the chat read at once to find the oldest one held (the most the runtime gives). */
+  const HELD_PAGE = 500;
+  /** A group's window of events per ask (`HISTORY_WINDOW_MAX`). */
+  const GROUP_WINDOW = 1000;
+  /** A press under way: what it asked, and whether it was cancelled. */
+  type Ask = { chatId: string; query: string; cancelled: boolean };
+  let asking = $state.raw<Ask | null>(null);
+  /** How many older messages of the chat the press brought so far. */
+  let askLoaded = $state(0);
+  /** The last press, run out even when it was cancelled (an ask begun is not taken back): the next waits for it. */
+  let pressRunning: Promise<void> | null = null;
+  /** The oldest message of this chat on the device, as far as the last look read (`null`: none). */
+  let held: { chatId: string; floor: number | null } | null = null;
+  const restoringHere = $derived(archiveStore.isRestoring(scopeOfChat(chat.id)));
+  /** The relays of the chat have nothing older: the same word «Загрузить раньше» has. */
+  const serverEnd = $derived(isGroup ? earlierEmpty >= GROUP_EMPTY_END : historyEnd);
+  const canAsk = $derived(!serverEnd && (isGroup ? moreHistory : isDirect && sessionActive));
+
+  /**
+   * The messages of `id` older than `from` (all, for null) on the device: how many, and the oldest one's time.
+   * `live` false between pages: the reading stops, `done` false.
+   */
+  async function readDown(id: string, from: number | null, live: () => boolean): Promise<{ count: number; floor: number | null; done: boolean }> {
+    let floor = from;
+    let count = 0;
+    for (;;) {
+      const page = await messengerApi.chats.messages(id, floor ?? undefined, HELD_PAGE);
+      if (page.length) floor = Math.min(...page.map((m) => m.created_at));
+      count += page.length;
+      if (page.length < HELD_PAGE) return { count, floor, done: true };
+      if (!live()) return { count, floor, done: false };
+    }
+  }
+
+  /** The oldest message of `id` on the device: the window's first when the window holds them all, else read down past it once. */
+  async function heldFloor(id: string, live: () => boolean): Promise<number | null> {
+    if (held?.chatId === id) return held.floor;
+    const first = chatStore.activeId === id ? chatStore.messages[0] : undefined;
+    if (first && !chatStore.hasMore) return (held = { chatId: id, floor: first.created_at }).floor;
+    const down = await readDown(id, first?.created_at ?? null, live);
+    // Cut short by a cancel, it is not the oldest: the next press reads again.
+    if (down.done) held = { chatId: id, floor: down.floor };
+    return down.floor;
+  }
+
+  /** The relays are not reached: the press stops and the button stays, nothing is said of the end. */
+  const OFFLINE = new Error('no relay connected');
+
+  /** One ask of the relays; what it says of the end is the chat's, as «Загрузить раньше» keeps it. */
+  async function askRelays(id: string, before: number): Promise<{ end: boolean }> {
+    // Without the relays a group's window comes back empty, as if they had nothing older: it is not asked.
+    if (!linked) throw OFFLINE;
+    const ask = isGroup ? messengerApi.groups.history(id.slice(6), before, GROUP_WINDOW) : messengerApi.chats.history(id, before);
+    const got = await ask;
+    if (chat.id !== id) return { end: false };
+    if (typeof got === 'number') {
+      // The link lost meanwhile: an empty window says nothing of the end.
+      if (got === 0 && !linked) throw OFFLINE;
+      // A group: two windows in a row that bring nothing are its end.
+      earlierEmpty = windowsEmpty(earlierEmpty, got, true);
+      return { end: earlierEmpty >= GROUP_EMPTY_END };
+    }
+    historyAsked = true;
+    if (got.end) historyEnd = true;
+    return { end: got.end };
+  }
+
+  function cancelAsk() {
+    if (asking) asking.cancelled = true;
+    asking = null;
+  }
+
+  async function askServer() {
+    if (asking || !canAsk || !asked) return;
+    const run: Ask = { chatId: chat.id, query: asked, cancelled: false };
+    asking = run;
+    askLoaded = 0;
+    error = '';
+    const last = pressRunning;
+    const press = (async () => {
+      // The press before, cancelled, may still be reading or asking: one press at a time asks the relays.
+      if (last) await last;
+      await runPress(run);
+    })();
+    pressRunning = press;
+    await press;
+    if (pressRunning === press) pressRunning = null;
+  }
+
+  async function runPress(run: Ask) {
+    const id = run.chatId;
+    const live = () => !run.cancelled && searching && chat.id === id && asked === run.query;
+    try {
+      await askRounds({
+        floor: () => heldFloor(id, live),
+        ask: (before) => askRelays(id, before),
+        under: async (floor) => {
+          // Read to the end even when cancelled: the floor kept must be the oldest.
+          const down = await readDown(id, floor, () => true);
+          if (held?.chatId === id) held = { chatId: id, floor: down.floor };
+          // The window learns there is more above it, as after «Загрузить раньше».
+          if (down.count > 0 && chatStore.activeId === id) chatStore.hasMore = true;
+          return down;
+        },
+        search: async () => {
+          const oldest = found?.messages.at(-1);
+          await runSearch(id, run.query, oldest ? { created_at: oldest.created_at, id: oldest.id } : null);
+          return found?.total ?? 0;
+        },
+        live,
+        loaded: (n) => (askLoaded = n),
+        now: () => Math.floor(Date.now() / 1000),
+      }, found?.total ?? 0);
+    } catch (e) {
+      if (live()) error = askFailed(e);
+    } finally {
+      if (asking === run) asking = null;
+    }
+  }
+
+  // Another question, another chat or no search: a press under way stops asking.
+  $effect(() => {
+    const q = asked;
+    const id = chat.id;
+    const on = searching;
+    untrack(() => { if (asking && (!on || asking.query !== q || asking.chatId !== id)) cancelAsk(); });
+  });
+  // The window closed (the list, a chat of another kind): its press begins nothing more.
+  $effect(() => () => { if (asking) asking.cancelled = true; });
+
+  // The archive brings this chat's months back: the search is asked again as they come, at most once a second, and once more when they are all here.
+  let archiveTimer: ReturnType<typeof setTimeout> | null = null;
+  let wasRestoring = false;
+  $effect(() => {
+    void archiveStore.progress;
+    const on = restoringHere;
+    const ended = wasRestoring && !on;
+    wasRestoring = on;
+    if (!filtering || (!on && !ended) || archiveTimer) return;
+    const id = chat.id;
+    archiveTimer = setTimeout(() => untrack(() => {
+      archiveTimer = null;
+      held = null;
+      searchAgain(id);
+    }), 1000);
+  });
+  $effect(() => () => { if (archiveTimer) clearTimeout(archiveTimer); });
 
   // An empty chat with a contact asks its server once by itself: a contact
   // of long ago on a device that signed in again has nothing here yet. A
@@ -742,7 +1176,7 @@
         menu = { open: true, x, y, m, target, caption: editTarget(m, album), album: album ?? null };
       },
       forward: fit.length ? () => openForward(fit) : undefined,
-      react: reactable(target)
+      react: reactable(target) && !filtering
         ? (el: HTMLElement) => {
             const { x, y } = at(el, false);
             menuMore = false;
@@ -800,6 +1234,15 @@
     if (!m) return [];
     const own = m.direction === 'out';
     const list: MenuEntry[] = [];
+    // What the search found is gone to, copied or forwarded; it is answered or changed where it stands.
+    if (filtering) {
+      if (m.deleted) return list;
+      list.push({ label: $t('msg_search_go'), icon: 'arrow-right', onselect: () => goToFound(m.id) });
+      if (m.text) list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
+      const fit = fitOf(m, menu.album);
+      if (fit.length) list.push({ label: $t('msg_fwd_forward'), icon: 'forward', onselect: () => openForward(fit) });
+      return list;
+    }
     if (!m.deleted) {
       if (canReply(m)) list.push({ label: $t('msg_message_reply'), icon: 'reply', onselect: () => answer(m) });
       // An album goes, and is ticked, whole.
@@ -868,14 +1311,23 @@
   {/if}
 {/snippet}
 
+<!-- What the search found: a tap on a row goes to it in the conversation. -->
+{#snippet pressable(messageId: string, row: Snippet)}
+  <div class="found-row" role="button" tabindex="0" aria-label={$t('msg_search_go')} aria-busy={reaching}
+    onclick={(e) => pressFound(e, messageId)}
+    onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); void goToFound(messageId); } }}>
+    {@render row()}
+  </div>
+{/snippet}
+
 {#snippet bubble(item: Extract<TimelineItem, { type: "bubble" }>)}
   {#snippet row()}
     <MessageBubble message={item.message} first={item.first} last={item.last} showAuthor={item.showAuthor} peerTitle={chat.title} {author} highlighted={highlighted === item.message.id}
-      onmenu={choosing ? (e) => e.preventDefault() : openMenu} onreplyclick={jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))}
-      onreply={!choosing && canReply(item.message) ? () => answer(item.message) : undefined}
-      actions={phone || choosing ? undefined : hoverActions(item.message)} selected={selectedId === item.message.id} />
+      onmenu={choosing ? (e) => e.preventDefault() : openMenu} onreplyclick={filtering ? goToFound : jumpTo} onretry={(m) => guard(() => chatStore.retry(m.id))} media={attachment} onreacterror={(e) => (error = explain(e))}
+      onreply={!choosing && !filtering && canReply(item.message) ? () => answer(item.message) : undefined}
+      actions={phone || choosing ? undefined : hoverActions(item.message)} selected={selectedId === item.message.id} mark={filtering ? asked : ''} />
   {/snippet}
-  {@render chooser(item.id, row)}
+  {#if filtering}{@render pressable(item.message.id, row)}{:else}{@render chooser(item.id, row)}{/if}
 {/snippet}
 
 {#snippet album(item: Extract<TimelineItem, { type: "album" }>)}
@@ -883,10 +1335,10 @@
   {#snippet row()}
     <AlbumBubble messages={item.messages} variant={item.variant} first={item.first} last={item.last} author={item.showAuthor && author ? author(who) : null} authorTint={tint(who)} {highlighted}
       onmenu={choosing ? (e) => e.preventDefault() : (e, m) => openMenu(e, m, item.messages)} onretry={(m) => guard(() => chatStore.retry(m.id))} onreacterror={(e) => (error = explain(e))}
-      onreply={!choosing && canReply(item.messages[item.messages.length - 1]) ? () => answer(item.messages[item.messages.length - 1]) : undefined}
-      actions={phone || choosing ? undefined : hoverActions(item.messages[item.messages.length - 1], item.messages)} selected={!!selectedId && item.messages.some((p) => p.id === selectedId)} />
+      onreply={!choosing && !filtering && canReply(item.messages[item.messages.length - 1]) ? () => answer(item.messages[item.messages.length - 1]) : undefined}
+      actions={phone || choosing ? undefined : hoverActions(item.messages[item.messages.length - 1], item.messages)} selected={!!selectedId && item.messages.some((p) => p.id === selectedId)} mark={filtering ? asked : ''} />
   {/snippet}
-  {@render chooser(item.id, row)}
+  {#if filtering}{@render pressable(item.messages[0].id, row)}{:else}{@render chooser(item.id, row)}{/if}
 {/snippet}
 
 {#snippet composerTools()}
@@ -953,17 +1405,54 @@
     {/if}
     <span class="chip-slot"><TransfersChip {phone} /></span>
     {#if actions}{@render actions()}{/if}
+    <button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>
     <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
       {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
     {/if}
   </header>
 
+  {#if searching}
+    <div class="search" class:phone role="search">
+      <Icon name="search" size={16} />
+      <input bind:this={searchField} bind:value={searchText} type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" maxlength={64}
+        placeholder={$t('msg_search_placeholder')} aria-label={$t('msg_search_placeholder')}
+        onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchField?.blur(); } }} />
+      {#if filtering && found}<span class="search-count" aria-hidden="true">{found.total}</span>{/if}
+      <button class="icon" onclick={() => closeSearch()} title={$t('msg_search_close')} aria-label={$t('msg_search_close')}><Icon name="x" size={16} /></button>
+    </div>
+  {/if}
+
   {#if !isGroup}<RelationBanner {chat} busy={acting} onaction={act} />{/if}
   {#if banner}{@render banner()}{/if}
 
   <div class="scroll" class:phone bind:this={scroller} {onscroll}>
     <div class="content" bind:this={content}>
+    {#if filtering}
+      {#if found?.partial}<div class="history-start" role="status">{$t('msg_search_indexing')}</div>{/if}
+      {#if searchBusy && found?.messages.length}<div class="loading"><Icon name="loader" size={14} /></div>{/if}
+      {#if !found}
+        <div class="placeholder">{$t('loading')}</div>
+      {:else if found.messages.length === 0}
+        <div class="placeholder">
+          <Icon name="search" size={22} />
+          <p>{$t('msg_search_none')}</p>
+          {#if restoringHere}
+            <!-- The archive is bringing this chat back: its months come by themselves, the search follows them. -->
+            <span class="ask-line" role="status"><Icon name="loader" size={14} />{$t('msg_search_restoring', { percent: String(archiveStore.percent) })}</span>
+          {:else if asking}
+            <span class="ask-line" role="status"><Icon name="loader" size={14} />{askLoaded > 0 ? $t(countKey('msg_search_asking', askLoaded, $locale), { n: String(askLoaded) }) : $t('msg_search_asking_start')}</span>
+            <button class="btn btn-ghost btn-sm" onclick={cancelAsk}>{$t('common_cancel')}</button>
+          {:else if serverEnd}
+            <span>{$t('msg_search_server_end')}</span>
+          {:else if canAsk}
+            <button class="btn btn-ghost btn-sm" onclick={askServer}><Icon name="download" size={13} />{$t('msg_search_ask_server')}</button>
+          {/if}
+        </div>
+      {:else}
+        <Timeline messages={foundShown} many={isGroup} systemText={systemLine} {bubble} {album} />
+      {/if}
+    {:else}
     <ArchiveEarlier chatId={chat.id} />
     {#if earlierBusy}
       <!-- The past is being asked of the relays: it may take a few seconds. -->
@@ -994,20 +1483,24 @@
     {:else}
       <Timeline messages={chatStore.messages} many={isGroup} systemText={systemLine} {bubble} {album} />
     {/if}
+    {/if}
     </div>
   </div>
 
   {#if !atBottom}
     <button class="to-bottom" class:count={unseen > 0} onclick={() => { atBottom = true; scrollToBottom(); }} title={$t('msg_chat_to_bottom')}>
       <Icon name="chevrons-down" size={18} />
-      {#if unseen > 0}<span>{$t(countKey('msg_new_count', unseen, $locale), { n: String(unseen) })}</span>{/if}
+      {#if unseen > 0 && !searching}<span>{$t(countKey('msg_new_count', unseen, $locale), { n: String(unseen) })}</span>{/if}
     </button>
   {/if}
 
   <div class="bottom" class:float={phone} bind:clientHeight={bottomH}>
   {#if error}<div class="error-line">{error}</div>{/if}
 
-  {#if chat.can_send}
+  {#if searching}
+    <!-- Searching, nothing is written: how many the search found stands in the composer's place. -->
+    {#if filtering && found}<div class="found-line" role="status">{$t(countKey('msg_search_matches', found.total, $locale), { n: String(found.total) })}</div>{/if}
+  {:else if chat.can_send}
     <Composer {replyTo} {editing} peerTitle={chat.title} disabled={!sessionActive} draftKey={chat.id} autofocus={!phone} oneditlast={editLast} onrecording={record} canRecord={canAttach}
       oncancel={() => { replyTo = null; editing = null; }} onsend={send} tools={composerTools} {attached} attachments={picked.length ? tray : undefined}
       onpastefiles={attachFiles} onpasteclipboard={attachClipboard} canattach={canAttachNow} commands={botCommands} />
@@ -1021,7 +1514,7 @@
 
 <MediaViewer />
 <ForwardDialog bind:open={forward.open} chatId={chat.id} ids={forward.ids} onforwarded={stopChoosing} />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) && !filtering ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} width={menuWidth ? `${menuWidth}px` : undefined} onclose={() => (chatMenu.open = false)} />
 
@@ -1109,6 +1602,8 @@
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
   .placeholder p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .placeholder span { font-size: var(--fs-xs); max-width: 320px; line-height: var(--lh-base); }
+  .placeholder .ask-line { display: inline-flex; align-items: center; gap: var(--sp-2); }
+  .placeholder .ask-line :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .loading { display: flex; justify-content: center; align-items: center; gap: var(--sp-2); color: var(--text-3); padding: var(--sp-2); font-size: var(--fs-xs); }
   .loading :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .earlier { display: flex; justify-content: center; padding: var(--sp-2); }
@@ -1152,5 +1647,22 @@
   .readers { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 50vh; overflow-y: auto; }
   .reader { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text); font-size: var(--fs-sm); }
   .reader span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The field of the search under the head; on a phone a bar of glass as the head. */
+  .search { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); color: var(--text-3); }
+  .search.phone {
+    position: relative; z-index: calc(var(--z-base) + 2); margin: var(--sp-2) var(--sp-2) 0; padding-inline: var(--sp-3) var(--sp-1);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+  }
+  .search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 6px 0; }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search-count { flex-shrink: 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--text-3); }
+  .search .icon { flex-shrink: 0; }
+  .search-btn.on { color: var(--accent-text); }
+  /* A found message: the whole row takes the tap. */
+  .found-row { cursor: pointer; border-radius: var(--radius-sm); }
+  .found-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .found-line { display: flex; align-items: center; justify-content: center; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+  .bottom.float .found-line { margin: 0 var(--sp-2) var(--sp-2); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
 </style>

@@ -47,8 +47,10 @@
     actions?: { react?: (anchor: HTMLElement) => void; forward?: () => void; more: (anchor: HTMLElement) => void };
     /** Its menu is open. */
     selected?: boolean;
+    /** What the search of the conversation asked: the words it found are marked. */
+    mark?: string;
   }
-  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry, onreacterror, onreply, actions, selected = false }: Props = $props();
+  let { messages, variant, first, last, author = null, authorTint = 'inherit', highlighted = null, onmenu, onretry, onreacterror, onreply, actions, selected = false, mark = '' }: Props = $props();
 
   const head = $derived(messages[0]);
   const tail = $derived(messages[messages.length - 1]);
@@ -155,7 +157,7 @@
       </div>
     {/if}
     <!-- The time at the end of the last line of the words (mockups c7.js), else on a line of its own. -->
-    {#each captions as m, i (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} rich={m.rich} />{#if !overlay && i === captions.length - 1}{@render meta(false, true)}{/if}</div>{/each}
+    {#each captions as m, i (m.id)}<div class="caption" data-part={m.id}><MessageContent text={m.text ?? ''} rich={m.rich} highlight={mark} />{#if !overlay && i === captions.length - 1}{@render meta(false, true)}{/if}</div>{/each}
     {#if !overlay && captions.length === 0}{@render meta(false)}{/if}
   </div>
     {#if actions && !tail.deleted}<HoverActions {onreply} {actions} {selected} />{/if}

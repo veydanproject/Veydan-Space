@@ -136,6 +136,7 @@ pub async fn delete(store: &Store, id: &str) -> Result<()> {
         sqlx::query(sql).bind(id).execute(&mut *tx).await.map_err(storage)?;
     }
     let chat = group_chat_id(id);
+    crate::search::forget_chat_in(&mut tx, &chat).await?;
     sqlx::query("DELETE FROM msg_messages WHERE chat_id = ?").bind(&chat).execute(&mut *tx).await.map_err(storage)?;
     sqlx::query("DELETE FROM msg_chats WHERE id = ?").bind(&chat).execute(&mut *tx).await.map_err(storage)?;
     tx.commit().await.map_err(storage)

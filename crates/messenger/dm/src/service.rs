@@ -20,7 +20,7 @@ use messenger_core::{
 use messenger_store::chats::{self, ChatRow};
 use messenger_store::messages::{self as repo, MessageRow, NewMessage};
 use messenger_store::shared::{self, Counts, Section};
-use messenger_store::{dm_held, dm_routes, reactions, receipts, servers, settings, Store};
+use messenger_store::{dm_held, dm_routes, reactions, receipts, search, servers, settings, Store};
 use nostr::key::Keys;
 use nostr::nips::nip19::ToBech32;
 use nostr::prelude::PublicKey;
@@ -314,6 +314,42 @@ impl DmService {
     pub async fn messages_as(&self, chat_id: &str, before: Option<i64>, limit: i64, moderator: bool) -> Result<Vec<MessageView>> {
         let rows = repo::list(&self.store, chat_id, before, limit.clamp(1, 500), moderator).await?;
         self.views(chat_id, rows).await
+    }
+
+    /// The messages of a chat that the search finds (`search::in_chat`):
+    /// the newest first, as the chat shows them; how many there are; and
+    /// where the next page starts, absent on the last.
+    pub async fn search_in(
+        &self,
+        chat_id: &str,
+        query: &str,
+        before: Option<&search::Cursor>,
+        limit: i64,
+        moderator: bool,
+    ) -> Result<(Vec<MessageView>, i64, Option<search::Cursor>)> {
+        let limit = limit.clamp(1, 500);
+        // One row past the page says whether there is another: a last page
+        // that is full gives no cursor to a page of nothing.
+        let (mut rows, total) = search::in_chat(&self.store, chat_id, query, before, limit + 1, moderator).await?;
+        let more = rows.len() as i64 > limit;
+        rows.truncate(limit as usize);
+        let next = rows
+            .last()
+            .filter(|_| more)
+            .map(|r| search::Cursor { created_at: r.created_at, id: r.id.clone() });
+        Ok((self.views(chat_id, rows).await?, total, next))
+    }
+
+    /// The chats the search finds (`search::across_chats`): each with how
+    /// many of its messages match and the newest of them.
+    pub async fn search_across(&self, query: &str, limit: i64, moderated: &[String]) -> Result<Vec<(String, i64, MessageView)>> {
+        let mut out = Vec::new();
+        for hit in search::across_chats(&self.store, query, limit.clamp(1, 500), moderated).await? {
+            if let Some(view) = self.views(&hit.chat_id, vec![hit.last]).await?.pop() {
+                out.push((hit.chat_id, hit.count, view));
+            }
+        }
+        Ok(out)
     }
 
     /// What a chat has shared in one section, newest first.

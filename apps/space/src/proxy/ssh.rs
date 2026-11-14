@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 use russh::client;
-use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64};
+use russh::keys::{
+    decode_secret_key, PrivateKeyWithHashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate,
+};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 
@@ -36,9 +38,9 @@ impl client::Handler for SshHandler {
 
     fn check_server_key(
         &mut self,
-        server_public_key: &PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send {
-        let fp = compute_fingerprint(server_public_key);
+        let fp = compute_fingerprint(&server_public_key.public_key());
         *self.received_fingerprint.lock().unwrap() = Some(fp.clone());
 
         let result = match &self.known_fingerprint {

@@ -44,8 +44,10 @@
     actions?: { react?: (anchor: HTMLElement) => void; forward?: () => void; more: (anchor: HTMLElement) => void };
     /** Its menu is open. */
     selected?: boolean;
+    /** What the search of the conversation asked: the words it found are marked. */
+    mark?: string;
   }
-  let { message: m, first, last = true, peerTitle, showAuthor = false, author, highlighted = false, onmenu, onreplyclick, onretry, media, onreacterror, onreply, actions, selected = false }: Props = $props();
+  let { message: m, first, last = true, peerTitle, showAuthor = false, author, highlighted = false, onmenu, onreplyclick, onretry, media, onreacterror, onreply, actions, selected = false, mark = '' }: Props = $props();
 
   // The backend's own words go to the log; the Retry button says it in the UI's language.
   $effect(() => {
@@ -118,9 +120,9 @@
       <BotCardMessage card={m.bot_card} id={m.id} at={m.created_at} />
     {:else if m.content_type === 'media' && media}
       {@render media(m)}
-      {#if m.text}<div class="body"><MessageContent text={m.text} rich={m.rich} />{#if metaInline}{@render meta()}{/if}</div>{/if}
+      {#if m.text}<div class="body"><MessageContent text={m.text} rich={m.rich} highlight={mark} />{#if metaInline}{@render meta()}{/if}</div>{/if}
     {:else if m.text}
-      <div class="body"><MessageContent text={m.text} rich={m.rich} />{#if metaInline}{@render meta()}{/if}</div>
+      <div class="body"><MessageContent text={m.text} rich={m.rich} highlight={mark} />{#if metaInline}{@render meta()}{/if}</div>
     {:else}
       <span class="tomb">{$t('msg_message_unsupported', { type: m.content_type })}</span>
     {/if}

@@ -74,8 +74,13 @@ pub async fn release(store: &Store, message_id: &str) -> Result<bool> {
 /// Forget the held rows of a chat, the hidden messages with them, as if they
 /// had been dropped when they came. Returns how many there were.
 pub async fn purge(store: &Store, chat_id: &str) -> Result<u64> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
-    sqlx::query("DELETE FROM msg_messages WHERE id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?) AND is_hidden = 1")
+    // It reads before it writes (the index, a virtual table, is told its
+    // rows by a SELECT first): a deferred transaction would fail (busy,
+    // not waited for) when another connection writes in between.
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
+    const HELD: &str = "id IN (SELECT message_id FROM msg_dm_held WHERE chat_id = ?) AND is_hidden = 1";
+    sqlx::query(sqlx::AssertSqlSafe(crate::search::forget_sql(HELD))).bind(chat_id).execute(&mut *tx).await.map_err(storage)?;
+    sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM msg_messages WHERE {HELD}")))
         .bind(chat_id)
         .execute(&mut *tx)
         .await

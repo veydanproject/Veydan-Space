@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { MessengerChat, MessengerContact, MessengerProfile } from '../api';
-import { chatMatches, contactHaystacks, contactMatches, fold } from './search';
+import { chatMatches, contactHaystacks, contactMatches, excerpt, fold, highlightRanges } from './search';
 
 const PK = 'ab12cd34'.repeat(8);
 const NPUB = 'npub1qwertyzxcvbnm7f3k9uq2w5e8r4t6y0u1i3o5p7a9s2d4f6g8h0j';
@@ -29,6 +29,16 @@ describe('fold', () => {
   it('drops case and marks', () => {
     expect(fold('José')).toBe('jose');
     expect(fold('ЁЛКА')).toBe('елка');
+  });
+
+  // The same pairs as `messenger_store::search::fold` holds: the index of
+  // the conversation folds its words by this rule, in Rust.
+  it('folds as the search of the conversation does', () => {
+    const pairs: [string, string][] = [
+      ['Ёлка', 'елка'], ['Ёлена', 'елена'], ['José', 'jose'], ['Привет', 'привет'], ['Йогурт', 'иогурт'],
+      ['ÅNGSTRÖM', 'angstrom'], ['Straße', 'straße'], ['İstanbul', 'istanbul'], ['ΟΔΥΣΣΕΥΣ', 'οδυσσευς'],
+    ];
+    for (const [from, to] of pairs) expect(fold(from), from).toBe(to);
   });
 });
 
@@ -102,5 +112,65 @@ describe('chatMatches', () => {
     const g = chat({ id: 'group:1', kind: 'group', peer_pubkey: null, peer_npub: null, title: 'Семья Петровых' });
     expect(chatMatches(g, 'петровых', hay)).toBe(true);
     expect(chatMatches(g, 'мама', hay)).toBe(false);
+  });
+});
+
+describe('highlightRanges', () => {
+  const marked = (text: string, query: string) => highlightRanges(text, query).map(([a, b]) => text.slice(a, b));
+
+  it('finds a word at the start of a word, in any case', () => {
+    expect(marked('Привет, как дела? приветик', 'прив')).toEqual(['Прив', 'прив']);
+    expect(marked('Привет', 'ивет')).toEqual([]);
+    expect(highlightRanges('abc', '')).toEqual([]);
+  });
+
+  it('takes «ё» for «е» and drops marks, both ways', () => {
+    expect(marked('Ёлка в лесу', 'елка')).toEqual(['Ёлка']);
+    expect(marked('елка в лесу', 'Ёлк')).toEqual(['елк']);
+    expect(marked('José и Jose', 'jose')).toEqual(['José', 'Jose']);
+  });
+
+  it('keeps the offsets of a text whose letters are written apart from their marks', () => {
+    const text = 'Е\u0308лка';
+    expect(highlightRanges(text, 'елка')).toEqual([[0, text.length]]);
+    // A mark after the last letter found stays with it.
+    expect(marked('Приве\u0308т', 'приве')).toEqual(['Приве\u0308']);
+  });
+
+  it('marks every word of the query, cut as the index cuts it', () => {
+    expect(marked('миру привет', 'прив-мир')).toEqual(['мир', 'прив']);
+    // Words that overlap are one range.
+    expect(highlightRanges('привет', 'пр прив')).toEqual([[0, 4]]);
+  });
+
+  it('counts a character past the basic plane as one', () => {
+    expect(marked('😀 Ёлка', 'ёлка')).toEqual(['Ёлка']);
+  });
+});
+
+describe('excerpt', () => {
+  const marks = (e: { text: string; ranges: [number, number][] }) => e.ranges.map(([a, b]) => e.text.slice(a, b));
+
+  it('keeps a short line whole, on one line', () => {
+    const e = excerpt('Привет,\n  Ёлка  ждёт', 'елк');
+    expect(e.text).toBe('Привет, Ёлка ждёт');
+    expect(marks(e)).toEqual(['Ёлк']);
+  });
+
+  it('begins a long line at a word a little before the first match', () => {
+    const e = excerpt('Сначала очень длинное вступление про всё на свете, а потом наконец ёлка и снова ёлка', 'ёлк', 20);
+    expect(e.text.startsWith('…')).toBe(true);
+    expect(e.text).toBe('…а потом наконец ёлка и снова ёлка');
+    expect(marks(e)).toEqual(['ёлк', 'ёлк']);
+  });
+
+  it('starts at the match itself when no word begins before it in reach', () => {
+    const e = excerpt(`${'x'.repeat(60)} José`, 'jose', 10);
+    expect(e.text).toBe('…José');
+    expect(marks(e)).toEqual(['José']);
+  });
+
+  it('gives the line unmarked when nothing matches', () => {
+    expect(excerpt('nothing here', 'zzz')).toEqual({ text: 'nothing here', ranges: [] });
   });
 });

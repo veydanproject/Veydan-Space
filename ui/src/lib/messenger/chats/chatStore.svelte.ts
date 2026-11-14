@@ -84,6 +84,8 @@ class ChatStore {
   tailTick = $state(0);
   /** A message to bring into view once its chat shows it (the list of transfers asks). */
   jumpTo = $state<{ chatId: string; messageId: string } | null>(null);
+  /** A chat to show filtered by a search once it is open (a match of the search across the chats was pressed). */
+  openSearch = $state<{ chatId: string; query: string } | null>(null);
   /** Bumped when the store is emptied (lock, logout): a page showing a chat loads it again. */
   resets = $state(0);
   /**
@@ -270,15 +272,16 @@ class ChatStore {
   /**
    * Older pages of the open chat until `messageId` is among the messages
    * (a message the list of transfers asks for may be far up), or until the
-   * chat has no more. Whether it is shown now.
+   * chat has no more, or `pages` were read. Whether it is shown now.
    */
-  async reach(messageId: string): Promise<boolean> {
+  async reach(messageId: string, pages = Infinity): Promise<boolean> {
     const id = this.activeId;
+    let read = 0;
     while (this.activeId === id && !this.messages.some((m) => m.id === messageId)) {
-      if (!this.hasMore || this.messages.length === 0) return false;
+      if (!this.hasMore || this.messages.length === 0 || read >= pages) return false;
       // A page the scroll asked for is on its way: it is waited for.
       if (this.loadingOlder) await new Promise((r) => setTimeout(r, 50));
-      else await this.loadOlder();
+      else { await this.loadOlder(); read++; }
     }
     return this.activeId === id;
   }
@@ -543,6 +546,7 @@ class ChatStore {
     this.chats = [];
     this.tailCards = {};
     this._tailsSeen.clear();
+    this.openSearch = null;
     this.close();
     this.resets++;
   }
