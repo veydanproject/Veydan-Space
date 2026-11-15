@@ -31,6 +31,8 @@ dependencies {
     // version the app brings.
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation(project(":tauri-android"))
+    // The permissions, asked from the live window (Permissions.kt of the shell, one for the plugins).
+    implementation(project(":veydan-shell"))
     // The decisions of MediaRules.kt, on the JVM (src/test).
     testImplementation("junit:junit:4.13.2")
 }

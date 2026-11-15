@@ -99,6 +99,7 @@
     "ssh_delete_title": "Supprimer la connexion",
     "ssh_delete_message": "Supprimer « {name} » ?",
     "ssh_terminal_closed": "Connexion fermée",
+    "ssh_terminal_closed_code": "Connexion fermée (code de sortie {code})",
     "ssh_terminal_error": "Erreur : {msg}",
     "ssh_btn_reconnect": "Se reconnecter",
     "ssh_hostkey_changed_title": "La clé d'hôte du serveur SSH a changé — attaque MITM possible",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "clé",
     "ssh_auth_badge_key_password": "clé + phrase",
     "files_symlink": "Lien symbolique",
-    "ssh_tor_err_invalid_country": "Les pays de sortie du proxy ne sont pas valides. Corrigez-les dans le proxy."
+    "ssh_tor_err_invalid_country": "Les pays de sortie du proxy ne sont pas valides. Corrigez-les dans le proxy.",
+    "ssh_sftp_err_no_subsystem": "SFTP n'est pas activé sur le serveur"
   },
   "mobile": {}
 }

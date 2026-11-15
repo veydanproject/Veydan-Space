@@ -99,6 +99,7 @@
     "ssh_delete_title": "Verbindung löschen",
     "ssh_delete_message": "„{name}“ löschen?",
     "ssh_terminal_closed": "Verbindung geschlossen",
+    "ssh_terminal_closed_code": "Verbindung geschlossen (Exit-Code {code})",
     "ssh_terminal_error": "Fehler: {msg}",
     "ssh_btn_reconnect": "Neu verbinden",
     "ssh_hostkey_changed_title": "Der Host-Schlüssel des SSH-Servers hat sich geändert — möglicher MITM-Angriff",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "Schlüssel",
     "ssh_auth_badge_key_password": "Schlüssel + Passphrase",
     "files_symlink": "Symbolischer Link",
-    "ssh_tor_err_invalid_country": "Die Exit-Länder des Proxys sind ungültig. Korrigiere sie im Proxy."
+    "ssh_tor_err_invalid_country": "Die Exit-Länder des Proxys sind ungültig. Korrigiere sie im Proxy.",
+    "ssh_sftp_err_no_subsystem": "SFTP ist auf dem Server nicht aktiviert"
   },
   "mobile": {}
 }

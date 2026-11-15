@@ -99,6 +99,7 @@
     "ssh_delete_title": "Excluir conexão",
     "ssh_delete_message": "Excluir \"{name}\"?",
     "ssh_terminal_closed": "Conexão encerrada",
+    "ssh_terminal_closed_code": "Conexão encerrada (código de saída {code})",
     "ssh_terminal_error": "Erro: {msg}",
     "ssh_btn_reconnect": "Reconectar",
     "ssh_hostkey_changed_title": "A chave do host do servidor SSH mudou — possível ataque MITM",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "chave",
     "ssh_auth_badge_key_password": "chave + frase",
     "files_symlink": "Link simbólico",
-    "ssh_tor_err_invalid_country": "Os países de saída do proxy não são válidos. Corrija-os no proxy."
+    "ssh_tor_err_invalid_country": "Os países de saída do proxy não são válidos. Corrija-os no proxy.",
+    "ssh_sftp_err_no_subsystem": "O SFTP não está ativado no servidor"
   },
   "mobile": {}
 }

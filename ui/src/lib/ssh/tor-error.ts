@@ -4,7 +4,8 @@
 import type { TranslationKey } from '$lib/core/i18n';
 import { formatError } from '$lib/core/utils';
 
-/** What the backend puts before the English text of an error that came through Tor: `tor_failed: …`. */
+/** What the backend puts before the English text of an error that came through Tor: `tor_failed: …`,
+ *  and of the one SFTP error said in words of its own. */
 const KEYS = {
   // The words of a Tor failure are the proxies' own (browser/i18n.ts); only
   // the exit countries of a proxy are said as SSH sees them.
@@ -17,14 +18,16 @@ const KEYS = {
   tor_in_use: 'proxy_tor_err_in_use',
   tor_no_builtin_bridges: 'proxy_tor_err_no_builtin_bridges',
   tor_no_transports: 'proxy_tor_err_no_transports',
+  // A server that refuses the SFTP subsystem (commands/sftp.rs, NO_SFTP).
+  sftp_no_subsystem: 'ssh_sftp_err_no_subsystem',
 } as const satisfies Record<string, TranslationKey>;
 
 export type TorErrorCode = keyof typeof KEYS;
 
-/** The first known `tor_*` code followed by `: ` in an error message, or null. */
+/** The first known `tor_*` (or `sftp_*`) code followed by `: ` in an error message, or null. */
 export function torErrorCode(message: string | null | undefined): TorErrorCode | null {
   if (!message) return null;
-  for (const m of message.matchAll(/(?<![a-z_])(tor_[a-z_]+): /g)) {
+  for (const m of message.matchAll(/(?<![a-z_])((?:tor|sftp)_[a-z_]+): /g)) {
     if (m[1] in KEYS) return m[1] as TorErrorCode;
   }
   return null;

@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "不开视频",
     "msg_call_err_no_camera": "未找到摄像头。通话将在无视频的情况下继续。",
     "msg_call_err_camera": "摄像头未能打开：{error}",
+    "msg_call_err_mic_denied": "通话需要麦克风。请在手机设置中允许应用使用。",
+    "msg_call_err_camera_denied": "视频需要摄像头。请在手机设置中允许应用使用。",
     "msg_call_err_screen": "无法共享屏幕：{error}",
     "msg_settings_tab_calls": "通话",
     "msg_calls_title": "通话",

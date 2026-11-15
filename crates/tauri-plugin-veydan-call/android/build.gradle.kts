@@ -55,6 +55,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     // The lifecycle of the camera's own (the same version the app brings).
     implementation("androidx.lifecycle:lifecycle-runtime:2.10.0")
+    // The permissions, asked from the live window (Permissions.kt of the shell, one for the plugins).
+    implementation(project(":veydan-shell"))
     // The decisions of CallRules.kt, on the JVM (src/test).
     testImplementation("junit:junit:4.13.2")
 }

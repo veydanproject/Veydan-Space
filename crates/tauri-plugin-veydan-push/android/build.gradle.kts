@@ -126,4 +126,6 @@ dependencies {
     // Named for the check "are Google services on this phone".
     implementation("com.google.android.gms:play-services-base:18.5.0")
     implementation(project(":tauri-android"))
+    // The permissions, asked from the live window (Permissions.kt of the shell, one for the plugins).
+    implementation(project(":veydan-shell"))
 }

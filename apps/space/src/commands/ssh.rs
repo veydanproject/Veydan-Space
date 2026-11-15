@@ -231,6 +231,8 @@ struct StatusChangedPayload {
     connection_id: String,
     status: SshStatus,
     error: Option<String>,
+    /// The shell's exit code when it was not 0: the terminal says it.
+    exit_status: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -352,6 +354,7 @@ fn emit_status(
     connection_id: &str,
     status: SshStatus,
     error: Option<String>,
+    exit_status: Option<u32>,
 ) {
     let _ = app.emit(
         "ssh://status-changed",
@@ -360,6 +363,7 @@ fn emit_status(
             connection_id: connection_id.to_string(),
             status,
             error,
+            exit_status,
         },
     );
 }
@@ -1242,6 +1246,7 @@ pub async fn ssh_connect(
         &connection_id,
         SshStatus::Connecting,
         None,
+        None,
     );
 
     // Load the proxy if one is configured. Fails closed: a dangling or
@@ -1256,12 +1261,8 @@ pub async fn ssh_connect(
     tokio::spawn(async move {
         let result = run_session(&app, &session_id, &conn, proxy, db, rx).await;
 
-        let (status, error) = match result {
-            Ok(()) => (SshStatus::Disconnected, None),
-            Err(e) => (SshStatus::Error, Some(e.to_string())),
-        };
-
-        emit_status(&app, &session_id, &conn.id, status, error);
+        let (status, error, exit_status) = session_end(result);
+        emit_status(&app, &session_id, &conn.id, status, error, exit_status);
 
         // Prune the finished session — the registry only holds live sessions.
         // The frontend keeps its own copy of session info (updated via the
@@ -1527,6 +1528,15 @@ pub(crate) async fn persist_connect_success(
     }
 }
 
+/// The status a finished session is reported with; an exit code 0 is said as none.
+fn session_end(result: anyhow::Result<Option<u32>>) -> (SshStatus, Option<String>, Option<u32>) {
+    match result {
+        Ok(code) => (SshStatus::Disconnected, None, code.filter(|&c| c != 0)),
+        Err(e) => (SshStatus::Error, Some(e.to_string()), None),
+    }
+}
+
+/// Ok with the shell's exit code, if the server sent one.
 async fn run_session(
     app: &AppHandle,
     session_id: &str,
@@ -1534,7 +1544,7 @@ async fn run_session(
     proxy: Option<crate::models::Proxy>,
     db: sqlx::SqlitePool,
     mut rx: mpsc::Receiver<SshInputCommand>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<u32>> {
     // The connection's own keepalive and connect timeout, as the SFTP path has them.
     let config = Arc::new(client::Config {
         keepalive_interval: Some(std::time::Duration::from_secs(
@@ -1601,9 +1611,10 @@ async fn run_session(
 
     channel.request_shell(false).await?;
 
-    emit_status(app, session_id, &conn.id, SshStatus::Connected, None);
+    emit_status(app, session_id, &conn.id, SshStatus::Connected, None, None);
 
     // Main loop: forward channel output to frontend, forward frontend input to channel
+    let mut exit_status = None;
     loop {
         tokio::select! {
             msg = channel.wait() => {
@@ -1614,7 +1625,11 @@ async fn run_session(
                     Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                         emit_data(app, session_id, data);
                     }
-                    Some(ChannelMsg::ExitStatus { .. }) | None => break,
+                    Some(ChannelMsg::ExitStatus { exit_status: code }) => {
+                        exit_status = Some(code);
+                        break;
+                    }
+                    None => break,
                     _ => {}
                 }
             }
@@ -1634,7 +1649,7 @@ async fn run_session(
     }
 
     channel.close().await?;
-    Ok(())
+    Ok(exit_status)
 }
 
 /// Every terminal session is told to disconnect: the module ssh is switched
@@ -1735,6 +1750,15 @@ pub async fn ssh_respond_prompt(
 #[cfg(test)]
 mod auth_tests {
     use super::*;
+
+    #[test]
+    fn the_exit_code_of_the_shell_is_said_when_not_0() {
+        assert_eq!(session_end(Ok(Some(3))), (SshStatus::Disconnected, None, Some(3)));
+        assert_eq!(session_end(Ok(Some(0))), (SshStatus::Disconnected, None, None));
+        assert_eq!(session_end(Ok(None)), (SshStatus::Disconnected, None, None));
+        let (status, error, code) = session_end(Err(anyhow::anyhow!("boom")));
+        assert_eq!((status, error.as_deref(), code), (SshStatus::Error, Some("boom"), None));
+    }
     use russh::MethodKind::{KeyboardInteractive as Kbd, Password as Pw, PublicKey as Pk};
 
     #[test]

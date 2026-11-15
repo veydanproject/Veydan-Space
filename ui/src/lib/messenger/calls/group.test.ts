@@ -222,7 +222,8 @@ describe('my own tile', () => {
 describe('the words of a camera that failed', () => {
   it('tell a camera that would not open from one that is not there', () => {
     expect(callErrorText({ code: 'other', message: 'camera busy' }, tr)).toBe('msg_call_err_camera');
-    expect(callErrorText('the camera is not allowed', tr)).toBe('msg_call_err_camera');
+    expect(callErrorText('the camera is not allowed', tr)).toBe('msg_call_err_camera_denied');
+    expect(callErrorText('call bridge: the microphone is not allowed', tr)).toBe('msg_call_err_mic_denied');
     expect(callErrorText('no camera', tr)).toBe('msg_call_err_no_camera');
   });
 });

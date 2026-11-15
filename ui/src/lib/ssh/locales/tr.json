@@ -99,6 +99,7 @@
     "ssh_delete_title": "Bağlantıyı sil",
     "ssh_delete_message": "\"{name}\" silinsin mi?",
     "ssh_terminal_closed": "Bağlantı kapandı",
+    "ssh_terminal_closed_code": "Bağlantı kapatıldı (çıkış kodu {code})",
     "ssh_terminal_error": "Hata: {msg}",
     "ssh_btn_reconnect": "Yeniden bağlan",
     "ssh_hostkey_changed_title": "SSH sunucusunun ana makine anahtarı değişti — olası MITM saldırısı",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "anahtar",
     "ssh_auth_badge_key_password": "anahtar + ifade",
     "files_symlink": "Sembolik bağlantı",
-    "ssh_tor_err_invalid_country": "Proxy'nin çıkış ülkeleri geçersiz. Bunları proxy ayarlarında düzeltin."
+    "ssh_tor_err_invalid_country": "Proxy'nin çıkış ülkeleri geçersiz. Bunları proxy ayarlarında düzeltin.",
+    "ssh_sftp_err_no_subsystem": "Sunucuda SFTP etkin değil"
   },
   "mobile": {}
 }

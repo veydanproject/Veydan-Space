@@ -99,6 +99,7 @@
     "ssh_delete_title": "연결 삭제",
     "ssh_delete_message": "“{name}”을(를) 삭제할까요?",
     "ssh_terminal_closed": "연결이 종료되었습니다",
+    "ssh_terminal_closed_code": "연결이 종료되었습니다(종료 코드 {code})",
     "ssh_terminal_error": "오류: {msg}",
     "ssh_btn_reconnect": "다시 연결",
     "ssh_hostkey_changed_title": "SSH 서버의 호스트 키가 변경되었습니다 — MITM 공격일 수 있습니다",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "키",
     "ssh_auth_badge_key_password": "키 + 암호 문구",
     "files_symlink": "심볼릭 링크",
-    "ssh_tor_err_invalid_country": "프록시의 출구 국가가 올바르지 않습니다. 프록시에서 수정하세요."
+    "ssh_tor_err_invalid_country": "프록시의 출구 국가가 올바르지 않습니다. 프록시에서 수정하세요.",
+    "ssh_sftp_err_no_subsystem": "서버에서 SFTP가 활성화되어 있지 않습니다"
   },
   "mobile": {}
 }

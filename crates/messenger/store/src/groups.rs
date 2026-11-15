@@ -214,7 +214,7 @@ pub async fn secrets_owed(store: &Store) -> Result<Vec<(String, String)>> {
 
 /// Those of `done` are owed no more.
 pub async fn secrets_forgotten(store: &Store, done: &[(String, String)]) -> Result<()> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
     let mut owed = secrets_owed_in(&mut tx).await?;
     owed.retain(|k| !done.contains(k));
     set_secrets_owed_in(&mut tx, &owed).await?;

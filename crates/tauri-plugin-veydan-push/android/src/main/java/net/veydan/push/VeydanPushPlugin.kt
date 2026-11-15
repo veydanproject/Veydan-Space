@@ -5,16 +5,17 @@ package net.veydan.push
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Base64
 import android.util.Log
 import android.webkit.WebView
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.ProcessLifecycleOwner
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
-import app.tauri.annotation.Permission
-import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -23,6 +24,7 @@ import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
+import net.veydan.shell.Permissions
 
 @InvokeArg
 class ContextArgs {
@@ -50,15 +52,20 @@ class KeysArgs {
   var bundle: String? = null
 }
 
-private const val NOTIFICATIONS = "notifications"
+private const val PREFS = "veydan-push"
+private const val ASKED = "notifications-asked"
 
-/** The app's side of the push bridge. Called from the app's Rust code only. */
-@TauriPlugin(
-  permissions = [
-    Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = NOTIFICATIONS)
-  ]
-)
+/**
+ * The app's side of the push bridge. Called from the app's Rust code only.
+ * The system's question for the notifications comes from the app's window
+ * live now (Permissions.kt of veydan-shell), not Tauri's launcher of the
+ * first window (ROO-1223); its state is read here, not from Tauri's cache
+ * of the answers ("PluginPermStates"), which that question does not write.
+ */
+@TauriPlugin
 class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
+  private val permissions = Permissions.of(activity)
+
   override fun load(webView: WebView) {
     PushState.attach(this)
     Notifier.ensureChannels(activity)
@@ -161,17 +168,28 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /** Whether the system's question was answered once: here, or by Tauri's before ROO-1223. */
+  private fun asked(): Boolean =
+    activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ASKED, false) ||
+      activity.getSharedPreferences("PluginPermStates", Context.MODE_PRIVATE)
+        .contains(Manifest.permission.POST_NOTIFICATIONS)
+
+  private fun systemGranted(): Boolean =
+    activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
   private fun state(): String {
     if (Notifier.allowed(activity)) return PermissionState.GRANTED.toString()
     // Before Android 13 there is nothing to ask: the user turned them off.
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+    // Granted by the system, turned off in the app's settings: the same.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || systemGranted()) {
       return PermissionState.DENIED.toString()
     }
-    return when (val state = getPermissionState(NOTIFICATIONS)) {
-      // Granted by the system, turned off in the app's settings.
-      PermissionState.GRANTED, null -> PermissionState.DENIED.toString()
-      else -> state.toString()
-    }
+    if (!asked()) return PermissionState.PROMPT.toString()
+    // Refused once: the system asks again. Refused for good: it does not.
+    val rationale = ActivityCompat.shouldShowRequestPermissionRationale(
+      activity, Manifest.permission.POST_NOTIFICATIONS
+    )
+    return if (rationale) PermissionState.PROMPT_WITH_RATIONALE.toString() else PermissionState.DENIED.toString()
   }
 
   @Command
@@ -181,18 +199,14 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun requestPermission(invoke: Invoke) {
-    val asked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-      getPermissionState(NOTIFICATIONS) != PermissionState.GRANTED
-    if (asked) {
-      requestPermissionForAlias(NOTIFICATIONS, invoke, "permissionAnswered")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !systemGranted()) {
+      permissions.ask(arrayOf(Manifest.permission.POST_NOTIFICATIONS)) {
+        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(ASKED, true).apply()
+        permissionState(invoke)
+      }
     } else {
       permissionState(invoke)
     }
-  }
-
-  @PermissionCallback
-  fun permissionAnswered(invoke: Invoke) {
-    permissionState(invoke)
   }
 
   @Command

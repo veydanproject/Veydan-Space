@@ -293,7 +293,11 @@
           </Notice>
         {:else}
           <Notice tone="danger" icon="wifi-off">
-            {session?.error ? $t('ssh_terminal_error', { msg: explainTorMessage(session.error, $t) }) : $t('ssh_terminal_closed')}
+            {session?.error
+              ? $t('ssh_terminal_error', { msg: explainTorMessage(session.error, $t) })
+              : session?.exit_status
+                ? $t('ssh_terminal_closed_code', { code: String(session.exit_status) })
+                : $t('ssh_terminal_closed')}
             {#snippet action()}
               <button class="btn btn-ghost btn-sm" type="button" onclick={reconnect}>{$t('ssh_btn_reconnect')}</button>
             {/snippet}

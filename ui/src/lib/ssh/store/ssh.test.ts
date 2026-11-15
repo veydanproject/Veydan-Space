@@ -58,6 +58,15 @@ describe('a login that ends before connect returns', () => {
     expect(sshStore.sessionById('s2')?.status).toBe('connected');
   });
 
+  it('keeps the exit code a session ended with', async () => {
+    api.ssh.connect.mockImplementationOnce(async () => 's10');
+    await sshStore.connect('c1');
+    emit('ssh://status-changed', { session_id: 's10', connection_id: 'c1', status: 'disconnected', exit_status: 3 });
+    expect(sshStore.sessionById('s10')?.exit_status).toBe(3);
+    emit('ssh://status-changed', { session_id: 's10', connection_id: 'c1', status: 'disconnected' });
+    expect(sshStore.sessionById('s10')?.exit_status).toBeNull();
+  });
+
   it.each([
     ['s6', 'c9', 'error', 'Permission denied'],
     ['s7', 'c8', 'connected', null],

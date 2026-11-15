@@ -15,7 +15,7 @@ use crate::commands::ssh::{
 };
 use crate::error::{AppError, CmdResult};
 use crate::models::{format_octal, format_permissions, FileEntry};
-use russh::client;
+use russh::{client, ChannelMsg};
 use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -312,8 +312,19 @@ async fn do_connect(
     // Pin the host key on first connect (TOFU) + stamp last_connected_at.
     crate::commands::ssh::persist_connect_success(&core.db, conn, received_fp.as_deref()).await;
 
-    let channel = handle.channel_open_session().await?;
+    let mut channel = handle.channel_open_session().await?;
     channel.request_subsystem(true, "sftp").await?;
+    // The reply comes before SFTP's own hello: a server without SFTP refuses
+    // here, and SftpSession would only wait out its timeout ("Timeout").
+    tokio::time::timeout(timeout, async {
+        loop {
+            if let Some(reply) = subsystem_reply(channel.wait().await.as_ref()) {
+                return reply;
+            }
+        }
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("SFTP subsystem: no reply ({}s)", timeout.as_secs()))??;
     let sftp = SftpSession::new(channel.into_stream()).await?;
 
     let home = sftp
@@ -330,6 +341,20 @@ async fn do_connect(
         handle,
         _jump: jump,
     }))
+}
+
+/// The frontend says this as "SFTP is not enabled on the server" (tor-error.ts).
+const NO_SFTP: &str = "sftp_no_subsystem: the server has no SFTP subsystem";
+
+/// What a message on the channel says of the `sftp` subsystem request:
+/// None while the reply has not come.
+fn subsystem_reply(msg: Option<&ChannelMsg>) -> Option<anyhow::Result<()>> {
+    match msg {
+        Some(ChannelMsg::Success) => Some(Ok(())),
+        Some(ChannelMsg::Failure) => Some(Err(anyhow::anyhow!(NO_SFTP))),
+        None => Some(Err(anyhow::anyhow!("the server closed the SFTP channel"))),
+        Some(_) => None,
+    }
 }
 
 // ── Listing ────────────────────────────────────────────────────────────────────
@@ -718,7 +743,19 @@ pub async fn sftp_respond_prompt(
 
 #[cfg(test)]
 mod tests {
-    use super::is_safe_name_on;
+    use super::{is_safe_name_on, subsystem_reply, NO_SFTP};
+    use russh::ChannelMsg;
+
+    #[test]
+    fn a_server_without_sftp_is_said_at_once() {
+        assert!(matches!(subsystem_reply(Some(&ChannelMsg::Success)), Some(Ok(()))));
+        let refused = subsystem_reply(Some(&ChannelMsg::Failure)).unwrap().unwrap_err();
+        assert_eq!(refused.to_string(), NO_SFTP);
+        assert!(NO_SFTP.starts_with("sftp_no_subsystem: "));
+        assert!(matches!(subsystem_reply(None), Some(Err(_))));
+        let window = ChannelMsg::WindowAdjusted { new_size: 1 };
+        assert!(subsystem_reply(Some(&window)).is_none());
+    }
 
     #[test]
     fn names_from_the_server() {

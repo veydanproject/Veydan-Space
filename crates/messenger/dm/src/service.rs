@@ -3262,6 +3262,83 @@ mod tests {
         }).unwrap()).await.is_empty());
     }
 
+    /// A contact unblocked on one device of mine is unblocked on the other
+    /// too, and stays so on both after their lists cross. It goes as two
+    /// signals, the unblock and the accept that leaves the peer in a
+    /// defined state; the accept is the later and is the peer's alone. Its
+    /// copy, come first, made the unblock's a stale one: the other device
+    /// kept the block with the time of the accept, and its list won the
+    /// second over this one by strictness (ROO-1213; a build before that
+    /// does so still, ROO-1229). A block taken on the other device in the
+    /// second of the accept is a decision of its own and wins that second
+    /// on both (ROO-1235).
+    #[tokio::test]
+    async fn an_unblock_holds_on_both_devices_and_a_block_in_its_second_wins() {
+        use crate::snapshot::Piece;
+        let (alice, bob) = mutual().await;
+        // Alice's other device, running, with her list.
+        let old = gated_with(alice.keys.clone()).await;
+        let pieces = |events: &[WireEvent]| -> Vec<Piece> {
+            events.iter().map(|e| Piece::of_json(&e.json, &alice.keys.public_key()).unwrap()).collect()
+        };
+        let (_, list) = alice.dm.build_relations_snapshot(&alice.keys, 1_000_000).await.unwrap();
+        old.dm.apply_relations_snapshot(&alice.keys, &pieces(&list)).await.unwrap();
+        assert_eq!(mode(&old, &bob).await, "full_chat");
+
+        let copies = |outs: &[Outbound]| -> Vec<WireEvent> {
+            outs.iter()
+                .filter_map(|o| match o {
+                    Outbound::PublishOwn { event } => Some(event.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let cross = || async {
+            let (_, theirs) = old.dm.build_relations_snapshot(&alice.keys, 1_000_000).await.unwrap();
+            let (_, mine) = alice.dm.build_relations_snapshot(&alice.keys, 1_000_000).await.unwrap();
+            alice.dm.apply_relations_snapshot(&alice.keys, &pieces(&theirs)).await.unwrap();
+            old.dm.apply_relations_snapshot(&alice.keys, &pieces(&mine)).await.unwrap();
+        };
+        let block = alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+        for c in copies(&block.outbounds) {
+            old.receive(&c).await;
+        }
+        assert_eq!(mode(&old, &bob).await, "blocked");
+        let unblock = alice.dm.act(&alice.keys, &bob.pk(), Action::Unblock).await.unwrap();
+        assert_eq!(unblock.outbounds.len(), 3, "the unblock to Bob and to me, the accept to Bob");
+        let unblock_copies = copies(&unblock.outbounds);
+        assert_eq!(unblock_copies.len(), 1, "the accept is Bob's alone");
+        assert_eq!(mode(&alice, &bob).await, "full_chat");
+        for c in &unblock_copies {
+            old.receive(c).await;
+        }
+        assert_eq!(mode(&old, &bob).await, "full_chat", "unblocked on the other device");
+        cross().await;
+        assert_eq!(mode(&alice, &bob).await, "full_chat", "the unblock holds here");
+        assert_eq!(mode(&old, &bob).await, "full_chat", "and there");
+
+        // Blocked again here, unblocked again; the other device has the
+        // unblock's copy and blocks in the second of the accept.
+        let block = alice.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+        for c in copies(&block.outbounds) {
+            old.receive(&c).await;
+        }
+        let unblock = alice.dm.act(&alice.keys, &bob.pk(), Action::Unblock).await.unwrap();
+        for c in copies(&unblock.outbounds) {
+            old.receive(&c).await;
+        }
+        assert_eq!(mode(&old, &bob).await, "full_chat");
+        let block = old.dm.act(&alice.keys, &bob.pk(), Action::Block).await.unwrap();
+        let accept_at = alice.dm.load_relation(&bob.pk()).await.unwrap().last_my_signal_at;
+        assert_eq!(old.dm.load_relation(&bob.pk()).await.unwrap().decided_at, accept_at, "the second of the accept");
+        for c in copies(&block.outbounds) {
+            alice.receive(&c).await;
+        }
+        cross().await;
+        assert_eq!(mode(&alice, &bob).await, "blocked", "the block stands here");
+        assert_eq!(mode(&old, &bob).await, "blocked", "and there");
+    }
+
     fn own_copy(outs: &[Outbound]) -> WireEvent {
         outs.iter()
             .find_map(|o| match o {

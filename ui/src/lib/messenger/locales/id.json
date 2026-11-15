@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Tanpa video",
     "msg_call_err_no_camera": "Kamera tidak ditemukan. Panggilan berlanjut tanpa video.",
     "msg_call_err_camera": "Kamera tidak menyala: {error}",
+    "msg_call_err_mic_denied": "Panggilan memerlukan mikrofon. Izinkan untuk aplikasi di pengaturan ponsel.",
+    "msg_call_err_camera_denied": "Video memerlukan kamera. Izinkan untuk aplikasi di pengaturan ponsel.",
     "msg_call_err_screen": "Layar tidak bisa dibagikan: {error}",
     "msg_settings_tab_calls": "Panggilan",
     "msg_calls_title": "Panggilan",

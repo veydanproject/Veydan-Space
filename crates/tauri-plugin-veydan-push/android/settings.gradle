@@ -1,2 +1,4 @@
 include ':tauri-android'
 project(':tauri-android').projectDir = new File('./.tauri/tauri-api')
+include ':veydan-shell'
+project(':veydan-shell').projectDir = new File('../../shell/android')

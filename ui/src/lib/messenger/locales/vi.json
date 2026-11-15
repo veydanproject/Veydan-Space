@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Không video",
     "msg_call_err_no_camera": "Không tìm thấy camera. Cuộc gọi tiếp tục không có video.",
     "msg_call_err_camera": "Không bật được camera: {error}",
+    "msg_call_err_mic_denied": "Cuộc gọi cần micrô. Hãy cho phép ứng dụng dùng micrô trong cài đặt điện thoại.",
+    "msg_call_err_camera_denied": "Video cần camera. Hãy cho phép ứng dụng dùng camera trong cài đặt điện thoại.",
     "msg_call_err_screen": "Không chia sẻ được màn hình: {error}",
     "msg_settings_tab_calls": "Cuộc gọi",
     "msg_calls_title": "Cuộc gọi",

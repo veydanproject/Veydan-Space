@@ -710,6 +710,16 @@ pub fn apply_own_signal(r: &Relationship, signal: Signal, at: i64) -> Option<Own
             }
         }
     }
+    // No signal but the block goes while I block the peer
+    // (`apply_my_action`): any other one says I did not block them then.
+    // An unblock goes with an accept or a removal after it, and that copy
+    // can come first and make the unblock's a stale one: it carries the
+    // unblock itself, or this device keeps the block with the time of the
+    // unblock, and its list wins that second over the device that decided
+    // (`merge_decision`, the stricter).
+    if signal != Signal::Block {
+        next.blocked = false;
+    }
     let mut merged = merge_decision(r, &next);
     // Of two decisions of the same second the merge keeps the one here when
     // it is as strict: then the copy did not stand, whatever its time says.
@@ -1296,6 +1306,12 @@ mod tests {
         let n = o.next;
         assert_eq!((n.decided_at, n.last_my_signal_at), (11, 11), "the copy carries the time of the decision");
         assert!(!own(&n, Signal::Unblock, 12).unwrap().blocked);
+        // An unblock goes as the unblock and the accept after it; the
+        // accept's copy came first, and the unblock's is stale after it.
+        let o = apply_own_signal(&n, Signal::Accept, 13).unwrap();
+        assert!(!o.next.blocked && o.stood, "an accept is never sent while I block");
+        assert!(own(&o.next, Signal::Unblock, 12).is_none());
+        assert!(!own(&n, Signal::ContactRemoved, 13).unwrap().blocked, "nor is a removal");
         // My removal elsewhere ends what their approval was for, as it did
         // there: no request comes back on this device.
         let n = own(&rel(M::Approved, false, P::Approved, true), Signal::ContactRemoved, 13).unwrap();

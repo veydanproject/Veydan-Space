@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Görüntüsüz",
     "msg_call_err_no_camera": "Kamera bulunamadı. Arama görüntüsüz sürüyor.",
     "msg_call_err_camera": "Kamera açılmadı: {error}",
+    "msg_call_err_mic_denied": "Aramalar için mikrofon gerekir. Telefon ayarlarından uygulamaya izin verin.",
+    "msg_call_err_camera_denied": "Görüntü için kamera gerekir. Telefon ayarlarından uygulamaya izin verin.",
     "msg_call_err_screen": "Ekran paylaşılamıyor: {error}",
     "msg_settings_tab_calls": "Aramalar",
     "msg_calls_title": "Aramalar",

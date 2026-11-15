@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "ビデオなし",
     "msg_call_err_no_camera": "カメラが見つかりません。通話はビデオなしで続きます。",
     "msg_call_err_camera": "カメラをオンにできませんでした：{error}",
+    "msg_call_err_mic_denied": "通話にはマイクが必要です。スマートフォンの設定でアプリに許可してください。",
+    "msg_call_err_camera_denied": "ビデオにはカメラが必要です。スマートフォンの設定でアプリに許可してください。",
     "msg_call_err_screen": "画面を共有できません：{error}",
     "msg_settings_tab_calls": "通話",
     "msg_calls_title": "通話",

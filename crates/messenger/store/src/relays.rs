@@ -148,7 +148,7 @@ pub async fn set_enabled(store: &Store, url: &str, enabled: bool) -> Result<()> 
 /// one transaction. Used when a manifest keeps a `relay_id` but changes its
 /// url.
 pub async fn migrate_url(store: &Store, old: &str, new: &str) -> Result<()> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
     // If the new url already exists as its own row, drop the old row instead of colliding.
     let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM msg_relays WHERE url = ?")
         .bind(new)

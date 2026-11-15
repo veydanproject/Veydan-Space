@@ -99,6 +99,7 @@
     "ssh_delete_title": "Hapus koneksi",
     "ssh_delete_message": "Hapus \"{name}\"?",
     "ssh_terminal_closed": "Koneksi ditutup",
+    "ssh_terminal_closed_code": "Koneksi ditutup (kode keluar {code})",
     "ssh_terminal_error": "Kesalahan: {msg}",
     "ssh_btn_reconnect": "Hubungkan ulang",
     "ssh_hostkey_changed_title": "Kunci host server SSH berubah — kemungkinan serangan MITM",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "kunci",
     "ssh_auth_badge_key_password": "kunci + frasa",
     "files_symlink": "Tautan simbolik",
-    "ssh_tor_err_invalid_country": "Negara keluar pada proksi tidak valid. Perbaiki di proksi."
+    "ssh_tor_err_invalid_country": "Negara keluar pada proksi tidak valid. Perbaiki di proksi.",
+    "ssh_sftp_err_no_subsystem": "SFTP tidak diaktifkan di server"
   },
   "mobile": {}
 }

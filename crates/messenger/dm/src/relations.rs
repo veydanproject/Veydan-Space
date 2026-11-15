@@ -491,9 +491,19 @@ impl DmService {
         let mut outbounds = Vec::new();
         let now = self.clock.now().secs();
         let mut last_at = now;
-        for s in &outcome.signals {
+        for (i, s) in outcome.signals.iter().enumerate() {
             let (at, mut out) = self.control(keys, &chat_id, peer, *s, invite).await?;
             last_at = at;
+            // The accept after an unblock is for the peer: my other devices
+            // have the contact approved already, and the unblock's copy
+            // tells them the rest. A device of mine of a build before
+            // ROO-1213 that took the accept's copy first kept the block with
+            // its time, and its list won that second by strictness on every
+            // device (ROO-1229). The decision here keeps the accept's time,
+            // so a block taken on another device in that second still wins.
+            if i > 0 && *s == Signal::Accept {
+                out.truncate(1);
+            }
             outbounds.append(&mut out);
         }
         // A decision taken here is dated: by the signal that tells my other

@@ -99,6 +99,7 @@
     "ssh_delete_title": "删除连接",
     "ssh_delete_message": "删除“{name}”？",
     "ssh_terminal_closed": "连接已关闭",
+    "ssh_terminal_closed_code": "连接已关闭（退出代码 {code}）",
     "ssh_terminal_error": "错误：{msg}",
     "ssh_btn_reconnect": "重新连接",
     "ssh_hostkey_changed_title": "SSH 服务器主机密钥已更改 — 可能是中间人（MITM）攻击",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "密钥",
     "ssh_auth_badge_key_password": "密钥 + 密码短语",
     "files_symlink": "符号链接",
-    "ssh_tor_err_invalid_country": "代理的出口国家无效。请在代理中修正。"
+    "ssh_tor_err_invalid_country": "代理的出口国家无效。请在代理中修正。",
+    "ssh_sftp_err_no_subsystem": "服务器未启用 SFTP"
   },
   "mobile": {}
 }

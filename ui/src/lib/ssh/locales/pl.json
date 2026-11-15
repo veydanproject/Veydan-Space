@@ -99,6 +99,7 @@
     "ssh_delete_title": "Usuń połączenie",
     "ssh_delete_message": "Usunąć „{name}”?",
     "ssh_terminal_closed": "Połączenie zamknięte",
+    "ssh_terminal_closed_code": "Połączenie zamknięte (kod wyjścia {code})",
     "ssh_terminal_error": "Błąd: {msg}",
     "ssh_btn_reconnect": "Połącz ponownie",
     "ssh_hostkey_changed_title": "Klucz hosta serwera SSH się zmienił — możliwy atak MITM",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "klucz",
     "ssh_auth_badge_key_password": "klucz + fraza",
     "files_symlink": "Dowiązanie symboliczne",
-    "ssh_tor_err_invalid_country": "Kraje wyjścia w proxy są nieprawidłowe. Popraw je w proxy."
+    "ssh_tor_err_invalid_country": "Kraje wyjścia w proxy są nieprawidłowe. Popraw je w proxy.",
+    "ssh_sftp_err_no_subsystem": "SFTP nie jest włączony na serwerze"
   },
   "mobile": {}
 }

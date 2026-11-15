@@ -22,18 +22,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import app.tauri.PermissionState
-import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
-import app.tauri.annotation.Permission
-import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
+import net.veydan.shell.Permissions
 import java.util.concurrent.Executors
 
 @InvokeArg
@@ -106,12 +103,6 @@ class SavePictureArgs {
 }
 
 private const val TAG = "VeydanMedia"
-private const val CAMERA = "camera"
-private const val IMAGES = "images"
-private const val VIDEO = "video"
-private const val SELECTED = "selected"
-private const val STORAGE = "storage"
-private const val WRITE = "write"
 private const val PREFS = "veydan-media"
 private const val ASKED = "asked"
 private const val CAMERA_ASKED = "camera-asked"
@@ -125,29 +116,19 @@ private const val CAMERA_ASKED = "camera-asked"
  *
  * Nothing is asked of the user before a tap: the access is only read until
  * the page asks for it (`request`), the camera's permission until the tile
- * of the camera is tapped (`camera` with `ask`, `capture`).
+ * of the camera is tapped (`camera` with `ask`, `capture`). The system's
+ * questions, the camera app and the Photo Picker come from the app's window
+ * live now (Permissions.kt of veydan-shell), not Tauri's launcher of the
+ * first window (ROO-1223).
  */
-@TauriPlugin(
-  permissions = [
-    Permission(strings = [MediaPermissions.IMAGES], alias = IMAGES),
-    Permission(strings = [MediaPermissions.VIDEO], alias = VIDEO),
-    Permission(strings = [MediaPermissions.USER_SELECTED], alias = SELECTED),
-    Permission(strings = [MediaPermissions.STORAGE], alias = STORAGE),
-    // Android 9 and older only (maxSdkVersion 28 in the products): the public Pictures of «Сохранить».
-    Permission(strings = [Manifest.permission.WRITE_EXTERNAL_STORAGE], alias = WRITE),
-    Permission(strings = [Manifest.permission.CAMERA], alias = CAMERA),
-  ]
-)
+@TauriPlugin
 class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
+  private val permissions = Permissions.of(activity)
   private val gallery = Gallery(activity)
   private val thumbs = Thumbs(activity)
   // MediaStore, the decoder and the disk off the thread that called.
   private val work = Executors.newFixedThreadPool(3)
   private val captureDir = File(activity.cacheDir, "attach-capture")
-  /** The file the camera app is writing into, while it is open. */
-  private var capturing: File? = null
-  /** The camera's rationale before the request of a tap on «Разрешить доступ». */
-  private var cameraRationale = false
 
   override fun load(webView: WebView) {
     // What a run before left: thumbnails and shots never imported.
@@ -181,12 +162,6 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(accessAnswer())
   }
 
-  private fun askedAliases(): Array<String> = when {
-    Build.VERSION.SDK_INT >= MediaPermissions.SDK_SELECTED -> arrayOf(IMAGES, VIDEO, SELECTED)
-    Build.VERSION.SDK_INT >= MediaPermissions.SDK_MEDIA -> arrayOf(IMAGES, VIDEO)
-    else -> arrayOf(STORAGE)
-  }
-
   /**
    * The user tapped «Разрешить доступ» (or «Выбрать ещё»): the system's
    * question, when it may still be shown; else the app's page of settings,
@@ -196,7 +171,8 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
   fun request(invoke: Invoke) {
     val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val access = accessNow()
-    val rationale = MediaPermissions.asked(Build.VERSION.SDK_INT).any {
+    val asked = MediaPermissions.asked(Build.VERSION.SDK_INT)
+    val rationale = asked.any {
       ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
     }
     if (!MediaPermissions.mayAsk(access, prefs.getBoolean(ASKED, false), rationale)) {
@@ -205,12 +181,7 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
     prefs.edit().putBoolean(ASKED, true).apply()
-    requestPermissionForAliases(askedAliases(), invoke, "accessAnswered")
-  }
-
-  @PermissionCallback
-  fun accessAnswered(invoke: Invoke) {
-    invoke.resolve(accessAnswer())
+    permissions.ask(asked) { invoke.resolve(accessAnswer()) }
   }
 
   private fun openSettings() {
@@ -317,8 +288,9 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
    * Answers `{ path }`, the `content://` address of the shot, or no path
    * when it was given up; `camera_denied`, `no_camera_app` refuse.
    */
-  private fun cameraAnswer(): JSObject =
-    JSObject().put("granted", getPermissionState(CAMERA) == PermissionState.GRANTED)
+  private fun cameraGranted() = granted(Manifest.permission.CAMERA)
+
+  private fun cameraAnswer(): JSObject = JSObject().put("granted", cameraGranted())
 
   /**
    * Whether the app may use the camera (`{ granted }`), read of the system:
@@ -329,7 +301,7 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun camera(invoke: Invoke) {
     val ask = invoke.parseArgs(CameraArgs::class.java).ask
-    if (!ask || getPermissionState(CAMERA) == PermissionState.GRANTED) {
+    if (!ask || cameraGranted()) {
       invoke.resolve(cameraAnswer())
       return
     }
@@ -341,31 +313,21 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
     prefs.edit().putBoolean(CAMERA_ASKED, true).apply()
-    cameraRationale = rationale
-    requestPermissionForAlias(CAMERA, invoke, "cameraRead")
+    permissions.ask(arrayOf(Manifest.permission.CAMERA)) { granted -> cameraRead(invoke, granted, rationale) }
   }
 
   /** Turned down with no question (refused for good before the tile asked): the settings at once. */
-  @PermissionCallback
-  fun cameraRead(invoke: Invoke) {
-    val granted = getPermissionState(CAMERA) == PermissionState.GRANTED
+  private fun cameraRead(invoke: Invoke, granted: Boolean, rationaleBefore: Boolean) {
     val rationale = ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)
-    if (MediaPermissions.refusedUnasked(granted, cameraRationale, rationale)) openSettings()
+    if (MediaPermissions.refusedUnasked(granted, rationaleBefore, rationale)) openSettings()
     invoke.resolve(cameraAnswer())
   }
 
   @Command
   fun capture(invoke: Invoke) {
-    if (getPermissionState(CAMERA) == PermissionState.GRANTED) {
-      startCamera(invoke)
-    } else {
-      requestPermissionForAlias(CAMERA, invoke, "cameraAnswered")
+    permissions.ask(arrayOf(Manifest.permission.CAMERA)) { granted ->
+      if (granted) startCamera(invoke) else invoke.reject("camera_denied")
     }
-  }
-
-  @PermissionCallback
-  fun cameraAnswered(invoke: Invoke) {
-    if (getPermissionState(CAMERA) == PermissionState.GRANTED) startCamera(invoke) else invoke.reject("camera_denied")
   }
 
   private fun startCamera(invoke: Invoke) {
@@ -378,23 +340,16 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
       .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
     // The grant reaches the camera app through the clip on every version.
     intent.clipData = ClipData.newRawUri("", uri)
-    capturing = file
-    try {
-      startActivityForResult(invoke, intent, "captured")
-    } catch (e: ActivityNotFoundException) {
-      capturing = null
-      invoke.reject("no_camera_app")
+    permissions.launch(intent) { result ->
+      if (result == null) {
+        invoke.reject("no_camera_app")
+      } else {
+        captured(invoke, file, result)
+      }
     }
   }
 
-  @ActivityCallback
-  fun captured(invoke: Invoke, result: ActivityResult) {
-    val file = capturing
-    capturing = null
-    if (file == null) {
-      invoke.resolve(JSObject())
-      return
-    }
+  private fun captured(invoke: Invoke, file: File, result: ActivityResult) {
     if (result.resultCode == Activity.RESULT_OK && file.isFile && file.length() > 0) {
       val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
       invoke.resolve(JSObject().put("path", uri.toString()))
@@ -436,10 +391,12 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
     } else {
       ActivityResultContracts.PickVisualMedia().createIntent(activity, request)
     }
-    try {
-      startActivityForResult(invoke, intent, if (args.multiple) "pickedMany" else "pickedOne")
-    } catch (e: ActivityNotFoundException) {
-      invoke.reject("no_picker")
+    permissions.launch(intent) { result ->
+      when {
+        result == null -> invoke.reject("no_picker")
+        args.multiple -> pickedMany(invoke, result)
+        else -> pickedOne(invoke, result)
+      }
     }
   }
 
@@ -449,13 +406,11 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject().put("paths", paths))
   }
 
-  @ActivityCallback
-  fun pickedMany(invoke: Invoke, result: ActivityResult) {
+  private fun pickedMany(invoke: Invoke, result: ActivityResult) {
     answerPaths(invoke, ActivityResultContracts.PickMultipleVisualMedia().parseResult(result.resultCode, result.data))
   }
 
-  @ActivityCallback
-  fun pickedOne(invoke: Invoke, result: ActivityResult) {
+  private fun pickedOne(invoke: Invoke, result: ActivityResult) {
     answerPaths(invoke, listOfNotNull(ActivityResultContracts.PickVisualMedia().parseResult(result.resultCode, result.data)))
   }
 
@@ -533,20 +488,14 @@ class VeydanMediaPlugin(private val activity: Activity) : Plugin(activity) {
    */
   @Command
   fun savePicture(invoke: Invoke) {
-    if (!mayWritePictures()) {
-      requestPermissionForAlias(WRITE, invoke, "savePictureAnswered")
+    if (mayWritePictures()) {
+      writePicture(invoke)
       return
     }
-    writePicture(invoke)
-  }
-
-  @PermissionCallback
-  fun savePictureAnswered(invoke: Invoke) {
-    if (!mayWritePictures()) {
-      invoke.reject("storage_denied")
-      return
+    // Android 9 and older only (maxSdkVersion 28 in the products): the public Pictures of «Сохранить».
+    permissions.ask(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)) { granted ->
+      if (granted) writePicture(invoke) else invoke.reject("storage_denied")
     }
-    writePicture(invoke)
   }
 
   private fun writePicture(invoke: Invoke) {

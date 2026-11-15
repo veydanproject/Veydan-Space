@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Bez wideo",
     "msg_call_err_no_camera": "Nie znaleziono kamery. Połączenie trwa bez wideo.",
     "msg_call_err_camera": "Kamera się nie włączyła: {error}",
+    "msg_call_err_mic_denied": "Do połączeń potrzebny jest mikrofon. Zezwól aplikacji na niego w ustawieniach telefonu.",
+    "msg_call_err_camera_denied": "Do wideo potrzebna jest kamera. Zezwól aplikacji na nią w ustawieniach telefonu.",
     "msg_call_err_screen": "Nie można udostępnić ekranu: {error}",
     "msg_settings_tab_calls": "Połączenia",
     "msg_calls_title": "Połączenia",

@@ -9,15 +9,13 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.webkit.WebView
-import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
-import app.tauri.annotation.Permission
-import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import net.veydan.shell.Permissions
 
 @InvokeArg
 class IncomingArgs {
@@ -84,16 +82,13 @@ private const val MICROPHONE = "microphone"
  *
  * The permissions of a call are the phone's: the camera does not open and
  * the service does not hold the microphone without them. The app asks for
- * them here (`requestPermission`), where the window to ask from is.
+ * them here (`requestPermission`), from the app's window live now
+ * (Permissions.kt of veydan-shell).
  */
-@TauriPlugin(
-  permissions = [
-    Permission(strings = [Manifest.permission.CAMERA], alias = CAMERA),
-    Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = MICROPHONE),
-  ]
-)
+@TauriPlugin
 class VeydanCallPlugin(private val activity: Activity) : Plugin(activity) {
   private val main = Handler(Looper.getMainLooper())
+  private val permissions = Permissions.of(activity)
 
   override fun load(webView: WebView) {
     CallState.attach(this)
@@ -261,22 +256,15 @@ class VeydanCallPlugin(private val activity: Activity) : Plugin(activity) {
    */
   @Command
   fun requestPermission(invoke: Invoke) {
-    val alias = invoke.parseArgs(PermissionArgs::class.java).permission
-    if (alias != CAMERA && alias != MICROPHONE) {
-      invoke.reject("not a permission: $alias")
-      return
+    val wanted = when (invoke.parseArgs(PermissionArgs::class.java).permission) {
+      CAMERA -> arrayOf(Manifest.permission.CAMERA)
+      MICROPHONE -> arrayOf(Manifest.permission.RECORD_AUDIO)
+      else -> {
+        invoke.reject("not a permission")
+        return
+      }
     }
-    if (getPermissionState(alias) == PermissionState.GRANTED) {
-      permissionAnswered(invoke)
-    } else {
-      requestPermissionForAlias(alias, invoke, "permissionAnswered")
-    }
-  }
-
-  @PermissionCallback
-  fun permissionAnswered(invoke: Invoke) {
-    val alias = invoke.parseArgs(PermissionArgs::class.java).permission
-    invoke.resolve(JSObject().put("granted", alias != null && getPermissionState(alias) == PermissionState.GRANTED))
+    permissions.ask(wanted) { granted -> invoke.resolve(JSObject().put("granted", granted)) }
   }
 
   @Command

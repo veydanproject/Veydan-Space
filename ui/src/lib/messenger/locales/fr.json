@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Sans vidéo",
     "msg_call_err_no_camera": "Aucune caméra trouvée. L’appel continue sans vidéo.",
     "msg_call_err_camera": "La caméra ne s’est pas activée : {error}",
+    "msg_call_err_mic_denied": "Les appels ont besoin du micro. Autorisez-le pour l’app dans les réglages du téléphone.",
+    "msg_call_err_camera_denied": "La vidéo a besoin de la caméra. Autorisez-la pour l’app dans les réglages du téléphone.",
     "msg_call_err_screen": "Impossible de partager l’écran : {error}",
     "msg_settings_tab_calls": "Appels",
     "msg_calls_title": "Appels",

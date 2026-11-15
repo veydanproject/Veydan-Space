@@ -18,7 +18,7 @@ export interface KeyboardPromptPayload {
   host_key?: string | null;
 }
 
-type StatusPayload = { session_id: string; connection_id: string; status: string; error?: string };
+type StatusPayload = { session_id: string; connection_id: string; status: string; error?: string; exit_status?: number | null };
 
 class SshStore {
   connections = $state<SshConnection[]>([]);
@@ -92,12 +92,17 @@ class SshStore {
     if (!isTauri) return Promise.resolve();
     this.listening ??= Promise.all([
       listen<StatusPayload>('ssh://status-changed', (e) => {
-        const { session_id, status, error } = e.payload;
+        const { session_id, status, error, exit_status } = e.payload;
         // The login is over: a question it asked has no one to answer it.
         if (status === 'error' || status === 'disconnected') delete this.prompts[session_id];
         const idx = this.sessions.findIndex((s) => s.session_id === session_id);
         if (idx >= 0) {
-          this.sessions[idx] = { ...this.sessions[idx], status: status as SshSessionInfo['status'], error: error ?? null };
+          this.sessions[idx] = {
+            ...this.sessions[idx],
+            status: status as SshSessionInfo['status'],
+            error: error ?? null,
+            exit_status: exit_status ?? null,
+          };
         } else if (this.pendingConnects.has(e.payload.connection_id)) {
           this.earlyStatus.set(session_id, e.payload);
         }
@@ -166,6 +171,7 @@ class SshStore {
         port: conn?.port ?? 22,
         status: (early?.status as SshSessionInfo['status']) ?? 'connecting',
         error: early?.error ?? null,
+        exit_status: early?.exit_status ?? null,
         connected_at: null,
       };
       this.sessions = [...this.sessions, info];

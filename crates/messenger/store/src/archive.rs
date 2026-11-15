@@ -316,7 +316,7 @@ pub async fn refused(store: &Store) -> Result<Vec<(String, String, String)>> {
 /// placed before keep their place, the others follow by `(at, id)` and
 /// are placed now, so that every later build has them at the same place.
 pub async fn order_for_write(store: &Store, scope: &str, month: &str) -> Result<Vec<WriteRow>> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
     let rows: Vec<(String, i64, Option<i64>, String)> = sqlx::query_as(
         "SELECT id, at, seq, event_json FROM msg_archive_events WHERE scope = ? AND month = ? AND dropped = 0
          ORDER BY seq IS NULL, seq, at, id",
@@ -668,7 +668,7 @@ pub async fn forget_written(store: &Store) -> Result<()> {
 /// server added again, merges the storage's files, and what was deleted
 /// must not come back with them. Returns the months it had, newest first.
 pub async fn remove_scope(store: &Store, scope: &str) -> Result<Vec<String>> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
     let months = remove_scope_in(&mut tx, scope).await?;
     tx.commit().await.map_err(storage)?;
     Ok(months)

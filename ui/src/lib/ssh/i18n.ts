@@ -108,6 +108,7 @@ export const translations = {
     ssh_delete_title: 'Delete connection',
     ssh_delete_message: 'Delete "{name}"?',
     ssh_terminal_closed: 'Connection closed',
+    ssh_terminal_closed_code: 'Connection closed (exit code {code})',
     ssh_terminal_error: 'Error: {msg}',
     ssh_btn_reconnect: 'Reconnect',
     ssh_hostkey_changed_title: 'SSH server host key changed — possible MITM attack',
@@ -218,6 +219,7 @@ export const translations = {
     ssh_auth_badge_key_password: 'key + pass',
     files_symlink: 'Symbolic link',
     ssh_tor_err_invalid_country: 'The exit countries of the proxy are not valid. Fix them in the proxy.',
+    ssh_sftp_err_no_subsystem: 'SFTP is not enabled on the server',
   },
   ru: {
     nav_files: 'Файлы',
@@ -321,6 +323,7 @@ export const translations = {
     ssh_delete_title: 'Удалить подключение',
     ssh_delete_message: 'Удалить "{name}"?',
     ssh_terminal_closed: 'Соединение закрыто',
+    ssh_terminal_closed_code: 'Соединение закрыто (код выхода {code})',
     ssh_terminal_error: 'Ошибка: {msg}',
     ssh_btn_reconnect: 'Переподключиться',
     ssh_hostkey_changed_title: 'Ключ SSH-сервера изменился — возможна MITM-атака',
@@ -431,6 +434,7 @@ export const translations = {
     ssh_auth_badge_key_password: 'ключ + фраза',
     files_symlink: 'Символическая ссылка',
     ssh_tor_err_invalid_country: 'Страны выхода в прокси указаны неверно. Исправьте их в прокси.',
+    ssh_sftp_err_no_subsystem: 'На сервере не включён SFTP',
   },
   mobile: {
     en: {

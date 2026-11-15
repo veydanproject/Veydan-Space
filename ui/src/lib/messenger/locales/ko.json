@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "영상 없이",
     "msg_call_err_no_camera": "카메라를 찾지 못했습니다. 통화는 영상 없이 계속됩니다.",
     "msg_call_err_camera": "카메라를 켜지 못했습니다: {error}",
+    "msg_call_err_mic_denied": "통화에는 마이크가 필요합니다. 휴대폰 설정에서 앱에 허용해 주세요.",
+    "msg_call_err_camera_denied": "영상에는 카메라가 필요합니다. 휴대폰 설정에서 앱에 허용해 주세요.",
     "msg_call_err_screen": "화면을 공유할 수 없습니다: {error}",
     "msg_settings_tab_calls": "통화",
     "msg_calls_title": "통화",

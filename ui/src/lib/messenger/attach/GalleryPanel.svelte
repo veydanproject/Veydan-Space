@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import type { AttachPanelProps } from '../seams/attach.svelte';
+  import { messengerError } from '../api';
   import { mediaLibrary } from './library';
   import { cameraAllowed, openPreview } from '../media/capture';
   import { CAMERA_DENIED, type Album, type MediaAccess, type MediaItem } from './MediaLibrary';
@@ -183,8 +184,8 @@
         note = $t('msg_attach_too_many', { n: String(model.max) });
       }
     } catch (e) {
-      const text = String(e instanceof Error ? e.message : e);
-      note = text.includes(CAMERA_DENIED) ? $t('msg_attach_camera_denied') : $t('msg_attach_camera_failed');
+      // A command's error is `{ code, message }`, not an Error.
+      note = messengerError(e).includes(CAMERA_DENIED) ? $t('msg_attach_camera_denied') : $t('msg_attach_camera_failed');
     } finally {
       await readCamera();
       void startPreview();

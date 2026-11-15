@@ -99,6 +99,7 @@
     "ssh_delete_title": "Xóa kết nối",
     "ssh_delete_message": "Xóa “{name}”?",
     "ssh_terminal_closed": "Kết nối đã đóng",
+    "ssh_terminal_closed_code": "Kết nối đã đóng (mã thoát {code})",
     "ssh_terminal_error": "Lỗi: {msg}",
     "ssh_btn_reconnect": "Kết nối lại",
     "ssh_hostkey_changed_title": "Khóa máy chủ SSH đã thay đổi — có thể là tấn công MITM",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "khóa",
     "ssh_auth_badge_key_password": "khóa + cụm MK",
     "files_symlink": "Liên kết tượng trưng",
-    "ssh_tor_err_invalid_country": "Các quốc gia thoát của proxy không hợp lệ. Hãy sửa chúng trong proxy."
+    "ssh_tor_err_invalid_country": "Các quốc gia thoát của proxy không hợp lệ. Hãy sửa chúng trong proxy.",
+    "ssh_sftp_err_no_subsystem": "SFTP chưa được bật trên máy chủ"
   },
   "mobile": {}
 }

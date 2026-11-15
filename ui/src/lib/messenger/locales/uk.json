@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Без відео",
     "msg_call_err_no_camera": "Камеру не знайдено. Дзвінок триває без відео.",
     "msg_call_err_camera": "Камера не ввімкнулася: {error}",
+    "msg_call_err_mic_denied": "Для дзвінка потрібен мікрофон. Дозвольте його застосунку в налаштуваннях телефона.",
+    "msg_call_err_camera_denied": "Для відео потрібна камера. Дозвольте її застосунку в налаштуваннях телефона.",
     "msg_call_err_screen": "Не вдалося показати екран: {error}",
     "msg_settings_tab_calls": "Дзвінки",
     "msg_calls_title": "Дзвінки",

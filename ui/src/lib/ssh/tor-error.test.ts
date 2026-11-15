@@ -26,6 +26,12 @@ describe('the Tor codes in an error message', () => {
     expect(torErrorCode(null)).toBeNull();
   });
 
+  it('says a server without SFTP in words of its own', () => {
+    expect(torErrorCode('sftp_no_subsystem: the server has no SFTP subsystem')).toBe('sftp_no_subsystem');
+    expect(explainError({ code: 'other', message: 'sftp_no_subsystem: the server has no SFTP subsystem' }, tr)).toBe('<ssh_sftp_err_no_subsystem>');
+    expect(torErrorCode('sftp_other: text')).toBeNull();
+  });
+
   it('translates a Tor message and leaves another one alone', () => {
     expect(explainTorMessage('tor_failed: boom', tr)).toBe('<proxy_tor_err_failed>');
     expect(explainTorMessage('connection refused', tr)).toBe('connection refused');

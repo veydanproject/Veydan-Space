@@ -99,6 +99,7 @@
     "ssh_delete_title": "Видалити підключення",
     "ssh_delete_message": "Видалити «{name}»?",
     "ssh_terminal_closed": "З'єднання закрито",
+    "ssh_terminal_closed_code": "З'єднання закрито (код виходу {code})",
     "ssh_terminal_error": "Помилка: {msg}",
     "ssh_btn_reconnect": "Перепідключитися",
     "ssh_hostkey_changed_title": "Ключ SSH-сервера змінився — можлива MITM-атака",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "ключ",
     "ssh_auth_badge_key_password": "ключ + фраза",
     "files_symlink": "Символічне посилання",
-    "ssh_tor_err_invalid_country": "Країни виходу в проксі вказано неправильно. Виправте їх у проксі."
+    "ssh_tor_err_invalid_country": "Країни виходу в проксі вказано неправильно. Виправте їх у проксі.",
+    "ssh_sftp_err_no_subsystem": "На сервері не ввімкнено SFTP"
   },
   "mobile": {}
 }

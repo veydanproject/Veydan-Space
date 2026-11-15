@@ -160,7 +160,7 @@ pub async fn set_owner(store: &Store, pubkey_hex: &str) -> Result<()> {
 /// (`GroupService::forget_gone`). The files of the media and the avatars
 /// are the runtime's to remove.
 pub async fn wipe(store: &Store) -> Result<()> {
-    let mut tx = store.pool().begin().await.map_err(storage)?;
+    let mut tx = store.pool().begin_with("BEGIN IMMEDIATE").await.map_err(storage)?;
     let keys: Vec<(String, String)> =
         sqlx::query_as("SELECT group_id, key_id FROM msg_group_keys ORDER BY group_id, key_id")
             .fetch_all(&mut *tx)

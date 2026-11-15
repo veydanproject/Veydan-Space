@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Ohne Video",
     "msg_call_err_no_camera": "Keine Kamera gefunden. Der Anruf geht ohne Video weiter.",
     "msg_call_err_camera": "Die Kamera ließ sich nicht einschalten: {error}",
+    "msg_call_err_mic_denied": "Für Anrufe wird das Mikrofon benötigt. Erlaube es der App in den Telefoneinstellungen.",
+    "msg_call_err_camera_denied": "Für Video wird die Kamera benötigt. Erlaube sie der App in den Telefoneinstellungen.",
     "msg_call_err_screen": "Der Bildschirm lässt sich nicht teilen: {error}",
     "msg_settings_tab_calls": "Anrufe",
     "msg_calls_title": "Anrufe",

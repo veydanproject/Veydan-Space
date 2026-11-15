@@ -1437,6 +1437,8 @@
     "msg_call_answer_voice": "Senza video",
     "msg_call_err_no_camera": "Nessuna fotocamera trovata. La chiamata continua senza video.",
     "msg_call_err_camera": "La fotocamera non si è attivata: {error}",
+    "msg_call_err_mic_denied": "Le chiamate richiedono il microfono. Consentilo all’app nelle impostazioni del telefono.",
+    "msg_call_err_camera_denied": "Il video richiede la fotocamera. Consentila all’app nelle impostazioni del telefono.",
     "msg_call_err_screen": "Impossibile condividere lo schermo: {error}",
     "msg_settings_tab_calls": "Chiamate",
     "msg_calls_title": "Chiamate",

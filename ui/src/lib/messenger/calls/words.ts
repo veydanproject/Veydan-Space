@@ -186,6 +186,9 @@ export function callErrorText(e: unknown, tr: Translate): string {
   if (/call is under way/i.test(text)) return tr('msg_call_err_busy');
   if (/no media engine/i.test(text)) return tr('msg_call_unavailable');
   if (/not logged in|messenger identity/i.test(text)) return tr('msg_call_err_locked');
+  // The phone's permission refused (call_android::permission_refused, Camera.start).
+  if (/microphone is not allowed/i.test(text)) return tr('msg_call_err_mic_denied');
+  if (/camera is not allowed/i.test(text)) return tr('msg_call_err_camera_denied');
   // My camera failed: the call itself goes on, without my video.
   if (/no camera/i.test(text)) return tr('msg_call_err_no_camera');
   if (/camera|\/dev\/video|uncompressed format/i.test(text)) return tr('msg_call_err_camera', { error: text });

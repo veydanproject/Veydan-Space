@@ -99,6 +99,7 @@
     "ssh_delete_title": "接続を削除",
     "ssh_delete_message": "「{name}」を削除しますか？",
     "ssh_terminal_closed": "接続が閉じられました",
+    "ssh_terminal_closed_code": "接続が閉じられました（終了コード {code}）",
     "ssh_terminal_error": "エラー：{msg}",
     "ssh_btn_reconnect": "再接続",
     "ssh_hostkey_changed_title": "SSHサーバーのホスト鍵が変更されました — MITM攻撃の可能性があります",
@@ -204,7 +205,8 @@
     "ssh_auth_badge_key": "鍵",
     "ssh_auth_badge_key_password": "鍵 + パスフレーズ",
     "files_symlink": "シンボリックリンク",
-    "ssh_tor_err_invalid_country": "プロキシの出口国が正しくありません。プロキシの設定で修正してください。"
+    "ssh_tor_err_invalid_country": "プロキシの出口国が正しくありません。プロキシの設定で修正してください。",
+    "ssh_sftp_err_no_subsystem": "サーバーで SFTP が有効になっていません"
   },
   "mobile": {}
 }

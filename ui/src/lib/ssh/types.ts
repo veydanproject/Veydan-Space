@@ -94,6 +94,8 @@ export interface SshSessionInfo {
   port: number;
   status: SshStatus;
   error: string | null;
+  /** The shell's exit code when it was not 0. */
+  exit_status?: number | null;
   connected_at: string | null;
 }
 
