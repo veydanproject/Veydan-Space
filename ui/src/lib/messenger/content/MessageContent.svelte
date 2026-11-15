@@ -11,6 +11,8 @@
   parsed them; drawn by Markdown.svelte, unless `plain`.
   `highlight`: what the search of the conversation asked; the words it
   found are marked (in a Markdown message, in its plain words).
+  `still`: links look as links and are words: no address, nothing to
+  open them, the system's own menu for a link neither (SelectTextDialog).
 -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
@@ -35,8 +37,9 @@
     cards?: boolean;
     rich?: MdBlock[] | null;
     highlight?: string;
+    still?: boolean;
   }
-  let { text, plain = false, cards = true, rich = null, highlight = '' }: Props = $props();
+  let { text, plain = false, cards = true, rich = null, highlight = '', still = false }: Props = $props();
 
   const md = $derived(!plain && !!rich?.length);
   const segments = $derived(md ? segmentsOf(rich!) : tokenize(text));
@@ -60,10 +63,10 @@
   }
 </script>
 
-{#snippet words(str: string)}{#each tokenize(str, highlight) as s}{#if s.type === 'text'}{s.text}{:else if s.type === 'mark'}<mark>{s.text}</mark>{:else if s.type === 'external'}{#if plain}{s.text}{:else}<a href={s.url} rel="noreferrer noopener" onclick={(e) => follow(e, s.url)}>{s.text}</a>{/if}{:else}{@const l = label(s.link)}<span class="chip" title={s.text}><Icon name={l.icon} size={11} />{l.text}</span>{/if}{/each}{/snippet}
+{#snippet words(str: string)}{#each tokenize(str, highlight) as s}{#if s.type === 'text'}{s.text}{:else if s.type === 'mark'}<mark>{s.text}</mark>{:else if s.type === 'external'}{#if plain}{s.text}{:else if still}<span class="link">{s.text}</span>{:else}<a href={s.url} rel="noreferrer noopener" onclick={(e) => follow(e, s.url)}>{s.text}</a>{/if}{:else}{@const l = label(s.link)}<span class="chip" title={s.text}><Icon name={l.icon} size={11} />{l.text}</span>{/if}{/each}{/snippet}
 
 {#if md}
-  <Markdown blocks={rich!} {words} />
+  <Markdown blocks={rich!} {words} {still} />
 {:else if !bare}
   <span class="text">{@render words(text)}</span>
 {/if}
@@ -78,7 +81,7 @@
   .text { font-size: var(--fs-body); line-height: var(--lh-body); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
   /* A word the search found: a yellow under it, in the text's own colour (on my bubble too). */
   mark { background: color-mix(in srgb, var(--warn) 40%, transparent); color: inherit; border-radius: 3px; }
-  a { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+  a, .link { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; max-width: 100%;
     padding: 0 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--accent-text-2);

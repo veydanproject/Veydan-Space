@@ -828,6 +828,8 @@
     "msg_message_more": "Más",
     "msg_composer_expand": "Editor ampliado",
     "msg_text_copied": "Texto copiado",
+    "msg_select_text": "Seleccionar texto",
+    "msg_select_copy_all": "Copiar todo",
     "msg_chat_archived_toast": "Chat movido al archivo",
     "msg_new_count": "{n} nuevos",
     "msg_new_count_one": "{n} nuevo",

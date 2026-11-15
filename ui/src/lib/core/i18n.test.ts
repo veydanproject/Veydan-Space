@@ -536,6 +536,9 @@ const ADDED: Record<'desktop' | 'mobile', Record<'en' | 'ru', Dict>> = {
       // The shell's exit code and a server without SFTP are said (ROO-1214).
       ssh_terminal_closed_code: 'Connection closed (exit code {code})',
       ssh_sftp_err_no_subsystem: 'SFTP is not enabled on the server',
+      // A message's words in a window of their own, to be selected (ROO-1255).
+      msg_select_text: 'Select text',
+      msg_select_copy_all: 'Copy all',
       // The connection is a promise; a message is shown sent for a moment (2026-10-05).
       msg_chat_connecting: 'connecting…',
       msg_net_lost: 'No connection to the relays',
@@ -2643,6 +2646,8 @@ msg_media_err_timeout: 'The storage did not answer in time.',
       ssh_tor_err_invalid_country: 'Страны выхода в прокси указаны неверно. Исправьте их в прокси.',
       ssh_terminal_closed_code: 'Соединение закрыто (код выхода {code})',
       ssh_sftp_err_no_subsystem: 'На сервере не включён SFTP',
+      msg_select_text: 'Выбрать текст',
+      msg_select_copy_all: 'Копировать всё',
       msg_chat_connecting: 'подключение…',
       msg_net_lost: 'Нет связи с реле',
       msg_status_waiting: 'Ждёт связи',

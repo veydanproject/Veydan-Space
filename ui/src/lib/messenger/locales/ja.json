@@ -828,6 +828,8 @@
     "msg_message_more": "その他",
     "msg_composer_expand": "拡張エディター",
     "msg_text_copied": "テキストをコピーしました",
+    "msg_select_text": "テキストを選択",
+    "msg_select_copy_all": "すべてコピー",
     "msg_chat_archived_toast": "チャットをアーカイブに移動しました",
     "msg_new_count": "新着 {n} 件",
     "msg_new_count_one": "新着 {n} 件",

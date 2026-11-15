@@ -828,6 +828,8 @@
     "msg_message_more": "Thêm",
     "msg_composer_expand": "Trình soạn thảo mở rộng",
     "msg_text_copied": "Đã sao chép văn bản",
+    "msg_select_text": "Chọn văn bản",
+    "msg_select_copy_all": "Sao chép tất cả",
     "msg_chat_archived_toast": "Đã chuyển cuộc trò chuyện vào lưu trữ",
     "msg_new_count": "{n} mới",
     "msg_new_count_one": "{n} mới",

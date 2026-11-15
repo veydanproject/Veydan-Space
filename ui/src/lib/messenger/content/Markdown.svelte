@@ -6,7 +6,8 @@
   (messenger-richtext::md): blocks and inlines drawn as elements and text
   nodes, never as HTML. A link shows the host it opens beside its words;
   a picture is a link to it, never loaded. `words` draws a run of plain
-  words with its bare links (MessageContent's own).
+  words with its bare links (MessageContent's own). `still`: a link has no
+  address and opens nothing, as MessageContent's.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -19,8 +20,9 @@
   interface Props {
     blocks: MdBlock[];
     words: Snippet<[string]>;
+    still?: boolean;
   }
-  let { blocks, words }: Props = $props();
+  let { blocks, words, still = false }: Props = $props();
 
   function follow(e: MouseEvent, url: string) {
     e.preventDefault();
@@ -28,7 +30,7 @@
   }
 </script>
 
-{#snippet inlines(list: MdInline[], linked: boolean)}{#each list as i}{#if i.kind === 'text'}{#if i.style?.bold || i.style?.italic || i.style?.strike}<span class:b={i.style?.bold} class:i={i.style?.italic} class:s={i.style?.strike}>{#if linked}{i.text}{:else}{@render words(i.text)}{/if}</span>{:else if linked}{i.text}{:else}{@render words(i.text)}{/if}{:else if i.kind === 'code'}<code class="ic">{i.text}</code>{:else if i.kind === 'break'}<br />{:else if i.host !== null}<a href={i.url} title={i.url} rel="noreferrer noopener" onclick={(e) => follow(e, i.url)}>{@render inlines(i.children, true)}</a>{#if !showsHost(wordsOf(i.children), i.host)}<span class="host">{i.host}</span>{/if}{:else}<span class="inside" title={i.url}>{@render inlines(i.children, true)}</span>{/if}{/each}{/snippet}
+{#snippet inlines(list: MdInline[], linked: boolean)}{#each list as i}{#if i.kind === 'text'}{#if i.style?.bold || i.style?.italic || i.style?.strike}<span class:b={i.style?.bold} class:i={i.style?.italic} class:s={i.style?.strike}>{#if linked}{i.text}{:else}{@render words(i.text)}{/if}</span>{:else if linked}{i.text}{:else}{@render words(i.text)}{/if}{:else if i.kind === 'code'}<code class="ic">{i.text}</code>{:else if i.kind === 'break'}<br />{:else if i.host !== null}{#if still}<span class="link" title={i.url}>{@render inlines(i.children, true)}</span>{:else}<a href={i.url} title={i.url} rel="noreferrer noopener" onclick={(e) => follow(e, i.url)}>{@render inlines(i.children, true)}</a>{/if}{#if !showsHost(wordsOf(i.children), i.host)}<span class="host">{i.host}</span>{/if}{:else}<span class="inside" title={i.url}>{@render inlines(i.children, true)}</span>{/if}{/each}{/snippet}
 
 {#snippet render(list: MdBlock[])}
   {#each list as b, n (n)}
@@ -84,9 +86,9 @@
   .h1 { font-size: var(--fs-xl); }
   .h2 { font-size: var(--fs-lg); }
   .h3 { font-size: var(--fs-md); }
-  a { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; }
+  a, .link { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; }
   /* Marks of the direction of writing in the words cannot move the words over the host beside them. */
-  a, .host, .inside { unicode-bidi: isolate; }
+  a, .link, .host, .inside { unicode-bidi: isolate; }
   /* Where a link leads, whatever its words say. */
   .host {
     display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: var(--radius-xs); vertical-align: baseline;

@@ -44,6 +44,8 @@
   import { serverStore } from '../servers/serverStore.svelte';
   import { privateInvite } from '../servers/privateInvite.svelte';
   import ForwardDialog from '../content/ForwardDialog.svelte';
+  import SelectTextDialog from '../content/SelectTextDialog.svelte';
+  import { hasText } from './selectable';
   import { buildTimeline } from '../content/timeline';
   import { holdBack } from '$lib/core/ui/sheetBack';
   import ArchiveEarlier from '../archive/ArchiveEarlier.svelte';
@@ -222,6 +224,16 @@
     menu.open = false;
     if (ids.length) forward = { open: true, ids: [...ids] };
   }
+  /** The message whose words are open to be selected (content/SelectTextDialog.svelte). */
+  let selecting = $state<MessengerMessage | null>(null);
+  /** The head, left sharp over the blur of that window. */
+  let headEl = $state<HTMLElement | null>(null);
+  function openSelect(m: MessengerMessage) {
+    menu.open = false;
+    selecting = m;
+  }
+  const copyText = (m: MessengerMessage) => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {});
+
   /** What of a pressed message (or its album) may be forwarded. */
   const fitOf = (m: MessengerMessage, album?: MessengerMessage[] | null) => (album?.length ? album : [m]).filter(forwardable).map((x) => x.id);
 
@@ -1238,7 +1250,10 @@
     if (filtering) {
       if (m.deleted) return list;
       list.push({ label: $t('msg_search_go'), icon: 'arrow-right', onselect: () => goToFound(m.id) });
-      if (m.text) list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
+      if (hasText(m)) {
+        list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => copyText(m) });
+        list.push({ label: $t('msg_select_text'), icon: 'cursor-text', onselect: () => openSelect(m) });
+      }
       const fit = fitOf(m, menu.album);
       if (fit.length) list.push({ label: $t('msg_fwd_forward'), icon: 'forward', onselect: () => openForward(fit) });
       return list;
@@ -1249,7 +1264,10 @@
       const fit = fitOf(m, menu.album);
       if (fit.length) list.push({ label: $t('msg_fwd_forward'), icon: 'forward', onselect: () => openForward(fit) });
       list.push({ label: $t('msg_fwd_select'), icon: 'check', onselect: () => startChoosing(fit) });
-      if (m.text) list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => navigator.clipboard.writeText(m.text ?? '').then(() => toast.success($t('msg_text_copied'))).catch(() => {}) });
+      if (hasText(m)) {
+        list.push({ label: $t('common_copy'), icon: 'copy', onselect: () => copyText(m) });
+        list.push({ label: $t('msg_select_text'), icon: 'cursor-text', onselect: () => openSelect(m) });
+      }
       const caption = menu.caption ?? m;
       if (canEdit(caption, chat.can_send)) list.push({ label: $t('common_edit'), icon: 'pencil', shortcut: !phone && lastEditable()?.id === caption.id ? '↑' : undefined, onselect: () => { replyTo = null; editing = caption; } });
       if (own && m.status === 'failed') list.push({ label: $t('common_retry'), icon: 'arrow-forward-up', onselect: () => guard(() => chatStore.retry(m.id)) });
@@ -1365,7 +1383,7 @@
 
 <section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
-  <header class="head" class:phone class:on-glass={phone}>
+  <header class="head" class:phone class:on-glass={phone} class:veiled={!!selecting} bind:this={headEl}>
     {#if choosing}
       <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={18} /></button>
       <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
@@ -1514,6 +1532,7 @@
 
 <MediaViewer />
 <ForwardDialog bind:open={forward.open} chatId={chat.id} ids={forward.ids} onforwarded={stopChoosing} />
+<SelectTextDialog message={selecting} author={isGroup ? author : undefined} clear={headEl} area={phone ? null : windowEl} onclose={() => (selecting = null)} />
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) && !filtering ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} width={menuWidth ? `${menuWidth}px` : undefined} onclose={() => (chatMenu.open = false)} />
@@ -1538,6 +1557,10 @@
     margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4);
   }
+  /* «Выбрать текст» open where the head draws no glass: the conversation under it is not
+     to be read through its fill (the window blurs all but the head). */
+  @media (prefers-reduced-transparency: reduce) { .head.phone.veiled { background: var(--bg-2); } }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .head.phone.veiled { background: var(--bg-2); } }
   /* The chip of transfers stands at the right of the name and the line under it, in the middle of the head, a place of its own in the row. */
   .head.phone { gap: var(--sp-2); }
   .chip-slot { display: contents; }

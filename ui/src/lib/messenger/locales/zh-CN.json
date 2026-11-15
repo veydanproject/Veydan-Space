@@ -828,6 +828,8 @@
     "msg_message_more": "更多",
     "msg_composer_expand": "扩展编辑器",
     "msg_text_copied": "文本已复制",
+    "msg_select_text": "选择文本",
+    "msg_select_copy_all": "全部复制",
     "msg_chat_archived_toast": "聊天已移至归档",
     "msg_new_count": "{n} 条新消息",
     "msg_new_count_one": "{n} 条新消息",

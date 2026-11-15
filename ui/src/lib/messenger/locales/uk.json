@@ -828,6 +828,8 @@
     "msg_message_more": "Ще",
     "msg_composer_expand": "Розширений редактор",
     "msg_text_copied": "Текст скопійовано",
+    "msg_select_text": "Виділити текст",
+    "msg_select_copy_all": "Копіювати все",
     "msg_chat_archived_toast": "Чат перенесено в архів",
     "msg_new_count": "{n} нових",
     "msg_new_count_one": "{n} нове",

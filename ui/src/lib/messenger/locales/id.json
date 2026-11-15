@@ -828,6 +828,8 @@
     "msg_message_more": "Lainnya",
     "msg_composer_expand": "Editor lengkap",
     "msg_text_copied": "Teks disalin",
+    "msg_select_text": "Pilih teks",
+    "msg_select_copy_all": "Salin semua",
     "msg_chat_archived_toast": "Obrolan dipindahkan ke arsip",
     "msg_new_count": "{n} baru",
     "msg_new_count_one": "{n} baru",

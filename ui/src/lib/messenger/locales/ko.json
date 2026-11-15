@@ -828,6 +828,8 @@
     "msg_message_more": "더 보기",
     "msg_composer_expand": "확장 편집기",
     "msg_text_copied": "텍스트가 복사됨",
+    "msg_select_text": "텍스트 선택",
+    "msg_select_copy_all": "모두 복사",
     "msg_chat_archived_toast": "채팅을 보관함으로 옮겼습니다",
     "msg_new_count": "새 메시지 {n}개",
     "msg_new_count_one": "새 메시지 {n}개",

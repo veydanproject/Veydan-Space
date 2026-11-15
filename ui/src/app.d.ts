@@ -35,6 +35,8 @@ declare namespace App {
     emojiDock?: boolean;
     /** The sheet of a dropdown list of a phone is open (core/ui/CustomSelect.svelte). */
     selectSheet?: boolean;
+    /** The window of a message's text to select is open (messenger/content/SelectTextDialog.svelte). */
+    selectText?: boolean;
     /** My profile is being edited (messenger/contacts/OwnProfileCard.svelte). */
     profileEdit?: boolean;
   }
