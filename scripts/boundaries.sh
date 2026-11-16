@@ -468,8 +468,11 @@ allowed() {
     media)     echo "messenger-core messenger-store messenger-http messenger-avatar" ;;
     groups)    echo "messenger-core messenger-store messenger-media messenger-dm messenger-links messenger-contacts messenger-richtext" ;;
     push)      echo "messenger-core messenger-http" ;;
-    presence)  echo "messenger-core messenger-store" ;;
-    notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink messenger-presence" ;;
+    # evidence: nip44::decrypt_v2, the one way the bytes of a NIP-44 payload
+    # open with a conversation key (the focus content, the blob of a sealed
+    # push); evidence itself takes no crate of the messenger, no cycle.
+    presence)  echo "messenger-core messenger-store messenger-evidence" ;;
+    notify)    echo "messenger-core messenger-store messenger-ingress messenger-contacts messenger-dm messenger-groups messenger-media messenger-transport messenger-vlink messenger-presence messenger-evidence" ;;
     calls)     echo "messenger-core messenger-store messenger-dm messenger-vlink" ;;
     runtime)   echo "messenger-core messenger-store messenger-transport messenger-identity messenger-ingress messenger-contacts messenger-dm messenger-media messenger-groups messenger-links messenger-preview messenger-push messenger-notify messenger-vlink messenger-http messenger-presence messenger-richtext messenger-avatar messenger-calls messenger-rtc messenger-evidence messenger-archive" ;;
     # The archive of the conversation in the sync storage: types and pure

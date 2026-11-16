@@ -1,21 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-//! Whether another device of mine is in sight now: what a phone woken by
-//! a push reads before it rings for a message (`messenger_notify`).
-//!
-//! The page of the app beats while it is on the screen, and a phone asleep
-//! beats not at all. So a live beat of my presence key that this device
-//! did not make says the user is in a chat on the computer now, and the
-//! phone shows the message without a sound.
+//! Whether another device of mine is in sight now, by the beats of my
+//! presence key that this device did not make.
 //!
 //! The runtime watches my own presence key in the subscription it holds
 //! for my contacts' keys anyway (`presence`), and the handler of beats
 //! writes down the newest beat of it that is not this device's own
-//! ([`heard_mine`]). The push handler only reads that ([`elsewhere`]): no
-//! question goes to a relay when a message comes, so no relay learns when
-//! one came. A phone whose process is gone hears no beat, and its record
-//! grows old: it rings as before.
+//! ([`heard_mine`]); [`elsewhere`] reads that. A phone woken by a push
+//! read it once to ring without a sound (ROO-1079); since ROO-1275 it asks
+//! my relays for the focus instead (`messenger_notify::focus`), and the
+//! record is kept for the runtime.
 //!
 //! A beat of this device is written down before it goes out
 //! ([`beating`]), so the copy that comes back from a relay, in this

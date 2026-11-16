@@ -166,6 +166,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_privacy_set", r3(crate::commands::messenger_privacy_set)));
     v.push(("messenger_presence_list", r1(crate::commands::messenger_presence_list)));
     v.push(("messenger_presence_foreground", r3(crate::commands::messenger_presence_foreground)));
+    v.push(("messenger_focus", r2(crate::commands::messenger_focus)));
     v.push(("messenger_chat_mark_read", r2(crate::commands::messenger_chat_mark_read)));
     v.push(("messenger_chat_set_pinned", r3(crate::commands::messenger_chat_set_pinned)));
     v.push(("messenger_chat_set_archived", r3(crate::commands::messenger_chat_set_archived)));

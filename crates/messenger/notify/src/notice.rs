@@ -40,8 +40,10 @@ pub struct Notice {
     pub body: Option<Body>,
     pub hide_on_lockscreen: bool,
     pub count: u32,
-    /// Shown without a sound: another device of mine is in sight, so the
-    /// user is reading there (`sight`). Absent in what an older core said.
+    /// Shown without a sound. Set by no core since ROO-1275: a chat read
+    /// on another device of mine is not shown at all
+    /// ([`Reason::ReadElsewhere`]); kept for the phone that reads it.
+    /// Absent in what an older core said.
     #[serde(default)]
     pub muted: bool,
 }
@@ -105,6 +107,11 @@ pub enum Reason {
     /// a wrap. Under the settings that open nothing but calls nothing is
     /// said of it; the app takes the event, whatever it is, when it runs.
     NotACall,
+    /// Another device of mine is reading the chat now: its focus event on
+    /// my relays names the chat and is live (`crate::focus`). Nothing is
+    /// shown, with a sound or without; the app takes the message when it
+    /// runs.
+    ReadElsewhere,
 }
 
 /// A signal that ends a ringing, come by push: the phone may ring for

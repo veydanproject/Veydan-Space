@@ -57,7 +57,11 @@ impl Handler<MetaInbound> for MetaHandler {
                     payload: serde_json::json!({ "count": follows.len() }),
                 })])
             }
-            MetaInbound::RelayList { .. } | MetaInbound::DmRelays { .. } | MetaInbound::Presence { .. } | MetaInbound::Relations { .. } => {
+            MetaInbound::RelayList { .. }
+            | MetaInbound::DmRelays { .. }
+            | MetaInbound::Presence { .. }
+            | MetaInbound::Focus { .. }
+            | MetaInbound::Relations { .. } => {
                 Ok(vec![])
             }
         }

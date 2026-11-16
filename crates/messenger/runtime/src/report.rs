@@ -728,7 +728,8 @@ async fn own_copies(
         let Ok(payload) = STANDARD.decode(seal.content.as_bytes()) else {
             continue;
         };
-        let Ok(plain) = nip44::v2::decrypt_to_bytes(&to_myself, &payload) else {
+        // The version byte first, as NIP-44 wants (decrypt_v2 says why).
+        let Ok(plain) = messenger_evidence::nip44::decrypt_v2(&to_myself, &payload) else {
             continue;
         };
         let Ok(rumor) = serde_json::from_slice::<UnsignedEvent>(&plain) else {
@@ -751,8 +752,9 @@ mod tests {
     use crate::tests::{ctx_of, pk_of};
     use messenger_core::outbound::WireEvent;
     use messenger_core::{
-        Envelope, EventSource, MessengerConfig, PubKey, RawEvent, RelayUrl, Timestamp,
+        Envelope, EventId, EventSource, MessengerConfig, PubKey, RawEvent, RelayUrl, Timestamp,
     };
+    use nostr::event::{EventBuilder, FinalizeEvent, Tag};
     use messenger_store::chats;
     use messenger_store::messages::NewMessage;
     use messenger_testkit::{open_dm, MemorySecretStore};
@@ -989,6 +991,81 @@ mod tests {
 
     /// A message whose wrap this device no longer keeps goes with the word
     /// why, and proves nothing; the others still do.
+    /// My copy of a message whose seal is not NIP-44 v2 proves nothing:
+    /// the version byte is read before the decryption, which the MAC alone
+    /// would let through.
+    #[tokio::test]
+    async fn a_copy_of_mine_of_another_nip44_version_is_not_opened() {
+        let (_dir, rt, me) = started(false).await;
+        let bob = Keys::generate();
+        let id = to_peer(&rt, &me, &bob, "mine").await;
+        let wanted: HashMap<String, usize> = HashMap::from([(id.clone(), 0)]);
+        let t = now();
+        let found = own_copies(rt.store(), &me, &wanted, t, t).await.unwrap();
+        assert_eq!(found.len(), 1, "the copy as it stands opens");
+
+        // The seal of that copy, its payload under another version byte,
+        // sealed by me again and wrapped anew; a month back, so that the
+        // copy as it stands is out of the window.
+        let (_, json) = events_raw::raw_in_window(rt.store(), messenger_evidence::KIND_GIFT_WRAP, 0, t + 60, 10)
+            .await
+            .unwrap()
+            .pop()
+            .expect("the copy of mine is kept");
+        let wrap: Event = serde_json::from_str(&json).unwrap();
+        let seal: Event =
+            serde_json::from_str(&nip44::decrypt(me.secret_key(), &wrap.pubkey, &wrap.content).unwrap()).unwrap();
+        let payload = STANDARD.decode(seal.content.as_bytes()).unwrap();
+        assert_eq!(payload[0], 2, "the seal is v2");
+        let to_myself = ConversationKey::derive(me.secret_key(), &me.public_key()).unwrap();
+        let far = t - 30 * 86_400;
+        let rewrap = |payload: &[u8], at: i64| {
+            let seal = EventBuilder::new(Kind::Seal, STANDARD.encode(payload))
+                .custom_created_at(nostr::types::Timestamp::from_secs(at as u64))
+                .finalize(&me)
+                .unwrap();
+            let random = Keys::generate();
+            let content = nip44::encrypt(
+                random.secret_key(),
+                &me.public_key(),
+                serde_json::to_string(&seal).unwrap(),
+                nip44::Version::V2,
+            )
+            .unwrap();
+            let wrap = EventBuilder::new(Kind::GiftWrap, content)
+                .tag(Tag::public_key(me.public_key()))
+                .custom_created_at(nostr::types::Timestamp::from_secs(at as u64))
+                .finalize(&random)
+                .unwrap();
+            RawEvent {
+                id: EventId::parse(&wrap.id.to_hex()).unwrap(),
+                kind: 1059,
+                pubkey: PubKey::parse(&wrap.pubkey.to_hex()).unwrap(),
+                created_at: Timestamp(at),
+                json: serde_json::to_value(&wrap).unwrap(),
+                source: EventSource::Relay {
+                    url: RelayUrl::parse("wss://r.example").unwrap(),
+                },
+            }
+        };
+        for (i, version) in [0u8, 1, 3, 255].into_iter().enumerate() {
+            let mut other = payload.clone();
+            other[0] = version;
+            assert!(
+                nip44::v2::decrypt_to_bytes(&to_myself, &other).is_ok(),
+                "version {version}: nostr's v2 decryptor reads no version, the check must be ours"
+            );
+            assert!(events_raw::insert_if_new(rt.store(), &rewrap(&other, far + i as i64)).await.unwrap());
+        }
+        let found = own_copies(rt.store(), &me, &wanted, far, far + 4).await.unwrap();
+        assert_eq!(found.len(), 0, "a seal of another version is not opened");
+        // The same payload, its byte as it was, rewrapped the same way: found.
+        assert!(events_raw::insert_if_new(rt.store(), &rewrap(&payload, far + 4)).await.unwrap());
+        let found = own_copies(rt.store(), &me, &wanted, far, far + 4).await.unwrap();
+        assert_eq!(found.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), [id.as_str()]);
+        rt.shutdown().await;
+    }
+
     #[tokio::test]
     async fn a_message_without_its_wrap_goes_with_the_word_why() {
         let (_dir, rt, me) = started(false).await;

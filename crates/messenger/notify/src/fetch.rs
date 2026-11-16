@@ -14,9 +14,13 @@
 //! it stays within what the system gives a push to be handled in
 //! (`BUDGET`), and the invitation of a call is good for 45 s from its
 //! making: a push that took longer to come rings nothing anyway.
+//!
+//! In silent mode nothing is asked: the app reaches no relay then, and the
+//! process a push started does not either. The push is told as one that
+//! could not be had (ROO-1308).
 
 use messenger_core::{MessengerError, RelayUrl, Result};
-use messenger_store::{relays, Store};
+use messenger_store::{relays, settings, Store};
 use messenger_transport::RelayConfig;
 use nostr_sdk::prelude::*;
 use std::time::{Duration, Instant};
@@ -33,8 +37,12 @@ pub const PATIENCE: Duration = Duration::from_secs(5);
 pub const BUDGET: Duration = Duration::from_secs(15);
 
 /// The event as JSON, or None when the relay had nothing to say in time
-/// (or said it has no such event: expired, or never there).
+/// (or said it has no such event: expired, or never there), and in silent
+/// mode, where no relay is reached; an unreadable switch counts as on.
 pub async fn event(store: &Store, relay: &str, event_id: &str) -> Result<Option<serde_json::Value>> {
+    if !matches!(settings::get_bool(store, relays::KEY_SILENT, false).await, Ok(false)) {
+        return Ok(None);
+    }
     let url = RelayUrl::parse(relay).ok_or_else(|| MessengerError::Invalid("relay url".into()))?;
     // The relay may be one of mine with a gate key on it.
     let api_key = relays::list(store)
@@ -85,4 +93,35 @@ pub async fn event(store: &Store, relay: &str, event_id: &str) -> Result<Option<
     }
     client.disconnect().await;
     Ok(found.flatten().map(|e| serde_json::to_value(&e).expect("an event serializes")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use messenger_core::MessengerConfig;
+
+    /// In silent mode the event is not fetched: no connection, so no
+    /// question either. With silent mode off the relay is reached.
+    #[tokio::test]
+    async fn silent_mode_fetches_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&MessengerConfig::new(dir.path().join("messenger"))).await.unwrap();
+        // A relay that only counts who comes.
+        let relay = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", relay.local_addr().unwrap());
+        let id = "ab".repeat(32);
+
+        settings::set_bool(&store, relays::KEY_SILENT, true).await.unwrap();
+        assert!(event(&store, &url, &id).await.unwrap().is_none());
+        let came = tokio::time::timeout(Duration::from_millis(200), relay.accept()).await.is_ok();
+        assert!(!came, "no connection in silent mode");
+
+        settings::set_bool(&store, relays::KEY_SILENT, false).await.unwrap();
+        let came = tokio::select! {
+            _ = event(&store, &url, &id) => false,
+            accepted = tokio::time::timeout(CONNECT, relay.accept()) => accepted.is_ok(),
+        };
+        assert!(came, "reached with silent mode off");
+        store.close().await;
+    }
 }

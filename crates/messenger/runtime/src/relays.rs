@@ -20,7 +20,7 @@ use tokio::sync::RwLock;
 const KEY_SERIAL: &str = "manifest.serial";
 const KEY_ISSUED_AT: &str = "manifest.issued_at";
 const KEY_REGION: &str = "manifest.region";
-pub(crate) const KEY_SILENT: &str = "relays.silent_mode";
+pub(crate) const KEY_SILENT: &str = repo::KEY_SILENT;
 pub(crate) const KEY_MODE: &str = "servers.mode";
 /// The document of the manifest in use, written for the record (and for an
 /// older build after a downgrade). Never read back: see `KEY_SIGNED`.

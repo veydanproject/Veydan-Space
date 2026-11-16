@@ -2203,6 +2203,7 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_privacy_get: () => mockPrivacy,
   messenger_presence_list: () => mockPresence(),
   messenger_presence_foreground: () => undefined,
+  messenger_focus: () => undefined,
   messenger_privacy_set: (a) => { mockPrivacy = { read_receipts: Boolean(a?.readReceipts), presence: Boolean(a?.presence) }; return mockPrivacy; },
   messenger_moderation_requests: (a): RequestsPage => {
     const all = mockRequests();
@@ -2612,6 +2613,12 @@ export const messengerApi = {
     /** `true` is a lease of 90 s: say it again every 45 s while the page is visible. */
     foreground: (visible: boolean) => invoke<void>('messenger_presence_foreground', { visible }),
   },
+
+  /**
+   * The chat I am reading here now, or none: my other devices show nothing for it.
+   * A chat holds for five minutes: say it again while the user does something in it.
+   */
+  focus: (chatId: string | null) => invoke<void>('messenger_focus', { chatId }),
 
   /** Which emoji I used last and use most, the same on every device of mine. */
   emoji: {

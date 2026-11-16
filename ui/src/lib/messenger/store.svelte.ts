@@ -24,6 +24,7 @@ import {
 } from './api';
 import { avatarStore } from './contacts/avatars.svelte';
 import { chatStore, inSight, lockSight } from './chats/chatStore.svelte';
+import { focusLease } from './chats/focus.svelte';
 import { transferStore } from './media/transferStore.svelte';
 import { groupStore } from "./groups/groupStore.svelte";
 import { nameStore } from "./groups/names.svelte";
@@ -315,7 +316,7 @@ class MessengerStore {
       await listen('lock://locked', () => this.lockChanged(true)),
       await listen('lock://unlocked', () => this.lockChanged(false)),
     );
-    this._unlisten.push(this.leaseForeground());
+    this._unlisten.push(this.leaseForeground(), focusLease());
   }
 
   /**

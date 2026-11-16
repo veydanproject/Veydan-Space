@@ -12,19 +12,21 @@
 //!
 //! It runs where the app does not: in a process a push started, with no
 //! window and no runtime. So it opens the database read-only, takes the
-//! keys as a bundle the app exported, and uses no network but one short
-//! question to a relay when the push could not carry the event.
+//! keys as a bundle the app exported, and uses no network but a short
+//! question to a relay when the push could not carry the event, and one to
+//! my relays of whether another device of mine is reading the chat
+//! ([`focus`]).
 
 pub mod bundle;
 pub mod describe;
 pub mod fetch;
+pub mod focus;
 pub mod live;
 pub mod net;
 pub mod notice;
 pub mod push;
 pub mod sealed;
 pub mod settings;
-pub mod sight;
 
 pub use bundle::{GroupKeyEntry, KeyBundle};
 pub use sealed::{is_sealed, unseal_as, Unsealed};

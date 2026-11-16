@@ -24,6 +24,16 @@
 //! The look around is decided under one lock (`turn`), which a rotation
 //! waits for; what goes to the relays (the subscription, the beat) is
 //! sent after the lock is let go, so a slow relay holds up no command.
+//!
+//! Beside the beat, the focus (messenger-wire.md §8, «Фокус»; ROO-1275):
+//! which chat I am reading on this device, said to my other devices so
+//! that they show no notification for it. The page names the chat
+//! (`focus`) while it is in sight, its window has the focus and the user
+//! does something in it; the name holds `FOCUS_IDLE_SECS` past the last
+//! word. The focus event goes as a beat does, past the outbox, every half
+//! minute and at once when the chat changes, and once with no chat when
+//! the page leaves it. My focus key is watched whatever the presence
+//! switch says: it tells nobody but my devices anything.
 
 use crate::MessengerRuntime;
 use messenger_contacts::ContactService;
@@ -32,7 +42,9 @@ use messenger_core::{Clock, Envelope, Outbound, PubKey, Result, Scope, SubId, Tr
 use messenger_dm::wrap::{wrap_note, wrap_own};
 use messenger_dm::{presence_proof, DmService};
 use messenger_ingress::{filters, Outbox};
-use messenger_presence::{heartbeat, key, sight, view, PresenceView, BEAT_JITTER_SECS, BEAT_SECS};
+use messenger_presence::{
+    elsewhere, focus, heartbeat, key, sight, view, FocusKeys, FocusSlot, PresenceView, BEAT_JITTER_SECS, BEAT_SECS,
+};
 use messenger_store::{presence, settings, Store};
 use messenger_transport::RelayPool;
 use nostr::key::Keys;
@@ -53,13 +65,37 @@ pub const PRESENCE_TICK_SECS: u64 = 5;
 /// How long the page counts as in sight after it last said so. The page
 /// says so every 45 s while it is.
 pub const FOREGROUND_LEASE_SECS: i64 = 90;
+/// How long the page counts as reading its chat after it last said so;
+/// it says so when the user does something in it (a pointer, a key). Five
+/// minutes without a touch, and my other devices notify again (ROO-1275).
+pub const FOCUS_IDLE_SECS: i64 = 300;
+/// The epoch of the focus keys, the push handler's as well.
+pub use messenger_presence::FOCUS_EPOCH;
 
+/// How far ahead of the clock a focus event may be dated so that each is
+/// later than the one before (`PresenceDriver::focus_if_due`): well within
+/// what a reader takes (`FOCUS_AHEAD_SECS`).
+pub const FOCUS_LEAD_SECS: i64 = 5;
 const PRESENCE_TICK: Duration = Duration::from_secs(PRESENCE_TICK_SECS);
 
 /// Whether to beat now: the page is in sight, the app may reach relays,
 /// and the last beat is a beat's interval (with its jitter) behind.
 pub fn beat_due(now: i64, foreground_until: i64, last_beat: i64, silent: bool, jitter: i64) -> bool {
     !silent && now < foreground_until && now - last_beat >= BEAT_SECS + jitter
+}
+
+/// The chat this device is reading at `now`: the one the page named, while
+/// its word and the page's lease of being in sight both hold.
+pub fn focus_wanted(now: i64, foreground_until: i64, chat: Option<&str>, focus_until: i64) -> Option<&str> {
+    chat.filter(|_| now < foreground_until && now < focus_until)
+}
+
+/// Whether to say the focus now: what is wanted is not what was said last
+/// (a chat opened, changed or left), or a chat is being read and the last
+/// word is a beat's interval (with its jitter) behind. Nothing in silent
+/// mode; nothing again while no chat is read.
+pub fn focus_due(now: i64, wanted: Option<&str>, said: Option<&str>, last: i64, silent: bool, jitter: i64) -> bool {
+    !silent && (wanted != said || (wanted.is_some() && now - last >= BEAT_SECS + jitter))
 }
 
 /// Whether a note saying `since` may go at `now`. A contact counts a
@@ -95,10 +131,26 @@ pub struct PresenceDriver {
     epoch_key: std::sync::Mutex<Option<(String, u32, Keys)>>,
     /// One look around at a time; a rotation waits for it.
     turn: Mutex<()>,
+    /// My focus keys of this session, shared with the handler that opens
+    /// what my other devices say (`messenger_presence::FocusHandler`).
+    focus_keys: FocusSlot,
+    /// The chat the page names, until when its word holds, and the number
+    /// of the word (`set_focus`).
+    focus_lease: std::sync::Mutex<(Option<String>, i64, u64)>,
+    /// What this device said last and when (0: say at the first chance).
+    focus_said: std::sync::Mutex<(Option<String>, i64)>,
+    /// How many focus events this run made: picks the next jitter.
+    focus_beats: AtomicU64,
+    /// The `created_at` of the last focus event made: the next is later.
+    focus_at: AtomicI64,
+    /// One focus event at a time: the tick and the page may both find one due.
+    focus_turn: Mutex<()>,
+    /// The focus key the pool watches now.
+    focus_watched: Mutex<Option<String>>,
 }
 
 impl PresenceDriver {
-    pub fn new(store: Store, dm: DmService, contacts: ContactService, outbox: Outbox) -> Self {
+    pub fn new(store: Store, dm: DmService, contacts: ContactService, outbox: Outbox, focus_keys: FocusSlot) -> Self {
         Self {
             store,
             dm,
@@ -110,6 +162,13 @@ impl PresenceDriver {
             subscribed: Mutex::new(Vec::new()),
             epoch_key: std::sync::Mutex::new(None),
             turn: Mutex::new(()),
+            focus_keys,
+            focus_lease: std::sync::Mutex::new((None, 0, 0)),
+            focus_said: std::sync::Mutex::new((None, 0)),
+            focus_beats: AtomicU64::new(0),
+            focus_at: AtomicI64::new(0),
+            focus_turn: Mutex::new(()),
+            focus_watched: Mutex::new(None),
         }
     }
 
@@ -126,6 +185,9 @@ impl PresenceDriver {
         self.subscribed.lock().await.clear();
         *self.epoch_key.lock().unwrap() = None;
         self.last_beat.store(0, Ordering::SeqCst);
+        *self.focus_watched.lock().await = None;
+        *self.focus_keys.write().unwrap() = None;
+        *self.focus_said.lock().unwrap() = (None, 0);
         if let Err(e) = self.dm.presence_devices_unsure().await {
             eprintln!("messenger presence: my devices not told: {e}");
         }
@@ -134,11 +196,38 @@ impl PresenceDriver {
     /// The device woke from a sleep: beat at the next chance.
     pub fn woke(&self) {
         self.last_beat.store(0, Ordering::SeqCst);
+        self.focus_said.lock().unwrap().1 = 0;
     }
 
     /// The page is in sight (renewing the lease) or hidden.
     pub fn set_foreground(&self, visible: bool, now: i64) {
         self.foreground_until.store(if visible { now + FOREGROUND_LEASE_SECS } else { 0 }, Ordering::SeqCst);
+    }
+
+    /// The page reads `chat` now (renewing its word) or no chat. `asked`
+    /// numbers the words in the order the page said them: one that comes
+    /// after a later one (a chat that waited for the lock or the screen
+    /// while the window lost the focus) is dropped. `true` when taken.
+    pub fn set_focus(&self, chat: Option<String>, now: i64, asked: u64) -> bool {
+        let mut lease = self.focus_lease.lock().unwrap();
+        if asked < lease.2 {
+            return false;
+        }
+        *lease = match chat {
+            Some(chat) => (Some(chat), now + FOCUS_IDLE_SECS, asked),
+            None => (None, 0, asked),
+        };
+        true
+    }
+
+    /// My focus keys of this session: made from `me` at the first need.
+    pub fn focus_keys(&self, me: &Keys) -> Arc<FocusKeys> {
+        if let Some(keys) = self.focus_keys.read().unwrap().clone() {
+            return keys;
+        }
+        let keys = Arc::new(FocusKeys::derive(me, FOCUS_EPOCH));
+        *self.focus_keys.write().unwrap() = Some(keys.clone());
+        keys
     }
 
     pub(crate) async fn turn(&self) -> MutexGuard<'_, ()> {
@@ -181,7 +270,75 @@ impl PresenceDriver {
         };
         self.watch(pool, watched).await;
         self.beat_if_due(pool, keys, now).await;
+        self.watch_focus(pool, keys).await;
+        self.focus_if_due(pool, keys, now).await;
         Ok(())
+    }
+
+    /// Watch my focus key, whatever the presence switch: what my other
+    /// device reads. A pool that refuses is asked again at the next tick.
+    async fn watch_focus(&self, pool: &RelayPool, keys: &Keys) {
+        let mine = self.focus_keys(keys).public_key().to_hex();
+        let mut watched = self.focus_watched.lock().await;
+        if watched.as_deref() == Some(mine.as_str()) {
+            return;
+        }
+        let Some(author) = PubKey::parse(&mine) else { return };
+        let out = Outbound::Subscribe { id: SubId(filters::SUB_FOCUS.into()), filter: filters::focus_of(&author), scope: Scope::Own };
+        match pool.send(out).await {
+            Ok(_) => *watched = Some(mine),
+            Err(e) => eprintln!("messenger focus: not watched: {e}"),
+        }
+    }
+
+    /// Say the focus when it is time (`focus_due`), straight to the pool as
+    /// a beat. One no relay answered is not said: the next chance tries
+    /// again. `true` when it went.
+    ///
+    /// Each event is dated a second past the one before, ahead of the
+    /// clock if need be: a relay keeps one focus event of the key, and of
+    /// two of one second the one with the smaller id (NIP-01), so a chat
+    /// left in the second it was opened would stay "in X" on the relay and
+    /// keep the phone quiet (ROO-1300). Never more than [`FOCUS_LEAD_SECS`]
+    /// ahead: past that the word waits for the tick.
+    pub(crate) async fn focus_if_due(&self, pool: &RelayPool, keys: &Keys, now: i64) -> bool {
+        let _turn = self.focus_turn.lock().await;
+        let wanted = {
+            let lease = self.focus_lease.lock().unwrap();
+            focus_wanted(now, self.foreground_until.load(Ordering::SeqCst), lease.0.as_deref(), lease.1).map(str::to_string)
+        };
+        let (said, last) = self.focus_said.lock().unwrap().clone();
+        let jitter = jitter(self.focus_beats.load(Ordering::SeqCst));
+        if !focus_due(now, wanted.as_deref(), said.as_deref(), last, pool.is_silent(), jitter) {
+            return false;
+        }
+        let at = now.max(self.focus_at.load(Ordering::SeqCst) + 1);
+        if at > now + FOCUS_LEAD_SECS {
+            return false;
+        }
+        let keys = self.focus_keys(keys);
+        // A chat id too long for the seal is said as no chat.
+        let event = match focus::build(&keys, wanted.as_deref(), at).or_else(|_| focus::build(&keys, None, at)) {
+            Ok(event) => event,
+            Err(e) => {
+                eprintln!("messenger focus: not said: {e}");
+                return false;
+            }
+        };
+        self.focus_at.store(at, Ordering::SeqCst);
+        // Written down before it goes: its copy from a relay is this device's.
+        if let Err(e) = elsewhere::sending(&self.store, event.id.as_hex()).await {
+            eprintln!("messenger focus: not said, not written down: {e}");
+            return false;
+        }
+        match pool.send(Outbound::PublishOwn { event }).await {
+            Ok(ack) if !ack.accepted_by.is_empty() || !ack.rejected_by.is_empty() => {
+                *self.focus_said.lock().unwrap() = (wanted, now);
+                self.focus_beats.fetch_add(1, Ordering::SeqCst);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// What a tick does on this device: tells my other devices an epoch
@@ -203,8 +360,8 @@ impl PresenceDriver {
         let mut watched: Vec<String> =
             presence::keys(&self.store).await?.into_iter().filter(|(peer, _)| allowed.contains(peer.as_str())).map(|(_, k)| k).collect();
         // My own key in the same subscription: the beat of my other device
-        // tells a push on this phone not to ring (`messenger_presence::sight`).
-        // Known as mine before the relays bring it.
+        // is written down (`messenger_presence::sight`). Known as mine
+        // before the relays bring it.
         let mine = self.presence_keys(keys).await?.1.public_key().to_hex();
         sight::watching_mine(&self.store, &mine).await?;
         watched.push(mine);
@@ -404,13 +561,36 @@ impl MessengerRuntime {
     pub async fn presence_foreground(&self, visible: bool) -> Result<()> {
         let now = SystemClock.now().secs();
         self.presence.set_foreground(visible, now);
-        if !visible || !self.presence.enabled().await? {
+        let Ok(keys) = self.session_keys().await else { return Ok(()) };
+        let pool = self.relays.pool().await;
+        if visible && self.presence.enabled().await? {
+            self.presence.beat_if_due(&pool, &keys, now).await;
+        }
+        // Hidden: my other devices hear at once that no chat is read here.
+        self.presence.focus_if_due(&pool, &keys, now).await;
+        Ok(())
+    }
+
+    /// The page reads `chat` now (said again while the user does something
+    /// in it) or no chat: the window lost the focus, the chat closed. A
+    /// change is said to my other devices at once. `asked`: the number of
+    /// the page's word, a word older than one taken is dropped
+    /// (`PresenceDriver::set_focus`).
+    pub async fn focus(&self, chat: Option<String>, asked: u64) -> Result<()> {
+        let now = SystemClock.now().secs();
+        if !self.presence.set_focus(chat, now, asked) {
             return Ok(());
         }
         let Ok(keys) = self.session_keys().await else { return Ok(()) };
         let pool = self.relays.pool().await;
-        self.presence.beat_if_due(&pool, &keys, now).await;
+        self.presence.focus_if_due(&pool, &keys, now).await;
         Ok(())
+    }
+
+    /// Whether another device of mine is reading `chat_id` now: a message
+    /// of it is then shown here by nothing, not a notification, not a card.
+    pub async fn read_elsewhere(&self, chat_id: &str) -> Result<bool> {
+        elsewhere::reading(&self.store, chat_id, SystemClock.now().secs()).await
     }
 
     /// Look around now instead of at the next tick. Nothing without a
@@ -492,6 +672,32 @@ mod tests {
         assert!(!beat_due(now, 0, 0, false, 0), "hidden");
         assert!(!beat_due(now, now, 0, false, 0), "the lease ran out");
         assert!(!beat_due(now, until, 0, true, 0), "silent mode");
+    }
+
+    #[test]
+    fn the_focus_is_the_chat_named_while_both_leases_hold() {
+        let now = 10_000;
+        let (seen, read) = (now + FOREGROUND_LEASE_SECS, now + FOCUS_IDLE_SECS);
+        assert_eq!(focus_wanted(now, seen, Some("dm:x"), read), Some("dm:x"));
+        assert_eq!(focus_wanted(now, seen, None, read), None, "in the list");
+        assert_eq!(focus_wanted(now, 0, Some("dm:x"), read), None, "hidden");
+        assert_eq!(focus_wanted(now, seen, Some("dm:x"), now), None, "five minutes without a touch");
+    }
+
+    #[test]
+    fn the_focus_is_said_at_a_change_and_every_half_minute_while_a_chat_is_read() {
+        let now = 10_000;
+        assert!(focus_due(now, Some("dm:x"), None, now - 1, false, 0), "a chat opened: at once");
+        assert!(focus_due(now, Some("dm:y"), Some("dm:x"), now - 1, false, 0), "another chat: at once");
+        assert!(focus_due(now, None, Some("dm:x"), now - 1, false, 0), "left: once, at once");
+        assert!(!focus_due(now, None, None, 0, false, 0), "no chat: nothing again");
+        assert!(!focus_due(now, Some("dm:x"), Some("dm:x"), now - BEAT_SECS + 1, false, 0), "too soon");
+        assert!(focus_due(now, Some("dm:x"), Some("dm:x"), now - BEAT_SECS, false, 0));
+        assert!(!focus_due(now, Some("dm:x"), Some("dm:x"), now - BEAT_SECS, false, 3), "too soon with its jitter");
+        assert!(!focus_due(now, Some("dm:x"), None, 0, true, 0), "silent mode");
+        // Two events late by all their jitter, and a tick late each, fit in
+        // what one promises.
+        assert!(2 * (BEAT_SECS + BEAT_JITTER_SECS + PRESENCE_TICK_SECS as i64) <= messenger_presence::FOCUS_TTL_SECS);
     }
 
     #[test]
@@ -923,6 +1129,203 @@ mod tests {
         settings::set_bool(rt.store(), KEY_PRESENCE, false).await.unwrap();
         assert!(!rt.presence().beat_if_due(&pool, &me, later + 60).await, "presence off");
         pool.shutdown().await;
+        rt.shutdown().await;
+    }
+
+    /// A pool connected to `url`.
+    async fn pool_on(url: &messenger_core::RelayUrl) -> RelayPool {
+        use messenger_core::traits::RelayState;
+        use messenger_transport::RelayConfig;
+        let pool = RelayPool::new(None);
+        pool.set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
+        for _ in 0..50 {
+            if pool.status().await.relays.iter().all(|r| r.state == RelayState::Connected) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        pool
+    }
+
+    /// A word of the page that waited (for the lock, for the screen) while
+    /// a later one went through is dropped: the later stands (ROO-1292).
+    #[tokio::test]
+    async fn a_word_of_the_focus_late_behind_a_later_one_is_dropped() {
+        let (_dir, rt, _me) = started().await;
+        let now = SystemClock.now().secs();
+        let p = rt.presence();
+        p.set_foreground(true, now);
+        let read = || {
+            let lease = p.focus_lease.lock().unwrap();
+            focus_wanted(now + 1, p.foreground_until.load(Ordering::SeqCst), lease.0.as_deref(), lease.1).map(str::to_string)
+        };
+        // As `messenger_focus` does: the number is taken when the page
+        // asks, the word is applied after the checks.
+        let delayed = |chat: Option<&str>, asked: u64, gate: tokio::sync::oneshot::Receiver<()>| {
+            let chat = chat.map(str::to_string);
+            let rt = &rt;
+            async move {
+                gate.await.unwrap();
+                rt.focus(chat, asked).await.unwrap();
+            }
+        };
+
+        // X waits for its check; the window loses the focus: none goes first.
+        let (open, gate) = tokio::sync::oneshot::channel();
+        tokio::join!(delayed(Some("dm:x"), 1, gate), async {
+            rt.focus(None, 2).await.unwrap();
+            open.send(()).unwrap();
+        });
+        assert_eq!(read(), None, "the late X does not come back");
+
+        // X waits; Y is opened meanwhile.
+        let (open, gate) = tokio::sync::oneshot::channel();
+        tokio::join!(delayed(Some("dm:x"), 3, gate), async {
+            rt.focus(Some("dm:y".into()), 4).await.unwrap();
+            open.send(()).unwrap();
+        });
+        assert_eq!(read().as_deref(), Some("dm:y"), "the late X does not cover Y");
+
+        // In order, each is taken.
+        rt.focus(Some("dm:z".into()), 5).await.unwrap();
+        assert_eq!(read().as_deref(), Some("dm:z"));
+        rt.focus(None, 6).await.unwrap();
+        assert_eq!(read(), None);
+    }
+
+    /// The focus goes as a beat, past the outbox: at once when a chat is
+    /// opened, changed or left, every half minute while it is read, never
+    /// past five minutes without a touch; with presence off too. Each says
+    /// its chat, sealed for my devices, and is written down as this
+    /// device's before it goes.
+    #[tokio::test]
+    async fn the_focus_says_the_chat_read_here_and_when_it_is_left() {
+        let (_dir, rt, me) = started().await;
+        let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
+        let pool = pool_on(&url).await;
+        let keys = FocusKeys::derive(&me, FOCUS_EPOCH);
+        // My other device, listening as the runtime does.
+        let phone = pool_on(&url).await;
+        let mut events = messenger_core::Transport::events(&phone);
+        let author = PubKey::parse(&keys.public_key().to_hex()).unwrap();
+        phone.send(Outbound::Subscribe { id: SubId(filters::SUB_FOCUS.into()), filter: filters::focus_of(&author), scope: Scope::Own }).await.unwrap();
+        settings::set_bool(rt.store(), KEY_PRESENCE, false).await.unwrap();
+        let p = rt.presence();
+        let now = SystemClock.now().secs();
+        let said = |e: &messenger_core::outbound::WireEvent| {
+            let ev = focus::parse(&e.json).unwrap();
+            (focus::open(&keys, &ev).unwrap().chat, ev.until() - ev.created_at)
+        };
+
+        // Watched with presence off: the subscription is of my focus key.
+        p.watch_focus(&pool, &me).await;
+        assert_eq!(p.focus_watched.lock().await.clone(), Some(keys.public_key().to_hex()));
+
+        p.set_foreground(true, now);
+        assert!(!p.focus_if_due(&pool, &me, now).await, "in the list: nothing");
+        p.set_focus(Some("dm:x".into()), now, 1);
+        assert!(p.focus_if_due(&pool, &me, now).await, "a chat opened: at once");
+        assert!(!p.focus_if_due(&pool, &me, now + 1).await, "not again so soon");
+        p.set_focus(Some("dm:y".into()), now + 2, 2);
+        assert!(p.focus_if_due(&pool, &me, now + 2).await, "another chat: at once");
+        let later = now + 2 + BEAT_SECS + BEAT_JITTER_SECS;
+        p.set_foreground(true, later);
+        assert!(p.focus_if_due(&pool, &me, later).await, "half a minute on");
+        assert!(p.focus_if_due(&pool, &me, now + 2 + FOCUS_IDLE_SECS).await, "no touch for five minutes: no chat");
+        assert!(!p.focus_if_due(&pool, &me, now + 3 + FOCUS_IDLE_SECS).await, "and nothing more");
+        p.set_focus(Some("dm:y".into()), now + 400, 3);
+        p.set_foreground(true, now + 400);
+        assert!(p.focus_if_due(&pool, &me, now + 400).await);
+        p.set_foreground(false, now + 401);
+        assert!(p.focus_if_due(&pool, &me, now + 401).await, "hidden: no chat, at once");
+
+        // What went, in order, as the subscription of my focus key heard
+        // it; each is known as this device's own.
+        let sent = settings::get(rt.store(), messenger_core::presence::KEY_FOCUS_SENT).await.unwrap().unwrap();
+        let (mut ids, mut got) = (Vec::new(), Vec::new());
+        while let Ok(Some(raw)) = tokio::time::timeout(Duration::from_secs(2), events.recv()).await {
+            if ids.contains(&raw.id) {
+                continue;
+            }
+            assert!(sent.split(' ').any(|id| id == raw.id.as_hex()), "written down before it went");
+            got.push(said(&messenger_core::outbound::WireEvent { id: raw.id.clone(), json: raw.json.clone() }));
+            ids.push(raw.id);
+        }
+        let ttl = messenger_presence::FOCUS_TTL_SECS;
+        let chats: Vec<Option<&str>> = vec![Some("dm:x"), Some("dm:y"), Some("dm:y"), None, Some("dm:y"), None];
+        assert_eq!(got, chats.iter().map(|c| (c.map(str::to_string), ttl)).collect::<Vec<_>>());
+        phone.shutdown().await;
+        pool.shutdown().await;
+        rt.shutdown().await;
+    }
+
+    /// A chat opened and left, or changed, within one second: the relay
+    /// keeps the last word, not the one of the smaller id (ROO-1300).
+    #[tokio::test]
+    async fn the_last_word_of_one_second_is_what_the_relay_keeps() {
+        use nostr_sdk::prelude::{Client, Filter, Kind};
+        let (_dir, rt, me) = started().await;
+        let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
+        relay.run().await.unwrap();
+        let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
+        let pool = pool_on(&url).await;
+        let keys = FocusKeys::derive(&me, FOCUS_EPOCH);
+        // What the phone woken by a push gets: the one event of my focus key.
+        let phone = Client::default();
+        phone.add_relay(url.as_str()).await.unwrap();
+        phone.connect().await;
+        let kept = || async {
+            let filter = Filter::new().kind(Kind::from(focus::KIND_FOCUS)).author(keys.public_key()).identifier(messenger_presence::FOCUS_D);
+            let events = phone.fetch_events(filter).timeout(Duration::from_secs(2)).await.unwrap();
+            assert_eq!(events.len(), 1, "one focus event of the key");
+            let json = serde_json::to_value(events.first().unwrap()).unwrap();
+            focus::open(&keys, &focus::parse(&json).unwrap()).unwrap().chat
+        };
+        let p = rt.presence();
+        let now = SystemClock.now().secs();
+        p.set_foreground(true, now);
+
+        let mut asked = 0;
+        let mut say = |chat: Option<&str>| {
+            asked += 1;
+            p.set_focus(chat.map(str::to_string), now, asked);
+        };
+        say(Some("dm:x"));
+        assert!(p.focus_if_due(&pool, &me, now).await);
+        say(None);
+        assert!(p.focus_if_due(&pool, &me, now).await, "left in the same second: said too");
+        assert_eq!(kept().await, None, "X then left: no chat");
+        say(Some("dm:x"));
+        assert!(p.focus_if_due(&pool, &me, now).await);
+        say(Some("dm:y"));
+        assert!(p.focus_if_due(&pool, &me, now).await);
+        assert_eq!(kept().await.as_deref(), Some("dm:y"), "X then Y: Y");
+        say(None);
+        assert!(p.focus_if_due(&pool, &me, now).await);
+        say(Some("dm:x"));
+        assert!(p.focus_if_due(&pool, &me, now).await);
+        assert_eq!(kept().await.as_deref(), Some("dm:x"), "six words of one second, the last kept");
+
+        // Past FOCUS_LEAD_SECS ahead the word waits for a later second.
+        say(None);
+        assert!(!p.focus_if_due(&pool, &me, now).await, "too far ahead of the clock");
+        assert!(p.focus_if_due(&pool, &me, now + 2).await, "a later tick says it");
+        assert_eq!(kept().await, None);
+        phone.disconnect().await;
+        pool.shutdown().await;
+        rt.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn what_another_device_reads_is_read_elsewhere() {
+        let (_dir, rt, _me) = started().await;
+        let now = SystemClock.now().secs();
+        assert!(!rt.read_elsewhere("dm:x").await.unwrap());
+        elsewhere::heard(rt.store(), "phone", Some("dm:x"), now, now + 80).await.unwrap();
+        assert!(rt.read_elsewhere("dm:x").await.unwrap());
+        assert!(!rt.read_elsewhere("dm:y").await.unwrap());
         rt.shutdown().await;
     }
 }

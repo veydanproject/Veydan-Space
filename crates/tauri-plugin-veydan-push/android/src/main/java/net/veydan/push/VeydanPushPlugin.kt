@@ -29,6 +29,7 @@ import net.veydan.shell.Permissions
 @InvokeArg
 class ContextArgs {
   var live: Boolean = false
+  var chat: String? = null
 }
 
 @InvokeArg
@@ -211,7 +212,9 @@ class VeydanPushPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun setContext(invoke: Invoke) {
-    PushState.live = invoke.parseArgs(ContextArgs::class.java).live
+    val args = invoke.parseArgs(ContextArgs::class.java)
+    PushState.openChat = args.chat?.takeIf { Push.isChatKey(it) }
+    PushState.live = args.live
     invoke.resolve()
   }
 

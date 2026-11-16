@@ -236,6 +236,7 @@ messenger_dm_send_recording messenger all
 messenger_dm_send_text messenger all
 messenger_emoji_top messenger all
 messenger_emoji_used messenger all
+messenger_focus messenger all
 messenger_forward messenger all
 messenger_gallery_access messenger all
 messenger_gallery_albums messenger all

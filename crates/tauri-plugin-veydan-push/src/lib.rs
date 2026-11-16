@@ -179,9 +179,11 @@ impl<R: Runtime> VeydanPush<R> {
     }
 
     /// `live`: the app receives messages by itself right now. While it is on
-    /// the screen and live, pushes about messages are not shown.
-    pub async fn set_context(&self, live: bool) -> Result<()> {
-        self.call::<serde_json::Value>("setContext", serde_json::json!({ "live": live }))
+    /// the screen and live, pushes about messages are not shown. `chat`: the
+    /// chat open on the screen; a push of it is not shown while the app is on
+    /// the screen, live or not.
+    pub async fn set_context(&self, live: bool, chat: Option<&str>) -> Result<()> {
+        self.call::<serde_json::Value>("setContext", serde_json::json!({ "live": live, "chat": chat }))
             .await
             .map(|_| ())
     }

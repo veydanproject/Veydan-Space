@@ -488,6 +488,9 @@ fn spawn_net_watcher(rt: Arc<MessengerRuntime>) -> [Task; 3] {
 /// Forwards runtime UI events to the webview as `EVENT_RUNTIME`. On a
 /// computer a `notify` goes by the notifications first: when the system
 /// shows it, the event says so (`os: true`) and the page shows no card.
+/// A `notify` of a chat another device of mine is reading now goes to
+/// neither (ROO-1275): the event says so (`elsewhere: true`) and is only
+/// counted; the message is in the chat.
 fn spawn_ui_event_forwarder(
     app: tauri::AppHandle,
     rt: Arc<MessengerRuntime>,
@@ -499,9 +502,14 @@ fn spawn_ui_event_forwarder(
             match rx.recv().await {
                 #[allow(unused_mut)]
                 Ok(mut ev) => {
-                    #[cfg(desktop)]
-                    if ev.name == "notify" && desktop.take(&rt, &ev.payload).await {
-                        ev.payload["os"] = serde_json::Value::Bool(true);
+                    if ev.name == "notify" && read_elsewhere(&rt, &ev.payload).await {
+                        eprintln!("messenger notify: not shown, read elsewhere");
+                        ev.payload["elsewhere"] = serde_json::Value::Bool(true);
+                    } else {
+                        #[cfg(desktop)]
+                        if ev.name == "notify" && desktop.take(&rt, &ev.payload).await {
+                            ev.payload["os"] = serde_json::Value::Bool(true);
+                        }
                     }
                     // Read on another device of mine: its notifications go here too.
                     if ev.name == messenger_runtime::UI_EVENT_CHAT_READ {
@@ -518,6 +526,15 @@ fn spawn_ui_event_forwarder(
             }
         }
     })
+}
+
+/// Whether the chat of a `notify` is being read on another device of mine
+/// now. A notice of no chat, or a store that does not answer: not.
+async fn read_elsewhere(rt: &MessengerRuntime, payload: &serde_json::Value) -> bool {
+    match payload["chat_id"].as_str() {
+        Some(chat) => rt.read_elsewhere(chat).await.unwrap_or(false),
+        None => false,
+    }
 }
 
 /// The box of the lock the messenger keeps its secrets in.
@@ -1224,6 +1241,29 @@ pub async fn messenger_presence_foreground(
         crate::sync::background(&app);
     }
     rt.presence_foreground(visible).await.map_err(map_err)
+}
+
+/// The page reads this chat now (said again while the user does something
+/// in it), or none: the window lost the focus, the chat closed, the page
+/// is hidden. My other devices then show nothing for it. A chat is refused
+/// while the lock is closed, and taken for none while the screen of the
+/// system is locked (`desktop_notify::session_locked`: Linux so far).
+/// Each word is numbered as it comes, before those checks: a chat that
+/// waited for them while a later word went through is dropped.
+#[tauri::command]
+pub async fn messenger_focus(chat_id: Option<String>, messenger: tauri::State<'_, MessengerState>) -> CmdResult<()> {
+    static ASKED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let asked = ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let rt = if chat_id.is_some() { messenger.runtime_unlocked().await? } else { messenger.runtime()? };
+    // The push handler of this phone shows nothing of the chat on the screen.
+    #[cfg(mobile)]
+    push::open_chat(chat_id.clone(), asked);
+    #[cfg(desktop)]
+    let chat_id = match chat_id {
+        Some(_) if ::desktop_notify::session_locked().await => None,
+        other => other,
+    };
+    rt.focus(chat_id, asked).await.map_err(map_err)
 }
 
 /// Not while the lock is closed: the chat is not on the screen then.

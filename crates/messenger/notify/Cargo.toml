@@ -19,8 +19,11 @@ messenger-dm.workspace = true
 messenger-groups.workspace = true
 messenger-transport.workspace = true
 messenger-vlink.workspace = true
-# What the runtime heard of my other device's beat (sight.rs).
+# The focus of my other device, asked of my relays (focus.rs).
 messenger-presence.workspace = true
+# decrypt_v2: the blob of a sealed push opens the one way every reader of
+# a NIP-44 payload goes (sealed.rs).
+messenger-evidence.workspace = true
 nostr.workspace = true
 nostr-sdk.workspace = true
 serde.workspace = true
@@ -34,6 +37,8 @@ tokio = { workspace = true, features = ["time"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile.workspace = true
+# A relay in the test of the question the phone asks (focus.rs).
+nostr-sdk = { workspace = true, features = ["local-relay"] }
 sqlx.workspace = true
 messenger-testkit.workspace = true
 messenger-media.workspace = true

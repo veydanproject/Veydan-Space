@@ -5,7 +5,7 @@
 //! so handlers and tests can inspect them without a protocol crate.
 
 use messenger_core::outbound::Filter;
-use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
+use messenger_core::presence::{FOCUS_D, KIND_PRESENCE, PRESENCE_D};
 use messenger_core::relations::{relations_d, KIND_RELATIONS, RELATIONS_MAX_PAGES};
 use messenger_core::{PubKey, Timestamp};
 
@@ -147,9 +147,28 @@ pub fn presence_of(authors: &[PubKey]) -> Filter {
     }))
 }
 
+pub const SUB_FOCUS: &str = "focus";
+
+/// The focus events of my focus key (`messenger_presence::focus`): which
+/// chat my other device is in.
+pub fn focus_of(author: &PubKey) -> Filter {
+    Filter(serde_json::json!({
+        "kinds": [KIND_PRESENCE],
+        "authors": [author.as_hex()],
+        "#d": [FOCUS_D],
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_filter_asks_for_the_focus_events_of_my_focus_key() {
+        let a = PubKey::parse(&"ab".repeat(32)).unwrap();
+        assert_eq!(focus_of(&a).0, serde_json::json!({ "kinds": [30315], "authors": [a.as_hex()], "#d": ["veydan-focus"] }));
+        assert_eq!(SUB_FOCUS, "focus");
+    }
 
     #[test]
     fn presence_filter_asks_for_our_beats_of_these_keys() {

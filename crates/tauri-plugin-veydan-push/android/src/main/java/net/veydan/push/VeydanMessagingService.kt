@@ -110,11 +110,22 @@ class VeydanMessagingService : FirebaseMessagingService() {
     } finally {
       bundle.fill(0)
     }
-    return when (val outcome = answer?.let { Outcome.from(it) }) {
+    val outcome = answer?.let { Outcome.from(it) }
+    // The chat is open on the screen: the message is there, or comes there.
+    val chat = when (outcome) {
+      is Outcome.Show -> outcome.notice.chat
+      is Outcome.Plain -> outcome.plain.chat
+      else -> null
+    }
+    if (PushState.openHere(chat)) {
+      return "not shown, the chat is open here"
+    }
+    return when (outcome) {
       null -> plain(push, PlainNotice.of(push), "no answer from the core")
       is Outcome.Show -> if (Notifier.show(this, outcome.notice)) shown(outcome.notice.kind, outcome.notice.muted) else "not shown, notifications are off"
       is Outcome.Plain -> plain(push, outcome.plain, "the core says only that something came")
-      is Outcome.Quiet -> "quiet: ${outcome.reason}"
+      // Another device of mine is reading the chat now: nothing at all.
+      is Outcome.Quiet -> if (outcome.reason == READ_ELSEWHERE) "not shown, read elsewhere" else "quiet: ${outcome.reason}"
       is Outcome.Call -> Notifier.ring(this, outcome.call)
       is Outcome.CallEnd -> Notifier.endRinging(this, outcome.callId)
       is Outcome.Error -> plain(push, PlainNotice.of(push), outcome.error)
@@ -143,6 +154,11 @@ class VeydanMessagingService : FirebaseMessagingService() {
    */
   private fun shown(kind: String, muted: Boolean): String =
     (if (muted) "shown silent (muted)" else "shown") + Notifier.quietNote(this, kind)
+
+  private companion object {
+    /** The core's `Reason::ReadElsewhere`. */
+    const val READ_ELSEWHERE = "read_elsewhere"
+  }
 
   override fun onNewToken(token: String) {
     Log.i(PushState.TAG, "the push service gave a new token")

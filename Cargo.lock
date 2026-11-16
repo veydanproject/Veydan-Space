@@ -4384,6 +4384,7 @@ dependencies = [
  "messenger-contacts",
  "messenger-core",
  "messenger-dm",
+ "messenger-evidence",
  "messenger-groups",
  "messenger-ingress",
  "messenger-presence",
@@ -4403,8 +4404,11 @@ name = "messenger-presence"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
+ "getrandom 0.3.4",
  "hmac 0.13.0",
  "messenger-core",
+ "messenger-evidence",
  "messenger-store",
  "nostr",
  "serde",

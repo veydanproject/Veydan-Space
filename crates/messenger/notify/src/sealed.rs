@@ -26,9 +26,9 @@ use crate::bundle::KeyBundle;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use messenger_core::{MessengerConfig, Result};
+use messenger_evidence::nip44::{decrypt_v2, OpenError};
 use messenger_store::{servers, Store};
 use nostr::key::{Keys, PublicKey};
-use nostr::nips::nip44;
 use nostr::nips::nip44::v2::ConversationKey;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -125,8 +125,11 @@ pub fn open(data: &BTreeMap<String, String>, push_key: &Keys, seals: &[Seal]) ->
     let Ok(key) = ConversationKey::derive(push_key.secret_key(), &from) else {
         return dropped("no conversation with the sender");
     };
-    let Ok(plain) = nip44::v2::decrypt_to_bytes(&key, &bytes) else {
-        return dropped("the blob does not open");
+    // The version byte first, as NIP-44 wants (decrypt_v2 says why).
+    let plain = match decrypt_v2(&key, &bytes) {
+        Ok(plain) => plain,
+        Err(OpenError::Version(_) | OpenError::Empty) => return dropped("the blob is not NIP-44 v2"),
+        Err(OpenError::Decrypt(_)) => return dropped("the blob does not open"),
     };
     let Ok(mut inner) = serde_json::from_slice::<BTreeMap<String, String>>(&plain) else {
         return dropped("the inside is no data map of a push");
@@ -196,6 +199,7 @@ pub async fn unseal_as(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nostr::nips::nip44;
 
     const RELAY: &str = "wss://relay.s1.example";
 
@@ -310,6 +314,35 @@ mod tests {
         assert!(is_dropped(open(&seal(&server, &device, &map(&[("v", "2")])), &device, &senders)));
         // Not sealed at all.
         assert!(is_dropped(open(&inner, &device, &senders)));
+    }
+
+    /// A blob whose first byte is not the version 2 of NIP-44 is dropped
+    /// before anything is decrypted: the MAC does not cover that byte, so
+    /// the v2 decryptor alone would open it as if nothing were wrong.
+    #[test]
+    fn a_blob_of_another_nip44_version_is_dropped_before_it_is_opened() {
+        let (server, device) = (Keys::generate(), Keys::generate());
+        let inner = map(&[("v", "2"), ("type", "dm"), ("trace", "x")]);
+        let data = seal(&server, &device, &inner);
+        let bytes = URL_SAFE_NO_PAD.decode(&data["blob"]).unwrap();
+        assert_eq!(bytes[0], 2, "the seal is v2");
+        let key = ConversationKey::derive(device.secret_key(), &server.public_key()).unwrap();
+        for version in [0u8, 1, 3, 255] {
+            let mut other = bytes.clone();
+            other[0] = version;
+            assert!(
+                nip44::v2::decrypt_to_bytes(&key, &other).is_ok(),
+                "version {version}: nostr's v2 decryptor reads no version, the check must be ours"
+            );
+            let mut touched = data.clone();
+            touched.insert("blob".into(), URL_SAFE_NO_PAD.encode(&other));
+            assert_eq!(
+                open(&touched, &device, &mine(&server)),
+                Unsealed::Dropped { reason: "the blob is not NIP-44 v2".into() },
+                "version {version}"
+            );
+        }
+        assert_eq!(open(&data, &device, &mine(&server)), Unsealed::Open { data: inner });
     }
 
     /// Without keys (a PIN on the app) a push is shown as «something came»

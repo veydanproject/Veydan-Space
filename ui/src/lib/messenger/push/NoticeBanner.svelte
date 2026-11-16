@@ -27,7 +27,7 @@
   import { albumLine, albumOf, bodyLine, joinAlbum, type Album, type NoticeBody } from './wording';
 
   /** `os`: a computer's system shows it already (the window was not on the screen). */
-  interface Notify { title: string; body: NoticeBody | null; chat_id: string | null; sender: string | null; request?: boolean; os?: boolean }
+  interface Notify { title: string; body: NoticeBody | null; chat_id: string | null; sender: string | null; request?: boolean; os?: boolean; elsewhere?: boolean }
 
   interface Card {
     key: string;
@@ -75,7 +75,8 @@
   });
 
   function arrive(n: Notify) {
-    if (n.os) return;
+    // The system shows it, or another device of mine is reading the chat now.
+    if (n.os || n.elsewhere) return;
     // The chat it is about is on the screen: the message is already there.
     if (n.chat_id && page.url.pathname.startsWith(BASE) && chatStore.activeId === n.chat_id) return;
     const chat = n.chat_id ? chatStore.chats.find((c) => c.id === n.chat_id) : undefined;

@@ -298,6 +298,8 @@ impl MessengerRuntime {
             ui.subscribe(),
         ));
         // The chain of the DM handlers: GroupDmHandler → CallDmHandler → DmHandler.
+        // My focus keys, put in by the presence driver, opened with by the handler.
+        let focus_keys = messenger_presence::FocusSlot::default();
         let dispatcher = Arc::new(
             Dispatcher::new()
                 .with_dm(Arc::new(messenger_groups::GroupDmHandler::new(
@@ -310,6 +312,7 @@ impl MessengerRuntime {
                     Arc::new(MetaHandler::new(profiles.clone(), contacts.clone())),
                     Arc::new(DmRoutesHandler::new(store.clone())),
                     Arc::new(messenger_presence::PresenceHandler::new(store.clone())),
+                    Arc::new(messenger_presence::FocusHandler::new(store.clone(), focus_keys.clone())),
                     Arc::new(relations::RelationsHandler::new(dm.clone())),
                 ]))),
         );
@@ -335,7 +338,7 @@ impl MessengerRuntime {
         let group_driver =
             groups::GroupsDriver::new(group_service, store.clone(), relays.clone(), outbox.clone(), ui.clone(), archive.clone());
         let group_signals = tokio::spawn(group_driver.clone().run(signals_rx));
-        let presence = Arc::new(presence::PresenceDriver::new(store.clone(), dm.clone(), contacts.clone(), outbox.clone()));
+        let presence = Arc::new(presence::PresenceDriver::new(store.clone(), dm.clone(), contacts.clone(), outbox.clone(), focus_keys));
         let meta = meta::MetaFollow::new(contacts.clone(), dm.clone(), relays.clone());
         let rt = Self {
             config,

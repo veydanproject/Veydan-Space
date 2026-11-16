@@ -14,6 +14,10 @@ use sqlx::AssertSqlSafe;
 pub const SOURCE_MANIFEST: &str = "manifest";
 pub const SOURCE_USER: &str = "user";
 
+/// The setting of silent mode: the app reaches no relay while it is on.
+/// Read by the runtime and by the handler of a push (`messenger-notify`).
+pub const KEY_SILENT: &str = "relays.silent_mode";
+
 /// `(table, column)` pairs that reference `msg_relays.url`. Extend when a
 /// new table stores relay URLs (scoped relays, DM routes, …). Identifiers
 /// only; they are spliced into SQL with `AssertSqlSafe`.

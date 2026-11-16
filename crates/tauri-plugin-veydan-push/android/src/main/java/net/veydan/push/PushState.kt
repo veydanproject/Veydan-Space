@@ -28,6 +28,23 @@ internal object PushState {
   @Volatile
   var live: Boolean = false
 
+  /**
+   * The chat the app shows on this phone now (`dm:…`, `group:…`), as the
+   * page last said it; none in the list, with the lock closed or the page
+   * hidden. Told by the app.
+   */
+  @Volatile
+  var openChat: String? = null
+
+  /**
+   * The app is on the screen with `chat` open: its message is there, or
+   * comes there when the app reaches its relays again (ROO-1308). So the
+   * phone shows nothing of it, also while the app is not live: a network
+   * that comes back brings the pushes held meanwhile sooner than the app
+   * reconnects.
+   */
+  fun openHere(chat: String?): Boolean = visible && chat != null && chat == openChat
+
   private const val MUTED_FILE = "push/muted"
 
   /**

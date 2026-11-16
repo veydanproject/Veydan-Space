@@ -15,18 +15,59 @@
 //! plaintext of 64 KiB and more two zero bytes and four of length. The NIP
 //! itself stops at 65 535 bytes; a seal our own clients made of a longer
 //! rumor must verify all the same.
+//!
+//! Beside that, [`decrypt_v2`]: the one way a client opens the bytes of a
+//! payload with a conversation key it holds, the version read before
+//! anything is decrypted.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use chacha20::cipher::{KeyIvInit, StreamCipher};
 use chacha20::ChaCha20;
 use hkdf::Hkdf;
 use hmac::{Hmac, KeyInit, Mac};
+use nostr::nips::nip44::v2::{self, ConversationKey};
 use sha2::Sha256;
 
 use crate::wire::MessageKeys;
 
 /// The version byte of a v2 payload.
 pub const VERSION: u8 = 2;
+
+/// Why [`decrypt_v2`] gave no plaintext.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenError {
+    /// The first byte is not [`VERSION`]: a version this code does not
+    /// know, or a payload touched there. Nothing was decrypted.
+    #[error("not a NIP-44 v2 payload: version byte {0}")]
+    Version(u8),
+    /// No bytes at all.
+    #[error("not a NIP-44 v2 payload: empty")]
+    Empty,
+    /// The v2 decryptor refused it: too short, the MAC not of these keys,
+    /// the padding wrong.
+    #[error("NIP-44 v2: {0}")]
+    Decrypt(#[from] nostr::error::Error),
+}
+
+/// Opens the bytes of a NIP-44 payload (version, nonce, ciphertext, MAC)
+/// with the conversation key, when its version is 2.
+///
+/// NIP-44 wants a reader to refuse a version it does not know before it
+/// decrypts anything. The decryptor of a version, `v2::decrypt_to_bytes`
+/// of nostr 0.45, takes the first byte for granted, and the MAC does not
+/// cover it, so a payload of another version byte would open there as v2;
+/// `nip44::decrypt` over the base64 form reads the version, but a reader
+/// holding the bytes and a conversation key has no way to it. This is that
+/// way, for every such reader: the content of a focus event
+/// (messenger-presence), the blob of a sealed push (messenger-notify), my
+/// own copy of a message under its seal (messenger-runtime).
+pub fn decrypt_v2(key: &ConversationKey, payload: &[u8]) -> Result<Vec<u8>, OpenError> {
+    match payload.first() {
+        Some(&VERSION) => Ok(v2::decrypt_to_bytes(key, payload)?),
+        Some(&other) => Err(OpenError::Version(other)),
+        None => Err(OpenError::Empty),
+    }
+}
 const NONCE_LEN: usize = 32;
 const MAC_LEN: usize = 32;
 const LEGACY_PREFIX: usize = 2;
@@ -211,6 +252,7 @@ fn unpad(padded: &[u8]) -> Result<Vec<u8>, PayloadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nostr::key::Keys;
 
     #[test]
     fn padding_steps() {
@@ -250,5 +292,35 @@ mod tests {
         let mut huge = vec![0, 0, 0xff, 0xff, 0xff, 0xff];
         huge.extend([0u8; 32]);
         assert_eq!(unpad(&huge), Err(PayloadError::Padding));
+    }
+
+    /// The version byte is read before the decryption: a payload of
+    /// another first byte is refused whole, though the v2 decryptor of
+    /// nostr, asked directly, opens it (the MAC does not cover the byte).
+    #[test]
+    fn a_payload_of_another_version_is_refused_before_it_is_decrypted() {
+        let (alice, bob) = (Keys::generate(), Keys::generate());
+        let key = ConversationKey::derive(alice.secret_key(), &bob.public_key()).unwrap();
+        let payload = v2::encrypt_to_bytes_with_nonce(&key, b"a word", [7u8; 32]).unwrap();
+        assert_eq!(payload[0], VERSION);
+        assert_eq!(decrypt_v2(&key, &payload).unwrap(), b"a word");
+
+        for version in [0u8, 1, 3, 255] {
+            let mut other = payload.clone();
+            other[0] = version;
+            assert_eq!(
+                v2::decrypt_to_bytes(&key, &other).unwrap(),
+                b"a word",
+                "nostr's v2 decryptor reads no version: the check must be ours"
+            );
+            assert!(
+                matches!(decrypt_v2(&key, &other), Err(OpenError::Version(v)) if v == version),
+                "version {version}"
+            );
+        }
+        assert!(matches!(decrypt_v2(&key, &[]), Err(OpenError::Empty)));
+        // Right version, wrong keys: the decryptor's refusal, passed on.
+        let theirs = ConversationKey::derive(bob.secret_key(), &Keys::generate().public_key()).unwrap();
+        assert!(matches!(decrypt_v2(&theirs, &payload), Err(OpenError::Decrypt(_))));
     }
 }

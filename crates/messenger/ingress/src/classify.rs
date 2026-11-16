@@ -8,7 +8,7 @@ use messenger_core::envelope::{KIND_GROUP_TYPING, KIND_OWN_RUMOR, KIND_PEER_NOTE
 use messenger_core::inbound::Envelope as WireEnvelope;
 /// Re-exported: ingress filters and skips beats by these, the presence
 /// crate builds them; both take them from core.
-pub use messenger_core::presence::{KIND_PRESENCE, PRESENCE_D};
+pub use messenger_core::presence::{FOCUS_D, KIND_PRESENCE, PRESENCE_D};
 pub use messenger_core::relations::{relations_page, KIND_RELATIONS, RELATIONS_D};
 use messenger_core::{ChannelInbound, DmInbound, EventId, GroupInbound, Inbound, MetaInbound, PubKey, RawEvent, Timestamp};
 use nostr::key::Keys;
@@ -243,14 +243,12 @@ fn classify_group(event: &Event, envelope: WireEnvelope, kind: u16) -> Inbound {
     })
 }
 
-/// A beat of our own `d` only: other clients use the same kind for a song
-/// or a mood. The expiration is kept as given; the handler decides what a
-/// missing one means.
+/// A beat or a focus event of our own `d` only: other clients use the same
+/// kind for a song or a mood. The expiration is kept as given; the handler
+/// decides what a missing one means. A focus event stays sealed: only the
+/// presence crate has the key to its content.
 fn classify_presence(event: &Event) -> Inbound {
     let d = event.tags.iter().find(|t| t.kind() == "d").and_then(|t| t.as_slice().get(1));
-    if d.map(String::as_str) != Some(PRESENCE_D) {
-        return Inbound::ignored(KIND_PRESENCE, "presence status of another client");
-    }
     let expires_at = event
         .tags
         .iter()
@@ -258,7 +256,18 @@ fn classify_presence(event: &Event) -> Inbound {
         .and_then(|t| t.as_slice().get(1))
         .and_then(|s| s.parse::<i64>().ok())
         .map(Timestamp);
-    Inbound::Meta(MetaInbound::Presence { author: pk(&event.pubkey), created_at: ts(event.created_at), expires_at })
+    let (author, created_at) = (pk(&event.pubkey), ts(event.created_at));
+    match d.map(String::as_str) {
+        Some(PRESENCE_D) => Inbound::Meta(MetaInbound::Presence { author, created_at, expires_at }),
+        Some(FOCUS_D) => Inbound::Meta(MetaInbound::Focus {
+            author,
+            id: EventId::parse(&event.id.to_hex()).expect("nostr event ids are 64 hex chars"),
+            created_at,
+            expires_at,
+            content: event.content.clone(),
+        }),
+        _ => Inbound::ignored(KIND_PRESENCE, "presence status of another client"),
+    }
 }
 
 /// The snapshot of my relations: application data of my own key under
@@ -581,6 +590,35 @@ mod tests {
         }
         let no_d = EventBuilder::new(Kind::from(KIND_PRESENCE), "").finalize(&k).unwrap();
         assert!(matches!(classify(&raw_of(&no_d), None), Inbound::Ignored { .. }), "no d at all");
+    }
+
+    /// The focus event (ROO-1275: `d = veydan-focus`, the chat I am in,
+    /// sealed) shares the kind of a beat and is not taken for one, with or
+    /// without the keys: it goes to the presence crate as it came, sealed,
+    /// with its id, which tells this device's own copy (D2).
+    #[test]
+    fn a_focus_event_is_not_a_beat() {
+        let me = Keys::generate();
+        let author = Keys::generate();
+        let focus = EventBuilder::new(Kind::from(KIND_PRESENCE), "AhER…sealed…")
+            .tag(Tag::parse(["d", FOCUS_D]).unwrap())
+            .tag(Tag::parse(["expiration", "1759700080"]).unwrap())
+            .custom_created_at(nostr::types::Timestamp::from(1_759_700_000u64))
+            .finalize(&author)
+            .unwrap();
+        for keys in [None, Some(&me)] {
+            match classify(&raw_of(&focus), keys) {
+                Inbound::Meta(MetaInbound::Focus { author: a, id, created_at, expires_at, content }) => {
+                    assert_eq!(a.as_hex(), author.public_key().to_hex());
+                    assert_eq!(id.as_hex(), focus.id.to_hex());
+                    assert_eq!(created_at, Timestamp(1_759_700_000));
+                    assert_eq!(expires_at, Some(Timestamp(1_759_700_080)));
+                    assert_eq!(content, "AhER…sealed…");
+                }
+                other => panic!("expected Meta::Focus, got {other:?}"),
+            }
+        }
+        assert!(crate::is_transient(KIND_PRESENCE), "and it is never kept in events_raw");
     }
 
     #[test]

@@ -128,6 +128,11 @@ pub enum MetaInbound {
     /// key, not a user: only the presence handler knows whose it is.
     /// `expires_at` is the NIP-40 `expiration` tag, when it parses.
     Presence { author: PubKey, created_at: Timestamp, expires_at: Option<Timestamp> },
+    /// A focus event (kind 30315, `d = veydan-focus`): which chat one of my
+    /// devices is in, sealed. `author` is a focus key; `content` is as the
+    /// relay has it, and only the presence crate, with my focus keys, opens
+    /// it. `id` tells the copy of this device's own from another device's.
+    Focus { author: PubKey, id: EventId, created_at: Timestamp, expires_at: Option<Timestamp>, content: String },
     /// One event of the snapshot of my relations (kind 30078 signed by my
     /// key, `d` of `crate::relations`): the header (`page` 0) or a page.
     /// `content` is as the relay has it, NIP-44 to myself; only the DM

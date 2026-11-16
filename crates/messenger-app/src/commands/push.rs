@@ -129,6 +129,8 @@ static LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 /// - The plugin is told whether the messenger is receiving messages by
 ///   itself, in which case a push about a message is not shown while the
 ///   app is on the screen.
+/// - The plugin is told the chat open on the screen ([`open_chat`]): a push
+///   of it is not shown while the app is on the screen, live or not.
 /// - The push handler is given the keys while the settings want it to
 ///   (Android; iOS has no handler of its own before the Notification
 ///   Service Extension).
@@ -166,16 +168,22 @@ pub fn spawn_bridge(
         }
 
         let context = async {
-            let mut told: Option<bool> = None;
+            let mut told: Option<(bool, Option<String>)> = None;
             loop {
                 let live = match rt.status().await {
                     Ok(s) => s.session_active && !s.silent_mode && s.relays_connected > 0,
                     Err(_) => false,
                 };
-                if told != Some(live) && push.set_context(live).await.is_ok() {
-                    told = Some(live);
+                let now = (live, open_chat_now());
+                if told.as_ref() != Some(&now)
+                    && push.set_context(now.0, now.1.as_deref()).await.is_ok()
+                {
+                    told = Some(now);
                 }
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(3)) => {}
+                    _ = OPEN_KICK.notified() => {}
+                }
             }
         };
         #[cfg(target_os = "android")]
@@ -317,7 +325,55 @@ pub async fn stop_bridge(app: &tauri::AppHandle, rt: &messenger_runtime::Messeng
     if let Err(e) = push.clear_keys().await {
         eprintln!("messenger notify: the handler's keys were not taken back: {e}");
     }
-    let _ = push.set_context(false).await;
+    let _ = push.set_context(false, None).await;
+}
+
+/// The chat the page shows on this phone, by its words to
+/// `messenger_focus`, numbered as they came: a word older than the one
+/// taken is dropped, as the runtime drops it (`PresenceDriver::set_focus`).
+/// Not let go after a while as the runtime's word is: a chat left on the
+/// screen untouched is still on the screen, and the page says when it is
+/// not (the list, a hidden page, the lock).
+#[cfg_attr(not(mobile), allow(dead_code))]
+#[derive(Debug, Default)]
+struct OpenChat {
+    asked: u64,
+    chat: Option<String>,
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+impl OpenChat {
+    /// `true` when taken.
+    fn say(&mut self, chat: Option<String>, asked: u64) -> bool {
+        if asked < self.asked {
+            return false;
+        }
+        self.asked = asked;
+        self.chat = chat;
+        true
+    }
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+static OPEN_CHAT: std::sync::Mutex<OpenChat> = std::sync::Mutex::new(OpenChat { asked: 0, chat: None });
+/// A new word of the open chat: the plugin is told at once.
+#[cfg_attr(not(mobile), allow(dead_code))]
+static OPEN_KICK: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+/// The page shows `chat` on this phone now, or none (ROO-1308): the push
+/// handler shows nothing of it while the app is on the screen, also while
+/// the app is not live, when a network that came back brings the pushes
+/// held meanwhile before the app reaches its relays.
+#[cfg(mobile)]
+pub fn open_chat(chat: Option<String>, asked: u64) {
+    if OPEN_CHAT.lock().unwrap_or_else(|e| e.into_inner()).say(chat, asked) {
+        OPEN_KICK.notify_one();
+    }
+}
+
+#[cfg(mobile)]
+fn open_chat_now() -> Option<String> {
+    OPEN_CHAT.lock().unwrap_or_else(|e| e.into_inner()).chat.clone()
 }
 
 /// Asks nothing of the push service or the push server.
@@ -662,4 +718,25 @@ pub async fn messenger_notify_set(
     rt.notify_set_settings(Settings { content, lockscreen_hidden }).await.map_err(map_err)?;
     lock_changed();
     messenger_notify_get(lock, messenger).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenChat;
+
+    /// The chat on the screen is the page's last word; a word that comes
+    /// after a later one moves nothing.
+    #[test]
+    fn the_open_chat_is_the_last_word_of_the_page() {
+        let mut open = OpenChat::default();
+        assert!(open.say(Some("dm:x".into()), 1));
+        assert_eq!(open.chat.as_deref(), Some("dm:x"));
+        // Said again while the user reads it.
+        assert!(open.say(Some("dm:x".into()), 2));
+        assert!(open.say(None, 4), "back to the list");
+        assert!(!open.say(Some("dm:x".into()), 3), "a late word of the chat");
+        assert_eq!(open.chat, None);
+        assert!(open.say(Some("dm:y".into()), 5));
+        assert_eq!(open.chat.as_deref(), Some("dm:y"));
+    }
 }

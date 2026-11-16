@@ -154,6 +154,7 @@ pub fn module() -> Module {
                 commands::messenger_privacy_set,
                 commands::messenger_presence_list,
                 commands::messenger_presence_foreground,
+                commands::messenger_focus,
                 commands::messenger_dm_send_text,
                 commands::messenger_chats_list,
                 commands::messenger_chat_open,

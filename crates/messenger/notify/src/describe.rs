@@ -10,7 +10,7 @@
 
 use crate::bundle::KeyBundle;
 use crate::fetch;
-use crate::sight;
+use crate::focus;
 use crate::notice::{Body, CallEnd, CallNotice, ChatKind, Notice, Outcome, Plain, Reason};
 use crate::push::{PushData, PushKind};
 use crate::settings::{Content, Settings};
@@ -53,27 +53,29 @@ pub async fn describe_as(config: &MessengerConfig, bundle: Option<&KeyBundle>, p
     describe_in(config, bundle, push, false).await
 }
 
-/// [`describe_as`] for a phone a push woke: a message to show is shown
-/// without a sound while another device of mine is in sight
-/// ([`crate::sight`], read from the store, no relay asked), so the phone
-/// does not ring for a chat the user is reading on the computer. A call
+/// [`describe_as`] for a phone a push woke: a message to show is not shown
+/// while another device of mine is reading its chat ([`crate::focus`],
+/// one question to my relays), so the phone shows nothing of a chat the
+/// user is reading on the computer ([`Reason::ReadElsewhere`]). A call
 /// rings as it does.
 pub async fn describe_on_phone(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData) -> Result<Outcome> {
     describe_in(config, bundle, push, true).await
 }
 
-/// `on_phone`: a message to show is muted while I am in sight elsewhere.
+/// `on_phone`: a message to show is quiet while its chat is read elsewhere.
 async fn describe_in(config: &MessengerConfig, bundle: Option<&KeyBundle>, push: &PushData, on_phone: bool) -> Result<Outcome> {
     let store = Store::open_read_only(config).await?;
     let out = match bundle {
         Some(bundle) => match bundle.keys() {
             Ok(keys) => {
-                let describe = Describe::new(store.clone(), keys, config.bot_pubkey.as_deref(), config.push_inbox_dir());
+                let describe = Describe::new(store.clone(), keys.clone(), config.bot_pubkey.as_deref(), config.push_inbox_dir());
                 match (describe.run(bundle, push).await, on_phone) {
-                    (Ok(Outcome::Show(mut notice)), true) => {
-                        notice.muted = sight::in_sight(&store, SystemClock.now().secs()).await;
-                        Ok(Outcome::Show(notice))
-                    }
+                    (Ok(Outcome::Show(notice)), true) => match notice.chat.as_deref() {
+                        Some(chat) if focus::read_elsewhere(&store, &keys, chat, SystemClock.now().secs()).await => {
+                            Ok(Outcome::Quiet { reason: Reason::ReadElsewhere })
+                        }
+                        _ => Ok(Outcome::Show(notice)),
+                    },
                     (out, _) => out,
                 }
             }

@@ -25,13 +25,26 @@
 //! runtime's: nothing here sends anything. The notes go through the DM
 //! module and land in `messenger_store::presence`, which is all the two
 //! share. See internal/messenger-wire.md, "Присутствие".
+//!
+//! Beside it, the focus ([`focus`]): the same kind under `d = veydan-focus`,
+//! signed by a key of the same making that my devices alone know and no
+//! contact is told, saying, sealed, which chat I am in now, so that my
+//! other device shows no notification for it. Its own keys, its own
+//! epoch, nothing to do with the presence switch; the kind is shared so
+//! that a relay keeps and forgets it as a beat, and ingress skips it as
+//! one (`TRANSIENT_KINDS`). What another device of mine said of it last,
+//! and whether it reads a chat now, is [`elsewhere`]'s.
 
+pub mod elsewhere;
+pub mod focus;
 pub mod handler;
 pub mod heartbeat;
 pub mod key;
 pub mod sight;
 pub mod view;
 
+pub use elsewhere::{FocusHandler, FocusSlot};
+pub use focus::{FocusKeys, FOCUS_D, FOCUS_EPOCH, FOCUS_TTL_SECS};
 pub use handler::{PresenceHandler, UI_EVENT_PRESENCE_UPDATED};
 pub use heartbeat::{BEAT_JITTER_SECS, BEAT_SECS, KIND_PRESENCE, ONLINE_TTL_SECS, PRESENCE_D};
 pub use view::PresenceView;

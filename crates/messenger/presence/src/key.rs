@@ -19,12 +19,19 @@ type HmacSha256 = Hmac<Sha256>;
 /// below the order of the curve: about one in 2^128), a counter byte 1, 2,
 /// … is put after the epoch until they are.
 pub fn derive(keys: &Keys, epoch: u32) -> Keys {
+    derive_with(CONTEXT, keys, epoch)
+}
+
+/// The same construction under another HMAC key: the focus key
+/// (`crate::focus`) is made so, with a context of its own, so that no key
+/// of one use is a key of another.
+pub(crate) fn derive_with(context: &[u8], keys: &Keys, epoch: u32) -> Keys {
     let mut message = Vec::with_capacity(37);
     message.extend_from_slice(keys.secret_key().as_secret_bytes());
     message.extend_from_slice(&epoch.to_le_bytes());
     let mut counter: u8 = 0;
     loop {
-        let mut mac = HmacSha256::new_from_slice(CONTEXT).expect("hmac takes a key of any length");
+        let mut mac = HmacSha256::new_from_slice(context).expect("hmac takes a key of any length");
         mac.update(&message);
         let bytes = mac.finalize().into_bytes();
         if let Ok(secret) = SecretKey::from_slice(&bytes) {

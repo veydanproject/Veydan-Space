@@ -13,12 +13,20 @@ publish.workspace = true
 [dependencies]
 messenger-core.workspace = true
 messenger-store.workspace = true
+# decrypt_v2: the content of a focus event opens the one way every reader
+# of a NIP-44 payload goes (focus.rs).
+messenger-evidence.workspace = true
 nostr.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true
+# The focus event (focus.rs): its content is a NIP-44 v2 payload in base64,
+# its nonce drawn from the system.
+base64.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+hex.workspace = true
