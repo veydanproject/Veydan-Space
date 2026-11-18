@@ -122,7 +122,7 @@ mod tests {
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         crate::servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         let g = rt.group_create(messenger_groups::GroupKind::Private, "Den", "", true, None).await.unwrap();
         rt.group_send_text(&g.id, "before", None).await.unwrap();

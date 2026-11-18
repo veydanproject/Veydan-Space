@@ -2187,12 +2187,23 @@ mod tests {
         service
     }
 
+    /// How long a test waits for what runs in tasks of its own: far
+    /// beyond what it takes on a busy runner, and nothing when it comes.
+    pub(super) const WAIT: Duration = Duration::from_secs(30);
+
     async fn until(what: impl Fn() -> bool) {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let deadline = tokio::time::Instant::now() + WAIT;
         while !what() {
-            assert!(tokio::time::Instant::now() < deadline, "waited too long");
+            if tokio::time::Instant::now() >= deadline {
+                panic!("waited {WAIT:?}");
+            }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+    }
+
+    /// `wait` to its end; a panic, naming `what`, once `WAIT` is out.
+    pub(super) async fn within<T>(what: &str, wait: impl std::future::Future<Output = T>) -> T {
+        tokio::time::timeout(WAIT, wait).await.unwrap_or_else(|_| panic!("{what}: not within {WAIT:?}"))
     }
 
     /// A refusal of a blob host is a code of its own, its answer after it;
@@ -2401,7 +2412,13 @@ mod tests {
         for _ in 0..3 {
             listener.woken().await;
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // What a wake asks for is marked asked before `woken` returns
+        // (`Run::ask`) and stays asked or running until its work is done,
+        // and a request is counted as it is made, before the gate holds
+        // it: once the live subscriptions and the notes are at rest, or
+        // something more was asked, the wakes did all they will do.
+        let rest = |r: &Run| !r.running.load(Ordering::SeqCst) && !r.asked.load(Ordering::SeqCst);
+        until(|| (rest(&listener.flight.live) && rest(&listener.flight.notes)) || subscribes(&net) != subs || net.syncs() != 1).await;
         assert_eq!((subscribes(&net), net.syncs()), (subs, 1), "the catch-up held, nothing more asked");
         net.gate.add_permits(tokio::sync::Semaphore::MAX_PERMITS);
         until(|| !listener.busy()).await;
@@ -2474,7 +2491,9 @@ mod tests {
         assert!(all.contains(&own_notes_sub().0));
         let before = net.sent().len();
         listener.resubscribe();
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // A round is asked before `resubscribe` returns or not at all: none
+        // asked, nothing goes out later either.
+        assert!(!listener.busy(), "no round asked after the stop");
         assert_eq!(net.sent().len(), before, "nothing after the stop");
     }
 
@@ -2491,19 +2510,27 @@ mod tests {
             std::future::pending::<()>().await;
         });
         uploads.close();
-        let ended = tokio::time::timeout(Duration::from_secs(5), ended).await;
-        assert!(matches!(ended, Ok(Err(_))), "the upload was ended");
+        assert!(within("the upload", ended).await.is_err(), "the upload was ended");
         let started = Arc::new(AtomicBool::new(false));
         let flag = started.clone();
-        uploads.spawn("u2", async move { flag.store(true, Ordering::SeqCst) });
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        let (alive, gone) = tokio::sync::oneshot::channel::<()>();
+        uploads.spawn("u2", async move {
+            let _alive = alive;
+            flag.store(true, Ordering::SeqCst);
+        });
+        // The work goes with its task, run or not, and sets the flag first
+        // if it runs at all: once it is gone, the flag says whether it ran.
+        assert!(within("the upload after the stop", gone).await.is_err());
         assert!(!started.load(Ordering::SeqCst));
 
         let keepers = Keepers::default();
         let wake = Wake::default();
         let turns = Arc::new(AtomicUsize::new(0));
         let counted = turns.clone();
+        // Held by the turn, and so by the task: gone when the task is.
+        let (alive, gone) = tokio::sync::oneshot::channel::<()>();
         keepers.start(wake.clone(), move || {
+            let _alive = &alive;
             let counted = counted.clone();
             async move {
                 counted.fetch_add(1, Ordering::SeqCst);
@@ -2517,10 +2544,11 @@ mod tests {
         wake.at(0);
         until(|| turns.load(Ordering::SeqCst) == 2).await;
         keepers.close();
-        tokio::time::sleep(Duration::from_millis(20)).await;
         assert!(!keepers.running(), "ended");
+        // The task is gone with its turn: no turn runs from here on, however
+        // long one waits.
+        assert!(within("the keepers' task", gone).await.is_err());
         wake.at(0);
-        tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(turns.load(Ordering::SeqCst), 2, "no turn after the stop");
         keepers.start(wake, || async { None });
         assert!(!keepers.running(), "none after the stop");
@@ -2532,30 +2560,31 @@ mod tests {
     async fn a_stop_ends_the_outbox_task() {
         let net = FakeNet::new(true);
         let service = service(net.clone()).await;
-        let (signals, _rx) = mpsc::unbounded_channel();
+        let (signals, mut rx) = mpsc::unbounded_channel();
         let outbox = Outbox::default();
-        outbox.start(service.clone(), signals.clone(), |_| {});
+        outbox.start(service.clone(), signals, |_| {});
         assert!(outbox.running());
         outbox.close();
-        tokio::time::sleep(Duration::from_millis(20)).await;
         assert!(!outbox.running(), "ended");
+        // The task holds the one sender: the channel closes once it is gone.
+        while within("the outbox task", rx.recv()).await.is_some() {}
+        let (signals, _rx) = mpsc::unbounded_channel();
         outbox.start(service, signals, |_| {});
         assert!(!outbox.running(), "none after the stop");
     }
 
-    /// The pool answers slowly (a relay that takes seconds to say OK),
-    /// while `slow` is set.
+    /// The pool takes no publish while the test holds `hold` (a relay
+    /// that has not said OK yet), and takes it at once otherwise.
     struct SlowNet {
-        delay: Duration,
-        slow: AtomicBool,
+        hold: tokio::sync::RwLock<()>,
         sent: std::sync::Mutex<Vec<Outbound>>,
     }
 
     #[async_trait::async_trait]
     impl Transport for SlowNet {
         async fn send(&self, out: Outbound) -> messenger_core::Result<Ack> {
-            if self.slow.load(Ordering::SeqCst) && matches!(out, Outbound::PublishScoped { .. } | Outbound::PublishToInbox { .. } | Outbound::PublishOwn { .. }) {
-                tokio::time::sleep(self.delay).await;
+            if matches!(out, Outbound::PublishScoped { .. } | Outbound::PublishToInbox { .. } | Outbound::PublishOwn { .. }) {
+                drop(self.hold.read().await);
             }
             self.sent.lock().unwrap().push(out);
             Ok(Ack { accepted_by: vec![RelayUrl::parse("wss://r.example").unwrap()], rejected_by: vec![] })
@@ -2572,13 +2601,13 @@ mod tests {
 
     /// A command answers before any relay does (живой запуск 2026-10-23:
     /// a new channel «hung» on the relay's answer): the channel is made
-    /// in milliseconds over a pool that takes five seconds a publish, and
-    /// the outbox task delivers its journal and card later, the journal
-    /// first; a post the same, once the keeper's turn gave the owner the
-    /// key (no pool was slow for that).
+    /// over a pool that takes no publish at all while the test holds it,
+    /// and the outbox task delivers its journal and card once the pool
+    /// takes them, the journal first; a post the same, once the keeper's
+    /// turn gave the owner the key (no pool was held for that).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_command_answers_before_the_relay_and_the_outbox_delivers_later() {
-        let net = Arc::new(SlowNet { delay: Duration::from_secs(5), slow: AtomicBool::new(true), sent: Default::default() });
+        let net = Arc::new(SlowNet { hold: tokio::sync::RwLock::new(()), sent: Default::default() });
         let db = Db::open_in_memory().await.unwrap();
         let blobs = Arc::new(super::join_path_tests::MemHosts::default());
         let service = ChannelService::new(db, Arc::new(MemSecrets::default()), net.clone(), blobs, Arc::new(SystemClock));
@@ -2596,12 +2625,14 @@ mod tests {
             relays: vec!["wss://r.example".into()],
             storage: vec!["https://h1.example".into()],
         };
-        let started = tokio::time::Instant::now();
-        let (cid, outcome) = service.create(&keys, new).await.unwrap();
-        assert!(started.elapsed() < Duration::from_millis(200), "answered in {:?}", started.elapsed());
+        // No publish is taken while this is held: a command that waited for
+        // one, itself or through what it waits for, would never answer.
+        let held = net.hold.write().await;
+        let (cid, outcome) = within("the channel made", service.create(&keys, new)).await.unwrap();
         assert_eq!(outcome.pending.len(), 1);
         assert!(!net.sent.lock().unwrap().iter().any(|o| matches!(o, Outbound::PublishScoped { .. } | Outbound::PublishToInbox { .. } | Outbound::PublishOwn { .. })), "nothing is on the relay yet");
         assert_eq!(service.outbox_summary(&cid).await.unwrap().queued, 4, "the journal, the card, the keeper's issue to me and the copy of my keys to my other devices wait");
+        drop(held);
         let kinds = || -> Vec<u16> {
             net.sent.lock().unwrap().iter().filter_map(|o| match o {
                 Outbound::PublishScoped { event, .. } => event.json["kind"].as_u64().and_then(|k| u16::try_from(k).ok()),
@@ -2609,9 +2640,11 @@ mod tests {
                 _ => None,
             }).collect()
         };
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let deadline = tokio::time::Instant::now() + WAIT;
         while kinds().len() < 4 {
-            assert!(tokio::time::Instant::now() < deadline, "the outbox delivered {:?}", kinds());
+            if tokio::time::Instant::now() >= deadline {
+                panic!("the outbox delivered {:?}", kinds());
+            }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         // The journal before the notes that follow it; the card on its own,
@@ -2623,24 +2656,41 @@ mod tests {
         let mut rest = sent[1..].to_vec();
         rest.sort_unstable();
         assert_eq!(rest, vec![communities_core::notes::KIND_WRAP, communities_core::notes::KIND_WRAP, communities_core::wire::KIND_CARD], "the notes behind it, the card on its own: {sent:?}");
-        assert_eq!(service.outbox_summary(&cid).await.unwrap().queued, 0);
-        assert!(matches!(woken.try_recv(), Ok(Signal::Wake(_))), "the keeper's turn is woken once its operation is out");
+        // The wake goes when the pass that sent the operation ends, and a
+        // row is done after the pool took it: both come a moment after the
+        // last publish was seen.
+        assert!(matches!(within("the keeper's wake", woken.recv()).await, Some(Signal::Wake(_))), "the keeper's turn is woken once its operation is out");
+        let drained = || async { service.outbox_summary(&cid).await.unwrap().queued == 0 };
+        within("the outbox emptied", async {
+            while !drained().await {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
 
         // The first epoch (the pool quick meanwhile: the hosts are what the
-        // turn waits for, not the relay), then a post over the slow pool.
-        net.slow.store(false, Ordering::SeqCst);
+        // turn waits for, not the relay), then a post over the held pool,
+        // once whatever the turn queued is out: nothing is on its way to
+        // the pool while the post is counted.
         service.tick().await.unwrap();
         assert!(service.member(&keys).newest_key(&cid, communities_core::state::SCOPE_EVERYONE).await.unwrap().is_some(), "the owner holds the key of the first epoch");
-        net.slow.store(true, Ordering::SeqCst);
+        within("the outbox emptied after the turn", async {
+            while !drained().await {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+        let held = net.hold.write().await;
         let before = kinds().len();
-        let started = tokio::time::Instant::now();
-        let (post, outcome) = service.send_post(&keys, &cid, "quick", messenger_core::TextFormat::Plain).await.unwrap();
-        assert!(started.elapsed() < Duration::from_millis(200), "the post answered in {:?}", started.elapsed());
+        let (post, outcome) = within("the post", service.send_post(&keys, &cid, "quick", messenger_core::TextFormat::Plain)).await.unwrap();
         assert!(outcome.pending.contains(&post));
         assert_eq!(kinds().len(), before, "not on the relay yet");
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        drop(held);
+        let deadline = tokio::time::Instant::now() + WAIT;
         while kinds().len() < before + 1 {
-            assert!(tokio::time::Instant::now() < deadline, "the outbox delivered {:?}", kinds());
+            if tokio::time::Instant::now() >= deadline {
+                panic!("the outbox delivered {:?}", kinds());
+            }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         assert_eq!(kinds().last(), Some(&communities_core::wire::KIND_CONTENT));
@@ -2706,11 +2756,16 @@ mod tests {
     async fn a_burst_of_asks_runs_once() {
         let coalesce = Coalesce::default();
         let runs = Arc::new(AtomicUsize::new(0));
+        // What is gone once the work is, run or dropped unrun; the work
+        // counts before it goes if it runs.
         let ask = |c: &Coalesce| {
             let runs = runs.clone();
+            let (alive, gone) = tokio::sync::oneshot::channel::<()>();
             c.ask(Duration::from_millis(30), async move {
+                let _alive = alive;
                 runs.fetch_add(1, Ordering::SeqCst);
             });
+            gone
         };
         for _ in 0..50 {
             ask(&coalesce);
@@ -2718,10 +2773,12 @@ mod tests {
         until(|| runs.load(Ordering::SeqCst) == 1).await;
         ask(&coalesce);
         until(|| runs.load(Ordering::SeqCst) == 2).await;
-        ask(&coalesce);
+        let waiting = ask(&coalesce);
         coalesce.close();
-        ask(&coalesce);
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        let after = ask(&coalesce);
+        for gone in [waiting, after] {
+            let _ = within("the work after the close", gone).await;
+        }
         assert_eq!(runs.load(Ordering::SeqCst), 2, "nothing after the close");
     }
 

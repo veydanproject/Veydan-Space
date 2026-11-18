@@ -17,7 +17,6 @@ use messenger_core::{EventId, Outbound, RelayUrl, Scope, SubId, Transport};
 use messenger_transport::{RelayConfig, RelayPool};
 use messenger_vlink::testing::{bridge, Behaviour};
 use messenger_vlink::{Net, NetConfig};
-use nostr_sdk::local_relay::LocalRelay;
 use nostr_sdk::prelude::*;
 
 /// A name that resolves nowhere: the only way to it is the bridge.
@@ -35,8 +34,7 @@ async fn connected(pool: &RelayPool) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_relay_of_the_project_is_reached_through_the_bridge() {
-    let relay = LocalRelay::builder().build();
-    relay.run().await.expect("local relay starts");
+    let relay = messenger_testkit::local_relay().await;
     let real = relay.url().await;
     let port = url::Url::parse(real.as_str()).unwrap().port().unwrap();
 

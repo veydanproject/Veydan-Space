@@ -1278,6 +1278,20 @@ async fn load_signer(identity: &IdentityService) -> Option<Keys> {
     }
 }
 
+/// What the tests of the runtime share.
+#[cfg(test)]
+pub(crate) mod testing {
+    /// A fresh key taken in as an nsec: what a test needs of an identity.
+    /// `create` makes the backup string it shows once as well, an scrypt of
+    /// N = 2^16 that takes seconds in a debug build, and every runtime a
+    /// test started paid it; the tests of `create` and of the backup keep
+    /// it.
+    pub(crate) async fn log_in(rt: &crate::MessengerRuntime) -> crate::Identity {
+        let nsec = messenger_identity::keys::nsec(&nostr::key::Keys::generate());
+        rt.identity().import_nsec(&nsec).await.unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1312,7 +1326,7 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         rt.relays().set_silent(true).await.unwrap();
         for id in ["alice@example.com", "example.com"] {
@@ -1368,7 +1382,7 @@ mod tests {
         let (rt, mode) = start_net_mode(&cfg, &secrets).await;
         assert_eq!(mode, net::NetMode::Auto);
         assert_eq!(settings::get(&rt.store, net::KEY_MODE).await.unwrap().as_deref(), Some("auto"), "written at the first start");
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.shutdown().await;
         let (rt, mode) = start_net_mode(&cfg, &secrets).await;
         assert_eq!(mode, net::NetMode::Auto, "registration does not turn it off");
@@ -1382,7 +1396,7 @@ mod tests {
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let rt = MessengerRuntime::start(cfg.clone(), secrets.clone()).await.unwrap();
         // An install from before: identity, and no `net.mode` key.
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         settings::delete(&rt.store, net::KEY_MODE).await.unwrap();
         rt.shutdown().await;
         let (rt, mode) = start_net_mode(&cfg, &secrets).await;
@@ -1445,7 +1459,7 @@ mod tests {
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm_send_text(&Keys::generate().public_key().to_hex(), "hello", None).await.unwrap();
         rt.contact_add(&Keys::generate().public_key().to_hex(), Some("Bob")).await.unwrap();
@@ -1510,10 +1524,10 @@ mod tests {
         assert!(!rt.refresh_signer().await.unwrap(), "nothing to do without identity");
         assert!(matches!(rt.dm_send_text(&"ab".repeat(32), "x", None).await, Err(MessengerError::NotLoggedIn)));
 
-        let created = rt.identity().create("pw").await.unwrap();
+        let created = crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap(), "session started with the new key");
         assert!(rt.status().await.unwrap().session_active);
-        assert_eq!(rt.session_pubkey().await.unwrap(), created.identity.pubkey);
+        assert_eq!(rt.session_pubkey().await.unwrap(), created.pubkey);
         assert!(!rt.refresh_signer().await.unwrap(), "idempotent");
 
         // Sending queues the wrap; relays may be unreachable in tests, the
@@ -1532,10 +1546,10 @@ mod tests {
         let bob = Keys::generate();
         let c = rt.contact_add(&bob.public_key().to_hex(), Some("Bob")).await.unwrap();
         assert_eq!(c.nickname.as_deref(), Some("Bob"));
-        assert!(rt.contact_add(created.identity.pubkey.as_hex(), None).await.is_err(), "no self-contact");
+        assert!(rt.contact_add(created.pubkey.as_hex(), None).await.is_err(), "no self-contact");
         let me = rt.publish_own_profile(&ProfileInput { name: Some("alice".into()), ..Default::default() }).await.unwrap();
         assert_eq!(me.name.as_deref(), Some("alice"));
-        assert_eq!(rt.my_profile().await.unwrap().unwrap().pubkey, created.identity.pubkey.as_hex());
+        assert_eq!(rt.my_profile().await.unwrap().unwrap().pubkey, created.pubkey.as_hex());
         rt.contact_set_followed(&PubKey::parse(&bob.public_key().to_hex()).unwrap(), true).await.unwrap();
         assert!(rt.contacts().list().await.unwrap()[0].followed);
         assert!(rt.verify_nip05(&PubKey::parse(&bob.public_key().to_hex()).unwrap()).await.is_err(), "no profile yet");
@@ -1604,15 +1618,14 @@ mod tests {
 
     /// A runtime with a session on one local relay of its own.
     async fn on_a_local_relay() -> (tempfile::TempDir, LocalRelay, MessengerRuntime, PubKey) {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let url = relay.url().await.as_str_without_trailing_slash().to_string();
         let dir = tempfile::tempdir().unwrap();
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().add_user(&url, None).await.unwrap();
         rt.servers_use_own().await.unwrap();
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         connected(&*rt.relays().pool().await).await;
         let me = rt.session_pubkey().await.unwrap();
@@ -1672,11 +1685,9 @@ mod tests {
     #[tokio::test]
     async fn a_private_server_hears_only_what_names_it() {
         use messenger_store::{groups as group_repo, relays as relay_repo, servers};
-        let home = LocalRelay::builder().build();
-        home.run().await.unwrap();
+        let home = messenger_testkit::local_relay().await;
         let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-        let private = LocalRelay::builder().build();
-        private.run().await.unwrap();
+        let private = messenger_testkit::local_relay().await;
         let private_url = private.url().await.as_str_without_trailing_slash().to_string();
 
         let dir = tempfile::tempdir().unwrap();
@@ -1725,7 +1736,7 @@ mod tests {
         let configured = rt.relays().pool().await.configured();
         assert_eq!(configured.iter().find(|c| c.url.as_str() == private_url).unwrap().server_id.as_deref(), Some(id.as_str()));
 
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         connected(&*rt.relays().pool().await).await;
         let me = rt.session_pubkey().await.unwrap();
@@ -1859,7 +1870,10 @@ mod tests {
         rt.dm().apply_inbound(hi, &ctx_of(&me, now)).await.unwrap();
         rt.profiles().apply_event(&bob_pk, Timestamp(now - 100), r#"{"name":"Bob v1"}"#).await.unwrap();
         publish_name(&relay, &bob, "Bob v2").await;
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        // Nobody asked: the follower sends only for a reason handed to it,
+        // and this test hands it none, so Bob is not among whom it follows;
+        // no wait for a request that might come.
+        assert!(!rt.meta.followed().contains(bob_pk.as_hex()), "nobody follows Bob");
         assert_eq!(rt.profiles().get(&bob_pk).await.unwrap().unwrap().name.as_deref(), Some("Bob v1"), "nobody asked");
 
         rt.chat_open(bob_pk.as_hex()).await.unwrap();
@@ -2016,7 +2030,7 @@ mod tests {
     /// history is synced once the relays answered, and what they sent may
     /// still be on its way through the loop.
     async fn applied(rt: &MessengerRuntime, ids: &[EventId]) {
-        for _ in 0..200 {
+        for _ in 0..600 {
             let mut all = true;
             for id in ids {
                 all &= messenger_store::events_raw::contains(rt.store(), id).await.unwrap();
@@ -2026,7 +2040,7 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        panic!("the history was not applied within 10 s");
+        panic!("the history was not applied within 30 s");
     }
 
     /// Until `rt` published revision `rev` of its list and the outbox is empty.
@@ -2034,7 +2048,7 @@ mod tests {
         // Three looks in a row: the revision is counted before its events
         // are in the outbox, and one look can fall between the two.
         let mut steady = 0;
-        for _ in 0..100 {
+        for _ in 0..300 {
             let at_rev = settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().as_deref() == Some(rev);
             let drained = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
             if at_rev && drained && !rt.dm().relations_owed().await.unwrap() {
@@ -2054,7 +2068,7 @@ mod tests {
     /// with the outbox empty: which one it is.
     async fn published_at_least(rt: &MessengerRuntime, min: u64) -> u64 {
         let (mut last, mut steady) = (0, 0);
-        for _ in 0..150 {
+        for _ in 0..300 {
             let rev: u64 = settings::get(rt.store(), messenger_dm::snapshot::KEY_REV).await.unwrap().and_then(|v| v.parse().ok()).unwrap_or(0);
             let drained = messenger_store::outbox::due(rt.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
             if rev >= min && rev == last && drained && !rt.dm().relations_owed().await.unwrap() {
@@ -2078,8 +2092,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_fresh_device_reads_my_list_before_its_history_and_follows_it_live() {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let keys = Keys::generate();
         let nsec = keys.secret_key().to_bech32().unwrap();
         let me = pk_of(&keys);
@@ -2098,7 +2111,7 @@ mod tests {
         // own (empty) one; then it blocks the stranger and adds the friend
         // quietly, which is a second revision.
         let (dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
-        let told = list_read(&mut ui1, 20).await;
+        let told = list_read(&mut ui1, 30).await;
         assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (None, Some(false)), "nothing on the relay");
         assert_eq!(rt1.dm().relations_known(), messenger_dm::RelationsKnown::No);
         event_named(&mut ui1, session::UI_EVENT_HISTORY_SYNCED, 30).await;
@@ -2112,7 +2125,7 @@ mod tests {
         // so the stranger's messages meet the block and the friend's land in
         // a full chat, without a copy of any signal (there was none).
         let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
-        let told = list_read(&mut ui2, 20).await;
+        let told = list_read(&mut ui2, 30).await;
         assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(rev), Some(true)));
         assert_eq!(rt2.dm().relations_known(), messenger_dm::RelationsKnown::Complete);
         event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
@@ -2137,7 +2150,7 @@ mod tests {
         rt1.dm_act(quiet_pk.as_hex(), Action::Request).await.unwrap();
         let live = published_at_least(&rt1, told_by_me + 1).await;
         let told = loop {
-            let ev = event_named(&mut ui2, relations::UI_EVENT_RELATIONS, 20).await;
+            let ev = event_named(&mut ui2, relations::UI_EVENT_RELATIONS, 30).await;
             if ev.payload["rev"].as_u64() == Some(live) {
                 break ev;
             }
@@ -2156,16 +2169,15 @@ mod tests {
     /// that welcome's id, the fresh device sends no welcome anew.
     #[tokio::test]
     async fn a_fresh_device_is_in_my_groups_by_the_welcome_my_list_names() {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let keys = Keys::generate();
         let nsec = keys.secret_key().to_bech32().unwrap();
         let (_dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
-        list_read(&mut ui1, 20).await;
+        list_read(&mut ui1, 30).await;
         event_named(&mut ui1, session::UI_EVENT_HISTORY_SYNCED, 30).await;
         let g = rt1.group_create(messenger_groups::GroupKind::Private, "Family", "", true, None).await.unwrap();
         let wrap = messenger_store::groups::self_welcome(rt1.store(), &g.id).await.unwrap().expect("named at the creation");
-        for _ in 0..100 {
+        for _ in 0..300 {
             let drained = messenger_store::outbox::due(rt1.store(), i64::MAX / 4, 0).await.unwrap().is_empty();
             if drained && !rt1.dm().relations_owed().await.unwrap() {
                 break;
@@ -2175,8 +2187,8 @@ mod tests {
         rt1.shutdown().await;
 
         let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
-        list_read(&mut ui2, 20).await;
-        for _ in 0..100 {
+        list_read(&mut ui2, 30).await;
+        for _ in 0..300 {
             if rt2.group_list().await.unwrap().iter().any(|v| v.id == g.id && v.membership == "joined") {
                 break;
             }
@@ -2211,15 +2223,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_page_of_an_older_revision_the_relay_still_holds_is_not_the_list() {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let keys = Keys::generate();
         let nsec = keys.secret_key().to_bech32().unwrap();
         let (friend_pk, gone_pk) = (pk_of(&Keys::generate()), pk_of(&Keys::generate()));
         // Two revisions, each fitting its header: the relay is told of no
         // page by either.
         let (_dir1, rt1, mut ui1) = device_on(&relay, &nsec, None).await;
-        list_read(&mut ui1, 20).await;
+        list_read(&mut ui1, 30).await;
         published(&rt1, "1").await;
         rt1.dm_act(friend_pk.as_hex(), Action::Request).await.unwrap();
         published(&rt1, "2").await;
@@ -2232,11 +2243,11 @@ mod tests {
         // subscription: it is older than the revision just taken, so the
         // one it names stays nobody.
         let (_dir2, rt2, mut ui2) = device_on(&relay, &nsec, None).await;
-        let told = list_read(&mut ui2, 20).await;
+        let told = list_read(&mut ui2, 30).await;
         assert_eq!((told["rev"].as_u64(), told["complete"].as_bool()), (Some(2), Some(true)));
         event_named(&mut ui2, session::UI_EVENT_HISTORY_SYNCED, 30).await;
         let stale = stale_page_on(&relay, &keys, 1, &gone_pk, SystemClock.now().secs() - 1_000).await;
-        for _ in 0..100 {
+        for _ in 0..300 {
             if messenger_store::events_raw::contains(rt2.store(), &stale).await.unwrap() {
                 break;
             }
@@ -2252,8 +2263,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_decision_owed_at_the_close_is_published_at_the_next_start() {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let keys = Keys::generate();
         let nsec = keys.secret_key().to_bech32().unwrap();
         let (dir, rt, mut ui) = device_on(&relay, &nsec, None).await;
@@ -2291,7 +2301,7 @@ mod tests {
                 rt.identity().import_nsec(nsec).await.unwrap();
             }
             None => {
-                rt.identity().create("pw").await.unwrap();
+                crate::testing::log_in(&rt).await;
             }
         }
         assert!(rt.refresh_signer().await.unwrap());
@@ -2423,7 +2433,7 @@ mod tests {
         let rt = MessengerRuntime::start(config, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         let me = rt.session_keys().await.unwrap();
         let chat = messenger_store::chats::dm_chat_id(&bot.public_key().to_hex(), None);

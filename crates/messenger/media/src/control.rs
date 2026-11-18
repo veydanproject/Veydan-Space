@@ -176,12 +176,21 @@ impl TransferCtx {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::future::Future;
+
+    /// Whether `f` is not done when polled now. A stop or a wake that is
+    /// there resolves on the first poll, so pending at once is the check,
+    /// not a short wait that a busy host might let pass for the wrong
+    /// reason.
+    fn pending_now<F: Future>(f: F) -> bool {
+        let mut f = std::pin::pin!(f);
+        f.as_mut().poll(&mut std::task::Context::from_waker(std::task::Waker::noop())).is_pending()
+    }
 
     #[tokio::test]
     async fn stop_is_seen_at_once_and_wakes_are_not_stale() {
         let c = Control::new();
-        assert!(tokio::time::timeout(Duration::from_millis(20), c.stopped()).await.is_err(), "running: no stop");
+        assert!(pending_now(c.stopped()), "running: no stop");
         let waiter = tokio::spawn({
             let c = c.clone();
             async move { c.stopped().await }
@@ -195,7 +204,7 @@ mod tests {
 
         c.wake();
         let mut w = c.wakes();
-        assert!(tokio::time::timeout(Duration::from_millis(20), w.changed()).await.is_err(), "an earlier wake is not kept");
+        assert!(pending_now(w.changed()), "an earlier wake is not kept");
         c.wake();
         w.changed().await.unwrap();
     }

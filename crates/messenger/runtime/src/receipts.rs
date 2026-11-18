@@ -162,7 +162,7 @@ pub(crate) mod tests {
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         crate::servers::use_veydan_offline(&rt).await;
-        let me = rt.identity().create("pw").await.unwrap().identity.pubkey;
+        let me = crate::testing::log_in(&rt).await.pubkey;
         assert!(rt.refresh_signer().await.unwrap());
         rt.dm().set_gate(false);
 

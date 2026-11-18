@@ -2498,8 +2498,52 @@ async fn a_demoted_moderator_s_marks_lose_their_force_until_the_admin_inherits_t
     assert!(w.notes.is_empty(), "{:?}", w.notes);
 }
 
-#[tokio::test]
-async fn marks_and_messages_meet_in_any_order_and_end_alike() {
+/// The orders `marks_and_messages_meet_in_any_order_and_end_alike_*` try,
+/// in `SHARDS` parts. Every order needs a device of its own that heard the
+/// start of the group, a store made and some twenty events taken in, tens
+/// of milliseconds each in a debug build: the 240 devices took a minute and
+/// a half in one test on a busy runner, so the orders are dealt out to
+/// tests of their own that run side by side, every order still tried once.
+const SHARDS: usize = 8;
+
+/// The five events of the moderated message, in every order, and the
+/// demotion put into twenty of those at every place: the orders of shard
+/// `shard`, as (the order without the demotion, or the order with it).
+fn meeting_orders(shard: usize) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
+    let five: Vec<usize> = (0..5).collect();
+    let orders = permutations(&five);
+    assert_eq!(orders.len(), 120);
+    let mut six: Vec<Vec<usize>> = Vec::new();
+    for order in orders.iter().take(20) {
+        for pos in 0..=5 {
+            let mut o = order.clone();
+            o.insert(pos, 5);
+            six.push(o);
+        }
+    }
+    let mine = |all: Vec<Vec<usize>>| all.into_iter().enumerate().filter(|(k, _)| k % SHARDS == shard).map(|(_, o)| o).collect();
+    (mine(orders), mine(six))
+}
+
+#[test]
+fn the_shards_of_the_meeting_orders_take_each_order_once() {
+    let mut without = Vec::new();
+    let mut with = Vec::new();
+    for shard in 0..SHARDS {
+        let (a, b) = meeting_orders(shard);
+        without.extend(a);
+        with.extend(b);
+    }
+    let (n, m) = (without.len(), with.len());
+    without.sort();
+    without.dedup();
+    with.sort();
+    with.dedup();
+    assert_eq!((n, m, without.len(), with.len()), (120, 120, 120, 120));
+}
+
+async fn marks_and_messages_meet_in_any_order_and_end_alike(shard: usize) {
+    let (orders, six) = meeting_orders(shard);
     let mut w = World::new();
     let owner = w.person().await;
     let moderator = w.person().await;
@@ -2508,7 +2552,7 @@ async fn marks_and_messages_meet_in_any_order_and_end_alike() {
     let late: Vec<usize> = {
         let keys = w.devices[moderator].keys.clone();
         let mut v = Vec::new();
-        for _ in 0..(120 + 120) {
+        for _ in 0..(orders.len() + six.len()) {
             v.push(w.device(keys.clone()).await);
         }
         v
@@ -2533,44 +2577,71 @@ async fn marks_and_messages_meet_in_any_order_and_end_alike() {
     assert!(w.moderate(moderator, &g, ModNote::Unhide { targets: vec![m.clone()] }).await.unwrap());
     assert_eq!(w.devices[owner].texts(&g).await, vec!["hello there"], "approved for its new version, shown again");
     let demotion_at = w.devices[late[0]].missed.len();
+    assert_eq!(demotion_at, 5, "message, edit, approve, hide, unhide");
     w.act(owner, &g, OpBody::SetRole { who: w.pk(moderator), role: Role::Member }).await.unwrap();
     assert_eq!(w.devices[late[0]].missed.len(), demotion_at + 1, "the demotion is one event");
     assert!(w.devices[owner].texts(&g).await.is_empty(), "the approval lost its force: waiting again");
     assert_eq!(w.devices[owner].texts_as_moderator(&g).await, vec!["hello there"]);
 
     // Without the demotion, in every order: approved and shown.
-    let five: Vec<usize> = (0..demotion_at).collect();
-    assert_eq!(five.len(), 5, "message, edit, approve, hide, unhide");
-    let orders = permutations(&five);
-    assert_eq!(orders.len(), 120);
     for (k, order) in orders.iter().enumerate() {
         let d = late[k];
-        let mut order = order.clone();
         // The demotion is left where it lies: not delivered.
-        order.retain(|&i| i != demotion_at);
-        w.online_in_order(d, &order).await;
+        w.online_in_order(d, order).await;
         assert_eq!(w.devices[d].texts(&g).await, vec!["hello there"], "order {order:?}");
         let row = &w.devices[d].moderated(&g).await.into_iter().find(|x| x.id == m).unwrap();
         assert_eq!(row.review, "ok", "order {order:?}");
     }
     // With the demotion somewhere in the order: nothing of the moderator's
     // holds, the message waits, and a moderator's view still has it.
-    let mut six: Vec<Vec<usize>> = Vec::new();
-    for order in orders.iter().take(20) {
-        for pos in 0..=5 {
-            let mut o = order.clone();
-            o.insert(pos, demotion_at);
-            six.push(o);
-        }
-    }
     for (k, order) in six.iter().enumerate() {
-        let d = late[120 + k];
+        let d = late[orders.len() + k];
         w.online_in_order(d, order).await;
         assert!(w.devices[d].texts(&g).await.is_empty(), "order {order:?}");
         let row = &w.devices[d].moderated(&g).await.into_iter().find(|x| x.id == m).unwrap();
         assert_eq!((row.review.as_str(), row.text.as_deref()), ("pending", Some("hello there")), "order {order:?}");
     }
     assert!(w.notes.is_empty(), "{:?}", w.notes);
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_1() {
+    marks_and_messages_meet_in_any_order_and_end_alike(0).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_2() {
+    marks_and_messages_meet_in_any_order_and_end_alike(1).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_3() {
+    marks_and_messages_meet_in_any_order_and_end_alike(2).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_4() {
+    marks_and_messages_meet_in_any_order_and_end_alike(3).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_5() {
+    marks_and_messages_meet_in_any_order_and_end_alike(4).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_6() {
+    marks_and_messages_meet_in_any_order_and_end_alike(5).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_7() {
+    marks_and_messages_meet_in_any_order_and_end_alike(6).await;
+}
+
+#[tokio::test]
+async fn marks_and_messages_meet_in_any_order_and_end_alike_8() {
+    marks_and_messages_meet_in_any_order_and_end_alike(7).await;
 }
 
 #[tokio::test]

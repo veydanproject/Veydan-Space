@@ -283,7 +283,10 @@ impl DeviceLink for Device {
     fn await_done<'a>(&'a self, t_pub: &'a str, until: u64) -> SeamFuture<'a, bool> {
         Box::pin(async move {
             let me = self.me().unwrap_or_default();
-            for _ in 0..500 {
+            // A relay that never brings the note: given up at the deadline of
+            // the tests, as the real one gives up when the link ends.
+            let deadline = tokio::time::Instant::now() + WAIT;
+            while tokio::time::Instant::now() < deadline {
                 let came = self.world.relay().own.iter().any(|(who, n)| {
                     *who == me
                         && n.t == T_DEVICE_LINK_DONE
@@ -318,8 +321,12 @@ impl DeviceLink for Device {
 
 const NSEC: [u8; 32] = [0x42; 32];
 
+/// How long a test waits for what it awaits; past it the test fails.
+const WAIT: Duration = Duration::from_secs(30);
+
 async fn until_state(b: &Linker, want: LinkState) -> LinkPoll {
-    for _ in 0..500 {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while tokio::time::Instant::now() < deadline {
         let poll = b.poll().await;
         if poll.state == want {
             return poll;
@@ -330,13 +337,27 @@ async fn until_state(b: &Linker, want: LinkState) -> LinkPoll {
 }
 
 async fn until<F: Fn() -> bool>(what: &str, f: F) {
-    for _ in 0..500 {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while tokio::time::Instant::now() < deadline {
         if f() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("{what} never happened");
+}
+
+/// Waits until T heard every note sent to it so far. B hears the notes one
+/// by one and stops listening at the first that opens: a note it cannot
+/// take (not of a link) is sent after them, and once T took it out of the
+/// queue, the notes before it were heard to their end and none opened.
+async fn heard_through(world: &World, t_pub: &str) {
+    let tx = world.relay().listeners.get(t_pub).cloned().expect("T listens");
+    tx.send(Note::new("test.marker", Map::new()))
+        .await
+        .expect("T still listens");
+    until("T took every note", || tx.capacity() == tx.max_capacity()).await;
+    assert!(!tx.is_closed(), "T still listens");
 }
 
 /// Without a camera: B shows the words, A types them, both see the same
@@ -444,7 +465,7 @@ async fn a_wrong_code_does_not_open() {
     );
     a.approve(None).await.expect("sent");
     assert_eq!(world.wraps_to(&shown.t_pub), 1);
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    heard_through(&world, &shown.t_pub).await;
     assert_eq!(
         b.poll().await.state,
         LinkState::Waiting,
@@ -484,7 +505,7 @@ async fn a_blob_from_another_sealer_is_dropped() {
         .cloned()
         .expect("T listens");
     tx.send(forged.clone()).await.expect("delivered");
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    heard_through(&world, &shown.t_pub).await;
     assert_eq!(b.poll().await.state, LinkState::Waiting);
     // The same blob from its own key opens.
     forged.from = Some(hex(&payload.npub));

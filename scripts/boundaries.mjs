@@ -18,6 +18,10 @@
 //       a crate given with `+` lends its tables, the others' are foreign
 //   tables product <src dir> <table>...
 //       where the SQL of a product names one of these tables
+//   tables-all <file>
+//       the rows of `tables`, one per line, words cut at tabs, in one
+//       process: the sources of each crate are read once, not once per row;
+//       `L<row>` TAB finding, or `F<row>` for a row whose scan failed
 //   imports <dir>
 //       what the UI files of a directory import: <file>:<line> TAB <path>
 //   ui <products.json>
@@ -431,6 +435,20 @@ function rules(kind, pkg, dir, buildScript, tauri) {
 /** The string literals of a crate's `src` that a build of the app holds:
  *  those of tests, inline or in a file a `#[cfg(test)] mod` leads to, aside. */
 function builtLiterals(root) {
+  // The batch mode asks for the same crate once per row; its sources are
+  // parsed once, and a failure of the parse is remembered and thrown again
+  // to every row that needs the crate, as a call of its own would have.
+  if (!builtCache.has(root)) {
+    try { builtCache.set(root, { lits: readLiterals(root) }); } catch (error) { builtCache.set(root, { error }); }
+  }
+  const hit = builtCache.get(root);
+  if (hit.error) throw hit.error;
+  return hit.lits;
+}
+const builtCache = new Map();
+const createdCache = new Map();
+
+function readLiterals(root) {
   const { files, cfgsOf } = crate(root);
   const found = [];
   for (const [file, code] of files) {
@@ -487,7 +505,9 @@ function tables(kind, dir, others) {
   }
   for (const other of kind === 'product' ? [] : others) {
     const shared = other.startsWith('+');
-    for (const name of created(builtLiterals(shared ? other.slice(1) : other))) {
+    const root = shared ? other.slice(1) : other;
+    if (!createdCache.has(root)) createdCache.set(root, created(builtLiterals(root)));
+    for (const name of createdCache.get(root)) {
       if (shared) allowed.add(name);
       else foreign.add(name);
     }
@@ -814,6 +834,26 @@ function uiSelftest() {
   }
 }
 
+/** The rows of `tables`, one per line of a file, the words of a row cut at
+ *  tabs, run in one process so that each crate is read once. For every row
+ *  it prints `L<row>` TAB a finding per finding, or `F<row>` when that row
+ *  alone failed, as the scan of one row would have exited with an error. */
+function tablesAll(file) {
+  const out = [];
+  read(file).split('\n').filter(Boolean).forEach((row, i) => {
+    const args = row.split('\t');
+    try {
+      if (args.length < 2 || !['lib', 'module', 'product'].includes(args[0])) throw new Error('not a row of tables');
+      for (const line of tables(args[0], args[1], args.slice(2))) out.push(`L${i}\t${line}`);
+    } catch (error) {
+      // What the scan of one row would have printed on stderr as it died.
+      console.error(error?.stack ?? String(error));
+      out.push(`F${i}`);
+    }
+  });
+  return out;
+}
+
 const [scan, ...args] = process.argv.slice(2);
 let lines;
 if (scan === 'commands' && args.length >= 2) lines = commands(args[0], args.slice(1));
@@ -822,6 +862,7 @@ else if (scan === 'imports' && args.length === 1) lines = imports(args[0]);
 else if (scan === 'ui' && args.length === 1) lines = ui(args[0]);
 else if (scan === 'ui-selftest' && args.length === 0) lines = uiSelftest();
 else if (scan === 'foreign' && args.length === 3) lines = foreign(...args);
+else if (scan === 'tables-all' && args.length === 1) lines = tablesAll(args[0]);
 else if (scan === 'tables' && args.length >= 2 && ['lib', 'module', 'product'].includes(args[0])) lines = tables(args[0], args[1], args.slice(2));
 else {
   console.error('usage: boundaries.mjs commands <golden> <src> [<src>[=<crate>]].. | rules <kind> <package> <dir> <build script|-> <yes|no> | tables <lib|module> <src> [[+]<src>].. | tables product <src> <table>.. | imports <dir> | ui <products.json> | ui-selftest | foreign <products.json> <product> <root>');

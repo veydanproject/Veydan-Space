@@ -10,6 +10,22 @@
 [build]
 target-dir = "data/target"
 
+# The key derivation at its production cost (Argon2id, 64 MiB, three passes:
+# veydan-lock, veydan-recovery) built without optimisation takes seconds per
+# derivation, and a test that sets a lock derives three or four times: the
+# crate veydan-lock took 35 s of tests, the restore and reissue tests of the
+# cloud up to 70 s each, a dev build of the app unlocked as slowly. These two
+# crates are built optimised in the dev profile: the same results, the
+# release profile untouched, veydan-lock 5 s (measured 2026-11-18).
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+# The same for the backup string of the messenger's identity (scrypt,
+# N = 2^16): seconds per create or import in a test build.
+[profile.dev.package.scrypt]
+opt-level = 3
+
 # The Windows archive of libwebrtc (livekit/rust-sdks) is built against the
 # static C runtime (/MT). Everything linked into one binary with it has to use
 # the same runtime, or the linker refuses (LNK2038 RuntimeLibrary mismatch),

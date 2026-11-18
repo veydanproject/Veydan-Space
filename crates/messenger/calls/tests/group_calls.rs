@@ -370,7 +370,9 @@ impl World {
             if done() {
                 return;
             }
-            assert!(started.elapsed() < UNTIL, "{what}: not within {UNTIL:?}");
+            if started.elapsed() >= UNTIL {
+                panic!("{what}: not within {UNTIL:?}");
+            }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
@@ -2083,9 +2085,13 @@ async fn the_room_moves_when_its_node_dies() {
     w.node.set_rtt(0, 20);
     w.node.set_rtt(1, 50);
     w.group(&[0, 1, 2]);
+    // The second holds her backup longer than any stall of a busy runner:
+    // the move asserted below is the creator's, and a backup that fired
+    // while her note was on its way would make a second room.
+    let timing = Timing { move_backup: Duration::from_secs(50), move_wait: Duration::from_secs(50), ..cascade_timing() };
     let servers = vec![w.node.as_call_node(), w.node.node(n1, NodeClass::Project)];
     for i in [0, 1, 2] {
-        w.with_servers(i, servers.clone(), cascade_timing()).await;
+        w.with_servers(i, servers.clone(), timing).await;
     }
     let (alice, bob, carol) = (w.p(0).clone(), w.p(1).clone(), w.p(2).clone());
 
@@ -2708,7 +2714,12 @@ async fn the_second_point_of_the_judgement_is_bounded_like_the_hello() {
     for i in [0, 1] {
         w.p(i).groups.pin(GROUP, w.node.as_call_node());
     }
-    let timing = Timing { move_backup: Duration::from_millis(300), ..cascade_timing() };
+    // The bound is told by the order of things, not by a race with the
+    // backup: the way to a node is given far longer to come than the test
+    // waits, and the second holds his backup as long, so a judgement
+    // that waited for the connect would never let the creator move in
+    // time, and only the creator moves.
+    let timing = Timing { move_backup: UNTIL * 2, move_wait: UNTIL * 4, connect_timeout: UNTIL * 2, ..cascade_timing() };
     // Alice's own node is node 1 (nearer, with the cascade): the second
     // point of her judgement.
     w.with_servers(0, vec![w.node.node(n1, NodeClass::Own)], timing).await;

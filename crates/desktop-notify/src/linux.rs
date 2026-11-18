@@ -286,6 +286,38 @@ mod tests {
         assert!(r.actions.is_empty());
         assert_eq!(r.body, "Incoming call");
     }
+
+    /// The lock of the session as the next notification asks it, if it is
+    /// told on the first poll: no bus, no timer, nothing to wait for.
+    fn told_at_once() -> Option<bool> {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let mut ask = std::pin::pin!(session_locked());
+        match ask.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+            Poll::Ready(locked) => Some(locked),
+            Poll::Pending => None,
+        }
+    }
+
+    /// An answer that stands for a while (no logind, or none in time) is
+    /// not asked again: the next notification has it at once, without the
+    /// half second of patience. Only logind's own answer is asked each time.
+    #[tokio::test]
+    async fn the_system_is_not_waited_on_for_every_notification() {
+        // Whatever this machine has: logind answering, none, or none in time.
+        let first = session_locked().await;
+        let held = *HELD.lock().unwrap();
+        if let Some((_, locked)) = held {
+            assert_eq!(locked, first);
+            assert_eq!(told_at_once(), Some(first), "a held answer is asked again");
+        }
+        // Either answer, once held, is told at once.
+        for locked in [false, true] {
+            *HELD.lock().unwrap() = Some((Instant::now() + NO_ANSWER_FOR, locked));
+            assert_eq!(told_at_once(), Some(locked));
+        }
+        *HELD.lock().unwrap() = held;
+    }
 }
 
 #[zbus::proxy(

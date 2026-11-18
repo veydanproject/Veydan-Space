@@ -11,6 +11,8 @@
 //!   to each other in the process (`messenger-calls`).
 //! - [`FakeNode`] and [`FakeGroups`]: a call node with rooms and no
 //!   network, and the groups a group call asks of (`messenger-calls`).
+//! - [`local_relay`]: a relay of nostr-sdk listening in the process, on a port
+//!   that was not taken meanwhile.
 //! - [`open_dm`]: a gift wrap opened into the `DmInbound` ingress would
 //!   make of it, for tests that pass wraps between parties.
 //!
@@ -19,9 +21,11 @@
 pub mod fake_engine;
 pub mod fake_node;
 pub mod file_secrets;
+pub mod relay;
 pub use fake_engine::{FakeEngine, FakeHandle};
 pub use fake_node::{FakeDevice, FakeGroups, FakeNode, FakeRegistry};
 pub use file_secrets::FileSecretStore;
+pub use relay::{local_relay, local_relay_with};
 
 use async_trait::async_trait;
 use messenger_core::inbound::Envelope as WireEnvelope;

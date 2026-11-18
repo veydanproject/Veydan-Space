@@ -1527,10 +1527,20 @@ mod tests {
         lock(&NOTICED).clear();
     }
 
+    /// The pause between two looks at the relays in these tests.
+    const EVERY: Duration = Duration::from_millis(2);
+    /// A limit of the wait that no test here reaches: the test's own
+    /// deadline ([`WAIT`]) comes long before it.
+    const NEVER: Duration = Duration::from_secs(600);
+    /// How long a test waits for the wait to end; past it the test fails.
+    const WAIT: Duration = Duration::from_secs(30);
+
     /// The readings of the relays after `reopen`, one per look, and how
     /// the wait came out: the restart of a call is asked only once a relay
     /// is back, never on the stale `Connected` of a socket just closed.
-    async fn relays_back_after(readings: &'static [bool]) -> (RelaysBack, usize) {
+    /// `within` and `drop_seen_within` are the limits of `relays_back`; the
+    /// wait failing to end before [`WAIT`] fails the test.
+    async fn relays_back_after(readings: &'static [bool], within: Duration, drop_seen_within: Duration) -> (RelaysBack, usize) {
         let looks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counted = looks.clone();
         let connected = move || {
@@ -1538,20 +1548,23 @@ mod tests {
             let up = readings[i.min(readings.len() - 1)];
             async move { up }
         };
-        let every = Duration::from_millis(2);
-        let back = relays_back(connected, every * 40, every * 10, every).await;
+        let back = tokio::time::timeout(WAIT, relays_back(connected, within, drop_seen_within, EVERY))
+            .await
+            .unwrap_or_else(|_| panic!("the wait for the relays did not end within {WAIT:?}"));
         (back, looks.load(std::sync::atomic::Ordering::SeqCst))
     }
 
     /// A socket just closed still reads `Connected` for a moment, then the
     /// relay drops and comes back after its retry: the wait ends at that
     /// moment, well within its limit. Relays that read down from the first
-    /// look (the drop was seen before the look) end it the same way.
+    /// look (the drop was seen before the look) end it the same way. The
+    /// limits are out of reach here, so the looks alone decide, however
+    /// long each of them takes on a busy machine.
     #[tokio::test]
     async fn the_restart_waits_for_a_relay_seen_down_and_back() {
-        let (back, looks) = relays_back_after(&[true, true, false, false, false, false, true]).await;
+        let (back, looks) = relays_back_after(&[true, true, false, false, false, false, true], NEVER, NEVER).await;
         assert_eq!((back, looks), (RelaysBack::Reconnected, 7), "the stale reading is not a relay back");
-        let (back, looks) = relays_back_after(&[false, false, true]).await;
+        let (back, looks) = relays_back_after(&[false, false, true], NEVER, NEVER).await;
         assert_eq!((back, looks), (RelaysBack::Reconnected, 3));
     }
 
@@ -1560,17 +1573,19 @@ mod tests {
     /// Relays that never come back are given the whole time, no more.
     #[tokio::test]
     async fn the_restart_goes_on_without_a_drop_or_after_the_time() {
+        // A drop looked for 20 ms, a wait of ten minutes: the test's deadline
+        // of half a minute ends a wait that went on to its limit.
         let started = Instant::now();
-        let (back, looks) = relays_back_after(&[true]).await;
+        let (back, looks) = relays_back_after(&[true], NEVER, EVERY * 10).await;
         assert_eq!(back, RelaysBack::Unchanged);
-        // A look every 2 ms until 20 ms: 11 looks at most, fewer when a
-        // sleep overshoots; never the whole wait of 80 ms (41 looks).
-        assert!((2..=12).contains(&looks), "about the drop's time, not the whole wait: {looks}");
-        assert!(started.elapsed() >= Duration::from_millis(20) && started.elapsed() < Duration::from_millis(80));
+        assert!(started.elapsed() >= EVERY * 10, "the drop is looked for the whole 20 ms");
+        // Every pause is at least 2 ms, so the eleventh look is past 20 ms:
+        // 11 looks at most, fewer when a pause overshoots.
+        assert!((1..=12).contains(&looks), "about the drop's time, not more: {looks}");
         let started = Instant::now();
-        let (back, looks) = relays_back_after(&[false]).await;
+        let (back, looks) = relays_back_after(&[false], EVERY * 40, EVERY * 10).await;
         assert_eq!(back, RelaysBack::TimedOut);
-        assert!((12..=41).contains(&looks), "the whole wait: {looks}");
-        assert!(started.elapsed() >= Duration::from_millis(80));
+        assert!(started.elapsed() >= EVERY * 40, "the whole wait");
+        assert!((1..=41).contains(&looks), "the whole wait, no more: {looks}");
     }
 }

@@ -211,7 +211,7 @@ mod tests {
             }
         });
         let ids = ["q".to_string(), "p".to_string()];
-        tokio::time::timeout(Duration::from_secs(5), waits.until_any(&ids))
+        tokio::time::timeout(Duration::from_secs(30), waits.until_any(&ids))
             .await
             .expect("the launch is seen waiting");
         assert!(waits.waits_for("p"));
@@ -239,8 +239,16 @@ mod tests {
         let locks = ProfileLocks::default();
         let waits = locks.launch_waits();
         let _held = locks.lock("p").await;
-        let launch = locks.lock_for_launch("p", || {});
-        let _ = tokio::time::timeout(Duration::from_millis(50), launch).await;
+        // One poll takes the launch to its wait: the lock is held, so it is
+        // counted as waiting and stays there.
+        let mut launch = Box::pin(locks.lock_for_launch("p", || {}));
+        let first = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(std::future::Future::poll(launch.as_mut(), cx))
+        })
+        .await;
+        assert!(first.is_pending(), "the lock is held");
+        assert!(waits.waits_for("p"), "the launch is seen waiting");
+        drop(launch);
         assert!(!waits.waits_for("p"));
     }
 }

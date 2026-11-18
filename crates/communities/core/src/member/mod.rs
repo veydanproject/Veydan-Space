@@ -547,8 +547,19 @@ impl Member {
                 // A flat epoch gives no key by its event (the keeper's issue
                 // to each member does): `Out` of it says nothing.
                 let flat = event.scheme == keydist::SchemeId::FlatV1;
+                // An event whose generations are all older than the newest
+                // one I hold a bundle of (or than an emergency I took) was
+                // built before the keeper issued me that bundle: its `Out`
+                // says nothing of where I stand now. `current` only says it
+                // is the newest this folder heard, and a folder restored
+                // empty hears the old epochs after the keeper's issue. An
+                // epoch that really leaves me out is built after my bundle
+                // and carries its generation or a newer one.
+                let newest_held = keys.state(&scope_id).and_then(|s| s.bundles.iter().map(|b| b.gen).chain(s.emergency_gen).max());
+                let stale = newest_gen.zip(newest_held).is_some_and(|(n, h)| n < h);
                 match status {
                     _ if held || flat => {}
+                    Some(Status::Out) if stale => {}
                     // Out of a section, not of the channel: «раздел закрыт»
                     // (wire §14.5); `everyone` and the membership stay.
                     Some(Status::Out) if *current && scope_id != SCOPE_EVERYONE => {

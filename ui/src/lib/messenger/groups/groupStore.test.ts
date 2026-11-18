@@ -26,8 +26,14 @@ describe('a decision of a moderator, the queue grown or shrunk', () => {
   });
 
   it('is ignored without a group named', async () => {
-    groupStore.handleEvent({ name: 'group.queue', payload: { pending: 2 } } as never);
-    await new Promise((r) => setTimeout(r, 300));
+    vi.useFakeTimers();
+    try {
+      groupStore.handleEvent({ name: 'group.queue', payload: { pending: 2 } } as never);
+      // Past the debounce of the read, on a clock the test moves itself.
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(api.get).not.toHaveBeenCalled();
   });
 });

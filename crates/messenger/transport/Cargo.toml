@@ -31,6 +31,7 @@ tokio-tungstenite.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+messenger-testkit = { path = "../testkit", default-features = false }
 messenger-vlink = { workspace = true, features = ["testing"] }
 nostr-sdk = { workspace = true, features = ["local-relay"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "io-util"] }

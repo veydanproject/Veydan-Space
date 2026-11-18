@@ -1148,24 +1148,29 @@ async fn a_join_waits_for_the_cycle_that_runs() {
     assert_eq!(refused.to_string(), join::ERR_SYNC_RUNNING);
     assert!(load_binding(&joiner.core.db).await.is_none());
 
+    // The join's first step is the slot, looked at in its first poll: the
+    // refusal above shows that a held slot stops it before it reads or
+    // binds anything. Found held now, the join does not give up but waits,
+    // and goes through once the cycle is over.
     let host = joiner.host();
-    let (joined, ()) = tokio::join!(
-        join::join_held(
-            &host,
-            &joiner.core,
-            &joiner.sync,
-            PASSPHRASE,
-            Duration::from_secs(20),
-        ),
-        async {
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            assert!(
-                load_binding(&joiner.core.db).await.is_none(),
-                "the join waits for the cycle"
-            );
-            drop(running);
-        }
+    let mut joining = Box::pin(join::join_held(
+        &host,
+        &joiner.core,
+        &joiner.sync,
+        PASSPHRASE,
+        Duration::from_secs(30),
+    ));
+    let first = std::future::poll_fn(|cx| {
+        std::task::Poll::Ready(std::future::Future::poll(joining.as_mut(), cx))
+    })
+    .await;
+    assert!(first.is_pending(), "the join waits for the cycle");
+    assert!(
+        load_binding(&joiner.core.db).await.is_none(),
+        "the join waits for the cycle"
     );
+    drop(running);
+    let joined = joining.await;
     if joined.unwrap() {
         key_row_changed(&joiner).await;
     }

@@ -7,6 +7,9 @@
 // texture coordinates the renderer draws with.
 
 import { describe, expect, it } from 'vitest';
+
+/** A turn of the event loop: the rejection of the send has been handled by then. */
+const turn = () => new Promise<void>((done) => setTimeout(done, 0));
 import {
   FpsMeter, FrameAcks, FrameRenderer, HEADER_BYTES, PictureWatch, VIDEO_LOST_MS, WINDOW_CORNER, WINDOW_MARGIN, chromaSize, clampShift, fitFor, frameSeq,
   mirrorsLocal, parseFrame, quadCoords, shownSize, signalLost, sourcePoint, testPattern,
@@ -344,7 +347,7 @@ describe('the acknowledgements of the frames', () => {
     rejecting.ready(1);
     rejecting.took(1);
     // An unhandled rejection would fail the run.
-    await new Promise((r) => setTimeout(r, 0));
+    await turn();
     expect(calls).toBe(3);
   });
 });

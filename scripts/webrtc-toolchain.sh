@@ -36,7 +36,10 @@ VEYDAN_ROOT="${VEYDAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 WEBRTC_TAG="webrtc-89d790b"
 WEBRTC_SOURCE="${WEBRTC_SOURCE:-veydan}"
 WEBRTC_VEYDAN_TAG="v1.0.10"
-WEBRTC_DIR="$VEYDAN_ROOT/data/toolchains/webrtc"
+# Through data/ by its physical path, as scripts/toolchain.sh names the
+# toolchains: on the runner data/ is a link into the cache kept between jobs.
+mkdir -p "$VEYDAN_ROOT/data"
+WEBRTC_DIR="$(cd -P "$VEYDAN_ROOT/data" && pwd)/toolchains/webrtc"
 export VEYDAN_WEBRTC_DIR="$WEBRTC_DIR"
 
 # sha256 of webrtc-<target>-release.zip of the release WEBRTC_VEYDAN_TAG of

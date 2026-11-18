@@ -15,6 +15,19 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const OURS: &str = "media.veydan.test";
 
+/// How long a test waits for what the rule and the requests are sure to
+/// do: far beyond what it takes on a busy runner.
+const WAIT: Duration = Duration::from_secs(30);
+
+/// Until `done` holds, looked at every few milliseconds, for `WAIT` at most.
+async fn wait_for(what: &str, done: impl Fn() -> bool) {
+    let until = std::time::Instant::now() + WAIT;
+    while !done() {
+        assert!(std::time::Instant::now() < until, "waited too long for {what}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_projects_server_is_reached_through_the_bridge_and_others_directly() {
     let server = MockServer::start().await;
@@ -116,12 +129,14 @@ async fn a_request_that_stalled_directly_is_made_again_through_the_bridge() {
             .await
         })
     };
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // The first attempt is under way on the direct way, where it waits
+    // for ever: the switch below has a stalled request to act on.
+    wait_for("the first attempt", || attempts.load(Ordering::Relaxed) >= 1).await;
     assert!(!request.is_finished(), "stalled on the direct way");
 
     // Bridges on: the stalled request is given up and made again at once.
     net.configure(config(true)).await.unwrap();
-    let status = tokio::time::timeout(Duration::from_secs(10), request).await.expect("not left waiting").unwrap();
+    let status = tokio::time::timeout(WAIT, request).await.expect("not left waiting").unwrap();
     assert_eq!(status.expect("the way settled").expect("answered"), 201);
     assert_eq!(attempts.load(Ordering::Relaxed), 2);
     assert_eq!(fake.streams.load(Ordering::Relaxed), 1);
@@ -137,19 +152,31 @@ async fn a_change_that_leaves_the_host_alone_interrupts_nothing() {
         bridges: vec![fake.bridge.clone()],
     };
     net.configure(config(&[OURS])).await.unwrap();
+    // The attempt ends only once it saw the change itself, and a turn of
+    // the task after that, so whatever the runner's pace the change comes
+    // while it is under way and is weighed before it ends: one that
+    // interrupted it would start a second attempt, which no further change
+    // ever ends.
     let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let (n, a) = (net.clone(), attempts.clone());
     let request = tokio::spawn(async move {
+        let watch = n.clone();
         messenger_http::following_route_on(&n, OURS, || {
             a.fetch_add(1, Ordering::Relaxed);
-            tokio::time::sleep(Duration::from_millis(400))
+            let mut seen = watch.changes();
+            seen.mark_unchanged();
+            async move {
+                let _ = seen.changed().await;
+                tokio::task::yield_now().await;
+            }
         })
         .await
     });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_for("the attempt", || attempts.load(Ordering::Relaxed) >= 1).await;
     // Another host joins the list: this one still goes through the bridge.
     net.configure(config(&[OURS, "push.veydan.test"])).await.unwrap();
-    assert_eq!(request.await.unwrap(), Ok(()));
+    let out = tokio::time::timeout(WAIT, request).await.expect("the attempt was not given up").unwrap();
+    assert_eq!(out, Ok(()));
     assert_eq!(attempts.load(Ordering::Relaxed), 1);
 }
 

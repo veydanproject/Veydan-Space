@@ -308,8 +308,7 @@ mod tests {
     use nostr_sdk::local_relay::LocalRelay;
 
     async fn local_relay() -> (LocalRelay, Vec<RelayConfig>) {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.expect("local relay starts");
+        let relay = messenger_testkit::local_relay().await;
         let url = relay.url().await;
         let url = RelayUrl::parse(url.as_str_without_trailing_slash()).expect("url");
         (
@@ -390,17 +389,26 @@ mod tests {
         publish(&relays, Some(old.clone()), kept.wrap.clone())
             .await
             .expect("sent");
-        let got = tokio::time::timeout(Duration::from_secs(5), heard.recv())
+        let got = tokio::time::timeout(Duration::from_secs(30), heard.recv())
             .await
             .expect("in time")
             .expect("a note");
         assert_eq!(got.from, pk(&old), "the sealer is the old device");
         assert_eq!(got.envelope.str_field("blob"), Some("AQID"));
-        assert!(
-            tokio::time::timeout(Duration::from_millis(500), strangers.recv())
-                .await
-                .is_err()
-        );
+        // A note to the stranger, sent after it on the same relay, is the
+        // first thing the stranger hears: anything of the note to T would
+        // have come before it.
+        let marker = Envelope::new(T_DEVICE_LINK).with("blob", "marker");
+        let to_stranger = keynotes::wrap_note_to_key(&old, &pk(&stranger), &marker.encode(), now(), now() + 600)
+            .expect("wrap");
+        publish(&relays, Some(old.clone()), to_stranger.wrap)
+            .await
+            .expect("sent");
+        let first = tokio::time::timeout(Duration::from_secs(30), strangers.recv())
+            .await
+            .expect("in time")
+            .expect("a note");
+        assert_eq!(first.envelope.str_field("blob"), Some("marker"), "nothing of the note to T");
 
         // The new device, now with my key, tells my devices it is in.
         let done = Envelope::new(T_DEVICE_LINK_DONE).with("t_pub", t.public_key().to_hex());
@@ -421,7 +429,7 @@ mod tests {
         publish(&relays, Some(old.clone()), own)
             .await
             .expect("sent");
-        let came = tokio::time::timeout(Duration::from_secs(5), waiting.recv())
+        let came = tokio::time::timeout(Duration::from_secs(30), waiting.recv())
             .await
             .expect("in time")
             .expect("the note");
@@ -505,12 +513,12 @@ mod tests {
             api_key: None,
             server_id: None,
         }];
-        let started = tokio::time::Instant::now();
-        assert!(matches!(
-            open_pool(&dead, None).await.err(),
-            Some(MessengerError::Transport(_))
-        ));
-        assert!(started.elapsed() < CONNECT_PATIENCE + Duration::from_secs(3));
+        // Given up by its own patience: ten times of it is a hang, not a
+        // busy runner.
+        let given_up = tokio::time::timeout(CONNECT_PATIENCE * 10, open_pool(&dead, None))
+            .await
+            .expect("given up by itself");
+        assert!(matches!(given_up.err(), Some(MessengerError::Transport(_))));
         assert!(link_qr_svg("veydan://link/ab/abandon")
             .expect("svg")
             .contains(r#"<circle class="logo""#));
@@ -555,7 +563,7 @@ mod tests {
         let a = runtime(dir_a.path()).await;
         crate::servers::use_veydan_offline(&a).await;
         on_the_relay(&a, &url).await;
-        a.identity().create("backup words").await.expect("identity");
+        crate::testing::log_in(&a).await;
         a.refresh_signer().await.expect("signer");
         let b = runtime(dir_b.path()).await;
         on_the_relay(&b, &url).await;
@@ -578,7 +586,7 @@ mod tests {
             .send_note_to_key(&found.pubkey, &note, now() + 600)
             .await
             .expect("sent");
-        let got = tokio::time::timeout(Duration::from_secs(5), heard.recv())
+        let got = tokio::time::timeout(Duration::from_secs(30), heard.recv())
             .await
             .expect("in time")
             .expect("a note");

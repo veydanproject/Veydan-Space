@@ -550,28 +550,58 @@ mod tests {
         assert_eq!(*told.lock().unwrap(), None);
     }
 
-    /// A thread that ends when told is joined; one that never does is
-    /// left behind after `STOP_WAIT`, and the drop returns.
+    /// The warnings given on the thread that has it as its default: a
+    /// thread left behind is told by one, a thread joined by none.
+    #[derive(Clone, Default)]
+    struct Warnings(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl tracing::Subscriber for Warnings {
+        fn enabled(&self, meta: &tracing::Metadata<'_>) -> bool {
+            *meta.level() == tracing::Level::WARN
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, _: &tracing::Event<'_>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    /// A thread that has ended is joined; one that never does is left
+    /// behind after `STOP_WAIT`, and the drop returns. Which of the two
+    /// happened is read from the warning, not from the clock. The thread
+    /// to join has ended before it is stopped: one that ends only when
+    /// told may need longer than `STOP_WAIT` to be given a processor on a
+    /// busy runner, and would then be left behind as it should.
     #[test]
     fn stopping_waits_a_bounded_time_for_the_thread() {
         let stop = Arc::new(AtomicBool::new(false));
-        let s = stop.clone();
-        let quick = std::thread::spawn(move || while !s.load(Ordering::SeqCst) {
+        let quick = std::thread::spawn(|| {});
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !quick.is_finished() {
+            assert!(Instant::now() < deadline, "the thread never ended");
             std::thread::sleep(Duration::from_millis(1));
-        });
-        let t = Instant::now();
-        stop_worker("test", &stop, Some(quick));
-        assert!(t.elapsed() < STOP_WAIT, "joined as soon as it ended");
+        }
+        let warnings = Warnings::default();
+        tracing::subscriber::with_default(warnings.clone(), || stop_worker("test", &stop, Some(quick)));
+        assert_eq!(warnings.0.load(Ordering::SeqCst), 0, "joined");
+        assert!(stop.load(Ordering::SeqCst), "told to stop all the same");
 
         let stop = Arc::new(AtomicBool::new(false));
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let stuck = std::thread::spawn(move || {
             let _ = release_rx.recv();
         });
+        let warnings = Warnings::default();
         let t = Instant::now();
-        stop_worker("test", &stop, Some(stuck));
+        tracing::subscriber::with_default(warnings.clone(), || stop_worker("test", &stop, Some(stuck)));
         let waited = t.elapsed();
-        assert!(waited >= STOP_WAIT && waited < STOP_WAIT * 4, "left behind after {waited:?}");
+        assert_eq!(warnings.0.load(Ordering::SeqCst), 1, "left behind, and told");
+        assert!(waited >= STOP_WAIT, "left behind after {waited:?}");
         assert!(stop.load(Ordering::SeqCst));
         let _ = release_tx.send(());
     }

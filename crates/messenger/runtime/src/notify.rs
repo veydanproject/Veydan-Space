@@ -116,7 +116,7 @@ mod tests {
         assert!(rt.notify_bundle().await.unwrap().is_none(), "no session, no keys");
         assert!(rt.notify_fingerprint().await.unwrap().is_none());
 
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         let full = rt.notify_bundle().await.unwrap().unwrap();
         assert!(!full.calls_only, "the default shows the content");

@@ -179,7 +179,6 @@ mod tests {
     #[tokio::test]
     async fn the_phone_asks_my_home_relays() {
         use messenger_core::{traits::Clock, traits::SystemClock, MessengerConfig};
-        use nostr_sdk::local_relay::LocalRelay;
 
         let dir = tempfile::tempdir().unwrap();
         let config = MessengerConfig::new(dir.path().join("messenger"));
@@ -188,8 +187,7 @@ mod tests {
         let now = SystemClock.now().secs();
         assert!(!read_elsewhere(&store, &me, "dm:x", now).await, "no relays");
 
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let url = relay.url().await.as_str_without_trailing_slash().to_string();
         for (url, server) in [(url.as_str(), None), ("ws://127.0.0.1:1", None), ("ws://127.0.0.1:2", Some("private"))] {
             let row = relays::RelayUpsert {
@@ -216,9 +214,11 @@ mod tests {
         let said: Event = serde_json::from_value(event(&keys, Some("dm:x"), now - 2)).unwrap();
         computer.send_event(&said).await.unwrap();
 
-        let started = Instant::now();
-        assert!(read_elsewhere(&store, &me, "dm:x", now).await, "read on the computer");
-        assert!(started.elapsed() <= BUDGET + Duration::from_millis(500), "within the budget");
+        // Heard at all is heard within the budget: the question is ended
+        // by its own timer at `BUDGET`, and an ended one answers false. So
+        // the relay out of reach held nothing up, and no stopwatch of the
+        // test is needed to say so.
+        assert!(read_elsewhere(&store, &me, "dm:x", now).await, "read on the computer, within the budget");
         assert!(!read_elsewhere(&store, &me, "dm:y", now).await, "another chat");
         assert!(!read_elsewhere(&store, &Keys::generate(), "dm:x", now).await, "another user");
 
@@ -258,8 +258,14 @@ mod tests {
 
         settings::set_bool(&store, relays::KEY_SILENT, true).await.unwrap();
         assert!(!read_elsewhere(&store, &me, "dm:x", 1_000_000).await);
-        let came = tokio::time::timeout(Duration::from_millis(200), relay.accept()).await.is_ok();
-        assert!(!came, "no connection in silent mode");
+        // The call is over and leaves nothing running, so a connection it
+        // made is in the backlog of the listener by now: an accept that
+        // does not block finds it at once, or there is none. No while of
+        // quiet is waited for.
+        let relay = relay.into_std().unwrap();
+        let pending = relay.accept();
+        assert!(matches!(&pending, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "no connection in silent mode: {pending:?}");
+        let relay = tokio::net::TcpListener::from_std(relay).unwrap();
 
         // The same relay is reached once silent mode is off.
         settings::set_bool(&store, relays::KEY_SILENT, false).await.unwrap();

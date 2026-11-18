@@ -1645,9 +1645,13 @@ mod tests {
     /// A zip of `(name, contents)` pairs, names written as they are.
     fn zip_of(path: &Path, files: &[(&str, &[u8])]) {
         let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        // A fixed date in every entry: by default an entry carries the time
+        // it was written (in steps of two seconds), and two archives of the
+        // same files made across such a step would not be the same bytes.
+        let options =
+            zip::write::SimpleFileOptions::default().last_modified_time(zip::DateTime::default());
         for (name, data) in files {
-            zip.start_file(*name, zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(*name, options).unwrap();
             zip.write_all(data).unwrap();
         }
         zip.finish().unwrap();

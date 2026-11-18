@@ -212,7 +212,7 @@ async fn serve_trustee(device: Arc<Device>) -> TrusteeSide {
 /// The owner's device: hears the acks and the pongs.
 async fn serve_owner(device: Arc<Device>, api: Arc<dyn CloudApi>) -> Social {
     let social = Social::new(device.clone(), device.boxed.clone(), api, device.me())
-        .with(device.world.clock(), Duration::from_secs(5));
+        .with(device.world.clock(), WAIT);
     let mut rx = device.incoming().await.expect("incoming");
     let heard = social.clone();
     tokio::spawn(async move {
@@ -232,8 +232,12 @@ async fn serve_owner(device: Arc<Device>, api: Arc<dyn CloudApi>) -> Social {
     social
 }
 
+/// How long a test waits for what it awaits; past it the test fails.
+const WAIT: Duration = Duration::from_secs(30);
+
 async fn until<F: Fn() -> bool>(what: &str, f: F) {
-    for _ in 0..200 {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while tokio::time::Instant::now() < deadline {
         if f() {
             return;
         }
@@ -247,13 +251,44 @@ where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = bool>,
 {
-    for _ in 0..200 {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while tokio::time::Instant::now() < deadline {
         if f().await {
             return;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("{what}: did not happen in time");
+}
+
+/// Waits until each of `listeners` took every note sent to it so far. Each
+/// hears its notes one by one, so a note it ignores, sent after them, is
+/// taken out of its queue only once they were handled to their end; a
+/// listener that stopped hears nothing more.
+async fn heard_through(listeners: Vec<mpsc::Sender<Note>>) {
+    let marker = Note::new("test.marker", Map::new());
+    let open: Vec<mpsc::Sender<Note>> = listeners
+        .into_iter()
+        .filter(|tx| match tx.try_send(marker.clone()) {
+            Ok(()) => true,
+            Err(mpsc::error::TrySendError::Closed(_)) => false,
+            Err(mpsc::error::TrySendError::Full(_)) => panic!("a queue of notes is full"),
+        })
+        .collect();
+    until("every note heard", || {
+        open.iter().all(|tx| tx.is_closed() || tx.capacity() == tx.max_capacity())
+    })
+    .await;
+}
+
+/// The devices of `who` that hear the notes to the identity.
+fn inbox(world: &World, who: &str) -> Vec<mpsc::Sender<Note>> {
+    guard(&world.relay).inboxes.get(who).cloned().unwrap_or_default()
+}
+
+/// What listens to the notes to the key `t_pub`.
+fn listeners_of(world: &World, t_pub: &str) -> Vec<mpsc::Sender<Note>> {
+    guard(&world.relay).keys.get(t_pub).cloned().unwrap_or_default()
 }
 
 /// The restore of §7, as far as this test goes: the words are recorded.
@@ -422,6 +457,8 @@ async fn a_clean_device_asks_two_people_confirm_and_the_key_is_put_together() {
     let view = requester.start(&stage.owner.me()).await.expect("request");
     let code = view.code.clone().expect("code");
     let link = view.link.clone().expect("link");
+    let open = stage.api.recovery_request_get(&stage.owner.me()).await.expect("get").expect("open");
+    let t_pub = open.temp_pub.expect("t");
 
     // Ann comes by the link: the code of the link is the code of the request.
     let ann = helper(&stage, &stage.trustees[0]);
@@ -451,7 +488,7 @@ async fn a_clean_device_asks_two_people_confirm_and_the_key_is_put_together() {
     let cid = helper(&stage, &stage.trustees[2]);
     cid.lookup(&link).await.expect("looked up");
     cid.confirm(true).await.expect("sent");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    heard_through(listeners_of(&stage.world, &t_pub)).await;
     assert_eq!(requester.poll().confirmed.len(), 2);
 
     // The restore of §7 with the words, then close by T.
@@ -581,7 +618,8 @@ async fn a_revoked_generation_is_dropped_and_a_stale_answer_is_ignored() {
     let ben = helper(&stage, &stage.trustees[1]);
     ben.lookup(&stage.owner.me()).await.expect("looked up");
     ben.confirm(true).await.expect("sent");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Ben's answer is counted and the key tried in one step of the requester.
+    until("Ben's answer is counted", || requester.poll().confirmed.len() == 2).await;
     assert_eq!(requester.poll().phase, RequestPhase::Waiting, "one of generation 1 is not enough");
     let cid = helper(&stage, &stage.trustees[2]);
     cid.lookup(&stage.owner.me()).await.expect("looked up");
@@ -622,8 +660,14 @@ async fn the_health_is_asked_with_pings_and_a_lost_share_is_sent_again() {
     let ben = &stage.trustees[1];
     ben.shares.clear();
     stage.world.later(social::PING_EVERY_SECS);
+    let pongs = stage.world.sent(social::T_PONG);
     stage.social.check(false).await.expect("pinged");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // Ann and Cid answer; Ben heard the ping to its end and sent nothing;
+    // the owner heard both pongs.
+    until("the pongs of Ann and Cid", || stage.world.sent(social::T_PONG) >= pongs + 2).await;
+    heard_through(inbox(&stage.world, &ben.me())).await;
+    assert_eq!(stage.world.sent(social::T_PONG), pongs + 2, "Ben has no share to answer for");
+    heard_through(inbox(&stage.world, &stage.owner.me())).await;
     let status = stage.social.status().await.expect("status");
     assert_eq!(status.people[1].health, Health::Delivered, "a week to answer");
     assert_eq!(status.alive, 2);
@@ -675,6 +719,9 @@ async fn a_reissue_without_enough_acks_fails_in_time() {
     let rk2 = RecoveryKey::generate().expect("rk");
     let e = social.deliver(&rk2, 2).await.err().map(|e| e.code);
     assert_eq!(e.as_deref(), Some(social::words::SHARES_NOT_ACKED));
+    // The one person still there acks, in the patience or after it.
+    let s = social.clone();
+    until_async("Cid's ack", || async { s.status().await.map(|s| s.acked >= 1).unwrap_or(false) }).await;
     let status = social.status().await.expect("status");
     assert_eq!((status.generation, status.acked), (2, 1));
 }

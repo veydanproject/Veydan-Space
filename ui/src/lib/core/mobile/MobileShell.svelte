@@ -17,6 +17,7 @@
   import { hub } from '$lib/core/mobile/hub.svelte';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import { startIosKeyboard } from '$lib/core/mobile/ios-keyboard';
+  import { installScrolling } from '$lib/core/scrolling';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import LinkInbox from '$lib/core/links/LinkInbox.svelte';
@@ -79,6 +80,7 @@
     void appLock.listen();
     void registry.startAll();
     const stopIosKeyboard = startIosKeyboard();
+    const uninstallScrolling = installScrolling();
     // A phone has no updater: the product's latest.json, once a day (14.3).
     // An app installed by a store is updated by the store and never checks.
     let stopUpdateCheck = () => {};
@@ -89,6 +91,7 @@
     return () => {
       gone = true;
       stopIosKeyboard();
+      uninstallScrolling();
       stopUpdateCheck();
       registry.stopAll();
     };

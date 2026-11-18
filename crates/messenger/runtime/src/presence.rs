@@ -740,7 +740,7 @@ mod tests {
         let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         crate::servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         rt.dm().set_gate(false);
         let keys = rt.session_keys().await.unwrap();
@@ -1088,7 +1088,6 @@ mod tests {
     async fn a_beat_counts_only_when_a_relay_took_it() {
         use messenger_core::traits::RelayState;
         use messenger_transport::RelayConfig;
-        use nostr_sdk::local_relay::LocalRelay;
 
         let (_dir, rt, me) = started().await;
         let now = SystemClock.now().secs();
@@ -1104,8 +1103,7 @@ mod tests {
         rt.presence().set_foreground(true, now);
         assert!(!rt.presence().beat_if_due(&nowhere, &me, now).await, "nobody took it");
 
-        let relay = LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = RelayPool::new(None);
         pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
@@ -1201,8 +1199,7 @@ mod tests {
     #[tokio::test]
     async fn the_focus_says_the_chat_read_here_and_when_it_is_left() {
         let (_dir, rt, me) = started().await;
-        let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = pool_on(&url).await;
         let keys = FocusKeys::derive(&me, FOCUS_EPOCH);
@@ -1267,8 +1264,7 @@ mod tests {
     async fn the_last_word_of_one_second_is_what_the_relay_keeps() {
         use nostr_sdk::prelude::{Client, Filter, Kind};
         let (_dir, rt, me) = started().await;
-        let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
-        relay.run().await.unwrap();
+        let relay = messenger_testkit::local_relay().await;
         let url = messenger_core::RelayUrl::parse(relay.url().await.as_str_without_trailing_slash()).unwrap();
         let pool = pool_on(&url).await;
         let keys = FocusKeys::derive(&me, FOCUS_EPOCH);

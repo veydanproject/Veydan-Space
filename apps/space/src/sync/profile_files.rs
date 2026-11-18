@@ -2842,7 +2842,18 @@ mod tests {
             warnings
         };
         let launched = async {
-            tokio::time::sleep(Duration::from_millis(800)).await;
+            // The lock of a profile is one shared mutex, held by the map of
+            // the locks and by this launch; whoever asks for it holds it
+            // too while it waits. A third holder is the cycle at the lock,
+            // the apply of the snapshot being its first step there.
+            let lock = tokio::sync::OwnedMutexGuard::mutex(&launch);
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            while std::sync::Arc::strong_count(lock) < 3 {
+                if tokio::time::Instant::now() >= deadline {
+                    panic!("the cycle never came to the lock of the profile's files");
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
             assert!(!done.load(Ordering::SeqCst), "the apply did not wait");
             b.browser
                 .running

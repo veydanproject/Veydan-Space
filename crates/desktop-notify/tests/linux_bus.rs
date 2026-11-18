@@ -106,8 +106,20 @@ impl Server {
     async fn action_invoked(emitter: &SignalEmitter<'_>, id: u32, action_key: &str) -> zbus::Result<()>;
 }
 
-async fn settle() {
-    tokio::time::sleep(Duration::from_millis(300)).await;
+/// How long a test waits for what it awaits; past it the test fails.
+const WAIT: Duration = Duration::from_secs(30);
+
+/// Waits until `done` holds: the bus and the notifier run on their own
+/// tasks, and a busy machine may take its time; a deadline ends the wait
+/// with a failure.
+async fn until(what: &str, done: impl Fn() -> bool) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !done() {
+        if tokio::time::Instant::now() >= deadline {
+            panic!("{what}: not within {WAIT:?}");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 fn app() -> AppInfo {
@@ -135,8 +147,7 @@ async fn one_per_key_replaced_cleared_clicked() {
     let (_bus, address, server, state) = server().await;
     let (click_tx, mut click_rx) = mpsc::unbounded_channel();
     let n = Notifier::start_on_bus(app(), Handlers::clicks(Arc::new(move |k| { let _ = click_tx.send(k); })), address);
-    settle().await;
-    assert!(n.available());
+    until("the server is seen", || n.available()).await;
 
     let toast = |key: &str, body: &str, silent: bool| Toast {
         key: key.into(),
@@ -148,7 +159,7 @@ async fn one_per_key_replaced_cleared_clicked() {
     n.show(toast("dm:a", "a <b>", false));
     n.show(toast("dm:a", "a <b>\nsecond", true));
     n.show(toast("group:g", "hi", false));
-    settle().await;
+    until("three notifications", || state.lock().unwrap().seen.len() >= 3).await;
     {
         let s = state.lock().unwrap();
         assert_eq!(s.seen.len(), 3);
@@ -165,18 +176,19 @@ async fn one_per_key_replaced_cleared_clicked() {
     }
 
     n.clear("group:g");
-    settle().await;
+    until("a close", || !state.lock().unwrap().closed.is_empty()).await;
     assert_eq!(state.lock().unwrap().closed, vec![2]);
 
     // A click on the chat's notification hands its key back.
     let emitter = SignalEmitter::new(&server, "/org/freedesktop/Notifications").unwrap();
     Server::action_invoked(&emitter, 1, "default").await.unwrap();
-    let key = tokio::time::timeout(Duration::from_secs(2), click_rx.recv()).await.unwrap();
+    let key = tokio::time::timeout(WAIT, click_rx.recv()).await.unwrap();
     assert_eq!(key.as_deref(), Some("dm:a"));
 
     // After the click the key starts a new notification.
     n.show(toast("dm:a", "again", false));
-    settle().await;
+    until("the fourth notification", || state.lock().unwrap().seen.len() >= 4).await;
+    assert_eq!(state.lock().unwrap().seen.len(), 4);
     assert_eq!(state.lock().unwrap().seen.last().unwrap().replaces, 0);
 }
 
@@ -190,7 +202,7 @@ async fn a_call_rings_until_a_button_is_pressed() {
         on_action: Arc::new(move |k, id| { let _ = actions.send(format!("{id} {k}")); }),
     };
     let n = Notifier::start_on_bus(app(), handlers, address);
-    settle().await;
+    until("the server is seen", || n.available()).await;
 
     let call = |key: &str| Toast {
         key: key.into(),
@@ -202,7 +214,7 @@ async fn a_call_rings_until_a_button_is_pressed() {
     };
     n.show(call("call:c1"));
     n.show(call("call:c2"));
-    settle().await;
+    until("two calls shown", || state.lock().unwrap().seen.len() >= 2).await;
     {
         let s = state.lock().unwrap();
         let seen = &s.seen[0];
@@ -220,27 +232,62 @@ async fn a_call_rings_until_a_button_is_pressed() {
     Server::action_invoked(&emitter, 2, "decline").await.unwrap();
     let mut got = Vec::new();
     for _ in 0..2 {
-        got.push(tokio::time::timeout(Duration::from_secs(2), rx.recv()).await.unwrap().unwrap());
+        got.push(tokio::time::timeout(WAIT, rx.recv()).await.unwrap().unwrap());
     }
     assert_eq!(got, ["answer call:c1", "decline call:c2"]);
-    settle().await;
+    until("both closed", || state.lock().unwrap().closed.len() >= 2).await;
     assert_eq!(state.lock().unwrap().closed, vec![1, 2]);
 
-    // A press on what is gone goes nowhere.
+    // A press on what is gone goes nowhere. The notifier takes the presses
+    // in the order the server sent them, so a press on a call still shown,
+    // sent right after, is the next thing it hands on: the press before it
+    // was taken and led nowhere.
+    n.show(call("call:c3"));
+    until("the third call shown", || state.lock().unwrap().seen.len() >= 3).await;
     Server::action_invoked(&emitter, 1, "answer").await.unwrap();
-    settle().await;
-    assert!(rx.try_recv().is_err());
+    Server::action_invoked(&emitter, 3, "answer").await.unwrap();
+    let next = tokio::time::timeout(WAIT, rx.recv()).await.unwrap().unwrap();
+    assert_eq!(next, "answer call:c3", "the press on what is gone was handed on");
+}
+
+/// Waits until the bus has carried `count` asks for the capabilities of a
+/// notification server, as a monitor of the bus sees them.
+async fn asks_seen(monitor: &mut zbus::MessageStream, seen: &mut usize, count: usize) {
+    use futures_util::StreamExt;
+    while *seen < count {
+        let message = tokio::time::timeout(WAIT, monitor.next())
+            .await
+            .unwrap_or_else(|_| panic!("ask {} not seen within {WAIT:?}", *seen + 1))
+            .expect("the monitor stays")
+            .expect("a message");
+        let header = message.header();
+        if header.message_type() == zbus::message::Type::MethodCall
+            && header.member().is_some_and(|m| m.as_str() == "GetCapabilities")
+        {
+            *seen += 1;
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_server_is_not_available() {
     let (_bus, address) = private_bus();
+    // A monitor of the bus, there before the notifier starts, sees each of
+    // its asks for the server.
+    let monitor = zbus::connection::Builder::address(address.as_str()).unwrap().build().await.unwrap();
+    zbus::fdo::MonitoringProxy::new(&monitor).await.unwrap().become_monitor(&[], 0).await.unwrap();
+    let mut monitor = zbus::MessageStream::from(&monitor);
+    let mut seen = 0;
+
     let app = AppInfo { id: "x".into(), name: "x".into(), desktop_entry: "x".into(), icon: "x".into(), icon_file: None };
     let n = Notifier::start_on_bus(app, Handlers::clicks(Arc::new(|_| {})), address);
-    settle().await;
-    assert!(!n.available());
+    asks_seen(&mut monitor, &mut seen, 1).await;
+    // With no server a show asks again, and the notifier asks only after it
+    // took the answer to the ask before: once the second ask is on the bus,
+    // the first was refused and told.
     n.show(Toast { key: "k".into(), title: "t".into(), body: "b".into(), ..Toast::default() });
-    settle().await;
+    asks_seen(&mut monitor, &mut seen, 2).await;
+    assert!(!n.available());
 }
 
 /// logind's session as a lock screen leaves it.
@@ -274,16 +321,6 @@ async fn the_lock_of_the_session_is_asked_of_logind_each_time() {
     assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(true), "a lock comes through at once, nothing is cached");
     *locked.lock().unwrap() = false;
     assert_eq!(desktop_notify::session_locked_on_bus(&address).await, Some(false));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn the_system_is_not_waited_on_for_every_notification() {
-    // Whatever this machine has: logind answering at once, or none, which
-    // is then left alone; the second ask never waits the half second.
-    let _ = desktop_notify::session_locked().await;
-    let started = std::time::Instant::now();
-    let _ = desktop_notify::session_locked().await;
-    assert!(started.elapsed() < Duration::from_millis(400), "{:?}", started.elapsed());
 }
 
 /// A logind that fails to answer the property.

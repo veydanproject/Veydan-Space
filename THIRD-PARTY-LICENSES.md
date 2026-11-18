@@ -994,7 +994,7 @@ Thank you to the authors of the following Cargo crates:
 | zerovec | 0.11.6 | Unicode-3.0 |
 | zerovec-derive | 0.11.3 | Unicode-3.0 |
 | zip | 4.6.1 | MIT * |
-| zip | 9.0.4 | MIT |
+| zip | 9.0.5 | MIT |
 | zlib-rs | 0.6.5 | Zlib |
 | zmij | 1.0.21 | MIT |
 | zopfli | 0.8.3 | Apache-2.0 |

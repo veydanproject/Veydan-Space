@@ -14,7 +14,8 @@ run-name: ${{ contains(github.ref_name, '-rc.') && 'RC' || 'Release' }} ${{ gith
 #       snapshot of the tagged commit here under vX.Y.Z-rc.N or vX.Y.Z; THIS
 #       workflow builds Windows, macOS (two architectures) and Linux in a
 #       matrix, Android (the APK, and the app bundle for Google Play) in a
-#       job of its own, checks every updater signature, writes latest.json
+#       job of its own, iOS (the .ipa) in another for a product with an
+#       Xcode project, checks every updater signature, writes latest.json
 #       and SHA256SUMS, and publishes the release — an rc as a pre-release
 #       (the updater never offers it), a release as the latest.
 #   make push <product> dev
@@ -65,6 +66,7 @@ jobs:
       updater_pubkey: ${{ steps.meta.outputs.updater_pubkey }}
       build_desktop: ${{ steps.meta.outputs.build_desktop }}
       build_android: ${{ steps.meta.outputs.build_android }}
+      build_ios: ${{ steps.meta.outputs.build_ios }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -426,13 +428,218 @@ jobs:
         if: always()
         run: df -h . && du -sh data/target-android data/toolchains 2>/dev/null || true
 
+  # The .ipa of the product for iOS, on a macOS runner, for a product whose
+  # folder holds its Xcode project (meta.sh build_ios): the steps of the iOS
+  # lab (.github/workflows/ios.yml) that a release needs. Without the Apple
+  # secrets of this repository the app is built without a signature
+  # (scripts/ios/build.sh device-unsigned) and the summary of the run says
+  # so; with all of them it is signed for App Store Connect, uploaded to
+  # TestFlight, and the signed .ipa is the one the release holds. A red job
+  # here publishes nothing, as on every other platform. No token: this job
+  # writes nothing on GitHub.
+  ios:
+    needs: meta
+    if: needs.meta.outputs.build_ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      PRODUCT: ${{ needs.meta.outputs.product }}
+      # The archive of libwebrtc for the phone: LiveKit's of the same commit
+      # (scripts/webrtc-toolchain.sh pins its hash), as the lab takes it,
+      # until Veydan-WebRTC publishes ours (services/webrtc/build/ios.sh).
+      WEBRTC_SOURCE: livekit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Xcode of the image
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: ui/package.json
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ui/.node-version
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      # The version rust-toolchain.toml names, with the targets
+      # scripts/ios/env.sh asks for: the phone, and its simulator.
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          rustc -V
+
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: . -> data/target-ios/${{ needs.meta.outputs.product }}
+          key: ios-${{ needs.meta.outputs.product }}
+
+      # The image has Xcode and CocoaPods, not XcodeGen, which the Tauri CLI
+      # runs over gen/apple/project.yml. The bash of macOS is 3.2, which
+      # cannot read scripts/product.sh; the one of Homebrew comes first on
+      # the PATH of the image.
+      - name: XcodeGen and bash
+        run: brew install xcodegen bash
+
+      - name: Install frontend dependencies
+        run: pnpm --dir ui install --frozen-lockfile
+
+      # The engine of calls: its archive for the phone, fetched by
+      # scripts/ios/env.sh and kept between runs by the hash of the script
+      # that pins it (the key of the lab).
+      - name: libwebrtc (cache)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: data/toolchains/webrtc
+          key: webrtc-veydan-ios-objc2-${{ hashFiles('scripts/webrtc-toolchain.sh') }}
+
+      # The Apple secrets of this repository decide the path, and only the
+      # answer leaves the step: all four, a build signed for App Store
+      # Connect and its upload to TestFlight; none, a build without a
+      # signature, said in the summary of the run; some of them, a mistake
+      # that stops the job before it builds.
+      - id: apple
+        name: The Apple secrets
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          IOS_API_KEY_ID: ${{ secrets.IOS_API_KEY_ID }}
+          IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          set_count=0
+          for value in "$IOS_TEAM_ID" "$IOS_API_ISSUER" "$IOS_API_KEY_ID" "$IOS_API_KEY_P8"; do
+            [ -z "$value" ] || set_count=$((set_count + 1))
+          done
+          case "$set_count" in
+            4) echo "signed=true" >> "$GITHUB_OUTPUT" ;;
+            0)
+              echo "signed=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::iOS is unsigned: the Apple secrets are not set in this repository"
+              {
+                echo "### iOS is unsigned"
+                echo
+                echo "iOS is unsigned: the Apple secrets are not set in this repository (IOS_TEAM_ID, IOS_API_ISSUER, IOS_API_KEY_ID, IOS_API_KEY_P8)."
+                echo "The release holds the .ipa without a signature, and nothing was uploaded to TestFlight."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::IOS_TEAM_ID, IOS_API_ISSUER, IOS_API_KEY_ID and IOS_API_KEY_P8 (base64 of the .p8) are set together or not at all; $set_count of 4 are set"
+              exit 1
+              ;;
+          esac
+
+      # The CLI is the one of the UI project, as on the other platforms:
+      # TAURI_APP_PATH names the product, TAURI_FRONTEND_PATH the UI project.
+      - name: Build without a signature (scripts/ios/build.sh)
+        if: steps.apple.outputs.signed != 'true'
+        env:
+          TAURI_APP_PATH: ${{ github.workspace }}/apps/${{ needs.meta.outputs.product }}
+          TAURI_FRONTEND_PATH: ${{ github.workspace }}/ui
+        run: bash scripts/ios/build.sh "$PRODUCT" device-unsigned
+
+      # The signed build: the Apple variables the Tauri CLI reads for
+      # automatic signing (internal/platform-spec.md 13.6), each from its
+      # secret in the env of this step alone, and the key of App Store
+      # Connect as a file of the run, removed below whatever happens.
+      - name: Build, signed for App Store Connect (scripts/ios/build.sh)
+        if: steps.apple.outputs.signed == 'true'
+        env:
+          TAURI_APP_PATH: ${{ github.workspace }}/apps/${{ needs.meta.outputs.product }}
+          TAURI_FRONTEND_PATH: ${{ github.workspace }}/ui
+          EXPORT_METHOD: app-store-connect
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.IOS_TEAM_ID }}
+          APPLE_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.IOS_API_KEY_ID }}
+          IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          printf '%s' "$IOS_API_KEY_P8" | base64 -d > "$RUNNER_TEMP/private_keys/AuthKey_$APPLE_API_KEY.p8"
+          unset IOS_API_KEY_P8
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/private_keys/AuthKey_$APPLE_API_KEY.p8"
+          bash scripts/ios/build.sh "$PRODUCT" device-signed
+
+      # TestFlight: the signed .ipa to App Store Connect with the same key,
+      # which altool reads from ./private_keys/AuthKey_<id>.p8; the id and
+      # the issuer name the key, the .p8 is the secret and stays a file.
+      # Processing and the testers are the owner's, in App Store Connect.
+      - name: Upload to App Store Connect (TestFlight)
+        if: steps.apple.outputs.signed == 'true'
+        env:
+          IOS_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          IOS_API_KEY_ID: ${{ secrets.IOS_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          signed=(release-assets/ios/*_ios-arm64.ipa)
+          if [ "${#signed[@]}" -ne 1 ]; then
+            echo "::error::the signed build left ${#signed[@]} files *_ios-arm64.ipa in release-assets/ios, not one"
+            exit 1
+          fi
+          mkdir -p private_keys
+          cp "$RUNNER_TEMP/private_keys/AuthKey_$IOS_API_KEY_ID.p8" private_keys/
+          xcrun altool --upload-app --type ios --file "${signed[0]}" --apiKey "$IOS_API_KEY_ID" --apiIssuer "$IOS_API_ISSUER"
+          rm -rf private_keys
+
+      - name: Remove the key of App Store Connect
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private_keys" private_keys
+
+      # The .ipa under the prefix of the other files of the release
+      # (productName of tauri.conf.json: Veydan.Space), where build.sh names
+      # it after the iOS app (productName of tauri.ios.conf.json). One .ipa:
+      # the signed one when it was made, the one without a signature
+      # otherwise, which says so in its name.
+      - name: Gather the .ipa
+        env:
+          ASSET_PREFIX: ${{ needs.meta.outputs.asset_prefix }}
+          VERSION: ${{ needs.meta.outputs.version }}
+          SIGNED: ${{ steps.apple.outputs.signed }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ "$SIGNED" = "true" ]; then tail="ios-arm64.ipa"; else tail="ios-arm64-unsigned.ipa"; fi
+          built=(release-assets/ios/*_"${VERSION}_${tail}")
+          if [ "${#built[@]}" -ne 1 ]; then
+            echo "::error::scripts/ios/build.sh left ${#built[@]} files *_${VERSION}_${tail} in release-assets/ios, not one"
+            exit 1
+          fi
+          mkdir -p ios-assets
+          cp "${built[0]}" "ios-assets/${ASSET_PREFIX}_${VERSION}_${tail}"
+          ls -la ios-assets
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-ios
+          path: ios-assets/
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Disk (after the job)
+        if: always()
+        run: df -h . && du -sh data/target-ios data/toolchains 2>/dev/null || true
+
   # Everything together: every signature checked against the public key of
   # the product, latest.json over every platform, SHA256SUMS, the note of
   # the version as the text — published under the tag as a pre-release (rc)
   # or THE release (the latest). Only this job may write.
   publish:
-    needs: [meta, build, android]
-    if: needs.build.result == 'success' && needs.android.result == 'success'
+    needs: [meta, build, android, ios]
+    # iOS blocks as the other platforms do; a product without an Xcode
+    # project skips it. A job whose need was skipped is skipped too unless
+    # its condition calls a status function: !cancelled() is that call, and
+    # the results named here are the whole condition.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.android.result == 'success' && (needs.ios.result == 'success' || needs.ios.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -461,6 +668,7 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
           UPDATER_KEYS: ${{ needs.meta.outputs.updater_keys }}
           UPDATER_PUBKEY: ${{ needs.meta.outputs.updater_pubkey }}
+          BUILD_IOS: ${{ needs.meta.outputs.build_ios }}
           ASSETS_DIR: release-assets
         run: |
           set -euo pipefail
@@ -469,7 +677,7 @@ jobs:
             exit 1
           fi
           node scripts/release/assets.mjs verify --dir "$ASSETS_DIR" --prefix "$ASSET_PREFIX" --version "$VERSION" \
-            --keys "$UPDATER_KEYS" --pubkey "$UPDATER_PUBKEY"
+            --keys "$UPDATER_KEYS" --pubkey "$UPDATER_PUBKEY" --ios "$BUILD_IOS"
           if [ ! -f "$NOTES_SOURCE" ]; then
             echo "::error::$NOTES_SOURCE: the release note of $VERSION is missing at the tag"
             exit 1

@@ -3,7 +3,7 @@
 
 //! Tests of the avatar crate, on tiny pictures built in memory.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::Engine;
 use image::codecs::bmp::BmpEncoder;
@@ -338,10 +338,10 @@ fn a_decompression_bomb_is_refused_before_decoding() {
         jpeg_claiming(65_000, 65_000),
         jpeg_claiming(10_000, 6_000),
     ] {
-        let started = Instant::now();
-        assert_eq!(decode(&bytes).unwrap_err(), AvatarError::TooLarge);
+        let (refused, cost) = cpu_of(|| decode(&bytes));
+        assert_eq!(refused.unwrap_err(), AvatarError::TooLarge);
         assert!(bytes.len() < 4096);
-        assert!(started.elapsed() < Duration::from_millis(500), "refused fast");
+        assert!(cost.is_none_or(|c| c < Duration::from_millis(500)), "refused fast: {cost:?}");
     }
     assert_eq!(square_thumb(&png_claiming(100_000, 100_000), 256), Err(AvatarError::TooLarge));
     assert_eq!(card_thumb(&jpeg_claiming(65_000, 65_000)), Err(AvatarError::TooLarge));
@@ -354,11 +354,12 @@ fn a_tiny_file_declaring_a_huge_canvas_is_refused() {
         ("bmp rle", bmp_rle_bomb()),
         ("jpeg sof", jpeg_claiming(7000, 7000)),
     ] {
-        let started = Instant::now();
-        assert_eq!(decode(&bytes).unwrap_err(), AvatarError::TooLarge, "{name}");
-        assert_eq!(square_thumb(&bytes, CACHE_SIDE).unwrap_err(), AvatarError::TooLarge, "{name}");
-        assert_eq!(card_thumb(&bytes).unwrap_err(), AvatarError::TooLarge, "{name}");
-        assert!(started.elapsed() < Duration::from_millis(100), "{name}: refused unread");
+        let ((), cost) = cpu_of(|| {
+            assert_eq!(decode(&bytes).unwrap_err(), AvatarError::TooLarge, "{name}");
+            assert_eq!(square_thumb(&bytes, CACHE_SIDE).unwrap_err(), AvatarError::TooLarge, "{name}");
+            assert_eq!(card_thumb(&bytes).unwrap_err(), AvatarError::TooLarge, "{name}");
+        });
+        assert!(cost.is_none_or(|c| c < Duration::from_millis(100)), "{name}: refused unread: {cost:?}");
     }
 }
 
@@ -830,4 +831,25 @@ fn data_url_carries_the_jpeg() {
     let body = url.strip_prefix("data:image/jpeg;base64,").unwrap();
     let back = base64::engine::general_purpose::STANDARD.decode(body).unwrap();
     assert_eq!(back, jpeg);
+}
+
+/// The processor time `work` took on this thread, read from /proc on
+/// Linux: what the work costs, which a busy host does not stretch the way
+/// it stretches the time on the clock (a runner shared with other jobs
+/// takes the processor away from the thread, and that time is not
+/// counted). In ticks of 10 ms; `None` where there is no /proc, and there
+/// the cost is not checked.
+fn cpu_of<T>(work: impl FnOnce() -> T) -> (T, Option<Duration>) {
+    fn now() -> Option<Duration> {
+        let stat = std::fs::read_to_string("/proc/thread-self/stat").ok()?;
+        // After the name in brackets: the state, then the fields from the
+        // fourth on; utime and stime are the 14th and the 15th.
+        let fields: Vec<&str> = stat.get(stat.rfind(')')? + 2..)?.split(' ').collect();
+        let ticks = fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?;
+        Some(Duration::from_millis(ticks * 10))
+    }
+    let before = now();
+    let out = work();
+    let spent = before.zip(now()).map(|(b, a)| a.saturating_sub(b));
+    (out, spent)
 }

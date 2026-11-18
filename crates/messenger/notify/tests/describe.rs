@@ -441,8 +441,7 @@ async fn in_silent_mode_the_event_of_a_push_is_not_fetched() {
     let alice = Keys::generate();
     befriend(&phone, &alice, "Al").await;
     phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
-    let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
-    relay.run().await.unwrap();
+    let relay = messenger_testkit::local_relay().await;
     let url = relay.url().await.as_str_without_trailing_slash().to_string();
     let text = dm_from(&alice, &phone, &Envelope::text("hi"), now() - 5);
     let sender = Client::default();
@@ -1109,8 +1108,7 @@ async fn a_message_of_a_chat_read_on_my_computer_is_not_shown() {
     assert!(sight::heard_mine(&phone.store, at - 5, at + 75).await.unwrap());
     assert!(!shown(on_phone(text.clone()).await).muted, "a beat mutes nothing");
 
-    let relay = nostr_sdk::local_relay::LocalRelay::builder().build();
-    relay.run().await.unwrap();
+    let relay = messenger_testkit::local_relay().await;
     let url = relay.url().await.as_str_without_trailing_slash().to_string();
     let row = messenger_store::relays::RelayUpsert {
         url: url.clone(),

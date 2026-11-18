@@ -1156,12 +1156,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = dir.path().join("notify-avatars");
         // Where the profile says the picture is: nothing may come here.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
         assert_eq!(picture_file(&cache, None).await, None);
         assert_eq!(picture_file(&cache, Some(Vec::new())).await, None);
         assert_eq!(picture_file(&cache, Some(vec![0; AVATAR_MAX_BYTES + 1])).await, None);
-        let knock = tokio::time::timeout(Duration::from_millis(200), listener.accept()).await;
-        assert!(knock.is_err(), "no request went out");
+        // The calls above have returned and leave no task behind: a
+        // connection any of them made would be waiting in the backlog now.
+        let knock = listener.accept();
+        assert!(
+            matches!(&knock, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock),
+            "no request went out: {knock:?}"
+        );
         assert!(!cache.exists(), "nothing written");
 
         let png = b"\x89PNG\r\n\x1a\n picture".to_vec();

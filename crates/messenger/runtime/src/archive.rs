@@ -776,7 +776,17 @@ mod tests {
         // The clock stands still once the store is open: its pool keeps
         // real timers.
         tokio::time::pause();
-        tokio::time::timeout(Duration::from_millis(10), bridge.wait_restored()).await.expect("no archive: no wait");
+        // What does not wait ends with the clock where it stood: the clock
+        // moves only when every task waits for it, so this is exact however
+        // busy the runner, and a wait that never ends is told by the
+        // timeout of a minute, gone in no time on the paused clock.
+        async fn at_once<T>(what: &str, wait: impl std::future::Future<Output = T>) -> T {
+            let started = tokio::time::Instant::now();
+            let out = tokio::time::timeout(Duration::from_secs(60), wait).await.unwrap_or_else(|_| panic!("{what}: never ended"));
+            assert_eq!(started.elapsed(), Duration::ZERO, "{what}: waited");
+            out
+        }
+        at_once("no archive: no wait", bridge.wait_restored()).await;
         bridge.install(Some(Arc::new(Recorder::default())));
         assert!(tokio::time::timeout(Duration::from_secs(1), bridge.wait_restored()).await.is_err(), "waits");
         let waiter = tokio::spawn({
@@ -785,14 +795,14 @@ mod tests {
         });
         tokio::task::yield_now().await;
         bridge.restored();
-        tokio::time::timeout(Duration::from_millis(10), waiter).await.expect("released").unwrap();
-        tokio::time::timeout(Duration::from_millis(10), bridge.wait_restored()).await.expect("restored: no wait");
+        at_once("released", waiter).await.unwrap();
+        at_once("restored: no wait", bridge.wait_restored()).await;
         // Installed anew: not restored yet, but the wait ends by itself,
         // and the session waits once: the next catch-up goes at once.
         bridge.install(Some(Arc::new(Recorder::default())));
         let started = tokio::time::Instant::now();
         bridge.wait_restored().await;
         assert!(started.elapsed() >= RESTORE_WAIT);
-        tokio::time::timeout(Duration::from_millis(10), bridge.wait_restored()).await.expect("waited once already: no wait");
+        at_once("waited once already: no wait", bridge.wait_restored()).await;
     }
 }

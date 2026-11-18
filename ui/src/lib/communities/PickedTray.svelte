@@ -32,7 +32,7 @@
 
 <style>
   /* As ChatWindow's tray: small cards that scroll sideways, pictures as they look. */
-  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
+  .tray { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
   .pick {
     position: relative; flex-shrink: 0; width: 64px; height: 64px; border-radius: var(--radius-md); overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;

@@ -959,9 +959,13 @@ mod tests {
     use nostr_sdk::local_relay::LocalRelay;
     use std::time::Duration;
 
+    /// How long a test waits for what the pool and a local relay are sure
+    /// to do: far beyond what it takes on a busy runner, so reaching it
+    /// means the thing never came, and nothing when it comes.
+    const WAIT: Duration = Duration::from_secs(30);
+
     async fn local_relay() -> (LocalRelay, RelayUrl) {
-        let relay = LocalRelay::builder().build();
-        relay.run().await.expect("local relay starts");
+        let relay = messenger_testkit::local_relay().await;
         let url = relay.url().await;
         (relay, RelayUrl::parse(url.as_str_without_trailing_slash()).unwrap())
     }
@@ -1009,7 +1013,7 @@ mod tests {
         let ack = sender.send(Outbound::PublishOwn { event: signed_note(&alice, "hello") }).await.unwrap();
         assert!(ack.is_delivered(), "relay must accept the note: {ack:?}");
 
-        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("event arrives").unwrap();
+        let got = tokio::time::timeout(WAIT, inbox.recv()).await.expect("event arrives").unwrap();
         assert_eq!(got.kind, 1);
         assert_eq!(got.pubkey.as_hex(), alice.public_key().to_hex());
         assert!(matches!(got.source, EventSource::Relay { .. }));
@@ -1039,7 +1043,7 @@ mod tests {
 
         let note = signed_note(&alice, "to myself");
         assert!(pool.send(Outbound::PublishOwn { event: note.clone() }).await.unwrap().is_delivered());
-        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("our copy comes back").unwrap();
+        let got = tokio::time::timeout(WAIT, inbox.recv()).await.expect("our copy comes back").unwrap();
         assert_eq!(got.id, note.id);
         pool.shutdown().await;
     }
@@ -1079,7 +1083,7 @@ mod tests {
 
         let ack = bob_out.send(Outbound::PublishOwn { event: signed_note(&bob, "from bob") }).await.unwrap();
         assert!(ack.is_delivered(), "{ack:?}");
-        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv())
+        let got = tokio::time::timeout(WAIT, inbox.recv())
             .await
             .expect("the second filter is the one the relay has")
             .unwrap();
@@ -1099,8 +1103,13 @@ mod tests {
         pool.set_silent(true).await;
         let err = pool.send(Outbound::PublishOwn { event: signed_note(&keys, "x") }).await.unwrap_err();
         assert!(matches!(err, MessengerError::Transport(m) if m.contains("silent")));
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        assert!(pool.status().await.relays.iter().all(|r| r.state != RelayState::Connected));
+        // The disconnect is the pool's own doing: waited for, not given a
+        // fixed while to happen in.
+        let until = std::time::Instant::now() + WAIT;
+        while pool.status().await.relays.iter().any(|r| r.state == RelayState::Connected) {
+            assert!(std::time::Instant::now() < until, "still connected: {:?}", pool.status().await);
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
         pool.shutdown().await;
     }
 
@@ -1120,7 +1129,7 @@ mod tests {
     async fn connected_pool(keys: Option<Keys>, relays: Vec<RelayConfig>) -> RelayPool {
         let pool = RelayPool::new(keys);
         pool.set_relays(relays).await.unwrap();
-        assert!(wait_connected(&pool, 5).await);
+        assert!(wait_connected(&pool, WAIT.as_secs()).await);
         pool
     }
 
@@ -1133,6 +1142,24 @@ mod tests {
         let mut texts: Vec<String> = found.iter().filter_map(|j| j["content"].as_str().map(String::from)).collect();
         texts.sort();
         texts
+    }
+
+    /// What `stream` brings before the note whose content is `marker`, as
+    /// (content, source). A relay sends on one connection in order, and
+    /// the pool hands on what each connection brings in that order, so a
+    /// marker sent after something fences everything that connection
+    /// carried before it: a check that nothing came is a wait for the
+    /// marker, not for a quiet while.
+    async fn until_marker(stream: &mut mpsc::Receiver<RawEvent>, marker: &str) -> Vec<(String, EventSource)> {
+        let mut before = Vec::new();
+        loop {
+            let got = tokio::time::timeout(WAIT, stream.recv()).await.unwrap_or_else(|_| panic!("the marker {marker}: {before:?}")).unwrap();
+            let text = got.json["content"].as_str().unwrap_or_default().to_string();
+            if text == marker {
+                return before;
+            }
+            before.push((text, got.source));
+        }
     }
 
     /// The home set and a private server in one pool: what is scoped to the
@@ -1178,24 +1205,33 @@ mod tests {
         let receiver = RelayPool::new(None);
         let mut inbox = receiver.events();
         receiver.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
-        assert!(wait_connected(&receiver, 5).await);
+        assert!(wait_connected(&receiver, WAIT.as_secs()).await);
 
+        // The REQ goes to b's relay alone. The filter has no `since`, so
+        // the note is heard whether the relay has the subscription before
+        // it comes, live, or after, as stored: no wait for the REQ.
         let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
-        receiver.send(Outbound::Subscribe { id: SubId("only-b".into()), filter: by_alice(), scope: server("b") }).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        let ack = receiver.send(Outbound::Subscribe { id: SubId("only-b".into()), filter: by_alice(), scope: server("b") }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![private_url.clone()], "{ack:?}");
         assert!(to_home.send(Outbound::PublishOwn { event: signed_note(&alice, "on home") }).await.unwrap().is_delivered());
         assert!(to_private.send(Outbound::PublishOwn { event: signed_note(&alice, "on b") }).await.unwrap().is_delivered());
-        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("b's note arrives").unwrap();
+        let got = tokio::time::timeout(WAIT, inbox.recv()).await.expect("b's note arrives").unwrap();
         assert_eq!(got.json["content"], "on b");
         assert_eq!(got.source, EventSource::Relay { url: private_url.clone() });
-        assert!(tokio::time::timeout(Duration::from_millis(700), inbox.recv()).await.is_err(), "nothing of the home relay");
 
-        // The home scope under its own id: the home relay's note, not b's.
+        // The home scope under its own id: the home relay's note, once, and
+        // nothing of b. Had the REQ of b gone to the home relay as well, its
+        // copy of the home note would have come on the same connection
+        // before anything of the home scope: everything up to a marker sent
+        // after it, on that connection, is what the home relay ever sent.
         receiver.send(Outbound::Unsubscribe { id: SubId("only-b".into()) }).await.unwrap();
-        receiver.send(Outbound::Subscribe { id: SubId("home".into()), filter: by_alice(), scope: Scope::Own }).await.unwrap();
-        let got = tokio::time::timeout(Duration::from_secs(5), inbox.recv()).await.expect("the home note arrives").unwrap();
+        let ack = receiver.send(Outbound::Subscribe { id: SubId("home".into()), filter: by_alice(), scope: Scope::Own }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![home_url.clone()], "the home scope asks the home relay alone: {ack:?}");
+        let got = tokio::time::timeout(WAIT, inbox.recv()).await.expect("the home note arrives").unwrap();
         assert_eq!(got.json["content"], "on home");
-        assert!(tokio::time::timeout(Duration::from_millis(700), inbox.recv()).await.is_err(), "nothing of b");
+        assert_eq!(got.source, EventSource::Relay { url: home_url.clone() });
+        assert!(to_home.send(Outbound::PublishOwn { event: signed_note(&alice, "marker") }).await.unwrap().is_delivered());
+        assert_eq!(until_marker(&mut inbox, "marker").await, Vec::<(String, EventSource)>::new(), "nothing of the home relay, nor of b");
 
         let fetched = receiver.fetch(&by_alice(), &server("b"), Duration::from_secs(3)).await.unwrap();
         assert_eq!(fetched.iter().map(|j| j["content"].as_str().unwrap()).collect::<Vec<_>>(), vec!["on b"]);
@@ -1205,12 +1241,14 @@ mod tests {
         let fresh = RelayPool::new(None);
         let mut synced = fresh.events();
         fresh.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
-        assert!(wait_connected(&fresh, 5).await);
-        fresh.send(Outbound::Sync { scope: server("b"), filter: by_alice(), local: vec![] }).await.unwrap();
-        // What the reconciliation fetched comes as the relay sent it (and
-        // as found by the sync, when the relay speaks NIP-77): all of it b's.
+        assert!(wait_connected(&fresh, WAIT.as_secs()).await);
+        let ack = fresh.send(Outbound::Sync { scope: server("b"), filter: by_alice(), local: vec![] }).await.unwrap();
+        assert_eq!(ack.accepted_by, vec![private_url.clone()], "b's relay alone was asked: {ack:?}");
+        // What the reconciliation found is on the stream, as found by the
+        // sync, before the call returns (the copies as the relay sent them
+        // may follow later): all of it b's.
         let mut seen = Vec::new();
-        while let Ok(Some(got)) = tokio::time::timeout(Duration::from_millis(1500), synced.recv()).await {
+        while let Ok(got) = synced.try_recv() {
             seen.push((got.json["content"].as_str().unwrap_or_default().to_string(), got.source));
         }
         assert!(!seen.is_empty(), "the sync brings b's note");
@@ -1230,7 +1268,15 @@ mod tests {
     #[tokio::test]
     async fn a_channel_reaches_the_relays_of_its_routes_and_is_heard_on_their_stream() {
         let (_a, home_url) = local_relay().await;
-        let (_b, channel_url) = local_relay().await;
+        // The channel's relay takes the backlog below from one connection
+        // in a second or two, past the sixty notes a minute a local relay
+        // lets one connection write by default: the rest were refused once
+        // the test no longer paused between its parts.
+        let channel_relay = messenger_testkit::local_relay_with(|| {
+            LocalRelay::builder().rate_limit(nostr_sdk::local_relay::RateLimit { max_reqs: 500, notes_per_minute: 10_000 })
+        })
+        .await;
+        let channel_url = RelayUrl::parse(channel_relay.url().await.as_str_without_trailing_slash()).unwrap();
         let alice = Keys::generate();
         let pool = connected_pool(Some(alice.clone()), vec![home(&home_url), of_server(&channel_url, "b")]).await;
         let mut ingress = pool.events();
@@ -1250,18 +1296,29 @@ mod tests {
         let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
         let sub = SubId(format!("{CHANNEL_SUB_PREFIX}{cid}:feed"));
         pool.send(Outbound::Subscribe { id: sub, filter: by_alice(), scope: channel.clone() }).await.unwrap();
-        let got = tokio::time::timeout(Duration::from_secs(5), channels.recv()).await.expect("the channel hears it").unwrap();
+        let got = tokio::time::timeout(WAIT, channels.recv()).await.expect("the channel hears it").unwrap();
         assert_eq!(got.json["content"], "in the channel");
         assert_eq!(got.source, EventSource::Relay { url: channel_url.clone() });
-        assert!(tokio::time::timeout(Duration::from_millis(700), ingress.recv()).await.is_err(), "nothing of the channel reaches the ingress");
+        // Nothing of the channel reaches the ingress: a subscription of the
+        // messenger's own on the same relay brings a marker, and what that
+        // connection carried before it (the channel's note among it) is
+        // all the ingress got.
+        let bob = Keys::generate();
+        pool.send(Outbound::PublishScoped { scope: server("b"), event: signed_note(&bob, "marker") }).await.unwrap();
+        let by_bob = CoreFilter(serde_json::json!({ "kinds": [1], "authors": [bob.public_key().to_hex()] }));
+        pool.send(Outbound::Subscribe { id: SubId("fence".into()), filter: by_bob, scope: server("b") }).await.unwrap();
+        assert_eq!(until_marker(&mut ingress, "marker").await, Vec::<(String, EventSource)>::new(), "nothing of the channel reaches the ingress");
+        pool.send(Outbound::Unsubscribe { id: SubId("fence".into()) }).await.unwrap();
 
         // A catch-up, by a pool that has seen nothing yet: the routes are
         // the process's, and every pool follows them.
         let fresh = connected_pool(None, vec![home(&home_url), of_server(&channel_url, "b")]).await;
         fresh.send(Outbound::Sync { scope: channel.clone(), filter: by_alice(), local: vec![] }).await.unwrap();
         fresh.shutdown().await;
+        // The catch-up hands what it fetched to the stream before the call
+        // returns: it is there to be read now, without a wait.
         let mut synced = false;
-        while let Ok(Some(got)) = tokio::time::timeout(Duration::from_millis(1500), channels.recv()).await {
+        while let Ok(got) = channels.try_recv() {
             assert_eq!(got.json["content"], "in the channel");
             synced |= got.source == (EventSource::Sync { url: channel_url.clone() });
         }
@@ -1271,15 +1328,23 @@ mod tests {
         // hand it over without waiting for the module (ревью модуля п. 1).
         const BACKLOG: usize = 120;
         for i in 0..BACKLOG {
-            pool.send(Outbound::PublishScoped { scope: channel.clone(), event: signed_note(&alice, &format!("backlog {i}")) }).await.unwrap();
+            let ack = pool.send(Outbound::PublishScoped { scope: channel.clone(), event: signed_note(&alice, &format!("backlog {i}")) }).await.unwrap();
+            assert_eq!(ack.accepted_by, vec![channel_url.clone()], "backlog {i}: {ack:?}");
         }
         let fresh = connected_pool(None, vec![home(&home_url), of_server(&channel_url, "b")]).await;
-        let caught = tokio::time::timeout(Duration::from_secs(10), fresh.send(Outbound::Sync { scope: channel.clone(), filter: by_alice(), local: vec![] })).await;
+        let caught = tokio::time::timeout(WAIT, fresh.send(Outbound::Sync { scope: channel.clone(), filter: by_alice(), local: vec![] })).await;
         assert!(matches!(caught, Ok(Ok(_))), "the catch-up does not wait for the module: {caught:?}");
         fresh.shutdown().await;
+        // The live copies and those of the catch-up together are more than
+        // the backlog: read until they are, for as long as it takes.
         let mut held = 0;
-        while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(1500), channels.recv()).await {
-            held += 1;
+        let until = std::time::Instant::now() + WAIT;
+        while held <= BACKLOG {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            match tokio::time::timeout(left, channels.recv()).await {
+                Ok(Some(_)) => held += 1,
+                _ => break,
+            }
         }
         assert!(held > BACKLOG, "the live copies and the catch-up are all held: {held}");
 
@@ -1306,10 +1371,14 @@ mod tests {
         let receiver = RelayPool::new(None);
         let mut inbox = receiver.events();
         receiver.set_relays(vec![home(&url_a), of_server(&url_b, "b")]).await.unwrap();
-        assert!(wait_connected(&receiver, 5).await);
+        assert!(wait_connected(&receiver, WAIT.as_secs()).await);
         let by_alice = || CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()] }));
+        // The copy a subscription brings, waited for as long as it takes,
+        // and then any other within a while: a second copy would come on
+        // its heels.
         async fn copies(inbox: &mut mpsc::Receiver<RawEvent>) -> Vec<(String, EventSource)> {
-            let mut got = Vec::new();
+            let first = tokio::time::timeout(WAIT, inbox.recv()).await.expect("a copy").unwrap();
+            let mut got = vec![(first.id.as_hex().to_string(), first.source)];
             while let Ok(Some(raw)) = tokio::time::timeout(Duration::from_millis(1500), inbox.recv()).await {
                 got.push((raw.id.as_hex().to_string(), raw.source));
             }
@@ -1357,7 +1426,7 @@ mod tests {
         let receiver = RelayPool::new(None);
         let mut inbox = receiver.events();
         receiver.set_relays(vec![home(&home_url), of_server(&private_url, "b")]).await.unwrap();
-        assert!(wait_connected(&receiver, 5).await);
+        assert!(wait_connected(&receiver, WAIT.as_secs()).await);
         let window = |until: i64| {
             CoreFilter(serde_json::json!({ "kinds": [1], "authors": [alice.public_key().to_hex()], "until": until, "limit": 2 }))
         };
@@ -1370,8 +1439,10 @@ mod tests {
         let mut want = vec![on_b[1].1.clone(), on_b[2].1.clone()];
         want.sort();
         assert_eq!(ids, want);
+        // The page is on the stream before the call returns: read now,
+        // without a wait.
         let mut synced = Vec::new();
-        while let Ok(Some(raw)) = tokio::time::timeout(Duration::from_millis(1000), inbox.recv()).await {
+        while let Ok(raw) = inbox.try_recv() {
             if raw.source == (EventSource::Sync { url: private_url.clone() }) {
                 synced.push(raw.id.as_hex().to_string());
             }
@@ -1435,15 +1506,19 @@ mod tests {
 
     /// A way to the relay that can be made to swallow everything, both
     /// ways, with the sockets left open: what a phone finds after a sleep.
-    async fn black_hole(to: &RelayUrl) -> (RelayUrl, Arc<AtomicBool>) {
+    /// It counts the connections it was given, each one made anew.
+    async fn black_hole(to: &RelayUrl) -> (RelayUrl, Arc<AtomicBool>, Arc<std::sync::atomic::AtomicUsize>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let target = to.as_str().trim_start_matches("ws://").to_string();
         let swallow = Arc::new(AtomicBool::new(false));
         let on = swallow.clone();
+        let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let made = accepted.clone();
         tokio::spawn(async move {
             while let Ok((client, _)) = listener.accept().await {
+                made.fetch_add(1, Ordering::SeqCst);
                 let Ok(server) = tokio::net::TcpStream::connect(&target).await else { continue };
                 let (cr, cw) = client.into_split();
                 let (sr, sw) = server.into_split();
@@ -1463,7 +1538,7 @@ mod tests {
                 }
             }
         });
-        (RelayUrl::parse(&format!("ws://127.0.0.1:{port}")).unwrap(), swallow)
+        (RelayUrl::parse(&format!("ws://127.0.0.1:{port}")).unwrap(), swallow, accepted)
     }
 
     /// A relay that takes the REQ and then does as `answer` says: `eose`
@@ -1519,7 +1594,7 @@ mod tests {
             pool.set_relays(vec![RelayConfig { url: url.clone(), read: true, write: true, api_key: None, server_id: None }])
                 .await
                 .unwrap();
-            assert!(wait_connected(&pool, 5).await, "{answer}: never connected {:?}", pool.status().await);
+            assert!(wait_connected(&pool, WAIT.as_secs()).await, "{answer}: never connected {:?}", pool.status().await);
             let page = pool.fetch_page(&filter, &Scope::Own, Duration::from_secs(2)).await;
             assert_eq!(page.is_ok(), answered, "{answer}: fetch_page {page:?}");
             if answer != "mute" {
@@ -1538,7 +1613,7 @@ mod tests {
         let url = scripted_relay("flood").await;
         let relay = Relay::new(nostr::types::url::RelayUrl::parse(url.as_str()).unwrap());
         relay.connect();
-        relay.wait_for_connection(Duration::from_secs(5)).await;
+        relay.wait_for_connection(WAIT).await;
         let filter = Filter::new().kind(Kind::TextNote);
         let held = ask_at_most(&relay, filter.clone(), Duration::from_secs(2), 5).await;
         assert_eq!(held.map(|evs| evs.len()), Some(5), "at the limit");
@@ -1562,10 +1637,10 @@ mod tests {
     #[tokio::test]
     async fn a_silent_connection_is_found_and_made_anew() {
         let (_relay, relay_url) = local_relay().await;
-        let (url, swallow) = black_hole(&relay_url).await;
+        let (url, swallow, _) = black_hole(&relay_url).await;
         let pool = RelayPool::new(None);
         pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
-        assert!(wait_connected(&pool, 5).await);
+        assert!(wait_connected(&pool, WAIT.as_secs()).await);
 
         assert_eq!(pool.revive(Duration::from_secs(2)).await, 0, "a live connection is left alone");
         assert_eq!(pool.status().await.relays[0].state, RelayState::Connected);
@@ -1582,13 +1657,22 @@ mod tests {
     /// servers needs, without the race of `disconnect` and `connect`.
     #[tokio::test]
     async fn reopen_connects_again() {
-        let (_relay, url) = local_relay().await;
+        // Through a way that counts the connections: a reopen is seen as
+        // the next connection made, so the wait for «connected» that
+        // follows cannot be met by the old one before its close was seen.
+        let (_relay, relay_url) = local_relay().await;
+        let (url, _, accepted) = black_hole(&relay_url).await;
         let pool = RelayPool::new(None);
         pool.set_relays(vec![RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
-        assert!(wait_connected(&pool, 5).await);
-        for _ in 0..3 {
+        assert!(wait_connected(&pool, WAIT.as_secs()).await);
+        for round in 1..=3 {
+            let before = accepted.load(Ordering::SeqCst);
             pool.reopen();
-            tokio::time::sleep(Duration::from_millis(200)).await;
+            let until = std::time::Instant::now() + WAIT;
+            while accepted.load(Ordering::SeqCst) <= before {
+                assert!(std::time::Instant::now() < until, "round {round}: no connection made anew");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
             assert!(wait_connected(&pool, RETRY_INTERVAL.as_secs() + 3).await);
         }
         pool.shutdown().await;
@@ -1659,7 +1743,7 @@ mod tests {
     }
 
     async fn next_access(rx: &mut broadcast::Receiver<RelayAccess>) -> RelayAccess {
-        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.expect("a signal of access").unwrap()
+        tokio::time::timeout(WAIT, rx.recv()).await.expect("a signal of access").unwrap()
     }
 
     /// A refusal of a relay of a private server is told once, with its
@@ -1674,16 +1758,17 @@ mod tests {
         assert!(!is_denial("blocked: spam") && !is_denial("duplicate: have it"));
 
         let member = Arc::new(AtomicBool::new(false));
-        let team = LocalRelay::builder()
-            .write_policy(Team { member: member.clone() })
-            .query_policy(Team { member: member.clone() })
-            .build();
-        team.run().await.unwrap();
+        let team = messenger_testkit::local_relay_with(|| {
+            LocalRelay::builder()
+                .write_policy(Team { member: member.clone() })
+                .query_policy(Team { member: member.clone() })
+        })
+        .await;
         let team_url = RelayUrl::parse(team.url().await.as_str_without_trailing_slash()).unwrap();
-        let home_refuses = LocalRelay::builder()
-            .write_policy(Team { member: Arc::new(AtomicBool::new(false)) })
-            .build();
-        home_refuses.run().await.unwrap();
+        let home_refuses = messenger_testkit::local_relay_with(|| {
+            LocalRelay::builder().write_policy(Team { member: Arc::new(AtomicBool::new(false)) })
+        })
+        .await;
         let home_url = RelayUrl::parse(home_refuses.url().await.as_str_without_trailing_slash()).unwrap();
 
         let keys = Keys::generate();
@@ -1697,21 +1782,22 @@ mod tests {
         assert_eq!(said.relay_url, team_url);
         assert_eq!(said.verdict, AccessVerdict::Denied(format!("restricted: {NOT_A_MEMBER}")));
         // The same refusal of an event is no news; the home relay's is none.
+        // Nothing waits for the silence: the next signal is the one of the
+        // event taken below, which the server's relay answers on the same
+        // connection after the refusal of "x", and the home relay answered
+        // before that event was sent; a signal of either would come first.
         let _ = pool.send(Outbound::PublishScoped { scope: server("s1"), event: signed_note(&keys, "x") }).await;
         let _ = pool.send(Outbound::PublishOwn { event: signed_note(&keys, "home") }).await;
-        assert!(
-            tokio::time::timeout(Duration::from_millis(500), signals.recv()).await.is_err(),
-            "nothing more told"
-        );
 
         member.store(true, Ordering::SeqCst);
         let ack = pool.send(Outbound::PublishScoped { scope: server("s1"), event: signed_note(&keys, "y") }).await.unwrap();
         assert_eq!(ack.accepted_by, vec![team_url.clone()]);
-        assert_eq!(next_access(&mut signals).await.verdict, AccessVerdict::Written);
+        let next = next_access(&mut signals).await;
+        assert_eq!(next.verdict, AccessVerdict::Written, "nothing more told before it: {next:?}");
 
         assert_eq!(pool.reopen_server("s1"), 1, "the server's one connection");
         assert_eq!(pool.reopen_server("nobody"), 0);
-        assert!(wait_connected(&pool, 10).await, "made anew");
+        assert!(wait_connected(&pool, WAIT.as_secs()).await, "made anew");
         pool.shutdown().await;
     }
 }

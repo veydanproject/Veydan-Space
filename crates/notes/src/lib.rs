@@ -668,4 +668,70 @@ pub(crate) mod testing {
                 .find(|state| std::any::Any::type_id(*state) == ty)
         }
     }
+
+    /// How long a test waits for what it awaits; past it the test fails.
+    pub(crate) const WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// Runs `writer` while the test holds `save`, the lock of the note
+    /// files, as a save in flight does, and shows without a clock that the
+    /// writer waits for it: the writer is let have the lock only once it
+    /// waits in the queue of that lock, and is run to its end then.
+    ///
+    /// A tokio mutex serves its waiters in the order they came. Each time
+    /// the writer can go no further, `released` runs (the lock is held here
+    /// and the writer stopped: it checks what may not have happened yet, and
+    /// may lay a save into the file), a probe queues for the lock and the
+    /// lock is let go. A writer queued before the probe takes the lock first
+    /// and runs to its end. Else the probe takes the lock at once, so the
+    /// writer is not at the lock yet and may still read the file: `kept`
+    /// runs, and the writer goes on once what it waits for wakes it.
+    pub(crate) async fn through_a_held_save<T>(
+        save: &tokio::sync::Mutex<()>,
+        writer: impl std::future::Future<Output = T>,
+        mut released: impl FnMut(),
+        mut kept: impl FnMut(),
+    ) -> T {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+        let mut writer = std::pin::pin!(writer);
+        let mut held = save.lock().await;
+        loop {
+            // As far as it goes: the lock held here stops it at the latest
+            // at the lock.
+            let went = std::future::poll_fn(|cx| Poll::Ready(writer.as_mut().poll(cx))).await;
+            assert!(went.is_pending(), "the writer ended while a save held the lock");
+            released();
+            let mut probe = std::pin::pin!(save.lock());
+            let (queued, first) = {
+                let mut cx = Context::from_waker(Waker::noop());
+                let queued = probe.as_mut().poll(&mut cx).is_pending();
+                drop(held);
+                (queued, probe.as_mut().poll(&mut cx))
+            };
+            assert!(queued, "the lock is held here");
+            match first {
+                Poll::Ready(guard) => held = guard,
+                Poll::Pending => {
+                    // The writer came first and holds the lock now; the
+                    // probe gets it after the writer let it go.
+                    let (out, _probe) = tokio::join!(writer.as_mut(), probe.as_mut());
+                    return out;
+                }
+            }
+            kept();
+            // The writer waits for something other than the lock, and its
+            // end wakes this task, which polled the writer above.
+            let mut asked = false;
+            let woken = std::future::poll_fn(|_| {
+                if std::mem::replace(&mut asked, true) {
+                    Poll::Ready(())
+                } else {
+                    Poll::Pending
+                }
+            });
+            tokio::time::timeout(WAIT, woken)
+                .await
+                .unwrap_or_else(|_| panic!("the writer was not woken within {WAIT:?}"));
+        }
+    }
 }

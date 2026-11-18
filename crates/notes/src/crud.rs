@@ -1113,15 +1113,18 @@ mod tests {
             .await
             .unwrap();
 
-        let held = notes.save.lock().await;
-        let tags = note_set_tags("n-1".into(), vec!["work".into()], app.state(), app.state());
-        let waited = tokio::time::timeout(std::time::Duration::from_millis(200), tags).await;
-        assert!(waited.is_err(), "the tags were written under a held lock");
-        drop(held);
-
-        note_set_tags("n-1".into(), vec!["work".into()], app.state(), app.state())
-            .await
-            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        crate::testing::through_a_held_save(
+            &notes.save,
+            note_set_tags("n-1".into(), vec!["work".into()], app.state(), app.state()),
+            || {
+                let now = std::fs::read(&path).unwrap();
+                assert_eq!(now, before, "the tags were written under a held lock");
+            },
+            || {},
+        )
+        .await
+        .unwrap();
         let (_, tags, body) = read_note_file(&path).unwrap();
         assert_eq!(body, "Saved");
         assert_eq!(tags, ["work"]);
@@ -1136,26 +1139,28 @@ mod tests {
         let version = history_snapshot("n-1", "Plan", "Older", "save", None, &core.db)
             .await
             .unwrap();
-        let wait = std::time::Duration::from_millis(200);
+        let unwritten = |what: &'static str| {
+            let before = std::fs::read(&path).unwrap();
+            let path = path.clone();
+            move || assert_eq!(std::fs::read(&path).unwrap(), before, "{what} was written under a held lock")
+        };
 
-        let held = notes.save.lock().await;
         let bind = crate::folders::note_add_binding(
             "n-1".into(),
             "profile:p-1".into(),
             app.state(),
             app.state(),
         );
-        assert!(tokio::time::timeout(wait, bind).await.is_err());
+        crate::testing::through_a_held_save(&notes.save, bind, unwritten("the binding"), || {})
+            .await
+            .unwrap();
         let restore = crate::history::note_history_restore(
             "n-1".into(),
-            version.clone(),
+            version,
             app.state(),
             app.state(),
         );
-        assert!(tokio::time::timeout(wait, restore).await.is_err());
-        drop(held);
-
-        crate::history::note_history_restore("n-1".into(), version, app.state(), app.state())
+        crate::testing::through_a_held_save(&notes.save, restore, unwritten("the restore"), || {})
             .await
             .unwrap();
         assert_eq!(body_of(&path), "Older");

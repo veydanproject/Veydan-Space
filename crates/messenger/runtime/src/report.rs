@@ -770,7 +770,7 @@ mod tests {
             .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         crate::servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         rt.dm().set_gate(gate);
         let keys = rt.session_keys().await.unwrap();

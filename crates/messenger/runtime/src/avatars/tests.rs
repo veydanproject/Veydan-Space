@@ -181,7 +181,7 @@ impl Rig {
     }
 
     async fn ready(&self, rx: &mut broadcast::Receiver<UiEvent>, url: &str) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(WAIT, async {
             loop {
                 let ev = rx.recv().await.unwrap();
                 if ev.name == UI_EVENT_AVATAR_READY && ev.payload["url"] == url {
@@ -228,8 +228,15 @@ fn data_bytes(data_url: &str) -> Vec<u8> {
     base64::engine::general_purpose::STANDARD.decode(b64).unwrap()
 }
 
+/// How long a test waits for what the avatars do in tasks of their own:
+/// far beyond what it takes on a busy runner, and nothing when it comes.
+const WAIT: Duration = Duration::from_secs(30);
+
+/// Looks every 20 ms for `WAIT` in all.
+const LOOKS: usize = 1_500;
+
 async fn eventually(what: &str, mut check: impl FnMut() -> bool) {
-    for _ in 0..200 {
+    for _ in 0..LOOKS {
         if check() {
             return;
         }
@@ -499,12 +506,15 @@ async fn a_new_avatar_takes_the_old_one_down() {
     eventually("the old blob is deleted", move || backend.get(&gone).is_none()).await;
     assert!(r.backend.get(&new.sha256).is_some());
 
-    // The same picture again: nothing is taken down.
+    // The same picture again: nothing is taken down. A take-down removes
+    // the file of this device before `set` returns, in the same step that
+    // sends the blob's removal off, so the file still there says no
+    // removal went; no wait for one that might come.
     let again = r.set(bmp(64, 64, [0, 200, 0])).await;
     assert_eq!(again.sha256, new.sha256);
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(r.backend.get(&new.sha256).is_some());
     assert!(r.own_file(&new.sha256).exists());
+    assert!(r.backend.get(&new.sha256).is_some());
+    assert_eq!(*r.backend.delete_calls.lock().unwrap(), 1, "the old one only");
 }
 
 #[tokio::test]
@@ -719,7 +729,7 @@ async fn over_blossom_two_copies_and_a_move() {
     assert_eq!(puts, 2, "once with the first copy, once on the move");
     // Taken off the server it moved from, and only there.
     let mut deleted = 0;
-    for _ in 0..200 {
+    for _ in 0..LOOKS {
         deleted = s1.received_requests().await.unwrap().iter().filter(|q| q.method.as_str() == "DELETE").count();
         if deleted > 0 {
             break;
@@ -967,13 +977,16 @@ async fn failures_are_remembered() {
     for attempt in 1..=8 {
         assert_eq!(r.av.cached(url, None, true).await.unwrap(), None);
         attempts_reach(&r.store, url, attempt).await;
-        // Asked again at once: not tried.
+        // Asked again at once: not tried. A fetch is queued before
+        // `cached` returns or not at all, and stays in flight until it has
+        // written its failure, so an address not in flight right after the
+        // call was not tried; no wait for a fetch that might come.
         r.av.cached(url, None, true).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!in_flight(&r, url));
         assert_eq!(r.net.calls().len() as i64, attempt);
         r.clock.advance(retry_after(attempt) - 1);
         r.av.cached(url, None, true).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!in_flight(&r, url), "not before its time");
         assert_eq!(r.net.calls().len() as i64, attempt, "not before its time");
         r.clock.advance(1);
     }
@@ -995,9 +1008,14 @@ async fn failures_are_remembered() {
     assert!(!r.dir.path().join("avatars").join(format!("{}.jpg", avatar::sha256_hex(junk.as_bytes()))).exists());
 }
 
+/// Whether a fetch of `url` is queued or under way.
+fn in_flight(r: &Rig, url: &str) -> bool {
+    r.av.inflight.lock().unwrap().contains(url)
+}
+
 /// Waits until the failures of `url` are `n`.
 async fn attempts_reach(store: &Store, url: &str, n: i64) {
-    for _ in 0..200 {
+    for _ in 0..LOOKS {
         if avatar_cache::get(store, url).await.unwrap().map(|row| row.attempts) == Some(n) {
             return;
         }
@@ -1023,7 +1041,7 @@ async fn fetches_are_deduplicated_and_limited() {
     }
     // In any order.
     let mut seen = HashSet::new();
-    tokio::time::timeout(Duration::from_secs(10), async {
+    tokio::time::timeout(WAIT, async {
         while seen.len() < urls.len() {
             let ev = rx.recv().await.unwrap();
             if ev.name == UI_EVENT_AVATAR_READY {
@@ -1047,7 +1065,9 @@ async fn nothing_is_fetched_when_it_may_not_be_or_cannot_be() {
     }
     let long = format!("https://a.example/{}", "x".repeat(messenger_preview::target::MAX_URL_LEN));
     assert_eq!(r.av.cached(&long, None, true).await.unwrap(), None);
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Nothing was queued (a fetch is queued before `cached` returns), so
+    // nothing will be asked later either.
+    assert!(r.av.inflight.lock().unwrap().is_empty());
     assert!(r.net.calls().is_empty());
 }
 
@@ -1329,7 +1349,7 @@ async fn the_session_keeper_wakes_when_kicked() {
     r.profiles.build_picture(&r.keys, Picture::Set(&old_url)).await.unwrap();
     let keeper = tokio::spawn(keeper_loop(r.av.clone(), r.keys.clone(), || false));
     r.av.kick();
-    for _ in 0..200 {
+    for _ in 0..LOOKS / 2 {
         if r.row().await.unwrap().url == row.url {
             break;
         }
@@ -1347,7 +1367,7 @@ async fn through_the_runtime() {
     rt.relays().set_silent(true).await.unwrap();
     crate::servers::use_veydan_offline(&rt).await;
     assert!(matches!(rt.avatar_remove().await, Err(MessengerError::NotLoggedIn)));
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     rt.refresh_signer().await.unwrap();
 
     let path = dir.path().join("me.bmp");
@@ -1506,7 +1526,7 @@ async fn group_rig() -> (tempfile::TempDir, MessengerRuntime, MemoryBackend, Arc
     let mut rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
     rt.relays().set_silent(true).await.unwrap();
     crate::servers::use_veydan_offline(&rt).await;
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     assert!(rt.refresh_signer().await.unwrap());
     let backend = MemoryBackend::new(BASE);
     let media = rt.media.clone().with_backend(Arc::new(backend.clone()), Arc::new(NoFetch));
@@ -1587,7 +1607,17 @@ async fn the_same_picture_in_two_groups_stays_while_one_names_it() {
     let pb = group_picture_set(&rt, &b.id, [9, 9, 9]).await.picture;
     assert_eq!(pa, pb, "one blob");
     rt.group_avatar_remove(&a.id).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // A take-down goes off in a task of its own. Another picture of a
+    // third group, removed after it, sends its removal off later on the
+    // same way: once that one is done, a removal sent for the first
+    // picture would be done too, however slow the runner.
+    let c = rt.group_create(messenger_groups::GroupKind::Private, "C", "", true, None).await.unwrap();
+    group_picture_set(&rt, &c.id, [7, 70, 7]).await;
+    let sha_c = messenger_store::group_avatar::get(&rt.store, &c.id).await.unwrap().unwrap().sha256;
+    rt.group_avatar_remove(&c.id).await.unwrap();
+    let b = backend.clone();
+    eventually("the third picture is taken down", move || b.get(&sha_c).is_none()).await;
+    assert_eq!(*backend.delete_calls.lock().unwrap(), 1, "the third picture only");
     assert!(!backend.is_empty(), "the other group still names it");
     assert!(rt.avatar_cached(&pb).await.unwrap().is_some(), "and its file stays");
     rt.shutdown().await;

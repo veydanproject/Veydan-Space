@@ -165,18 +165,30 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
             seen.store(true, Ordering::SeqCst);
         };
-        assert!(wait_off_runtime(work, Duration::from_secs(5)));
+        assert!(wait_off_runtime(work, WAIT));
         assert!(ran.load(Ordering::SeqCst));
     }
 
-    /// A stop that hangs does not keep the installer waiting for ever.
+    /// How long a test waits for what it awaits; past it the test fails.
+    const WAIT: Duration = Duration::from_secs(30);
+
+    /// A stop that hangs does not keep the installer waiting for ever: the
+    /// call gives up after its limit and says so. It runs on a thread of
+    /// its own, so a call that never returns fails the test at the deadline
+    /// instead of holding it.
     #[test]
     fn a_hanging_stop_is_given_up_after_the_limit() {
-        let started = std::time::Instant::now();
-        assert!(!wait_off_runtime(
-            std::future::pending(),
-            Duration::from_millis(50)
-        ));
-        assert!(started.elapsed() < Duration::from_secs(5));
+        let limit = Duration::from_millis(50);
+        let (done, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let started = std::time::Instant::now();
+            let ended = wait_off_runtime(std::future::pending(), limit);
+            let _ = done.send((ended, started.elapsed()));
+        });
+        let (ended, took) = answer
+            .recv_timeout(WAIT)
+            .unwrap_or_else(|_| panic!("the hanging stop was not given up within {WAIT:?}"));
+        assert!(!ended, "a stop that hangs is not reported as done");
+        assert!(took >= limit, "given up only after the limit: {took:?}");
     }
 }

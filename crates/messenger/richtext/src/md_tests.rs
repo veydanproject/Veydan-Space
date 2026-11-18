@@ -6,7 +6,7 @@
 //! text without the marks.
 
 use crate::md::*;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 fn t(text: &str) -> MdInline {
     MdInline::Text { text: text.into(), style: MdStyle::default() }
@@ -225,9 +225,8 @@ fn hostile_inputs_are_quick() {
         "<".repeat(30_000),
     ];
     for input in &inputs {
-        let started = Instant::now();
-        let _ = parse(input);
-        assert!(started.elapsed() < Duration::from_secs(1), "slow on {:?}…", &input[..12]);
+        let (_, cost) = cpu_of(|| parse(input));
+        assert!(cost.is_none_or(|c| c < Duration::from_secs(1)), "slow on {:?}…: {cost:?}", &input[..12]);
     }
 }
 
@@ -252,7 +251,28 @@ fn a_wide_table_of_short_rows_is_plain() {
     // The parser fills every short row up to the head: 2000 columns × 4000 rows of one cell.
     let input = format!("{}|\n{}|\n{}", "| a ".repeat(2000), "|-".repeat(2000), "|x|\n".repeat(4000));
     assert!(input.len() < 32 * 1024);
-    let started = Instant::now();
-    assert_eq!(parse(&input), None);
-    assert!(started.elapsed() < Duration::from_secs(1));
+    let (parsed, cost) = cpu_of(|| parse(&input));
+    assert_eq!(parsed, None);
+    assert!(cost.is_none_or(|c| c < Duration::from_secs(1)), "{cost:?}");
+}
+
+/// The processor time `work` took on this thread, read from /proc on
+/// Linux: what the work costs, which a busy host does not stretch the way
+/// it stretches the time on the clock (a runner shared with other jobs
+/// takes the processor away from the thread, and that time is not
+/// counted). In ticks of 10 ms; `None` where there is no /proc, and there
+/// the cost is not checked.
+fn cpu_of<T>(work: impl FnOnce() -> T) -> (T, Option<Duration>) {
+    fn now() -> Option<Duration> {
+        let stat = std::fs::read_to_string("/proc/thread-self/stat").ok()?;
+        // After the name in brackets: the state, then the fields from the
+        // fourth on; utime and stime are the 14th and the 15th.
+        let fields: Vec<&str> = stat.get(stat.rfind(')')? + 2..)?.split(' ').collect();
+        let ticks = fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?;
+        Some(Duration::from_millis(ticks * 10))
+    }
+    let before = now();
+    let out = work();
+    let spent = before.zip(now()).map(|(b, a)| a.saturating_sub(b));
+    (out, spent)
 }

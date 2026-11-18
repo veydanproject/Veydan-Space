@@ -31,7 +31,10 @@ const TONE_A: f64 = 440.0;
 const TONE_B: f64 = 660.0;
 const TONE_C: f64 = 880.0;
 const TALK: Duration = Duration::from_secs(4);
-const WAIT: Duration = Duration::from_secs(20);
+/// How long a test waits for what the engine and the node do by
+/// themselves: far beyond what they take on a busy runner, nothing when
+/// it comes.
+const WAIT: Duration = Duration::from_secs(30);
 
 /// What a participant's task tells the test.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,7 +334,7 @@ async fn participants_meet_in_a_room_of_a_node_encrypted_end_to_end() {
     }
     assert_eq!(a.session.remote_tracks().len(), 2, "{:?}", a.session.remote_tracks());
     // The frames of c's video end for their reader.
-    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+    let ended = tokio::time::timeout(WAIT, async {
         while let Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) = c_video_at_a.recv().await {}
     })
     .await;
@@ -340,7 +343,7 @@ async fn participants_meet_in_a_room_of_a_node_encrypted_end_to_end() {
     // mixes the room by waiting on every output per tick would otherwise
     // hang on the one who left (libwebrtc's stream ends only when
     // dropped, and the reader holds it).
-    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+    let ended = tokio::time::timeout(WAIT, async {
         while c_at_a.next().await.is_some() {}
     })
     .await;
@@ -384,7 +387,9 @@ async fn wait_layers(session: &Session, timeout: Duration, done: impl Fn(&[Track
             eprintln!("layers after {:?} (estimate {estimate:.0} kbps): {layers:?}", started.elapsed());
             return layers;
         }
-        assert!(started.elapsed() < timeout, "not within {timeout:?} (estimate {estimate:.0} kbps): {layers:?}");
+        if started.elapsed() >= timeout {
+            panic!("not within {timeout:?} (estimate {estimate:.0} kbps): {layers:?}");
+        }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
@@ -434,7 +439,7 @@ async fn three_layers_of_video_go_to_a_node() {
         assert!(after.iter().find(|t| t.rid == "h").is_some_and(|t| !t.active));
         // Back to all: h goes again.
         a.session.set_video_layers(VideoLayer::High).expect("layers");
-        let again = wait_layers(&a.session, Duration::from_secs(20), |l| bytes_of(l, "h") > bytes_of(&after, "h")).await;
+        let again = wait_layers(&a.session, Duration::from_secs(40), |l| bytes_of(l, "h") > bytes_of(&after, "h")).await;
         assert!(again.iter().find(|t| t.rid == "h").is_some_and(|t| t.active));
     } else {
         assert_eq!(a.session.video_encodings().len(), 1);
@@ -497,8 +502,8 @@ async fn the_offer_names_three_layers_and_a_far_end_without_simulcast_gets_one_a
     assert!(offer.contains("a=sendonly") && offer.contains("m=application"));
     let answer = with_simulcast_recv(&b.session.accept_offer(&offer).await.expect("answer"));
     a.session.accept_answer(&answer).await.expect("accept");
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     // A 640×360 source: two layers go (session.rs, `layers_for_width`).
     let encodings = a.session.video_encodings();
     assert_eq!(encodings.iter().map(|e| (e.rid.as_str(), e.active)).collect::<Vec<_>>(), vec![("q", true), ("h", true), ("f", false)], "{encodings:?}");
@@ -510,7 +515,7 @@ async fn the_offer_names_three_layers_and_a_far_end_without_simulcast_gets_one_a
     let (n, sizes) = watch_frames(&mut at_b, Duration::from_secs(3)).await;
     eprintln!("b got {n} frames at {sizes:?}");
     assert!(n > 30, "b got {n} frames");
-    let layers = wait_layers(&a.session, Duration::from_secs(20), |l| l.len() == 3 && ["q", "h"].iter().all(|rid| l.iter().any(|t| t.rid == *rid && t.bytes > 0 && t.width > 0))).await;
+    let layers = wait_layers(&a.session, Duration::from_secs(40), |l| l.len() == 3 && ["q", "h"].iter().all(|rid| l.iter().any(|t| t.rid == *rid && t.bytes > 0 && t.width > 0))).await;
     assert_eq!(layers.iter().map(|t| t.rid.as_str()).collect::<Vec<_>>(), vec!["f", "h", "q"], "three outbound-rtp, one per layer");
     assert!(layers.iter().all(|t| t.active == (t.rid != "f")), "{layers:?}");
     let size = |rid: &str| layers.iter().find(|t| t.rid == rid).map(|t| (t.width, t.height)).unwrap();
@@ -544,8 +549,8 @@ async fn the_offer_names_three_layers_and_a_far_end_without_simulcast_gets_one_a
     let answer = without_simulcast(&b2.session.accept_offer(&offer).await.expect("answer"));
     assert!(!answer.contains("a=rid:"));
     a2.session.accept_answer(&answer).await.expect("accept");
-    wait_connected(&mut a2, Duration::from_secs(15)).await;
-    wait_connected(&mut b2, Duration::from_secs(15)).await;
+    wait_connected(&mut a2, WAIT).await;
+    wait_connected(&mut b2, WAIT).await;
     let encodings = a2.session.video_encodings();
     eprintln!("without simulcast the sender has {encodings:?}");
     assert_eq!(encodings.len(), 1, "{encodings:?}");
@@ -584,8 +589,8 @@ async fn the_layers_follow_the_frames_pushed_not_the_size_of_the_source() {
     let offer = a.session.create_offer(false).await.expect("offer");
     let answer = with_simulcast_recv(&b.session.accept_offer(&offer).await.expect("answer"));
     a.session.accept_answer(&answer).await.expect("accept");
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     let source = a.session.video_source();
     assert_eq!(source.resolution(), (640, 360), "the default source of a session");
     assert_eq!(source.frame_size(), None, "nothing pushed yet");
@@ -623,7 +628,7 @@ async fn the_layers_follow_the_frames_pushed_not_the_size_of_the_source() {
     assert_eq!(source.frame_size(), Some((320, 180)));
     assert_eq!(layout(&a.session), vec![("q".into(), true, Some(1.0)), ("h".into(), false, Some(2.0)), ("f".into(), false, Some(1.0))]);
     let before = video_layers(a.session.stats().await.expect("stats"));
-    let layers = wait_layers(&a.session, Duration::from_secs(20), |l| {
+    let layers = wait_layers(&a.session, Duration::from_secs(40), |l| {
         l.iter().any(|t| t.rid == "q" && (t.width, t.height) == (320, 180) && t.bytes > bytes_of(&before, "q"))
     })
     .await;
@@ -635,7 +640,7 @@ async fn the_layers_follow_the_frames_pushed_not_the_size_of_the_source() {
     // session closes.
     let mut out_b = audio_output(&mut b).await;
     b.session.close();
-    let ended = tokio::time::timeout(Duration::from_secs(5), async { while out_b.next().await.is_some() {} }).await;
+    let ended = tokio::time::timeout(WAIT, async { while out_b.next().await.is_some() {} }).await;
     assert!(ended.is_ok(), "the output of the far end's sound did not end with the session");
     a.session.close();
 }
@@ -659,8 +664,8 @@ async fn the_size_hook_and_the_core_set_the_layers_at_once_and_none_is_refused()
     let offer = a.session.create_offer(false).await.expect("offer");
     let answer = with_simulcast_recv(&b.session.accept_offer(&offer).await.expect("answer"));
     a.session.accept_answer(&answer).await.expect("accept");
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     assert_eq!(a.session.video_encodings().len(), 3, "three layers negotiated");
     a.session.set_video_enabled(true);
 
@@ -811,8 +816,8 @@ async fn a_participant_on_the_device_path_is_heard_in_the_room_and_sees_itself()
         let mut a = wire(a.clone(), b.clone());
         let mut b = wire(b, a.session.clone());
         negotiate(&a, &b, false).await;
-        wait_connected(&mut a, Duration::from_secs(15)).await;
-        wait_connected(&mut b, Duration::from_secs(15)).await;
+        wait_connected(&mut a, WAIT).await;
+        wait_connected(&mut b, WAIT).await;
         let mut out = audio_output(&mut b).await;
         let got = collect(&mut out, TALK).await;
         let (from, at) = (a.session.stats().await.expect("stats"), b.session.stats().await.expect("stats"));
@@ -884,7 +889,7 @@ async fn a_participant_on_the_device_path_is_heard_in_the_room_and_sees_itself()
     a.session.set_video_enabled(true);
     let (stop_video_tx, stop_video_rx) = watch::channel(false);
     let pump_video = pump_pattern(a.session.video_source(), 640, 360, stop_video_rx);
-    let sizes = wait_for_size(&mut mine, 640, 360, Duration::from_secs(5)).await;
+    let sizes = wait_for_size(&mut mine, 640, 360, WAIT).await;
     assert!(sizes.len() <= 1, "my own frames come as pushed: {sizes:?}");
     let mut at_b = b.session.remote_video_frames_of(&of_a_at_b[&TrackKind::Video]);
     wait_for_size(&mut at_b, 640, 360, WAIT).await;

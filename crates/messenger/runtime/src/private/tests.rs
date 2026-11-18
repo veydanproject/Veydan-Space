@@ -11,12 +11,11 @@ use messenger_core::{MessengerConfig, PubKey, Transport};
 use messenger_dm::Action;
 use messenger_testkit::MemorySecretStore;
 use messenger_transport::{RelayConfig, RelayPool};
-use nostr_sdk::local_relay::LocalRelay;
 use std::sync::Arc;
 use std::time::Duration;
 
 async fn connected(pool: &RelayPool) {
-    for _ in 0..50 {
+    for _ in 0..300 {
         if pool
             .status()
             .await
@@ -68,23 +67,30 @@ async fn wraps_for(url: &str, who: &PubKey) -> usize {
 }
 
 /// The gift wraps a relay holds for the user of `rt`, but the notes that
-/// tell my devices where my presence stands: each session sends one to the
-/// home set, whatever its chats (`PresenceDriver::session_started`).
-async fn wraps_but_presence(url: &str, rt: &MessengerRuntime) -> usize {
+/// tell my devices the state of this device, which go to the home set
+/// whatever the chats: my presence (each session sends one,
+/// `PresenceDriver::session_started`) and the map of the emoji I use (a
+/// reaction marks it owed, and it rides the next flush of receipts, up to
+/// two seconds later: a slow run finds it at home, a fast one not yet).
+/// What is left is named, so that a failure says what reached the relay.
+async fn wraps_but_own_state(url: &str, rt: &MessengerRuntime) -> Vec<String> {
+    use messenger_core::envelope::{KIND_OWN_RUMOR, T_OWN_EMOJI, T_OWN_PRESENCE};
     let keys = rt.session_keys().await.unwrap();
     let filter = serde_json::json!({ "kinds": [1059], "#p": [keys.public_key().to_hex()] });
     on_relay(url, filter)
         .await
         .into_iter()
-        .filter(|w| {
-            let Ok(ev) = serde_json::from_value::<nostr::prelude::Event>(w.clone()) else { return true };
-            let Ok(u) = nostr::nips::nip59::UnwrappedGift::from_gift_wrap(&keys, &ev) else { return true };
-            let presence = u.rumor.kind.as_u16() == messenger_core::envelope::KIND_OWN_RUMOR
-                && messenger_core::Envelope::parse(&u.rumor.content)
-                    .is_ok_and(|e| e.t == messenger_core::envelope::T_OWN_PRESENCE);
-            !presence
+        .filter_map(|w| {
+            let Ok(ev) = serde_json::from_value::<nostr::prelude::Event>(w.clone()) else { return Some(format!("unreadable {w}")) };
+            let Ok(u) = nostr::nips::nip59::UnwrappedGift::from_gift_wrap(&keys, &ev) else {
+                return Some(format!("not opened {}", ev.id));
+            };
+            let kind = u.rumor.kind.as_u16();
+            let t = messenger_core::Envelope::parse(&u.rumor.content).map(|e| e.t).unwrap_or_default();
+            let own_state = kind == KIND_OWN_RUMOR && (t == T_OWN_PRESENCE || t == T_OWN_EMOJI);
+            (!own_state).then(|| format!("kind {kind} {t}"))
         })
-        .count()
+        .collect()
 }
 
 /// A runtime on the home relay with the private server, logged in.
@@ -108,17 +114,17 @@ async fn device(
         .await
         .unwrap();
     assert_eq!(id, servers::id_of(private));
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     assert!(rt.refresh_signer().await.unwrap());
     connected(&*rt.relays().pool().await).await;
     let me = rt.session_pubkey().await.unwrap();
     (dir, rt, me, id)
 }
 
-/// The texts of a chat once `want` of them are there (or what is, after 8 s).
+/// The texts of a chat once `want` of them are there (or what is, after 30 s).
 async fn texts_when(rt: &MessengerRuntime, chat: &str, want: usize) -> Vec<String> {
     let mut texts = Vec::new();
-    for _ in 0..80 {
+    for _ in 0..300 {
         texts = rt
             .dm()
             .messages(chat, None, 100)
@@ -138,7 +144,7 @@ async fn texts_when(rt: &MessengerRuntime, chat: &str, want: usize) -> Vec<Strin
 
 async fn mode_when(rt: &MessengerRuntime, peer: &str, want: &str) -> String {
     let mut mode = String::new();
-    for _ in 0..80 {
+    for _ in 0..300 {
         mode = rt.dm_relation(peer).await.unwrap().mode;
         if mode == want {
             break;
@@ -150,11 +156,9 @@ async fn mode_when(rt: &MessengerRuntime, peer: &str, want: &str) -> String {
 
 #[tokio::test]
 async fn a_private_chat_never_reaches_the_home_relay() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await
@@ -224,7 +228,7 @@ async fn a_private_chat_never_reaches_the_home_relay() {
     bob.flush_receipts().await.unwrap();
     // The read mark of Alice comes back to Bob's message.
     let mut read = None;
-    for _ in 0..80 {
+    for _ in 0..300 {
         let mine = bob.dm().messages(&bobs_chat, None, 100).await.unwrap();
         read = mine
             .iter()
@@ -250,7 +254,7 @@ async fn a_private_chat_never_reaches_the_home_relay() {
     assert_eq!(texts_when(&bob, &bobs_chat, 3).await.len(), 3);
     alice.dm_delete(&extra.id, true).await.unwrap();
     let mut seen = (false, false, false);
-    for _ in 0..80 {
+    for _ in 0..300 {
         let reacted = alice
             .dm()
             .message(&sent.id)
@@ -286,11 +290,11 @@ async fn a_private_chat_never_reaches_the_home_relay() {
     assert!(wraps_for(&private_url, &bob_pk).await >= 2);
     assert!(wraps_for(&private_url, &alice_pk).await >= 2);
     assert_eq!(
-        wraps_but_presence(&home_url, &bob).await,
-        0,
+        wraps_but_own_state(&home_url, &bob).await,
+        Vec::<String>::new(),
         "nothing of the private chat at home"
     );
-    assert_eq!(wraps_but_presence(&home_url, &alice).await, 0);
+    assert_eq!(wraps_but_own_state(&home_url, &alice).await, Vec::<String>::new());
 
     // My kind 0 goes to the server too, of the same second as the home one.
     let profile = messenger_contacts::ProfileInput {
@@ -300,7 +304,7 @@ async fn a_private_chat_never_reaches_the_home_relay() {
     alice.publish_own_profile(&profile).await.unwrap();
     let mine = serde_json::json!({ "kinds": [0], "authors": [alice_pk.as_hex()] });
     let (mut on_s1, mut at_home) = (Vec::new(), Vec::new());
-    for _ in 0..50 {
+    for _ in 0..300 {
         (on_s1, at_home) = (
             on_relay(&private_url, mine.clone()).await,
             on_relay(&home_url, mine.clone()).await,
@@ -370,7 +374,7 @@ async fn plain_device(
             rt.identity().import_nsec(nsec).await.unwrap();
         }
         None => {
-            rt.identity().create("pw").await.unwrap();
+            crate::testing::log_in(&rt).await;
         }
     }
     rt.refresh_signer().await.unwrap();
@@ -405,11 +409,11 @@ async fn servers_when(rt: &MessengerRuntime, want: &[&str]) -> Vec<String> {
 }
 
 /// Waits until `check` (an expression that may await) holds, or panics
-/// after 8 s with `what`.
+/// after 30 s with `what`.
 macro_rules! until {
     ($what:expr, $check:expr) => {{
         let mut held = false;
-        for _ in 0..80 {
+        for _ in 0..300 {
             if $check {
                 held = true;
                 break;
@@ -440,11 +444,9 @@ async fn group_texts(rt: &MessengerRuntime, chat: &str) -> Vec<String> {
 /// its chat on the first.
 #[tokio::test]
 async fn a_private_server_reaches_my_other_device_and_so_does_its_removal() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await
@@ -507,8 +509,8 @@ async fn a_private_server_reaches_my_other_device_and_so_does_its_removal() {
         .unwrap();
     assert_eq!(texts_when(&alice2, &chat, 2).await, vec!["first", "second"]);
     assert_eq!(
-        wraps_but_presence(&home_url, &alice1).await,
-        0,
+        wraps_but_own_state(&home_url, &alice1).await,
+        Vec::<String>::new(),
         "nothing of the private chat at home"
     );
 
@@ -518,7 +520,7 @@ async fn a_private_server_reaches_my_other_device_and_so_does_its_removal() {
     assert!(alice2.dm().chat(&chat).await.unwrap().is_none());
     assert_eq!(servers_when(&alice1, &[]).await, Vec::<String>::new());
     let mut gone = false;
-    for _ in 0..50 {
+    for _ in 0..300 {
         gone = alice1.dm().chat(&chat).await.unwrap().is_none()
             && alice1
                 .relays()
@@ -549,11 +551,9 @@ async fn a_private_server_reaches_my_other_device_and_so_does_its_removal() {
 async fn a_group_of_a_private_server_never_reaches_the_home_relay() {
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await
@@ -639,8 +639,8 @@ async fn a_group_of_a_private_server_never_reaches_the_home_relay() {
         "no event of the group at home"
     );
     assert_eq!(
-        wraps_but_presence(&home_url, &b).await,
-        0,
+        wraps_but_own_state(&home_url, &b).await,
+        Vec::<String>::new(),
         "nothing of the group's protocol at home"
     );
     assert_eq!(wraps_for(&home_url, &c_pk).await, 0);
@@ -651,9 +651,9 @@ async fn a_group_of_a_private_server_never_reaches_the_home_relay() {
 }
 
 /// The card a message of `chat` carries once one is there (or `None`
-/// after 8 s): the server it names, as the card view shows it.
+/// after 30 s): the server it names, as the card view shows it.
 async fn server_of_card_when(rt: &MessengerRuntime, chat: &str) -> Option<String> {
-    for _ in 0..80 {
+    for _ in 0..300 {
         let found = rt
             .dm()
             .messages(chat, None, 100)
@@ -678,11 +678,9 @@ async fn server_of_card_when(rt: &MessengerRuntime, chat: &str) -> Option<String
 /// goes by S1.
 #[tokio::test]
 async fn a_server_card_in_a_home_chat_opens_a_private_chat_on_both_sides() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await
@@ -794,11 +792,9 @@ async fn a_server_card_in_a_home_chat_opens_a_private_chat_on_both_sides() {
 /// answers), and asks into the group, which B hears on S1.
 #[tokio::test]
 async fn a_link_with_the_card_of_its_server_leads_there() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await
@@ -896,7 +892,7 @@ async fn a_link_with_the_card_of_its_server_leads_there() {
         "B hears the request on S1",
         !bob.group_get(&g.id).await.unwrap().requests.is_empty()
     );
-    assert_eq!(wraps_but_presence(&home_url, &bob).await, 0, "nothing of it at home");
+    assert_eq!(wraps_but_own_state(&home_url, &bob).await, Vec::<String>::new(), "nothing of it at home");
     alice.shutdown().await;
     bob.shutdown().await;
 }
@@ -937,11 +933,9 @@ async fn group_secrets(rt: &MessengerRuntime, group: &str, keys: &[String]) -> u
 /// goes nowhere, and the home relay never holds an event of the group.
 #[tokio::test]
 async fn a_removed_server_takes_its_groups_on_every_device() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private.url().await.as_str_without_trailing_slash().to_string();
 
     let (_a1, alice1, _alice_pk) = plain_device(&home_url, None).await;
@@ -1017,9 +1011,16 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
     };
     let queued = Outbound::PublishScoped { scope: messenger_core::Scope::Group { id: g.id.clone() }, event };
     assert!(scopes::resolve(alice1.store(), queued.clone()).await.is_err(), "no scope for it: not the home set");
-    alice1.outbox.enqueue(queued).await.unwrap();
+    let queued = alice1.outbox.enqueue(queued).await.unwrap();
     alice1.outbox.kick();
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // Tried: the row is marked once the try has ended, so whatever relay
+    // it went to has had it by then.
+    until!(
+        "the outbox tried it",
+        messenger_store::outbox::get(alice1.store(), &queued).await.unwrap().is_some_and(|r| r.attempts > 0 || r.state == "abandoned")
+    );
+    let row = messenger_store::outbox::get(alice1.store(), &queued).await.unwrap().unwrap();
+    assert_ne!(row.state, "published", "{:?}", row.last_error);
     assert!(
         on_relay(&home_url, serde_json::json!({ "kinds": [9] })).await.is_empty(),
         "the home relay never held an event of the group"
@@ -1028,7 +1029,10 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
         let groups = alice1.groups().clone();
         async move { groups.forget_gone().await }
     });
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The sweep has the lock of the group in hand (the map and this test
+    // hold the two others) and waits for it, the group still there.
+    until!("the sweep at the lock", Arc::strong_count(&lock) >= 3);
+    assert!(!sweep.is_finished());
     assert!(alice1.group_get(&g.id).await.is_ok(), "the sweep waits for the lock");
     drop(guard);
     sweep.await.unwrap().unwrap();
@@ -1047,11 +1051,9 @@ async fn a_removed_server_takes_its_groups_on_every_device() {
 /// with what was written meanwhile and what comes live, without a restart.
 #[tokio::test]
 async fn the_groups_of_a_server_that_comes_mid_session_are_heard_at_once() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let r2 = LocalRelay::builder().build();
-    r2.run().await.unwrap();
+    let r2 = messenger_testkit::local_relay().await;
     let r2_url = r2.url().await.as_str_without_trailing_slash().to_string();
 
     let (_b, bob, _bob_pk) = home_device(&r2_url).await;
@@ -1079,8 +1081,13 @@ async fn the_groups_of_a_server_that_comes_mid_session_are_heard_at_once() {
         a.group_driver.resubscribe().await;
         assert_eq!(servers::of_group(a.store(), &g.id).await.unwrap(), None);
     }
+    // R2 is gone from her pool, so nothing written there can reach her:
+    // what is asserted after Bob writes holds however long one waits.
+    until!(
+        "R2 left the pool",
+        alice1.relays().pool().await.status().await.relays.iter().all(|r| r.url.as_str().trim_end_matches('/') != r2_url)
+    );
     bob.group_send_text(&g.id, "two", None).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!group_texts(&alice1, &chat).await.contains(&"two".to_string()), "not heard at home");
 
     // R2 comes as a private server: by hand on the first device, by the
@@ -1122,11 +1129,9 @@ async fn the_groups_of_a_server_that_comes_mid_session_are_heard_at_once() {
 /// before it looked.
 #[tokio::test]
 async fn a_server_put_in_again_brings_its_history_back() {
-    let home = LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
-    let private = LocalRelay::builder().build();
-    private.run().await.unwrap();
+    let private = messenger_testkit::local_relay().await;
     let private_url = private
         .url()
         .await

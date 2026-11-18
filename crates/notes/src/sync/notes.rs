@@ -2565,16 +2565,27 @@ mod apply_tests {
 
     /// Applies `ops` while a save holds the lock, and lets the save write
     /// `body` into the file once the apply has read it and waits for the lock.
+    /// The apply reads the file only while it is polled, and is polled only
+    /// with the file as it was: the save is laid in each time the lock is
+    /// let go, and taken back when the apply turns out not to be at the lock
+    /// yet. So the apply reads the file of before, and finds the save once
+    /// it has the lock.
     async fn apply_racing_a_save(device: &mut Device, ops: Vec<Op>, body: &str) -> ApplyOutcome {
         let save = device.state.notes.save.clone();
         let path = device.note_path();
-        let held = save.lock().await;
-        let mut apply = Box::pin(device.apply(ops, false));
-        let waited = tokio::time::timeout(std::time::Duration::from_millis(300), &mut apply).await;
-        assert!(waited.is_err(), "the apply wrote without the lock");
-        write_raw(&path, &note_file(body)).unwrap();
-        drop(held);
-        apply.await
+        let read = std::fs::read(&path).unwrap();
+        let saved = note_file(body);
+        crate::testing::through_a_held_save(
+            &save,
+            device.apply(ops, false),
+            || {
+                let now = std::fs::read(&path).unwrap();
+                assert_eq!(now, read, "the apply wrote without the lock");
+                write_raw(&path, &saved).unwrap();
+            },
+            || write_raw(&path, &read).unwrap(),
+        )
+        .await
     }
 
     /// Two devices edited from one ancestor; a save lands here between the

@@ -1051,6 +1051,73 @@ async fn rows_that_do_not_add_up_are_recovered_as_an_emergency_generation() {
     assert!(has_key(&reader, &cid, 1).await, "the history stays readable");
 }
 
+/// A member restored on an empty folder: the keeper's issue of the
+/// emergency generation comes first and lets it in, then the catch-up
+/// hands the epoch before the emergency, which this folder takes as the
+/// newest it heard and keydist answers `Out` for (its generation is older
+/// than the bundle held), then the epoch of the emergency itself. The
+/// older epoch says nothing of where the member stands now: it stays in,
+/// with the key (the sdk under load, 2026-11-18: «left», and `follow`
+/// waited its 90 s).
+#[tokio::test]
+async fn an_epoch_older_than_the_emergency_bundle_held_does_not_put_a_restored_member_out() {
+    let w = World::new();
+    let owner = w.node().await;
+    let reader = w.node().await;
+    let cid = create(&w, &owner, JoinMode::Open, History::Open, &[H1, H2]).await;
+    join_by_link(&w, &owner, &reader, &cid, &[&owner, &reader]).await;
+    sqlx::query("INSERT INTO cm_keeper_revoked (community_id, scope_id, gen, leaf) VALUES (?, 'everyone', 1, 999999)")
+        .bind(&cid)
+        .execute(owner.svc.db().pool())
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    owner.svc.unload_keepers().await;
+    tick(&owner).await;
+    w.pump(&[&owner, &reader]).await;
+    assert_eq!(w.relay.epochs(), vec![1, 2], "epoch 2 starts the emergency generation");
+    // The reader's folder restored empty: the journal, nothing of the
+    // epochs or of the notes before.
+    let fresh = w.device(reader.keys.clone()).await;
+    fresh.skip_inboxes(&w.relay);
+    for ev in w.relay.of_kind(wire::KIND_JOURNAL) {
+        let _ = fresh.svc.on_event(&fresh.keys, &ev, false).await;
+    }
+    assert!(fresh.svc.ensure_keys(&fresh.keys, &cid).await.unwrap_or(false), "a bundle asked for");
+    flush(&fresh).await;
+    w.pump(&[&owner]).await;
+    assert!(fresh.hear_inbox(fresh.me.as_hex()).await > 0, "the keeper's issue");
+    assert_eq!(membership(&fresh, &cid).await, MEMBERSHIP_JOINED);
+    let bundles = db::keys::bundles(fresh.svc.db(), &cid, SCOPE_EVERYONE).await.unwrap_or_default();
+    assert!(bundles.iter().all(|(gen, _, emergency)| *gen == 2 && *emergency) && !bundles.is_empty(), "{bundles:?}");
+    assert!(!has_key(&fresh, &cid, 1).await, "nothing of epoch 1 here");
+    // The catch-up: the old epoch first, then the emergency one.
+    let epoch = |n: u32| {
+        let tag = n.to_string();
+        w.relay.of_kind(KIND_EPOCH).into_iter().find(|e| e["tags"].as_array().is_some_and(|t| t.iter().any(|t| t[0] == "n" && t[1].as_str() == Some(tag.as_str())))).unwrap_or_else(|| panic!("epoch {n}"))
+    };
+    fresh.svc.on_event(&fresh.keys, &epoch(1), false).await.unwrap_or_else(|e| panic!("epoch 1: {e}"));
+    assert_eq!(membership(&fresh, &cid).await, MEMBERSHIP_JOINED, "an epoch before the emergency puts nobody out");
+    fresh.svc.on_event(&fresh.keys, &epoch(2), false).await.unwrap_or_else(|e| panic!("epoch 2: {e}"));
+    assert_eq!(membership(&fresh, &cid).await, MEMBERSHIP_JOINED);
+    assert!(has_key(&fresh, &cid, 2).await, "the key of the emergency epoch");
+    assert!(fresh.errors().is_empty(), "{:?}", fresh.errors());
+    // Removed after it: out by the journal, and the epoch of the removal,
+    // of the emergency generation, opens nothing for it.
+    w.clock.advance(10);
+    owner.svc.act(&owner.keys, &cid, OpBody::Remove { who: pk(&reader) }).await.unwrap_or_else(|e| panic!("remove: {e}"));
+    w.pump(&[&owner]).await;
+    w.clock.advance(400);
+    tick(&owner).await;
+    assert_eq!(w.relay.epochs(), vec![1, 2, 3]);
+    for ev in w.relay.of_kind(wire::KIND_JOURNAL) {
+        let _ = fresh.svc.on_event(&fresh.keys, &ev, false).await;
+    }
+    fresh.svc.on_event(&fresh.keys, &epoch(3), false).await.unwrap_or_else(|e| panic!("epoch 3: {e}"));
+    fresh.svc.run_fetches(&fresh.keys).await;
+    assert_eq!(membership(&fresh, &cid).await, MEMBERSHIP_LEFT, "the removal puts it out");
+    assert!(!has_key(&fresh, &cid, 3).await, "nothing of the removal's epoch");
+}
+
 // ─── Sub-stage 1.3 ──────────────────────────────────────────────────────────
 
 fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {

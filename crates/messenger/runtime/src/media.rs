@@ -1770,19 +1770,18 @@ mod tests {
 
     /// A session with a new identity.
     async fn with_session(rt: &MessengerRuntime) {
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(rt).await;
         assert!(rt.refresh_signer().await.unwrap());
     }
 
-    /// Wait (up to twenty seconds) until `check` holds.
+    /// Wait (up to thirty seconds, far beyond what a busy runner needs)
+    /// until `check` holds.
     async fn until(mut check: impl AsyncFnMut() -> bool) {
-        for _ in 0..2000 {
-            if check().await {
-                return;
-            }
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !check().await {
+            assert!(tokio::time::Instant::now() < deadline, "the condition never held");
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-        panic!("the condition never held");
     }
 
     async fn status_of(rt: &MessengerRuntime, transfer: &str) -> String {
@@ -2082,7 +2081,7 @@ mod tests {
         let backend = MemoryBackend::new("https://mem.example/a");
         use_memory(&mut rt, &backend);
         // The identity is here, the session not yet (as before an unlock).
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         let keys = rt.identity().load_keys().await.unwrap();
         let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
         let path = dir.path().join("notes.bin");
@@ -2180,7 +2179,7 @@ mod tests {
         let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
         let backend = MemoryBackend::new("https://mem.example/a");
         use_memory(&mut rt, &backend);
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         let keys = rt.identity().load_keys().await.unwrap();
         let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
         let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex(), None).await.unwrap().id;
@@ -2248,7 +2247,7 @@ mod tests {
         let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
         let backend = MemoryBackend::new("https://mem.example/a");
         use_memory(&mut rt, &backend);
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         let keys = rt.identity().load_keys().await.unwrap();
         let peer = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
         let chat = messenger_store::chats::ensure_dm(&rt.store, peer.as_hex(), None).await.unwrap().id;
@@ -2305,6 +2304,11 @@ mod tests {
         let mut rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
         let backend = MemoryBackend::new("https://mem.example/a");
         use_memory(&mut rt, &backend);
+        // Waits of an hour: done while it waits is done because the network
+        // came back, however slow the runner. With the waits of the product
+        // (5 s for the first) a busy runner reached the end of the wait
+        // before the test saw the transfer done.
+        rt.media = rt.media.clone().with_retry_delays(vec![std::time::Duration::from_secs(3600); 3]);
         with_session(&rt).await;
         let path = dir.path().join("a.bin");
         tokio::fs::write(&path, vec![1u8; 1000]).await.unwrap();
@@ -2416,7 +2420,7 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let rt = runtime(&cfg, &Arc::new(MemorySecretStore::unlocked())).await;
         // Delete for me tells my other devices: it needs a session.
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         assert!(rt.refresh_signer().await.unwrap());
         let path = dir.path().join("a.bin");
         tokio::fs::write(&path, b"0123456789").await.unwrap();
@@ -2491,9 +2495,12 @@ mod tests {
         let ph = placeholder(&rt, 0).await;
         let id = upload(&rt, &path, &ph, transfers::ST_PAUSED).await;
         transfers::set_status(&rt.store, &id, transfers::ST_PAUSED, Some(transfers::REASON_INTERRUPTED)).await.unwrap();
+        // These two are what takes a transfer up by itself (the start of the
+        // session ran the first before the row was made), and each starts
+        // a job only for what it counts: nothing runs that could change the
+        // row, now or later.
         assert_eq!(rt.resume_interrupted().await.unwrap(), 0);
         assert_eq!(rt.media_retry_failed().await.unwrap(), 0);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert_eq!(status_of(&rt, &id).await, "paused");
         rt.shutdown().await;
     }

@@ -285,7 +285,7 @@ mod tests {
         assert!(s.rt.relays().list().await.unwrap().is_empty());
         assert!(s.rt.relays().pool().await.configured().is_empty());
         assert!(s.rt.media_servers().await.unwrap().is_empty());
-        s.rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&s.rt).await;
         assert!(!s.rt.refresh_signer().await.unwrap(), "no session before a choice");
         assert!(!s.rt.status().await.unwrap().session_active);
         assert_eq!(s.rt.manifest_refresh(true).await.unwrap(), None, "nothing is asked");
@@ -505,7 +505,7 @@ mod tests {
         let cfg = MessengerConfig::new(dir.path().join("messenger"));
         let secrets = Arc::new(MemorySecretStore::unlocked());
         let rt = MessengerRuntime::start(cfg.clone(), secrets.clone()).await.unwrap();
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.shutdown().await;
 
         let rt = MessengerRuntime::start(cfg, secrets).await.unwrap();

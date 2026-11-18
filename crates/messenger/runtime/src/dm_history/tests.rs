@@ -39,10 +39,28 @@ async fn connected(pool: &RelayPool) {
 }
 
 async fn local_relay() -> (LocalRelay, String) {
-    let relay = LocalRelay::builder().build();
-    relay.run().await.unwrap();
+    let relay = messenger_testkit::local_relay().await;
     let url = relay.url().await.as_str_without_trailing_slash().to_string();
     (relay, url)
+}
+
+/// A query policy that lets everything in and counts the requests for a
+/// page of the past (a filter with `until`): only the reading of history
+/// asks for one, the catch-up and the live inbox ask from a time on.
+#[derive(Debug)]
+struct Pages(Arc<AtomicUsize>);
+
+impl nostr_sdk::local_relay::QueryPolicy for Pages {
+    fn admit_query<'a>(
+        &'a self,
+        filter: &'a mut Filter,
+        _: &'a std::net::SocketAddr,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = nostr_sdk::local_relay::QueryPolicyResult> + Send + 'a>> {
+        if filter.until.is_some() {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+        Box::pin(async { nostr_sdk::local_relay::QueryPolicyResult::Accept })
+    }
 }
 
 /// A text of mine to `to` (on `server`, of a private chat) written at
@@ -82,11 +100,14 @@ async fn put(url: &str, wraps: &[WireEvent]) {
 /// The device of `me` that came back: the home relay and the private
 /// server, and a catch-up that reaches back to the last days only, as the
 /// first one of a device reaches its newest `DM_HISTORY_LIMIT` wraps only.
-async fn device_back(me: &Keys, home: &str, private: &str) -> (tempfile::TempDir, MessengerRuntime, String) {
+/// The events of the UI are heard from the start, so that a test can wait
+/// for the catch-ups of the session (`history.synced`).
+async fn device_back(me: &Keys, home: &str, private: &str) -> (tempfile::TempDir, MessengerRuntime, String, Ui) {
     let dir = tempfile::tempdir().unwrap();
     let rt = MessengerRuntime::start(MessengerConfig::new(dir.path().join("messenger")), Arc::new(MemorySecretStore::unlocked()))
         .await
         .unwrap();
+    let ui = rt.ui_events();
     rt.relays().add_user(home, None).await.unwrap();
     rt.servers_use_own().await.unwrap();
     let s1 = rt
@@ -103,7 +124,25 @@ async fn device_back(me: &Keys, home: &str, private: &str) -> (tempfile::TempDir
     connected(&*rt.relays().pool().await).await;
     // Pages of three: each asks its oldest second again, so two are new.
     rt.dm_history_state.set_page(3);
-    (dir, rt, s1)
+    (dir, rt, s1, ui)
+}
+
+type Ui = tokio::sync::broadcast::Receiver<messenger_core::traits::UiEvent>;
+
+/// Until the session said its catch-up of the inbox is done on `n` sets
+/// of relays (the home set and each private server): what the relays sent
+/// is then on its way to the ingress, behind anything that comes later.
+async fn synced(ui: &mut Ui, n: usize) {
+    let mut seen = 0;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while seen < n {
+            if ui.recv().await.unwrap().name == crate::session::UI_EVENT_HISTORY_SYNCED {
+                seen += 1;
+            }
+        }
+    })
+    .await
+    .expect("the catch-ups of the session");
 }
 
 async fn texts(rt: &MessengerRuntime, chat: &str) -> Vec<String> {
@@ -136,7 +175,10 @@ async fn oldest(rt: &MessengerRuntime, chat: &str, fallback: i64) -> i64 {
 
 #[tokio::test]
 async fn the_past_of_a_direct_chat_comes_page_by_page_to_the_start_of_the_inbox() {
-    let (_home, home_url) = local_relay().await;
+    let pages_asked = Arc::new(AtomicUsize::new(0));
+    let asked = pages_asked.clone();
+    let home = messenger_testkit::local_relay_with(move || nostr_sdk::local_relay::LocalRelay::builder().query_policy(Pages(asked.clone()))).await;
+    let home_url = home.url().await.as_str_without_trailing_slash().to_string();
     let (_private, private_url) = local_relay().await;
     let (bob, alice, carol) = (Keys::generate(), Keys::generate(), Keys::generate());
     let pk = |k: &Keys| PubKey::parse(&k.public_key().to_hex()).unwrap();
@@ -165,11 +207,17 @@ async fn the_past_of_a_direct_chat_comes_page_by_page_to_the_start_of_the_inbox(
         .collect();
     put(&private_url, &on_s1).await;
 
-    let (_dir, rt, _) = device_back(&bob, &home_url, &private_url).await;
+    let (_dir, rt, _, mut ui) = device_back(&bob, &home_url, &private_url).await;
     let (alice_chat, carol_chat) = (chats::dm_chat_id(alice_pk.as_hex(), None), chats::dm_chat_id(carol_pk.as_hex(), None));
     let private_chat = chats::dm_chat_id(alice_pk.as_hex(), Some(&s1));
     assert_eq!(texts_when(&rt, &alice_chat, 1).await, vec!["a recent"], "the catch-up brought the window");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Nothing older came of the catch-ups: once both are done, a copy of
+    // mine to Dave put on the home relay comes behind whatever they sent,
+    // through the same ingress, so with it here the rest is here too.
+    synced(&mut ui, 2).await;
+    let dave = PubKey::parse(&Keys::generate().public_key().to_hex()).unwrap();
+    put(&home_url, &[my_copy(&bob, &dave, None, "behind the catch-up", now, now)]).await;
+    assert_eq!(texts_when(&rt, &chats::dm_chat_id(dave.as_hex(), None), 1).await, vec!["behind the catch-up"]);
     assert_eq!(texts(&rt, &alice_chat).await, vec!["a recent"], "and nothing older");
     assert!(texts(&rt, &carol_chat).await.is_empty());
 
@@ -199,10 +247,11 @@ async fn the_past_of_a_direct_chat_comes_page_by_page_to_the_start_of_the_inbox(
     );
     assert!(asks.len() >= 3, "page by page: {asks:?}");
     assert_eq!(asks.last(), Some(&DmHistoryPage { older: 0, end: true }));
-    // The end is kept: asked again, it answers at once.
-    let at_once = tokio::time::Instant::now();
+    // The end is kept: asked again, it answers without asking the relays.
+    let before = pages_asked.load(Ordering::SeqCst);
+    assert!(before > 0, "the asks read pages of the home relay");
     assert_eq!(rt.dm_history(&carol_chat, oldest(&rt, &carol_chat, now).await).await.unwrap(), DmHistoryPage { older: 0, end: true });
-    assert!(at_once.elapsed() < Duration::from_secs(1));
+    assert_eq!(pages_asked.load(Ordering::SeqCst), before, "no page asked");
     assert!(texts(&rt, &private_chat).await.is_empty(), "nothing of the private server came by the home set");
 
     // The private chat, empty here, reads its own server's inbox.
@@ -241,7 +290,7 @@ async fn two_asks_at_once_read_the_pages_once() {
         })
         .collect();
     put(&home_url, &old).await;
-    let (_dir, rt, _) = device_back(&bob, &home_url, &private_url).await;
+    let (_dir, rt, _, _ui) = device_back(&bob, &home_url, &private_url).await;
     let chat = chats::dm_chat_id(alice_pk.as_hex(), None);
     let (one, two) = tokio::join!(rt.dm_history(&chat, now), rt.dm_history(&chat, now));
     let (one, two) = (one.unwrap(), two.unwrap());
@@ -273,7 +322,7 @@ async fn an_old_wrap_held_alone_does_not_hide_the_gap_above_it() {
     home.push(lone.clone());
     put(&home_url, &home).await;
 
-    let (_dir, rt, _) = device_back(&bob, &home_url, &private_url).await;
+    let (_dir, rt, _, _ui) = device_back(&bob, &home_url, &private_url).await;
     let pool = rt.relays().pool().await;
     let filter = messenger_core::outbound::Filter(serde_json::json!({ "kinds": [1059], "ids": [lone.id.as_hex()] }));
     pool.send(Outbound::Sync { scope: messenger_core::Scope::Own, filter, local: vec![] }).await.unwrap();

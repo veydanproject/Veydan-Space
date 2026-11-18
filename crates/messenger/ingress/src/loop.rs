@@ -362,6 +362,20 @@ mod tests {
         }
     }
 
+    /// Every one of the first `n` events the loop was given is done with.
+    /// The loop takes them one at a time under its gate and counts each as
+    /// received once it holds the gate, so when the count is `n` the last
+    /// of them has begun, and the gate is free again only once it ended.
+    /// No time is guessed: what was not taken by then never will be.
+    async fn settled(lp: &IngressLoop, n: u64) {
+        let until = std::time::Instant::now() + Duration::from_secs(30);
+        while lp.stats.snapshot().0 < n {
+            assert!(std::time::Instant::now() < until, "the loop took {} of {n} events", lp.stats.snapshot().0);
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        drop(lp.ingress().hold().await);
+    }
+
     #[tokio::test]
     async fn loop_dedups_and_counts() {
         let store = Store::open_in_memory().await.unwrap();
@@ -381,7 +395,7 @@ mod tests {
         tx.send(raw_of(&wrap)).await.unwrap();
         tx.send(raw_of(&wrap)).await.unwrap(); // duplicate
         tx.send(raw_of(&note)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 3).await;
 
         let (received, dups, dispatched, dm, ignored) = lp.stats.snapshot();
         assert_eq!((received, dups, dispatched, dm, ignored), (3, 1, 2, 1, 1));
@@ -473,7 +487,7 @@ mod tests {
         tx.send(raw_of(&beat)).await.unwrap();
         tx.send(raw_of(&beat)).await.unwrap(); // a replay goes through
         tx.send(raw_of(&note)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 3).await;
 
         let (received, dups, dispatched, _, _) = lp.stats.snapshot();
         assert_eq!((received, dups, dispatched), (3, 0, 3));
@@ -515,7 +529,7 @@ mod tests {
         let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher.clone(), ctx_of(&me), sink.clone(), None);
         tx.send(raw_of(&closed)).await.unwrap();
         tx.send(raw_of(&open)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 2).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 1, "only the open group's");
         assert!(!events_raw::contains(&store, &raw_of(&closed).id).await.unwrap(), "not seen");
         assert!(events_raw::contains(&store, &raw_of(&open).id).await.unwrap());
@@ -525,7 +539,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(8);
         let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink, None);
         tx.send(raw_of(&closed)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 1).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 2, "lifted: taken");
         assert!(events_raw::contains(&store, &raw_of(&closed).id).await.unwrap());
         drop(lp);
@@ -588,14 +602,14 @@ mod tests {
         let lp = IngressLoop::spawn(rx, store.clone(), Some(me.clone()), dispatcher, ctx_of(&me), sink, None);
         tx.send(by(&private, "wss://home.example")).await.unwrap();
         tx.send(by(&home, "wss://s1.example")).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 2).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 0, "each by the other's relay");
         assert!(!events_raw::contains(&store, &raw_of(&private).id).await.unwrap(), "not seen");
         assert!(!events_raw::contains(&store, &raw_of(&home).id).await.unwrap(), "not seen");
         tx.send(by(&private, "wss://s1.example")).await.unwrap();
         tx.send(by(&home, "wss://home.example")).await.unwrap();
         tx.send(by(&event("at-home"), "wss://unknown.example")).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 5).await;
         assert_eq!(handler.0.load(Ordering::SeqCst), 3, "each by its own server; home by a relay of no server");
         assert!(events_raw::contains(&store, &raw_of(&private).id).await.unwrap());
         drop(lp);
@@ -639,7 +653,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(8);
         let lp = IngressLoop::spawn(rx, store.clone(), None, dispatcher.clone(), ctx_of(&bob), sink.clone(), None);
         tx.send(raw_of(&wrap)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 1).await;
         assert_eq!(lp.stats.snapshot().4, 1, "ignored without a signer");
         assert_eq!(events_raw::count(&store).await.unwrap(), 0, "not seen");
         drop(lp);
@@ -649,7 +663,7 @@ mod tests {
         let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink, None);
         tx.send(raw_of(&wrap)).await.unwrap();
         tx.send(raw_of(&wrap)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 2).await;
         let (received, dups, _, dm, _) = lp.stats.snapshot();
         assert_eq!((received, dups, dm), (2, 1, 1));
         assert_eq!(handler.calls.load(Ordering::SeqCst), 1);
@@ -693,14 +707,14 @@ mod tests {
         let lp = IngressLoop::spawn(rx, store.clone(), Some(bob.clone()), dispatcher, ctx_of(&bob), sink, None);
         tx.send(raw_of(&wrap)).await.unwrap();
         tx.send(by_s1(&bare)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 2).await;
         assert_eq!(handler.calls.load(Ordering::SeqCst), 0, "no chat to file them under");
         assert_eq!(events_raw::count(&store).await.unwrap(), 0, "not seen");
 
         assert_eq!(servers::put_private(&store, &row).await.unwrap(), s1);
         tx.send(by_s1(&wrap)).await.unwrap();
         tx.send(by_s1(&bare)).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 4).await;
         assert_eq!(handler.calls.load(Ordering::SeqCst), 2, "put in again: taken");
         assert_eq!(events_raw::count(&store).await.unwrap(), 2);
         drop(lp);
@@ -721,7 +735,7 @@ mod tests {
         tx.send(raw_of(&wrap)).await.unwrap(); // fails
         tx.send(raw_of(&wrap)).await.unwrap(); // taken
         tx.send(raw_of(&wrap)).await.unwrap(); // a duplicate now
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        settled(&lp, 3).await;
 
         assert_eq!(handler.calls.load(Ordering::SeqCst), 2);
         assert_eq!(lp.stats.snapshot().1, 1, "one duplicate");

@@ -2108,7 +2108,7 @@ mod tests {
             .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         let peer = nostr::key::Keys::generate().public_key().to_hex();
         let refused = rt.call_start(&peer, CallMedia::Audio).await;
@@ -2213,7 +2213,7 @@ mod tests {
         let rt = MessengerRuntime::start_with_backends(cfg, Arc::new(MemorySecretStore::unlocked()), backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         let caller = nostr::key::Keys::generate();
@@ -2301,7 +2301,7 @@ mod tests {
             .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         let peer = nostr::key::Keys::generate().public_key().to_hex();
@@ -2462,7 +2462,7 @@ mod tests {
             .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         // The fake node is my own: the sets of servers find its SFU first.
@@ -2645,7 +2645,7 @@ mod tests {
             .unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         rt.call_set_nodes(vec![CallNodeInput {
@@ -2810,7 +2810,7 @@ mod tests {
         let rt = MessengerRuntime::start_with_backends(cfg, Arc::new(MemorySecretStore::unlocked()), backends).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         let s1 = rt
@@ -2898,7 +2898,7 @@ mod tests {
         rt.relays().set_silent(true).await.unwrap();
         use_veydan_offline(&rt).await;
         assert!(!rt.call_state().await.unwrap().available);
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         rt.dm().set_gate(false);
         let peer = nostr::key::Keys::generate().public_key().to_hex();

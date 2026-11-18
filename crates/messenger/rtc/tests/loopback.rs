@@ -23,6 +23,9 @@ use tokio::sync::{broadcast, watch};
 const TONE_A: f64 = 440.0;
 const TONE_B: f64 = 660.0;
 const TALK: Duration = Duration::from_secs(4);
+/// How long a test waits for what the engines do by themselves: far
+/// beyond what they take on a busy runner, nothing when it comes.
+const WAIT: Duration = Duration::from_secs(30);
 
 /// A tone at each end, read at the other: the ratio of the tone (1.0 is
 /// pure) and the RMS, as pushed (8000 of amplitude is 5657 of RMS).
@@ -45,8 +48,8 @@ async fn a_tone_crosses_a_direct_pair_both_ways() {
     let engine = engine();
     let (mut a, mut b) = pair(&engine, SessionConfig::default());
     negotiate(&a, &b, false).await;
-    let took = wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    let took = wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     eprintln!("connected after {took:?}");
 
     let (at_b, at_a) = exchange(&mut a, &mut b).await;
@@ -85,9 +88,10 @@ async fn candidates_that_come_before_the_answer_are_kept_and_go_in_with_it() {
     let offer = a.create_offer(false).await.expect("offer");
     let answer = b.accept_offer(&offer).await.expect("answer");
 
-    // The candidates of b, before a has seen the answer: the first within
-    // 10 s, then whatever follows within a moment (the session gathers
-    // continually, so no end of gathering is announced).
+    // The candidates of b, before a has seen the answer: the first, then
+    // whatever else is there already (the session gathers continually, so
+    // no end of gathering is announced; one is enough for what follows,
+    // and a waits for all it was given).
     let mut of_b = Vec::new();
     let first = async {
         while let Some(ev) = events_b.recv().await {
@@ -97,8 +101,8 @@ async fn candidates_that_come_before_the_answer_are_kept_and_go_in_with_it() {
             }
         }
     };
-    tokio::time::timeout(Duration::from_secs(10), first).await.expect("b has a candidate within 10 s");
-    while let Ok(Some(ev)) = tokio::time::timeout(Duration::from_millis(500), events_b.recv()).await {
+    tokio::time::timeout(WAIT, first).await.expect("b has a candidate");
+    while let Ok(ev) = events_b.try_recv() {
         if let SessionEvent::LocalCandidate(c) = ev {
             of_b.push(c);
         }
@@ -115,7 +119,7 @@ async fn candidates_that_come_before_the_answer_are_kept_and_go_in_with_it() {
     // From here on as over the wire: a's candidates straight into b (b has
     // the offer already), and both sides connect.
     let (mut state_a, mut state_b) = (ConnectionState::New, ConnectionState::New);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let deadline = tokio::time::Instant::now() + WAIT;
     while state_a != ConnectionState::Connected || state_b != ConnectionState::Connected {
         tokio::select! {
             ev = events_a.recv() => match ev.expect("events of a go on") {
@@ -146,8 +150,8 @@ async fn ice_restarts_with_new_credentials_and_the_sound_goes_on() {
     let offer = a.session.create_offer(false).await.expect("offer");
     let answer = b.session.accept_offer(&offer).await.expect("answer");
     a.session.accept_answer(&answer).await.expect("accept");
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     // The candidates of the first gathering, out of the way.
     let first = candidate_lines(&mut a);
     assert!(!first.is_empty());
@@ -169,9 +173,9 @@ async fn ice_restarts_with_new_credentials_and_the_sound_goes_on() {
             }
         }
     };
-    tokio::time::timeout(Duration::from_secs(10), gathered).await.expect("candidates after the restart");
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    tokio::time::timeout(WAIT, gathered).await.expect("candidates after the restart");
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
 
     let (at_b, at_a) = exchange(&mut a, &mut b).await;
     assert_tone(at_b, TONE_A, "b after the restart");
@@ -198,8 +202,8 @@ async fn frames_are_encrypted_end_to_end_under_a_shared_key() {
     let mut a = wire(a.clone(), b.clone());
     let mut b = wire(b, a.session.clone());
     negotiate(&a, &b, false).await;
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
 
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let pump_a = pump_tone(a.session.take_audio_input().expect("input"), TONE_A, stop_rx.clone());
@@ -298,8 +302,8 @@ async fn a_test_pattern_crosses_at_its_size_and_stops_with_the_video() {
     let engine = engine();
     let (mut a, mut b) = pair(&engine, SessionConfig::default());
     negotiate(&a, &b, false).await;
-    wait_connected(&mut a, Duration::from_secs(15)).await;
-    wait_connected(&mut b, Duration::from_secs(15)).await;
+    wait_connected(&mut a, WAIT).await;
+    wait_connected(&mut b, WAIT).await;
     // The video m-line is in the first offer: the far end's track is there
     // before any frame, on both sides.
     let saw_remote_video = |side: &mut Side| {
@@ -325,13 +329,13 @@ async fn a_test_pattern_crosses_at_its_size_and_stops_with_the_video() {
     let (stop_tx, stop_rx) = watch::channel(false);
     let pump = pump_pattern(a.session.video_source(), 640, 360, stop_rx.clone());
     // What a pushes it sees itself at once, as pushed.
-    let own = tokio::time::timeout(Duration::from_secs(5), own_a.recv()).await.expect("own frame in time").expect("own frame");
+    let own = tokio::time::timeout(WAIT, own_a.recv()).await.expect("own frame in time").expect("own frame");
     assert_eq!((own.width, own.height), (640, 360));
     assert!(has_test_square(&own));
     // The far end decodes it: the encoder may start smaller while the
     // estimate of the way climbs, and reaches the full size soon.
     let started = std::time::Instant::now();
-    let sizes = wait_for_size(&mut at_b, 640, 360, Duration::from_secs(20)).await;
+    let sizes = wait_for_size(&mut at_b, 640, 360, WAIT).await;
     eprintln!("b saw 640×360 with the square after {:?}; sizes on the way: {sizes:?}", started.elapsed());
     // At the full size the rate is the source's.
     let (n, sizes) = watch_frames(&mut at_b, Duration::from_secs(2)).await;
@@ -363,7 +367,7 @@ async fn a_test_pattern_crosses_at_its_size_and_stops_with_the_video() {
     a.session.set_video_enabled(true);
     let (stop_tx, stop_rx) = watch::channel(false);
     let pump = pump_pattern(screen, 320, 180, stop_rx);
-    let sizes = wait_for_size(&mut at_b, 320, 180, Duration::from_secs(20)).await;
+    let sizes = wait_for_size(&mut at_b, 320, 180, WAIT).await;
     eprintln!("b saw 320×180 after the switch; sizes on the way: {sizes:?}");
     let _ = stop_tx.send(true);
     let _ = pump.await;
@@ -375,7 +379,7 @@ async fn a_test_pattern_crosses_at_its_size_and_stops_with_the_video() {
     // that whoever reads them (the page's subscription) learns it is
     // over, instead of waiting on a track that is never closed.
     b.session.close();
-    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+    let ended = tokio::time::timeout(WAIT, async {
         while let Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) = at_b.recv().await {}
     })
     .await;
@@ -396,8 +400,8 @@ async fn a_second_pair_of_the_same_engine_carries_the_sound_again() {
     for round in 1..=2 {
         let (mut a, mut b) = pair(&engine, SessionConfig::default());
         negotiate(&a, &b, false).await;
-        wait_connected(&mut a, Duration::from_secs(15)).await;
-        wait_connected(&mut b, Duration::from_secs(15)).await;
+        wait_connected(&mut a, WAIT).await;
+        wait_connected(&mut b, WAIT).await;
         let (at_b, at_a) = exchange(&mut a, &mut b).await;
         assert_tone(at_b, TONE_A, &format!("b, round {round}"));
         assert_tone(at_a, TONE_B, &format!("a, round {round}"));
@@ -441,8 +445,8 @@ async fn the_device_of_the_engine_is_back_for_a_second_pair() {
             "round {round}: the device is initialized with the first session: {now:?}"
         );
         negotiate(&a, &b, false).await;
-        wait_connected(&mut a, Duration::from_secs(15)).await;
-        wait_connected(&mut b, Duration::from_secs(15)).await;
+        wait_connected(&mut a, WAIT).await;
+        wait_connected(&mut b, WAIT).await;
         a.session.close();
         b.session.close();
         drop(a);

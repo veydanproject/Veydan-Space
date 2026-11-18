@@ -94,7 +94,7 @@ mod tests {
         let rt = MessengerRuntime::start(cfg, std::sync::Arc::new(messenger_testkit::MemorySecretStore::unlocked())).await.unwrap();
         rt.relays().set_silent(true).await.unwrap();
         crate::servers::use_veydan_offline(&rt).await;
-        rt.identity().create("pw").await.unwrap();
+        crate::testing::log_in(&rt).await;
         rt.refresh_signer().await.unwrap();
         let s1 = rt
             .server_put_private(&crate::private::PrivateServerInput {

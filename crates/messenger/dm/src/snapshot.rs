@@ -1707,10 +1707,21 @@ mod tests {
         assert!(h.invites.is_empty(), "the invitations first");
         assert!(h.servers.as_ref().unwrap().len() < 32, "then the servers");
         assert_eq!(h.peers.len(), HEADER_ENTRIES, "the peers are never cut");
-        // A header nothing can be cut of any more is left as it is.
-        let mut h = header(5000, 0);
+        // Over by the choices of chats alone: everything else goes, then
+        // the choices last. Seven hundred are about twice what fits beside
+        // the peers, enough to show it; the cut writes the whole header
+        // again for every entry it takes off, so five thousand of them
+        // cost a minute of a debug build for the same check.
+        let mut alone = header(700, 0);
+        alone.invites.clear();
+        alone.servers = Some(Vec::new());
+        alone.servers_removed.clear();
+        alone.deleted.clear();
+        assert!(serde_json::to_string(&alone).unwrap().len() > HEADER_MAX_BYTES, "the choices alone are over");
+        let mut h = header(700, 0);
         let plain = fit_header(&mut h).unwrap();
         assert!(h.invites.is_empty() && h.servers.as_ref().unwrap().is_empty() && h.deleted.is_empty());
+        assert!(h.servers_removed.is_empty() && !h.chats.is_empty() && h.chats.len() < 700, "{} choices left", h.chats.len());
         assert!(plain.len() <= HEADER_MAX_BYTES, "the choices of chats last: {} left", h.chats.len());
     }
 }

@@ -24,9 +24,10 @@
 #   - the release.yml of a product's repository on GitHub (its snapshot):
 #       GITHUB_REF_NAME=vX.Y.Z[-rc.N] GITHUB_REPOSITORY=veydanproject/Veydan-Chat
 #         → own=true: every platform — Windows, macOS (the matrix), Linux
-#           (in the matrix too) and Android (the APK, and the app bundle for
-#           Google Play) — every signature checked, latest.json written and
-#           the release published there.
+#           (in the matrix too), Android (the APK, and the app bundle for
+#           Google Play) and, for a product with an Xcode project, iOS (the
+#           .ipa) — every signature checked, latest.json written and the
+#           release published there.
 #
 # By hand: GITHUB_OUTPUT=/dev/stdout prints the outputs. It reads
 # products.json and the product's crate, calls nothing and writes nothing
@@ -88,7 +89,7 @@ if [[ "$FULL" =~ $DEV_RE ]]; then
       seen="$seen$p "
       case "$p" in
         windows|macos) fail "$FULL: a dev build is built on Gitea, Linux and Android alone; Windows and macOS are built for an rc and a release" ;;
-        ios) fail "$FULL: ios is not built yet" ;;
+        ios) fail "$FULL: a dev build is built on our runner, which has no macOS; iOS is built for an rc and a release on GitHub" ;;
       esac
     done
   fi
@@ -115,6 +116,12 @@ case " $PRODUCTS " in
 esac
 
 APP="$(jq -r --arg p "$PRODUCT" '.targets[$p].app' products.json)"
+# iOS is built for an rc and a release of a product whose folder holds its
+# Xcode project (gen/apple, what scripts/ios/build.sh builds from): Space
+# today. A product without one has no iOS app, and its release no .ipa.
+if [ "$KIND" != "dev" ] && [ -d "$APP/gen/apple" ]; then
+  PLATFORMS="$PLATFORMS ios"
+fi
 REPO="$(jq -r --arg p "$PRODUCT" '.targets[$p].repo' products.json)"
 if [ "$OWN" = "true" ] && [ "$GITHUB_REPOSITORY" != "$REPO" ]; then
   fail "$TAG is a tag of the repository $REPO of $PRODUCT, not of $GITHUB_REPOSITORY"
@@ -164,6 +171,7 @@ keys=""
 BUILD_DESKTOP="false"
 BUILD_LINUX="false"
 BUILD_ANDROID="false"
+BUILD_IOS="false"
 for p in $PLATFORMS; do
   case "$p" in
     linux)
@@ -190,6 +198,12 @@ for p in $PLATFORMS; do
       ;;
     android)
       BUILD_ANDROID="true"
+      ;;
+    # A job of its own on a macOS runner of GitHub. The .ipa has no updater
+    # signature and no place in latest.json: iOS updates through TestFlight
+    # and the App Store, never through the updater.
+    ios)
+      BUILD_IOS="true"
       ;;
   esac
 done
@@ -223,4 +237,5 @@ echo "product=$PRODUCT  version=$VERSION  kind=$KIND  channel=$CHANNEL  platform
   echo "build_desktop=$BUILD_DESKTOP"
   echo "build_linux=$BUILD_LINUX"
   echo "build_android=$BUILD_ANDROID"
+  echo "build_ios=$BUILD_IOS"
 } >> "$GITHUB_OUTPUT"

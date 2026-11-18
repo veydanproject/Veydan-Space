@@ -16,6 +16,9 @@ import sheetSource from './AttachSheet.svelte?raw';
 import builtinSource from './builtin.ts?raw';
 import librarySource from './library.ts?raw';
 
+/** A turn of the event loop: the promises of the queue under test have all settled. */
+const turn = () => new Promise<void>((done) => setTimeout(done, 0));
+
 /** A source whose pages wait until the test lets them go. */
 function slowLibrary(total: number) {
   const asked: { cursor?: string; album?: string; release: () => void }[] = [];
@@ -254,18 +257,18 @@ describe('the thumbnails', () => {
     const get = vi.fn(async (it: MediaItem) => `url-${it.id}-${++n}`);
     const q = new ThumbQueue(get, 4);
     q.want(items(0, 2));
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(q.urls.m0).toBe('url-m0-2');
     q.failed('m0');
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(q.urls.m0).toBe('url-m0-3');
     q.failed('m0');
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(q.urls.m0).toBeUndefined();
     expect(get).toHaveBeenCalledTimes(3);
     // A reset asks it again.
     q.reset();
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(Object.keys(q.urls).sort()).toEqual(['m0', 'm1']);
   });
 
@@ -275,10 +278,10 @@ describe('the thumbnails', () => {
     q.want(items(0, 1));
     q.reset();
     waiting[0]('stale');
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(q.urls.m0).toBeUndefined();
     waiting[1]('fresh');
-    await new Promise((r) => setTimeout(r, 1));
+    await turn();
     expect(q.urls.m0).toBe('fresh');
   });
 

@@ -46,8 +46,14 @@ describe('the events of the channels', () => {
   });
 
   it('are ignored without a channel named', async () => {
-    channelStore.handleEvent({ name: 'channel.updated', payload: {} });
-    await new Promise((r) => setTimeout(r, 300));
+    vi.useFakeTimers();
+    try {
+      channelStore.handleEvent({ name: 'channel.updated', payload: {} });
+      // Past the debounce of the read, on a clock the test moves itself.
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(api.get).not.toHaveBeenCalled();
   });
 
@@ -145,8 +151,14 @@ describe('the page of a channel read again', () => {
   });
 
   it('does not read the page again for a message', async () => {
-    channelStore.handleEvent({ name: 'channel.message', payload: { community_id: 'c', id: 'p1' } });
-    await new Promise((r) => setTimeout(r, 300));
+    vi.useFakeTimers();
+    try {
+      channelStore.handleEvent({ name: 'channel.message', payload: { community_id: 'c', id: 'p1' } });
+      // Past the debounce of the read, on a clock the test moves itself.
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(api.get).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@
 //! event and serves a gift wrap only to the connection signed in as its
 //! `#p` (vguard).
 
+use super::tests::{within, WAIT};
 use super::*;
 use communities_core::blobs::BlobHosts;
 use communities_core::service::NewChannel;
@@ -109,6 +110,28 @@ struct FakePool {
     delay: StdMutex<Duration>,
     /// The filter of every `Sync`, as it was asked.
     syncs: StdMutex<Vec<serde_json::Value>>,
+    /// Every event handed to the module, on any of its paths.
+    handed: std::sync::atomic::AtomicUsize,
+    /// Written by the test: while `delay` is set, a request but a
+    /// subscription goes only once this is free (a relay that has not
+    /// answered yet).
+    held: tokio::sync::RwLock<()>,
+    /// Written by the loop of the app while it takes an event: while
+    /// `delay` is set, a relay's answer comes between two events, never
+    /// during one, so an event that waits for a relay, itself or through a
+    /// lock or a task it waits for, waits for good.
+    between: Arc<tokio::sync::RwLock<()>>,
+}
+
+tokio::task_local! {
+    /// Set while the loop of an app takes an event: what the relays or the
+    /// hosts are asked from inside it, the loop itself waits for.
+    static ON_LOOP: Arc<StdMutex<Vec<String>>>;
+}
+
+/// `what` written down when the loop of an app asks it itself.
+fn on_loop(what: &str) {
+    let _ = ON_LOOP.try_with(|asked| lock(asked).push(what.to_string()));
 }
 
 impl FakePool {
@@ -152,6 +175,7 @@ impl FakePool {
         let hit = subs.iter().any(|(id, s)| id.starts_with(messenger_transport::CHANNEL_SUB_PREFIX) && !s.relays.is_disjoint(relays) && matches(&s.filter, json));
         if hit {
             lock(&self.live_ids).push(json["id"].as_str().unwrap_or_default().to_string());
+            self.handed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let _ = self.events.send(Self::raw(json, EventSource::Relay { url: RelayUrl::parse(RELAY).expect("url") }));
         }
     }
@@ -169,8 +193,14 @@ impl FakePool {
 impl Transport for FakePool {
     async fn send(&self, out: Outbound) -> messenger_core::Result<Ack> {
         let delay = *lock(&self.delay);
-        if !delay.is_zero() && !matches!(out, Outbound::Subscribe { .. } | Outbound::Unsubscribe { .. }) {
+        let waits = !matches!(out, Outbound::Subscribe { .. } | Outbound::Unsubscribe { .. });
+        if waits {
+            on_loop(if matches!(out, Outbound::Sync { .. }) { "a page of the relays" } else { "a publish to the relays" });
+        }
+        if !delay.is_zero() && waits {
+            drop(self.held.read().await);
             tokio::time::sleep(delay).await;
+            drop(self.between.read().await);
         }
         match out {
             Outbound::PublishScoped { scope, event } => {
@@ -228,6 +258,7 @@ impl Transport for FakePool {
                     if e["kind"].as_u64() == Some(u64::from(communities_core::notes::KIND_WRAP)) {
                         self.replayed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     }
+                    self.handed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let _ = self.events.send(Self::raw(&e, EventSource::Relay { url: RelayUrl::parse(RELAY).expect("url") }));
                 }
                 Ok(Self::accepted(&relays))
@@ -253,6 +284,7 @@ impl Transport for FakePool {
                     if e["kind"].as_u64() == Some(u64::from(communities_core::notes::KIND_WRAP)) {
                         self.paged.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     }
+                    self.handed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let _ = self.events.send(Self::raw(&e, EventSource::Sync { url: RelayUrl::parse(RELAY).expect("url") }));
                 }
                 Ok(Ack { accepted_by: vec![], rejected_by: vec![] })
@@ -287,6 +319,7 @@ pub(super) struct MemHosts {
 #[async_trait::async_trait]
 impl BlobHosts for MemHosts {
     async fn put(&self, _signer: &Keys, host: &str, sha256: &str, bytes: &[u8]) -> messenger_core::Result<()> {
+        on_loop("a put to the hosts");
         if self.refusing.load(std::sync::atomic::Ordering::SeqCst) {
             return Err(MessengerError::Transport("err.auth_failed: blossom 403: no_account".into()));
         }
@@ -298,6 +331,7 @@ impl BlobHosts for MemHosts {
         Ok(())
     }
     async fn get(&self, host: &str, sha256: &str) -> messenger_core::Result<Option<Vec<u8>>> {
+        on_loop("a read of the hosts");
         let gate = lock(&self.get_gate).clone();
         if let Some(gate) = gate {
             let _ = gate.acquire().await;
@@ -305,6 +339,7 @@ impl BlobHosts for MemHosts {
         Ok(lock(&self.blobs).get(&(host.to_string(), sha256.to_string())).cloned())
     }
     async fn delete(&self, _signer: &Keys, host: &str, sha256: &str) -> messenger_core::Result<()> {
+        on_loop("a removal from the hosts");
         lock(&self.blobs).remove(&(host.to_string(), sha256.to_string()));
         Ok(())
     }
@@ -332,11 +367,19 @@ struct App {
     /// Held: the loop is busy (a round's catch-up, a keeper's turn) and
     /// takes nothing meanwhile.
     busy: Arc<tokio::sync::Mutex<()>>,
-    /// How long the loop took each event, by its kind.
+    /// The processor time the loop spent on each event, by its kind
+    /// (`Cpu`; zero where it cannot be read).
     took: Arc<StdMutex<Vec<(u64, Duration)>>>,
     /// Each event that held the loop past `SLOW_STEP`: its kind, how long,
     /// and the step it was at by then (`Steps`, as the module's watch says it).
     held_at: HeldAt,
+    /// The events the loop took, all of them: the loop is at rest when
+    /// these are as many as its pool handed (`FakePool::handed`).
+    done: Arc<std::sync::atomic::AtomicUsize>,
+    /// What the loop asked the relays or the hosts itself (`ON_LOOP`).
+    from_loop: Arc<StdMutex<Vec<String>>>,
+    /// The steps of the event the loop takes now, if any.
+    at: Arc<StdMutex<Option<communities_core::keeper::Steps>>>,
 }
 
 impl App {
@@ -370,6 +413,9 @@ impl App {
             live_ids: StdMutex::default(),
             delay: StdMutex::default(),
             syncs: StdMutex::default(),
+            handed: Default::default(),
+            held: tokio::sync::RwLock::new(()),
+            between: Arc::default(),
         });
         lock(&network.pools).push(pool.clone());
         let service = ChannelService::new(db, secrets, pool.clone(), hosts, Arc::new(SystemClock));
@@ -419,10 +465,15 @@ impl App {
         });
         let took: Arc<StdMutex<Vec<(u64, Duration)>>> = Arc::default();
         let held_at: HeldAt = Arc::default();
+        let done: Arc<std::sync::atomic::AtomicUsize> = Arc::default();
+        let from_loop: Arc<StdMutex<Vec<String>>> = Arc::default();
+        let at: Arc<StdMutex<Option<communities_core::keeper::Steps>>> = Arc::default();
         let (svc, lis, log, k, held, wk, up, tk, ha) = (service.clone(), listener.clone(), lines.clone(), keys.clone(), busy.clone(), wake.clone(), uploads.clone(), took.clone(), held_at.clone());
+        let (between, dn, fl, now_at) = (pool.between.clone(), done.clone(), from_loop.clone(), at.clone());
         let pump = tokio::spawn(async move {
             while let Some(raw) = rx.recv().await {
                 let _busy = held.lock().await;
+                let _between = between.write().await;
                 let live = !matches!(raw.source, EventSource::Sync { .. });
                 let kind = raw.json["kind"].as_u64().unwrap_or(0);
                 let started = std::time::Instant::now();
@@ -430,6 +481,7 @@ impl App {
                 // `SLOW_STEP`, as the module's watch reads it.
                 let steps = communities_core::keeper::Steps::default();
                 steps.set(Some(format!("an event of kind {kind}")));
+                *lock(&now_at) = Some(steps.clone());
                 let probe = {
                     let steps = steps.clone();
                     tokio::spawn(async move {
@@ -439,8 +491,9 @@ impl App {
                 };
                 // One channel at a time, as `Driver::on_event`.
                 let cid = raw.json["tags"].as_array().and_then(|tags| tags.iter().find(|t| t[0] == "h" || t[0] == "d").and_then(|t| t[1].as_str()).map(str::to_string));
-                let taken = steps
-                    .run(async {
+                let (taken, cpu) = Cpu::of(ON_LOOP.scope(
+                    fl.clone(),
+                    steps.run(async {
                         match cid {
                             Some(cid) => {
                                 let lock = svc.lock_of(&cid).await;
@@ -449,10 +502,12 @@ impl App {
                             }
                             None => svc.on_event(&k, &raw.json, live).await,
                         }
-                    })
-                    .await;
+                    }),
+                ))
+                .await;
+                *lock(&now_at) = None;
                 let took_now = started.elapsed();
-                lock(&tk).push((kind, took_now));
+                lock(&tk).push((kind, cpu.unwrap_or_default()));
                 if took_now >= SLOW_STEP {
                     let at = probe.await.ok().flatten();
                     lock(&ha).push((kind, took_now, at));
@@ -473,9 +528,10 @@ impl App {
                 }
                 spawn_fetches(&svc, &up, &k, &wk, &log);
                 spawn_asks(&svc, &up);
+                dn.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
         });
-        Self { keys, pool, service, listener, lines, tasks: vec![hand_off, pump, turns], previews, busy, took, held_at, outbox, keepers, wake, uploads }
+        Self { keys, pool, service, listener, lines, tasks: vec![hand_off, pump, turns], previews, busy, took, held_at, done, from_loop, at, outbox, keepers, wake, uploads }
     }
 
     fn stop(self) {
@@ -495,6 +551,41 @@ type HeldAt = Arc<StdMutex<Vec<(u64, Duration, Option<String>)>>>;
 /// How long an event may hold the loop of the harness before the step it
 /// is at is kept (`App::held_at`).
 const SLOW_STEP: Duration = Duration::from_millis(250);
+
+/// The processor time this thread has run so far, from /proc on Linux (the
+/// scheduler's count, a few ms behind at most); `None` where there is none.
+fn thread_cpu() -> Option<Duration> {
+    let stat = std::fs::read_to_string("/proc/thread-self/schedstat").ok()?;
+    Some(Duration::from_nanos(stat.split_whitespace().next()?.parse().ok()?))
+}
+
+/// A future and the processor time its polls took, on whichever threads
+/// polled it: what taking an event costs, which a busy host does not
+/// stretch the way it stretches the time on the clock (a runner shared
+/// with other jobs takes the processor away from the thread, and that time
+/// is not counted). `None` where the time cannot be read.
+struct Cpu<F> {
+    inner: std::pin::Pin<Box<F>>,
+    spent: Option<Duration>,
+}
+
+impl<F: std::future::Future> Cpu<F> {
+    fn of(inner: F) -> Self {
+        Self { inner: Box::pin(inner), spent: thread_cpu().map(|_| Duration::ZERO) }
+    }
+}
+
+impl<F: std::future::Future> std::future::Future for Cpu<F> {
+    type Output = (F::Output, Option<Duration>);
+
+    fn poll(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+        let before = thread_cpu();
+        let polled = self.inner.as_mut().poll(cx);
+        let poll = before.zip(thread_cpu()).map(|(b, a)| a.saturating_sub(b));
+        self.spent = self.spent.zip(poll).map(|(s, p)| s + p);
+        polled.map(|out| (out, self.spent))
+    }
+}
 
 /// What the events wanted of the relays, sent by a task of its own, as
 /// `Driver::spawn_asks` sends it.
@@ -537,6 +628,10 @@ async fn has_key(app: &App, cid: &str) -> bool {
 /// A long wait before a round is tried again: the test of the relays'
 /// watch must not be passed by the retry.
 const NO_RETRY: Duration = Duration::from_secs(600);
+
+/// A wait no test sees the end of: what ends sooner was ended by what the
+/// test is about, not by the wait.
+const NEVER: Duration = Duration::from_secs(3600);
 
 /// The run of the owner's app before: the channel made, its keeper here.
 /// The id of the channel and its link.
@@ -610,14 +705,14 @@ async fn a_join_reaches_the_keeper_of_an_app_that_listened_before_its_relays_cam
     let route = b.listener.routes.hold(&cid, parsed.relay.clone());
     b.service.expect_owner(&cid, &parsed.owner).await.unwrap();
     b.service.ask_journal(&cid).await.unwrap();
-    wait_for(Duration::from_secs(5), || async { b.service.log(&cid).await.unwrap().is_some() }).await;
+    wait_for(WAIT, || async { b.service.log(&cid).await.unwrap().is_some() }).await;
     let outcome = b.service.open_link(&b.keys, &link, "").await.unwrap();
     route.keep();
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
 
-    let joined = wait_until(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    let joined = wait_until(WAIT, || async { has_key(&b, &cid).await }).await;
     let owner_lines = lock(&a.lines).clone();
     assert!(joined, "the joiner never got the key; the owner's log: {owner_lines:?}");
     let joiner = b.keys.public_key().to_hex();
@@ -654,7 +749,7 @@ async fn a_keeper_whose_hosts_refuse_answers_a_join_and_says_the_refusal_once() 
     // Both, not the refusal alone: the refusal of a shard of the snapshot
     // the turn at the start put may come before the epoch of the rotation
     // waits (the PR Gate of #112 caught it, once in about 25 here).
-    wait_for(Duration::from_secs(5), || async {
+    wait_for(WAIT, || async {
         a.service.tick().await.unwrap();
         a.service.keeper_status(&cid).is_some_and(|s| s.pending_epoch.is_some() && s.storage_error.as_deref().is_some_and(|e| e.contains(HOST) && e.contains("no_account")))
     }).await;
@@ -682,13 +777,13 @@ async fn a_keeper_whose_hosts_refuse_answers_a_join_and_says_the_refusal_once() 
     let route = b.listener.routes.hold(&cid, parsed.relay.clone());
     b.service.expect_owner(&cid, &parsed.owner).await.unwrap();
     b.service.ask_journal(&cid).await.unwrap();
-    wait_for(Duration::from_secs(5), || async { b.service.log(&cid).await.unwrap().is_some() }).await;
+    wait_for(WAIT, || async { b.service.log(&cid).await.unwrap().is_some() }).await;
     let outcome = b.service.open_link(&b.keys, &link, "").await.unwrap();
     route.keep();
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
-    let joined = wait_until(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    let joined = wait_until(WAIT, || async { has_key(&b, &cid).await }).await;
     let owner_lines = lock(&a.lines).clone();
     assert!(joined, "the joiner never got the key while the hosts refused; the owner's log: {owner_lines:?}");
     assert!(owner_lines.iter().any(|l| l.contains("channel.join from") && l.ends_with(": taken, a reader of the channel")), "{owner_lines:?}");
@@ -722,7 +817,7 @@ async fn an_upload_that_hangs_holds_no_event_and_the_epoch_goes_out_after() {
     until_quiet(&a.listener).await;
     // The first epoch, as the module asks for a turn at a start.
     a.wake.at(0);
-    wait_for(Duration::from_secs(10), || async { has_key(&a, &cid).await }).await;
+    wait_for(WAIT, || async { has_key(&a, &cid).await }).await;
 
     let b = App::start(&network, Keys::generate(), Db::open_in_memory().await.unwrap(), Arc::new(super::tests::MemSecrets::default()), hosts.clone(), vec![NO_RETRY]).await;
     b.pool.connect();
@@ -732,15 +827,15 @@ async fn an_upload_that_hangs_holds_no_event_and_the_epoch_goes_out_after() {
     let route = b.listener.routes.hold(&cid, parsed.relay.clone());
     b.service.expect_owner(&cid, &parsed.owner).await.unwrap();
     b.service.ask_journal(&cid).await.unwrap();
-    wait_for(Duration::from_secs(5), || async { b.service.log(&cid).await.unwrap().is_some() }).await;
+    wait_for(WAIT, || async { b.service.log(&cid).await.unwrap().is_some() }).await;
     let outcome = b.service.open_link(&b.keys, &link, "").await.unwrap();
     route.keep();
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
-    wait_for(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    wait_for(WAIT, || async { has_key(&b, &cid).await }).await;
     let (post, _) = a.service.send_post(&owner, &cid, "the post", messenger_core::TextFormat::Plain).await.unwrap();
-    wait_for(Duration::from_secs(10), || async { db::content::get(b.service.db(), &post).await.unwrap().is_some() }).await;
+    wait_for(WAIT, || async { db::content::get(b.service.db(), &post).await.unwrap().is_some() }).await;
 
     // The hosts stop answering; an epoch is asked for: its blobs hang.
     let gate = Arc::new(tokio::sync::Notify::new());
@@ -748,7 +843,7 @@ async fn an_upload_that_hangs_holds_no_event_and_the_epoch_goes_out_after() {
     a.service.rotate_now(&cid).await.unwrap();
     a.wake.at(0);
     let put_key = |cid: &str| communities_core::keeper::upload::put_key(cid, communities_core::state::SCOPE_EVERYONE, 2);
-    wait_for(Duration::from_secs(10), || async { a.service.jobs_running().contains(&put_key(&cid)) }).await;
+    wait_for(WAIT, || async { a.service.jobs_running().contains(&put_key(&cid)) }).await;
     let status = a.service.keeper_status(&cid).unwrap();
     assert_eq!((status.epoch, status.pending_epoch), (Some(1), Some(2)), "the epoch waits for its hosts: {status:?}");
 
@@ -757,7 +852,7 @@ async fn an_upload_that_hangs_holds_no_event_and_the_epoch_goes_out_after() {
     let (comment, _) = b.service.send_comment(&b.keys, &cid, &post, None, "while the hosts hang", messenger_core::TextFormat::Plain).await.unwrap();
     // Taken by the owner's loop: kept, parked until the snapshot names the
     // reader, or judged by the snapshot held (said either way).
-    let heard = wait_until(Duration::from_secs(10), || async {
+    let heard = wait_until(WAIT, || async {
         db::content::get(a.service.db(), &comment).await.unwrap().is_some()
             || db::channels::count_pending(a.service.db(), &cid).await.unwrap() > 0
             || lock(&a.lines).iter().any(|l| l.starts_with("content waits") || l.starts_with("message refused"))
@@ -770,12 +865,12 @@ async fn an_upload_that_hangs_holds_no_event_and_the_epoch_goes_out_after() {
     // The host answers: the epoch goes out, the reader holds its key.
     *lock(&hosts.hang) = None;
     gate.notify_waiters();
-    let out = wait_until(Duration::from_secs(15), || async {
+    let out = wait_until(WAIT, || async {
         lock(&network.events).iter().any(|(e, _)| e["kind"] == communities_core::wire::KIND_EPOCH && e["tags"].as_array().is_some_and(|t| t.iter().any(|t| t[0] == "n" && t[1] == "2")))
     })
     .await;
     assert!(out, "the epoch never went out: {:?}", lock(&a.lines));
-    let keyed = wait_until(Duration::from_secs(10), || async {
+    let keyed = wait_until(WAIT, || async {
         db::keys::epochs(b.service.db(), &cid, communities_core::state::SCOPE_EVERYONE).await.unwrap_or_default().iter().any(|r| r.epoch == 2 && r.key_hex.is_some())
     })
     .await;
@@ -807,7 +902,7 @@ async fn hosts_that_never_answer_a_read_hold_no_event_of_a_reader() {
     a.listener.resubscribe();
     until_quiet(&a.listener).await;
     a.wake.at(0);
-    wait_for(Duration::from_secs(10), || async { has_key(&a, &cid).await }).await;
+    wait_for(WAIT, || async { has_key(&a, &cid).await }).await;
 
     let b = App::start(&network, Keys::generate(), Db::open_in_memory().await.unwrap(), Arc::new(super::tests::MemSecrets::default()), hosts.clone(), vec![NO_RETRY]).await;
     b.pool.connect();
@@ -817,18 +912,19 @@ async fn hosts_that_never_answer_a_read_hold_no_event_of_a_reader() {
     let route = b.listener.routes.hold(&cid, parsed.relay.clone());
     b.service.expect_owner(&cid, &parsed.owner).await.unwrap();
     b.service.ask_journal(&cid).await.unwrap();
-    wait_for(Duration::from_secs(5), || async { b.service.log(&cid).await.unwrap().is_some() }).await;
+    wait_for(WAIT, || async { b.service.log(&cid).await.unwrap().is_some() }).await;
     let outcome = b.service.open_link(&b.keys, &link, "").await.unwrap();
     route.keep();
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
-    wait_for(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    wait_for(WAIT, || async { has_key(&b, &cid).await }).await;
 
     // Every read of the hosts hangs from now on; an epoch goes out.
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     *lock(&hosts.get_gate) = Some(gate.clone());
     lock(&b.took).clear();
+    lock(&b.from_loop).clear();
     a.service.rotate_now(&cid).await.unwrap();
     a.wake.at(0);
     let row = |n: i64| {
@@ -836,25 +932,31 @@ async fn hosts_that_never_answer_a_read_hold_no_event_of_a_reader() {
         let cid = cid.clone();
         async move { db::keys::epochs(&db, &cid, communities_core::state::SCOPE_EVERYONE).await.unwrap_or_default().into_iter().find(|r| r.epoch == n).map(|r| r.key_hex.is_some()) }
     };
-    wait_for(Duration::from_secs(15), || async { row(2).await.is_some() }).await;
+    wait_for(WAIT, || async { row(2).await.is_some() }).await;
     let wanted = format!("{cid}:fetch:epoch:{}:2", communities_core::state::SCOPE_EVERYONE);
-    wait_for(Duration::from_secs(5), || async { b.service.fetches_wanted().contains(&wanted) }).await;
+    wait_for(WAIT, || async { b.service.fetches_wanted().contains(&wanted) }).await;
     // A post under the new epoch: heard by the reader's loop while the
     // fetch hangs, and parked for its key.
     let (post, _) = a.service.send_post(&owner, &cid, "under epoch 2", messenger_core::TextFormat::Plain).await.unwrap();
-    let parked = wait_until(Duration::from_secs(10), || async { db::channels::count_pending(b.service.db(), &cid).await.unwrap() > 0 }).await;
+    let parked = wait_until(WAIT, || async { db::channels::count_pending(b.service.db(), &cid).await.unwrap() > 0 }).await;
     assert!(parked, "the post was not heard while the hosts hung: {:?}", lock(&b.lines));
     assert_eq!(row(2).await, Some(false), "the key waits for the hosts");
     assert!(b.service.fetches_wanted().contains(&wanted), "the fetch still hangs");
     let took = lock(&b.took).clone();
     assert!(took.iter().any(|(k, _)| *k == u64::from(communities_core::wire::KIND_EPOCH)), "the epoch was heard: {took:?}");
+    // No event waited for the hosts: a read never ends while they hang, so
+    // an event that waited for one, itself or through anything, was never
+    // taken (the epoch was); none asked them itself, which a read given up
+    // after a while would hide; and none cost the processor long.
+    let asked = lock(&b.from_loop).clone();
+    assert!(!asked.iter().any(|w| w.contains("hosts")), "the loop asked the hosts itself: {asked:?}");
     let worst = took.iter().map(|(_, d)| *d).max().unwrap_or_default();
-    assert!(worst < Duration::from_millis(300), "an event held the loop {worst:?}: {took:?}");
+    assert!(worst < Duration::from_millis(300), "an event took {worst:?} of the processor: {took:?}");
 
     // The hosts answer: the epoch opens, the post is read.
     *lock(&hosts.get_gate) = None;
     gate.close();
-    let read = wait_until(Duration::from_secs(10), || async { db::content::get(b.service.db(), &post).await.unwrap().is_some() }).await;
+    let read = wait_until(WAIT, || async { db::content::get(b.service.db(), &post).await.unwrap().is_some() }).await;
     assert!(read, "the post was never read: {:?}", lock(&b.lines));
     assert_eq!(row(2).await, Some(true));
     assert!(b.service.fetches_wanted().is_empty());
@@ -867,7 +969,7 @@ async fn hosts_that_never_answer_a_read_hold_no_event_of_a_reader() {
 /// journal came 32 s late behind a round's catch-up, «Канал не ответил»):
 /// the joiner's pool has no relay yet and its loop takes nothing (a
 /// round's catch-up, a keeper's turn), and the journal of the link is
-/// taken all the same, as the relay hands it, in a second or so; a relay
+/// taken all the same, as the relay hands it, long before its wait; a relay
 /// that answers without the journal is said as soon as it answered, not
 /// after a fixed wait; one never reached is said when the wait runs out.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -891,9 +993,10 @@ async fn the_journal_of_a_link_is_taken_past_a_busy_loop_and_a_relay_without_it_
         tokio::time::sleep(Duration::from_millis(300)).await;
         pool.connect();
     });
-    let started = tokio::time::Instant::now();
-    let outcomes = take_journal(&b.service, &b.previews, &cid, JOURNAL_WAIT).await.expect("the journal is taken");
-    assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+    // The wait of the link, far longer than the test waits: what ends the
+    // taking is the journal, or the relay's answer, never the wait running
+    // out.
+    let outcomes = within("the journal", take_journal(&b.service, &b.previews, &cid, NEVER)).await.expect("the journal is taken");
     assert!(!outcomes.is_empty());
     assert!(b.service.log(&cid).await.unwrap().is_some(), "the journal is here though the loop took nothing");
     b.service.open_link(&b.keys, &link, "").await.expect("the link opens");
@@ -902,9 +1005,7 @@ async fn the_journal_of_a_link_is_taken_past_a_busy_loop_and_a_relay_without_it_
     // A channel the relay holds nothing of: said once the relay answered.
     let other = "e".repeat(64);
     let _other_route = b.listener.routes.hold(&other, RelayUrl::parse(RELAY).unwrap());
-    let started = tokio::time::Instant::now();
-    let e = take_journal(&b.service, &b.previews, &other, JOURNAL_WAIT).await.expect_err("no journal");
-    assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
+    let e = within("the answer without the journal", take_journal(&b.service, &b.previews, &other, NEVER)).await.expect_err("no journal");
     assert!(e.to_string().contains("channel_not_here_yet") && e.to_string().contains("holds no journal"), "{e}");
     // No relay reached: when the wait runs out, with the reason.
     lock(&b.pool.configured).clear();
@@ -935,7 +1036,7 @@ async fn a_join_is_heard_live_while_the_catch_up_of_a_start_still_runs() {
     a.pool.connect_both();
     let slow = a.pool.slow.write().await;
     a.listener.resubscribe();
-    wait_for(Duration::from_secs(5), || async { lock(&a.pool.subs).contains_key(&own_notes_sub().0) }).await;
+    wait_for(WAIT, || async { lock(&a.pool.subs).contains_key(&own_notes_sub().0) }).await;
     assert!(a.listener.busy(), "the catch-up of the start runs");
 
     // A new channel of the owner, on the second relay only.
@@ -957,7 +1058,7 @@ async fn a_join_is_heard_live_while_the_catch_up_of_a_start_still_runs() {
     assert!(outcome.resubscribe, "a new channel is listened to");
     a.listener.resubscribe();
     let notes = communities_core::transport::sub_id(&cid, PART_NOTES).0;
-    wait_for(Duration::from_secs(5), || async { lock(&a.pool.subs).get(&notes).is_some_and(|s| s.relays.contains(RELAY2)) }).await;
+    wait_for(WAIT, || async { lock(&a.pool.subs).get(&notes).is_some_and(|s| s.relays.contains(RELAY2)) }).await;
     let link = a.service.share_link(&cid).await.unwrap();
 
     // The joiner, its relays up, opens the link.
@@ -975,7 +1076,7 @@ async fn a_join_is_heard_live_while_the_catch_up_of_a_start_still_runs() {
         b.listener.resubscribe();
     }
 
-    let joined = wait_until(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    let joined = wait_until(WAIT, || async { has_key(&b, &cid).await }).await;
     let owner_lines = lock(&a.lines).clone();
     assert!(joined, "the joiner never got the key; the owner's log: {owner_lines:?}");
     let joiner = b.keys.public_key().to_hex();
@@ -1044,7 +1145,7 @@ async fn a_join_comes_on_the_live_subscription_and_no_subscription_replays_old_w
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
-    let joined = wait_until(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    let joined = wait_until(WAIT, || async { has_key(&b, &cid).await }).await;
     let owner_lines = lock(&a.lines).clone();
     assert!(joined, "the joiner never got the key; the owner's log: {owner_lines:?}");
     let joiner = b.keys.public_key().to_hex();
@@ -1096,9 +1197,9 @@ async fn a_comment_of_a_reader_reaches_the_owner_of_a_channel_made_in_this_run()
     assert!(outcome.resubscribe);
     a.listener.resubscribe();
     let feed = communities_core::transport::sub_id(&cid, communities_core::transport::PART_FEED).0;
-    wait_for(Duration::from_secs(5), || async { lock(&a.pool.subs).get(&feed).is_some_and(|s| s.relays.len() == 2) }).await;
+    wait_for(WAIT, || async { lock(&a.pool.subs).get(&feed).is_some_and(|s| s.relays.len() == 2) }).await;
     // The keeper's first epoch, and the owner's post under it.
-    wait_for(Duration::from_secs(10), || async {
+    wait_for(WAIT, || async {
         let _ = a.service.tick().await;
         has_key(&a, &cid).await
     })
@@ -1120,9 +1221,9 @@ async fn a_comment_of_a_reader_reaches_the_owner_of_a_channel_made_in_this_run()
     if outcome.resubscribe {
         b.listener.resubscribe();
     }
-    let joined = wait_until(Duration::from_secs(10), || async { has_key(&b, &cid).await }).await;
+    let joined = wait_until(WAIT, || async { has_key(&b, &cid).await }).await;
     assert!(joined, "the reader never got the key; the owner's log: {:?}", lock(&a.lines).clone());
-    wait_for(Duration::from_secs(10), || async { db::content::get(b.service.db(), &post).await.ok().flatten().is_some() }).await;
+    wait_for(WAIT, || async { db::content::get(b.service.db(), &post).await.ok().flatten().is_some() }).await;
     b.service.send_comment(&b.keys, &cid, &post, None, "a comment of the reader", messenger_core::TextFormat::Plain).await.unwrap();
     let on_relay = || {
         lock(&network.events)
@@ -1130,12 +1231,12 @@ async fn a_comment_of_a_reader_reaches_the_owner_of_a_channel_made_in_this_run()
             .find(|(e, _)| e["kind"].as_u64() == Some(u64::from(communities_core::wire::KIND_CONTENT)) && e["tags"].as_array().is_some_and(|t| t.iter().any(|t| t[0] == "e" && t[1] == post.as_str())))
             .map(|(e, _)| e["id"].as_str().unwrap_or_default().to_string())
     };
-    wait_for(Duration::from_secs(10), || async { on_relay().is_some() }).await;
+    wait_for(WAIT, || async { on_relay().is_some() }).await;
     let comment = on_relay().unwrap();
 
     // The owner holds it, heard live: no catch-up went through meanwhile.
     let comments = || async { db::content::comments(a.service.db(), &cid, &post).await.unwrap_or_default().len() };
-    let heard = wait_until(Duration::from_secs(10), || async { comments().await == 1 }).await;
+    let heard = wait_until(WAIT, || async { comments().await == 1 }).await;
     assert!(heard, "the owner never got the comment; live: {}; the owner's log: {:?}", lock(&a.pool.live_ids).contains(&comment), lock(&a.lines).clone());
     assert!(lock(&a.pool.live_ids).contains(&comment), "heard live");
     assert!(!lock(&a.pool.paged_ids).contains(&comment), "not paged: every catch-up was held");
@@ -1143,7 +1244,7 @@ async fn a_comment_of_a_reader_reaches_the_owner_of_a_channel_made_in_this_run()
     // And a catch-up round once the relays answer again finds it as well.
     drop(slow);
     a.listener.resubscribe_anew();
-    wait_for(Duration::from_secs(10), || async { lock(&a.pool.paged_ids).contains(&comment) }).await;
+    wait_for(WAIT, || async { lock(&a.pool.paged_ids).contains(&comment) }).await;
     until_quiet(&a.listener).await;
     assert_eq!(comments().await, 1, "the same comment, once");
     a.stop();
@@ -1166,18 +1267,19 @@ async fn a_round_that_did_not_go_out_is_tried_again() {
     let waits = vec![Duration::from_millis(30), Duration::from_millis(60)];
     let a = App::start(&network, owner, Db::open(&dir.join("owner.db")).await.unwrap(), secrets, hosts, waits).await;
     a.listener.resubscribe();
-    wait_for(Duration::from_secs(5), || async { a.listener.flight.failed.load(Ordering::SeqCst) >= 3 }).await;
+    wait_for(WAIT, || async { a.listener.flight.failed.load(Ordering::SeqCst) >= 3 }).await;
     assert!(lock(&a.pool.subs).is_empty());
     a.pool.connect();
     let notes = communities_core::transport::sub_id(&cid, PART_NOTES).0;
-    wait_for(Duration::from_secs(5), || async { lock(&a.pool.subs).contains_key(&notes) && lock(&a.pool.subs).contains_key(&own_notes_sub().0) }).await;
-    wait_for(Duration::from_secs(5), || async { a.listener.flight.failed.load(Ordering::SeqCst) == 0 }).await;
-    // Whole now: no try waits any more.
-    let rounds = || lock(&a.pool.subs).len();
-    let before = rounds();
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(rounds(), before);
+    wait_for(WAIT, || async { lock(&a.pool.subs).contains_key(&notes) && lock(&a.pool.subs).contains_key(&own_notes_sub().0) }).await;
+    wait_for(WAIT, || async { a.listener.flight.failed.load(Ordering::SeqCst) == 0 }).await;
+    // Whole now: no try waits any more. A try is asked only by the task of
+    // `Flight::retry`, and a round that went out whole leaves none there
+    // (`settle` takes the one before away first): once no round is asked
+    // or running and none waits, no round comes, however long one looks.
+    until_quiet(&a.listener).await;
     assert!(hold(&a.listener.flight.retry).is_none(), "no try waits once a round went out whole");
+    assert_eq!(a.listener.flight.failed.load(Ordering::SeqCst), 0, "and none is counted as failed");
     a.stop();
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -1233,11 +1335,13 @@ async fn a_relay_that_comes_back_is_listened_to_again() {
 /// round after the making pages them there, and the wrap that filled the
 /// page asked for the page before it of every channel followed, on the
 /// loop, each a `Sync` the pool awaits to its end. Over relays that
-/// answer every request but a subscription in 5 s and hosts that never
-/// answer, every event of the owner's loop — the pages of wraps, the
-/// echoes of my own issues and of the copy of my keys, the operations —
-/// is taken in < 300 ms, and the page before a full one is still asked
-/// for.
+/// answer every request but a subscription in 5 s, and only between two
+/// events of the loop, and hosts that never answer, the commands answer
+/// while the relays hold every request, and every event of the owner's
+/// loop — the pages of wraps, the echoes of my own issues and of the copy
+/// of my keys, the operations — is taken without waiting for a relay or a
+/// host, at a cost of under 300 ms of the processor, and the page before
+/// a full one is still asked for.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_channel_made_now_holds_no_event_of_its_owner_over_slow_relays_and_hosts() {
     let network = Arc::new(Network::default());
@@ -1260,9 +1364,9 @@ async fn a_channel_made_now_holds_no_event_of_its_owner_over_slow_relays_and_hos
     until_quiet(&a.listener).await;
     // The round of the start paged them on my own relays: no channel yet.
     let paged = || a.pool.paged.load(std::sync::atomic::Ordering::SeqCst);
-    wait_for(Duration::from_secs(10), || async { paged() >= usize::try_from(page).unwrap() }).await;
+    wait_for(WAIT, || async { paged() >= usize::try_from(page).unwrap() }).await;
     let taken = || lock(&a.took).len();
-    wait_for(Duration::from_secs(20), || async { taken() >= paged() }).await;
+    wait_for(WAIT, || async { taken() >= paged() }).await;
 
     // From here on every request but a subscription waits 5 s for its
     // relays, and no host answers a put or a get.
@@ -1270,6 +1374,7 @@ async fn a_channel_made_now_holds_no_event_of_its_owner_over_slow_relays_and_hos
     *lock(&hosts.hang) = Some(Arc::new(tokio::sync::Notify::new()));
     *lock(&hosts.get_gate) = Some(Arc::new(tokio::sync::Semaphore::new(0)));
     lock(&a.took).clear();
+    lock(&a.from_loop).clear();
     let (syncs_before, published_before) = (lock(&a.pool.syncs).len(), lock(&network.events).len());
 
     // `channel_create`, as the command does it, on one of my two relays.
@@ -1282,18 +1387,22 @@ async fn a_channel_made_now_holds_no_event_of_its_owner_over_slow_relays_and_hos
         relays: vec![RELAY.into()],
         storage: vec![HOST.into()],
     };
-    let started = std::time::Instant::now();
-    let (cid, outcome) = {
+    // The relays take no request while the commands run: a command that
+    // waited for one, itself or through anything it waits for, would
+    // never answer.
+    let relays_held = a.pool.held.write().await;
+    let (cid, outcome) = within("the channel made", async {
         let _creating = a.listener.routes.creating(vec![RelayUrl::parse(RELAY).unwrap()]).await;
         let made = a.service.create(&owner, new).await.unwrap();
         a.listener.refresh_routes().await;
         made
-    };
+    })
+    .await;
     assert!(outcome.resubscribe);
     a.listener.resubscribe();
     // And its section, as `channel_scope_add` does it.
-    a.service.scope_add(&owner, &cid, "Section", communities_core::SchemeId::SdV1, communities_core::History::Open).await.unwrap();
-    assert!(started.elapsed() < Duration::from_secs(1), "the commands answer before the relays: {:?}", started.elapsed());
+    within("the section made", a.service.scope_add(&owner, &cid, "Section", communities_core::SchemeId::SdV1, communities_core::History::Open)).await.unwrap();
+    drop(relays_held);
 
     // The round after the making pages the notes to me on the channel's
     // relays (a set not paged in this run), and the page before the full
@@ -1312,30 +1421,36 @@ async fn a_channel_made_now_holds_no_event_of_its_owner_over_slow_relays_and_hos
             .count()
     };
     let echoed = wait_until(Duration::from_secs(60), || async { mine() >= 2 }).await;
-    // Every event handed to the loop by now taken.
-    let quiet = wait_until(Duration::from_secs(20), || async {
-        let before = taken();
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        taken() == before
-    })
-    .await;
+    // Every event handed to the loop by now taken. An event that waits for
+    // a relay never ends (the relay answers between two events only), nor
+    // one that waits for a host (they never answer): the loop at rest is
+    // the proof that none did.
+    let handed = || a.pool.handed.load(std::sync::atomic::Ordering::SeqCst);
+    let done = || a.done.load(std::sync::atomic::Ordering::SeqCst);
+    let rest = wait_until(WAIT, || async { handed() == done() }).await;
     let took = lock(&a.took).clone();
     let held = lock(&a.held_at).clone();
-    let worst = took.iter().map(|(_, d)| *d).max().unwrap_or_default();
-    assert!(held.is_empty() && worst < Duration::from_millis(300), "events held the loop (kind, how long, at): {held:?}; worst {worst:?} of {}", took.len());
+    let at = lock(&a.at).as_ref().and_then(communities_core::keeper::Steps::now);
+    assert!(rest, "the loop never came to rest: {} events handed, {} taken; the one it takes is at {at:?}; held past {SLOW_STEP:?} (kind, how long, at): {held:?}", handed(), done());
+    let asked = lock(&a.from_loop).clone();
+    assert!(asked.is_empty(), "the loop asked the relays or the hosts itself: {asked:?}");
+    let costly: Vec<&(u64, Duration)> = took.iter().filter(|(_, d)| *d >= Duration::from_millis(300)).collect();
+    assert!(costly.is_empty(), "events took the processor long (kind, how long): {costly:?} of {}", took.len());
     assert!(pages, "the page before a full page of the notes to me was never asked for: {:?}", &lock(&a.pool.syncs)[syncs_before..]);
     assert!(echoed, "my own issue and keys were not heard back live: {}; the log: {:?}", mine(), lock(&a.lines));
-    assert!(quiet, "the loop never came to rest");
     a.stop();
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Until the listener ran every round asked for.
+/// Until the listener ran every round asked for. A round is marked asked
+/// before the call that asks for it returns (`Run::ask`), so there is
+/// nothing to wait for before the first look.
 async fn until_quiet(listener: &Listener) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    let deadline = tokio::time::Instant::now() + WAIT;
     while listener.busy() {
-        assert!(tokio::time::Instant::now() < deadline, "the round never ended");
+        if tokio::time::Instant::now() >= deadline {
+            panic!("the round never ended");
+        }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
@@ -1345,7 +1460,9 @@ where
     F: Fn() -> Fut,
     Fut: std::future::Future<Output = bool>,
 {
-    assert!(wait_until(patience, what).await, "waited too long");
+    if !wait_until(patience, what).await {
+        panic!("waited {patience:?}");
+    }
 }
 
 async fn wait_until<F, Fut>(patience: Duration, what: F) -> bool

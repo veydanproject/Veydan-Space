@@ -241,14 +241,17 @@ mod tests {
 
     #[tokio::test]
     async fn export_import_roundtrip_through_ncryptsec() {
+        // The key taken in as an nsec: `create` would make a backup of its
+        // own first, one more scrypt of seconds in a debug build that this
+        // test does not look at (the test above does).
         let (a, _) = service(false).await;
-        let created = a.create("pw-a").await.unwrap();
+        let created = a.import_nsec(&keys::nsec(&keys::generate())).await.unwrap();
         let backup = a.export_ncryptsec("pw-b").await.unwrap();
 
         let (b, _) = service(false).await;
         assert!(b.import_ncryptsec(&backup, "wrong").await.is_err());
         let imported = b.import_ncryptsec(&backup, "pw-b").await.unwrap();
-        assert_eq!(imported.npub, created.identity.npub);
+        assert_eq!(imported.npub, created.npub);
     }
 
     #[tokio::test]

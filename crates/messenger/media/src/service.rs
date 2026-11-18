@@ -2320,8 +2320,14 @@ mod tests {
 
     #[tokio::test]
     async fn upload_survives_a_flaky_server_and_resumes_after_a_dead_one() {
-        let r = rig().await;
-        let path = file(&r, "big.bin", 13 * MIB).await;
+        // Four chunks, the last one short, as 13 MiB in chunks of 4 MiB would
+        // be, at a sixteenth of the size: the four passes of the upload and
+        // the download after it encrypt and hash every byte again, and the
+        // full size took a quarter of a minute of a debug build for the same
+        // retries, the same resume and the same key.
+        let mut r = rig().await;
+        r.svc.chunk_size = Some(4 * CHUNK as u64);
+        let path = file(&r, "big.bin", 13 * CHUNK).await;
         let t = r.svc.queue_upload(&path, "chat", "ph").await.unwrap();
 
         // Two transient failures are absorbed by retries.
@@ -2345,7 +2351,7 @@ mod tests {
             .iter()
             .enumerate()
             .filter(|(_, c)| c.is_some())
-            .map(|(i, _)| (13 * MIB as u64 - i as u64 * 4 * MIB as u64).min(4 * MIB as u64))
+            .map(|(i, _)| (13 * CHUNK as u64 - i as u64 * 4 * CHUNK as u64).min(4 * CHUNK as u64))
             .sum();
         assert_eq!(row.done_bytes, stored, "the plaintext of the stored chunks");
         assert_eq!((row.chunks_done, row.chunks_total), (2, 4));
@@ -2365,7 +2371,7 @@ mod tests {
 
         let (svc, dd, _) = https(&r, &d);
         let out = svc.run_download("m", "chat", &dd, false, &Sink::default()).await.unwrap().unwrap();
-        assert_eq!(tokio::fs::read(out).await.unwrap(), content(13 * MIB));
+        assert_eq!(tokio::fs::read(out).await.unwrap(), content(13 * CHUNK));
     }
 
     #[tokio::test]
@@ -2590,15 +2596,37 @@ mod tests {
         r
     }
 
-    /// Wait (up to ten seconds) until `check` holds.
+    /// How long a test waits for what the service is sure to do: far beyond
+    /// what it takes on a busy runner, so reaching it means the thing never
+    /// came, and it costs nothing when the thing comes.
+    const WAIT: Duration = Duration::from_secs(30);
+
+    /// Wait (up to `WAIT`) until `check` holds.
     async fn until(mut check: impl AsyncFnMut() -> bool) {
-        for _ in 0..2000 {
-            if check().await {
-                return;
-            }
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while !check().await {
+            assert!(tokio::time::Instant::now() < deadline, "the condition never held");
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        panic!("the condition never held");
+    }
+
+    /// `future`, which the service is sure to finish, given `WAIT` to do it.
+    /// A test that drops requests which hang for good checks with this that
+    /// the run ended without them: had it waited for them, it never would.
+    async fn within<F: std::future::Future>(what: &str, future: F) -> F::Output {
+        match tokio::time::timeout(WAIT, future).await {
+            Ok(out) => out,
+            Err(_) => panic!("waited too long for {what}"),
+        }
+    }
+
+    /// Whether `future` is not done when polled now, with the state the
+    /// test made: a wait that loops on the state (a lock, a run deciding
+    /// its end) decides on its first poll and looks again only later, so
+    /// one poll is the check, not a pause that a busy host may stretch.
+    /// The future is left as it is, to be awaited after the state changed.
+    fn waiting<F: std::future::Future>(future: std::pin::Pin<&mut F>) -> bool {
+        future.poll(&mut std::task::Context::from_waker(std::task::Waker::noop())).is_pending()
     }
 
     fn upload_job(r: &Rig, id: &str) -> tokio::task::JoinHandle<Result<Option<MediaDescriptor>>> {
@@ -2624,10 +2652,10 @@ mod tests {
         let job = upload_job(&r, &t.id);
         until(async || { r.backend.len() == 3 && in_flight(&r) == WORKERS && state_of(&r, &t.id).await.chunks_done() == 3 }).await;
 
-        let started = tokio::time::Instant::now();
+        // The puts in flight hang until the gate opens, which it never does
+        // here: the run ends at all only if it drops them.
         r.svc.cancel(&t.id).await.unwrap();
-        assert_eq!(job.await.unwrap().unwrap(), None);
-        assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
+        assert_eq!(within("the run to end without its puts", job).await.unwrap().unwrap(), None);
         assert_eq!(in_flight(&r), 0, "the requests in flight were dropped");
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "cancelled");
         // The stored chunks go from the server in the background, and so do
@@ -2690,10 +2718,10 @@ mod tests {
         hang_after(&r, 5);
         let job = upload_job(&r, &t.id);
         until(async || { in_flight(&r) == WORKERS && state_of(&r, &t.id).await.chunks_done() == 5 }).await;
-        let started = tokio::time::Instant::now();
+        // The puts in flight hang for good: the run ends only if a pause
+        // does not wait for the chunk.
         r.svc.pause(&t.id).await.unwrap();
-        assert_eq!(job.await.unwrap().unwrap(), None);
-        assert!(started.elapsed() < Duration::from_secs(2), "a pause does not wait for the chunk");
+        assert_eq!(within("a pause that does not wait for the chunk", job).await.unwrap().unwrap(), None);
         let view = r.svc.transfer(&t.id).await.unwrap().unwrap();
         assert_eq!(view.status, "paused");
         assert_eq!((view.chunks_done, view.chunks_total, view.chunk_size), (5, 41, CHUNK as u64), "chunk 5 of 41, from the row");
@@ -2837,7 +2865,7 @@ mod tests {
 
         *r.backend.die_after_puts.lock().unwrap() = None;
         assert!(r.svc.retry_now(&t.id));
-        let d = tokio::time::timeout(Duration::from_secs(10), job).await.expect("woken").unwrap().unwrap();
+        let d = within("the run woken", job).await.unwrap().unwrap();
         assert!(d.is_some());
         assert!(!r.svc.retry_now(&t.id), "nothing runs any more");
 
@@ -2847,7 +2875,7 @@ mod tests {
         let job = upload_job(&r, &t.id);
         until(async || { r.svc.transfer(&t.id).await.unwrap().unwrap().status == "waiting_retry" }).await;
         r.svc.pause(&t.id).await.unwrap();
-        assert_eq!(tokio::time::timeout(Duration::from_secs(10), job).await.unwrap().unwrap().unwrap(), None);
+        assert_eq!(within("the run paused", job).await.unwrap().unwrap(), None);
         let view = r.svc.transfer(&t.id).await.unwrap().unwrap();
         assert_eq!((view.status.as_str(), view.retry_at_ms), ("paused", None));
     }
@@ -3099,7 +3127,9 @@ mod tests {
         r.backend.put_gate.lock().unwrap().as_ref().unwrap().add_permits(100);
         until(async || { *r.backend.put_calls.lock().unwrap() == 2 + WORKERS as u32 && in_flight(&r) == 0 }).await;
         until(async || { r.backend.is_empty() }).await;
-        tokio::time::sleep(r.svc.cleanup_grace).await;
+        // Every put has landed, and the removals (the second pass after the
+        // grace too) are over: nothing can bring a chunk back.
+        r.svc.removals_done().await;
         assert!(r.backend.is_empty(), "nothing is left on the server");
     }
 
@@ -3115,9 +3145,11 @@ mod tests {
             let (svc, id) = (r.svc.clone(), t.id.clone());
             tokio::spawn(async move { svc.cancel(&id).await })
         };
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The cancel is over before the run comes: it took the row and let
+        // go of the lock of the run, so the run is turned away by the row,
+        // not by a lock still held.
+        within("the cancel", cancel).await.unwrap().unwrap();
         assert_eq!(r.svc.run_upload(&t.id, &r.keys, None, &Sink::default()).await.unwrap(), None);
-        cancel.await.unwrap().unwrap();
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "cancelled");
 
         *r.backend.put_gate.lock().unwrap() = None;
@@ -3155,14 +3187,10 @@ mod tests {
         // one waits for it to go.
         assert_eq!(new.control.close(), PAUSE);
         assert_eq!(r.svc.pause("t").await.unwrap(), Paused::Nothing);
-        let next = {
-            let svc = r.svc.clone();
-            tokio::spawn(async move { svc.register("t").await.map(|run| run.control.get()) })
-        };
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(!next.is_finished(), "waits for the end of the one before");
+        let mut next = std::pin::pin!(async { r.svc.register("t").await.map(|run| run.control.get()) });
+        assert!(waiting(next.as_mut()), "waits for the end of the one before");
         drop(new);
-        assert_eq!(next.await.unwrap().unwrap(), RUN);
+        assert_eq!(within("the next run", next).await.unwrap(), RUN);
         assert_eq!(r.svc.pause("t").await.unwrap(), Paused::Nothing);
         // Before it has claimed its row a run hears nothing: a word goes
         // where the transfer is held, and waits there for the run.
@@ -3225,7 +3253,7 @@ mod tests {
 
         // A pause asked there is heeded where it runs, at once.
         assert_eq!(other.pause(&t.id).await.unwrap(), Paused::ByRun, "the run is asked");
-        assert_eq!(tokio::time::timeout(Duration::from_secs(5), job).await.unwrap().unwrap().unwrap(), None);
+        assert_eq!(within("the run to end", job).await.unwrap().unwrap(), None);
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "paused");
         assert_eq!(r.backend.len(), 3, "nothing is removed from under it");
         // Paused, it runs nowhere: the other process cancels it itself.
@@ -3685,10 +3713,14 @@ mod tests {
     #[tokio::test]
     async fn a_stalled_server_is_given_up_and_the_next_one_tried() {
         let (mut svc, _dir) = plain_service().await;
-        svc.public_timeout = Duration::from_millis(300);
+        // A second for an answer: the server that answers does so in
+        // moments even on a busy runner. The stalled one answers in four
+        // times the test's whole wait, so each call below ends in time only
+        // if the stall was given up.
+        svc.public_timeout = Duration::from_secs(1);
         let keys = Keys::generate();
         let (stalled, ok) = (MockServer::start().await, MockServer::start().await);
-        let hang = || ResponseTemplate::new(200).set_delay(Duration::from_secs(30));
+        let hang = || ResponseTemplate::new(200).set_delay(WAIT * 4);
         Mock::given(method("PUT")).respond_with(hang()).mount(&stalled).await;
         Mock::given(method("HEAD")).respond_with(hang()).mount(&stalled).await;
         Mock::given(method("DELETE")).respond_with(hang()).mount(&stalled).await;
@@ -3696,19 +3728,17 @@ mod tests {
         blossom(&svc, "stalled", &stalled.uri(), 10).await;
         blossom(&svc, "ok", &ok.uri(), 20).await;
 
-        let started = std::time::Instant::now();
-        let blobs = svc.upload_public(&keys, b"avatar".to_vec(), "image/jpeg", 1).await.unwrap();
+        let blobs = within("the upload past the stalled server", svc.upload_public(&keys, b"avatar".to_vec(), "image/jpeg", 1)).await.unwrap();
         assert_eq!(blobs.iter().map(|b| b.server_id.as_str()).collect::<Vec<_>>(), vec!["ok"]);
         let sha = crate::crypto::sha256_hex(b"avatar");
-        let e = svc.public_exists(&keys, "stalled", &sha).await.unwrap_err();
+        let e = within("the HEAD given up", svc.public_exists(&keys, "stalled", &sha)).await.unwrap_err();
         assert!(e.to_string().contains("err.network"), "{e}");
-        let e = svc.public_delete(&keys, "stalled", &sha).await.unwrap_err();
+        let e = within("the DELETE given up", svc.public_delete(&keys, "stalled", &sha)).await.unwrap_err();
         assert!(e.to_string().contains("err.network"), "{e}");
-        assert!(started.elapsed() < Duration::from_secs(10), "took {:?}", started.elapsed());
 
         // Only stalled servers: the expiry is the reason told.
         svc.set_server_enabled("ok", false).await.unwrap();
-        let e = svc.upload_public(&keys, b"avatar".to_vec(), "image/jpeg", 1).await.unwrap_err();
+        let e = within("the upload given up", svc.upload_public(&keys, b"avatar".to_vec(), "image/jpeg", 1)).await.unwrap_err();
         assert!(e.to_string().contains("err.network"), "{e}");
     }
 
@@ -3860,10 +3890,13 @@ mod tests {
         // A failure that comes with a cancel ends cancelled too.
         let t = r.svc.queue_upload(&path, "chat", "ph2").await.unwrap();
         *r.backend.reject_puts.lock().unwrap() = true;
+        let puts = *r.backend.put_calls.lock().unwrap();
         let job = upload_job(&r, &t.id);
-        // Refused at once, for good: the run has failed, and waits.
-        until(async || { *r.backend.put_calls.lock().unwrap() > 0 }).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Refused at once, for good: the run has failed, and waits. Its pass
+        // holds a slot of its lane from before its first put until the
+        // failure is decided, so a put of this run made and the slot back
+        // say the pass is over and failed.
+        until(async || { *r.backend.put_calls.lock().unwrap() > puts && r.svc.small.available_permits() == SMALL_SLOTS }).await;
         assert_eq!(r.svc.cancel_with(&t.id, Some(&r.keys)).await.unwrap(), Cancelled::ByRun);
         gate.add_permits(1);
         assert_eq!(job.await.unwrap().unwrap(), None, "cancelled, not failed");
@@ -3883,14 +3916,10 @@ mod tests {
         let view = r.svc.transfer(&t.id).await.unwrap().unwrap();
         assert_eq!((view.status.as_str(), view.stage), ("running", TransferStage::Publishing), "under way until the message is out");
 
-        let cancel = {
-            let (svc, id) = (r.svc.clone(), t.id.clone());
-            tokio::spawn(async move { svc.cancel_with(&id, None).await })
-        };
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(!cancel.is_finished(), "a cancel waits for the end of the publishing");
+        let mut cancel = std::pin::pin!(r.svc.cancel_with(&t.id, None));
+        assert!(waiting(cancel.as_mut()), "a cancel waits for the end of the publishing");
         assert!(p.published(Some("msg-1")).await.unwrap());
-        assert_eq!(cancel.await.unwrap().unwrap(), Cancelled::Nothing, "the message is out: its chunks stay");
+        assert_eq!(within("the cancel", cancel).await.unwrap(), Cancelled::Nothing, "the message is out: its chunks stay");
         let row = repo::transfer(&r.svc.store, &t.id).await.unwrap().unwrap();
         assert_eq!((row.status.as_str(), row.message_id.as_deref()), ("done", Some("msg-1")));
         assert_eq!(r.backend.len(), 3);
@@ -3940,7 +3969,9 @@ mod tests {
         repo::set_result(&r.svc.store, &t.id, None, None, Some("msg-2")).await.unwrap();
         assert_eq!(r.svc.discard_unpublished(&t.id, "local:ph2", Some(&r.keys)).await.unwrap(), Cancelled::Nothing);
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "done");
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // No removal in the background either: once every one under way is
+        // over, the chunks are all there.
+        r.svc.removals_done().await;
         assert_eq!(r.backend.len(), 3);
     }
 
@@ -4005,7 +4036,7 @@ mod tests {
 
         // Cancelled from the app: the run there stops and removes its chunks.
         assert_eq!(r.svc.cancel_with(&t.id, None).await.unwrap(), Cancelled::ByRun);
-        assert_eq!(tokio::time::timeout(Duration::from_secs(5), job).await.unwrap().unwrap().unwrap(), None);
+        assert_eq!(within("the run to end", job).await.unwrap().unwrap(), None);
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "cancelled");
         until(async || { r.backend.is_empty() }).await;
         assert!(!r.svc.retry_now(&t.id), "nothing runs it any more");
@@ -4030,12 +4061,13 @@ mod tests {
         };
         until(async || { in_flight(&r) == WORKERS && state_of(&r, &t.id).await.chunks_done() == 3 }).await;
 
-        // Here a run of it starts and waits for the lock the CLI holds.
+        // Here a run of it starts and tries the lock the CLI holds, and the
+        // cancel comes at once, while it starts: the soonest a cancel can
+        // come. Had the run here taken it, the CLI's run would never hear
+        // it, and its puts hang for good.
         let here = upload_job(&r, &t.id);
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        assert!(!here.is_finished(), "still waiting for the lock");
         assert_eq!(r.svc.cancel_with(&t.id, None).await.unwrap(), Cancelled::ByRun);
-        assert_eq!(tokio::time::timeout(Duration::from_secs(5), job).await.unwrap().unwrap().unwrap(), None, "the CLI's run heard it");
+        assert_eq!(within("the CLI's run to end", job).await.unwrap().unwrap(), None, "the CLI's run heard it");
         assert!(!matches!(here.await.unwrap(), Ok(Some(_))));
         assert_eq!(r.svc.transfer(&t.id).await.unwrap().unwrap().status, "cancelled");
         until(async || { r.backend.is_empty() }).await;
@@ -4073,10 +4105,10 @@ mod tests {
         let (svc, dd, fetch, tmp, job) = start(0);
         until(async || { on_disk(&tmp) == 10 && fetch.in_flight.load(Ordering::SeqCst) == WORKERS }).await;
         let id = id_of(&svc, 0).await;
-        let started = tokio::time::Instant::now();
+        // The fetches in flight hang for good: the run ends only if a pause
+        // does not wait for them.
         assert_eq!(svc.pause(&id).await.unwrap(), Paused::ByRun);
-        assert_eq!(job.await.unwrap().unwrap(), None);
-        assert!(started.elapsed() < Duration::from_secs(2), "a pause does not wait for the chunks in flight");
+        assert_eq!(within("a pause that does not wait for the chunks in flight", job).await.unwrap().unwrap(), None);
         assert_eq!(fetch.in_flight.load(Ordering::SeqCst), 0, "they were dropped");
         let view = svc.transfer(&id).await.unwrap().unwrap();
         assert_eq!((view.status.as_str(), view.chunks_done), ("paused", 10));
@@ -4182,7 +4214,9 @@ mod tests {
         r.backend.put_gate.lock().unwrap().as_ref().unwrap().add_permits(100);
         until(async || { *r.backend.put_calls.lock().unwrap() == WORKERS as u32 && in_flight(&r) == 0 }).await;
         until(async || { r.backend.is_empty() }).await;
-        tokio::time::sleep(r.svc.cleanup_grace).await;
+        // Every put has landed, and the removals (the second pass after the
+        // grace too) are over: nothing can bring a chunk back.
+        r.svc.removals_done().await;
         assert!(r.backend.is_empty(), "nothing is left on the server");
     }
 
@@ -4200,14 +4234,16 @@ mod tests {
             big.push((t.id.clone(), upload_job(&r, &t.id)));
         }
         until(async || { in_flight(&r) == CHUNK_SLOTS - SMALL_RESERVED }).await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(in_flight(&r), CHUNK_SLOTS - SMALL_RESERVED, "no more than their share");
+        // Not one more at any moment, the most the backend ever saw at once.
+        assert_eq!(r.backend.max_puts_in_flight.load(Ordering::SeqCst), CHUNK_SLOTS - SMALL_RESERVED, "no more than their share");
 
+        // The big ones hang for good: the photo is sent at all only if it
+        // never waits for their chunks.
         let photo = file(&r, "photo.jpg", 1000).await;
         let t = r.svc.queue_upload(&photo, "chat", "pp").await.unwrap();
-        let sent = tokio::time::timeout(Duration::from_secs(5), r.svc.run_upload(&t.id, &r.keys, None, &Sink::default())).await;
-        assert!(sent.expect("the photo went at once").unwrap().is_some());
-        assert_eq!(in_flight(&r), CHUNK_SLOTS - SMALL_RESERVED, "the big ones still hang");
+        let sent = within("the photo", r.svc.run_upload(&t.id, &r.keys, None, &Sink::default())).await;
+        assert!(sent.unwrap().is_some(), "the photo went at once");
+        assert_eq!(in_flight(&r), CHUNK_SLOTS - SMALL_RESERVED, "the big ones still hang, no more of them than before");
         for (id, job) in big {
             r.svc.cancel(&id).await.unwrap();
             assert_eq!(job.await.unwrap().unwrap(), None);
@@ -4340,7 +4376,9 @@ mod tests {
         r.backend.put_gate.lock().unwrap().as_ref().unwrap().add_permits(100);
         until(async || { *r.backend.put_calls.lock().unwrap() == 2 + WORKERS as u32 && in_flight(&r) == 0 }).await;
         until(async || { r.backend.is_empty() }).await;
-        tokio::time::sleep(r.svc.cleanup_grace).await;
+        // Every put has landed, and the removals (the second pass after the
+        // grace too) are over: nothing can bring a chunk back.
+        r.svc.removals_done().await;
         assert!(r.backend.is_empty(), "nothing is left on the server");
     }
 
@@ -4420,7 +4458,13 @@ mod tests {
         // The fetch fails and starts again with a quarter: the bar stays.
         fetcher.gate.add_permits(1);
         until(async || { fetcher.calls.load(Ordering::SeqCst) == 2 }).await;
-        tokio::time::sleep(Duration::from_millis(600)).await;
+        // The second fetch counted its quarter before it stopped at the
+        // gate. The meter tells the running transfer at least once a
+        // heartbeat whatever moved: two more events, and the newer of them
+        // was surely measured with the quarter in.
+        let told = sink.0.lock().unwrap().len();
+        until(async || { sink.0.lock().unwrap().len() >= told + 2 }).await;
+        assert_eq!(sink.0.lock().unwrap().last().unwrap().1.done_bytes, cap, "never back after a fetch that starts again");
         assert_eq!(done().await, cap, "never back after a fetch that starts again");
         fetcher.gate.add_permits(1);
         assert!(job.await.unwrap().unwrap().is_some());
@@ -4662,12 +4706,21 @@ mod tests {
             let (other, id) = (other.clone(), t.id.clone());
             tokio::spawn(async move { other.cancel_with(&id, None).await })
         };
-        tokio::time::sleep(Duration::from_millis(1500)).await;
-        assert!(!cancel.is_finished(), "waits longer than a run is given to heed a word");
-        assert_eq!(other.transfer(&t.id).await.unwrap().unwrap().stage, TransferStage::Publishing);
+        // The view is written anew every heartbeat while the message goes
+        // out. Two writes after the cancel began are a heartbeat apart at
+        // the least, so the cancel has waited longer than a run is given to
+        // heed a word by then; counted by the writes, not by a clock the
+        // test reads.
+        assert!(HEARTBEAT > other.ask_wait * 2, "the wait below outlasts the one for a word");
         let view = r.dir.path().join("media").join("runs").join(format!("{}.json", t.id));
-        let age = std::fs::metadata(view).unwrap().modified().unwrap().elapsed().unwrap_or_default();
-        assert!(age < Duration::from_millis(1200), "the view is kept fresh: {age:?}");
+        let written = || std::fs::metadata(&view).and_then(|m| m.modified()).ok();
+        let mut seen = written();
+        for _ in 0..2 {
+            until(async || { written() != seen }).await;
+            seen = written();
+        }
+        assert!(!cancel.is_finished(), "waits longer than a run is given to heed a word");
+        assert_eq!(other.transfer(&t.id).await.unwrap().unwrap().stage, TransferStage::Publishing, "the view is kept fresh");
 
         assert!(p.published(Some("msg-1")).await.unwrap());
         assert_eq!(cancel.await.unwrap().unwrap(), Cancelled::Nothing, "the message is out: its chunks stay");

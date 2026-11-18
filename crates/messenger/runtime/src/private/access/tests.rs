@@ -33,7 +33,7 @@ async fn setup() -> Setup {
     let rt = MessengerRuntime::start(config, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
     rt.relays().set_silent(true).await.unwrap();
     crate::servers::use_veydan_offline(&rt).await;
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     rt.refresh_signer().await.unwrap();
     let api = MockServer::start().await;
     let relay = format!("ws://127.0.0.1:{}", api.address().port());
@@ -104,7 +104,7 @@ async fn the_mode_of_a_server_is_asked_and_kept() {
     assert_eq!(s.rt.server_access_info(&id).await.unwrap(), info, "from the cache");
     let view = s.rt.servers_private_view().await.unwrap();
     assert_eq!(view[0].access, crate::links::ServerAccess::Team, "the server's word is kept");
-    let told = tokio::time::timeout(Duration::from_secs(2), async {
+    let told = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             if ui.recv().await.unwrap().name == crate::private::UI_EVENT_SERVERS_UPDATED {
                 return;
@@ -164,7 +164,7 @@ async fn a_join_sends_the_invite_under_my_key_and_forgets_the_refusal() {
 
     let view = s.rt.servers_private_view().await.unwrap();
     assert_eq!(view[0].denied, None, "«Нет доступа» goes");
-    let joined = tokio::time::timeout(Duration::from_secs(2), async {
+    let joined = tokio::time::timeout(Duration::from_secs(30), async {
         loop {
             let ev = ui.recv().await.unwrap();
             if ev.name == crate::private::UI_EVENT_SERVERS_UPDATED && ev.payload["joined"] == id.as_str() {
@@ -321,7 +321,7 @@ impl nostr_sdk::local_relay::QueryPolicy for Team {
 
 async fn denied_when(rt: &MessengerRuntime, want: bool) -> Option<String> {
     let mut denied = None;
-    for _ in 0..100 {
+    for _ in 0..300 {
         denied = rt.servers_private_view().await.unwrap()[0].denied.clone();
         if denied.is_some() == want {
             break;
@@ -338,14 +338,13 @@ async fn denied_when(rt: &MessengerRuntime, want: bool) -> Option<String> {
 #[tokio::test]
 async fn a_refusal_of_the_relay_is_no_access_until_the_server_lets_me_in() {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    let home = nostr_sdk::local_relay::LocalRelay::builder().build();
-    home.run().await.unwrap();
+    let home = messenger_testkit::local_relay().await;
     let member = Arc::new(AtomicBool::new(false));
     let asked = Arc::new(AtomicUsize::new(0));
-    let team = nostr_sdk::local_relay::LocalRelay::builder()
-        .query_policy(Team { member: member.clone(), asked: asked.clone() })
-        .build();
-    team.run().await.unwrap();
+    let team = messenger_testkit::local_relay_with(|| {
+        nostr_sdk::local_relay::LocalRelay::builder().query_policy(Team { member: member.clone(), asked: asked.clone() })
+    })
+    .await;
     let home_url = home.url().await.as_str_without_trailing_slash().to_string();
     let team_url = team.url().await.as_str_without_trailing_slash().to_string();
 
@@ -355,10 +354,10 @@ async fn a_refusal_of_the_relay_is_no_access_until_the_server_lets_me_in() {
     rt.relays().add_user(&home_url, None).await.unwrap();
     rt.servers_use_own().await.unwrap();
     let id = rt
-        .server_put_private(&PrivateServerInput { relay_url: team_url, access: Some("team".into()), ..Default::default() })
+        .server_put_private(&PrivateServerInput { relay_url: team_url.clone(), access: Some("team".into()), ..Default::default() })
         .await
         .unwrap();
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     assert!(rt.refresh_signer().await.unwrap());
 
     let denied = denied_when(&rt, true).await;
@@ -371,7 +370,7 @@ async fn a_refusal_of_the_relay_is_no_access_until_the_server_lets_me_in() {
     servers::clear_denied(rt.store(), &id).await.unwrap();
     rt.server_let_in(&id).await;
     let mut again = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         if asked.load(Ordering::SeqCst) > before {
             again = true;
             break;
@@ -379,7 +378,37 @@ async fn a_refusal_of_the_relay_is_no_access_until_the_server_lets_me_in() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert!(again, "the inbox of the server is asked again");
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(denied_when(&rt, false).await, None, "no refusal since");
+    // No refusal since: a wrap to me put on the team relay now comes by the
+    // inbox asked again, on the connection that would have carried a word
+    // of the relay on a request of before ahead of it, so once the session
+    // has counted the wrap, any such word is in too.
+    let me = messenger_core::PubKey::parse(&rt.session_keys().await.unwrap().public_key().to_hex()).unwrap();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let wrap = messenger_dm::wrap::wrap(&Keys::generate(), me, &messenger_core::Envelope::text("hi").encode(), now, None).unwrap();
+    let received = rt.status().await.unwrap().ingress.received;
+    use messenger_core::Transport;
+    let pool = messenger_transport::RelayPool::new(None);
+    let url = messenger_core::RelayUrl::parse(&team_url).unwrap();
+    pool.set_relays(vec![messenger_transport::RelayConfig { url, read: true, write: true, api_key: None, server_id: None }]).await.unwrap();
+    let mut sent = false;
+    for _ in 0..300 {
+        sent = pool.send(messenger_core::Outbound::PublishOwn { event: wrap.to_peer.clone() }).await.is_ok_and(|a| a.is_delivered());
+        if sent {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(sent, "the wrap is on the team relay");
+    pool.shutdown().await;
+    let mut came = false;
+    for _ in 0..300 {
+        if rt.status().await.unwrap().ingress.received > received {
+            came = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(came, "the inbox asked again hears the server");
+    assert_eq!(servers::denied(rt.store(), &id).await.unwrap(), None, "no refusal since");
     rt.shutdown().await;
 }

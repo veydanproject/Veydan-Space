@@ -6,6 +6,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** A turn of the event loop: the calls the opening made have all been made. */
+const turn = () => new Promise<void>((done) => setTimeout(done, 0));
+
 const api = vi.hoisted(() => {
   // 120 messages, the newest last; a page is the `limit` before `before`.
   const all = Array.from({ length: 120 }, (_, n) => ({ id: `m${n}`, chat_id: 'dm:x', created_at: n + 1 }));
@@ -159,8 +162,14 @@ describe('a decision of a moderator', () => {
   });
 
   it('reads the open window of its group again, and leaves another group alone', async () => {
-    chatStore.handleEvent({ name: 'group.queue', payload: { group: 'other', pending: 1 } } as never);
-    await new Promise((r) => setTimeout(r, 250));
+    vi.useFakeTimers();
+    try {
+      chatStore.handleEvent({ name: 'group.queue', payload: { group: 'other', pending: 1 } } as never);
+      // Past the debounce of the read, on a clock the test moves itself.
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(api.messages).not.toHaveBeenCalled();
     chatStore.handleEvent({ name: 'group.moderation', payload: { group: 'g', action: 'hide', by: 'x', target: '' } } as never);
     chatStore.handleEvent({ name: 'group.queue', payload: { group: 'g', pending: 0 } } as never);
@@ -191,7 +200,7 @@ describe('the profile of the peer', () => {
   it('is not asked for a group, nor twice when the runtime opened the chat', async () => {
     await chatStore.open('group:g1');
     await chatStore.openPeer('ab'.repeat(32));
-    await new Promise((r) => setTimeout(r, 0));
+    await turn();
     expect(api.requestProfile).not.toHaveBeenCalled();
   });
 

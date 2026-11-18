@@ -9,7 +9,7 @@
 //
 //   assets.mjs collect --bundle <dir> --name "Veydan Notes" --version 5.0.0 [--target <triple>] --pubkey <key> --out <dir>
 //   assets.mjs latest  --dir <dir> --prefix Veydan.Notes --version 5.0.0 --keys "linux-x86_64 …" --base-url <url>
-//   assets.mjs verify  --dir <dir> --prefix Veydan.Notes --version 5.0.0 --keys "linux-x86_64 …" --pubkey <key>
+//   assets.mjs verify  --dir <dir> --prefix Veydan.Notes --version 5.0.0 --keys "linux-x86_64 …" --pubkey <key> [--ios true|false]
 //
 // collect: <dir> is cargo's `…/release/bundle`. It takes the installers and
 // the updater signatures of this product and this version only — the target
@@ -34,6 +34,13 @@
 // signature was made by --pubkey over the bundle beside it, and every
 // platform of --keys has its signed bundle. The release workflow of Gitea
 // runs it before it publishes anything (docs/ci-cd.md).
+//
+// The .ipa of iOS is a file of the release like the others, in SHA256SUMS,
+// but it carries no updater signature and latest.json never names it: iOS
+// updates through TestFlight and the App Store. With --ios true (a product
+// with an Xcode project, meta.sh build_ios) the release holds exactly one,
+// signed (`_ios-arm64.ipa`) or not (`_ios-arm64-unsigned.ipa`); without it,
+// none.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -178,9 +185,10 @@ export function latest({ dir, prefix, version, keys, baseUrl, notes = null, now 
 /**
  * What is wrong with the files of `dir` as a set of bundles of the product:
  * a foreign file, a signature of nothing, a wrong signature, a platform
- * of `keys` without a signed bundle. Empty when all is well.
+ * of `keys` without a signed bundle, an .ipa where `ios` says none or
+ * not exactly one where it says one. Empty when all is well.
  */
-export function verify({ dir, prefix, version, keys, pubkey }) {
+export function verify({ dir, prefix, version, keys, pubkey, ios = false }) {
   const problems = [];
   const pub = parsePublicKey(pubkey ?? '');
   const names = fs.readdirSync(dir).sort();
@@ -189,6 +197,10 @@ export function verify({ dir, prefix, version, keys, pubkey }) {
     if (!(n.startsWith(`${prefix}_${version}_`) || n.startsWith(`${prefix}-${version}-`))) problems.push(`${n}: not a bundle of ${prefix} ${version}`);
   }
   for (const sig of names.filter((n) => n.endsWith('.sig'))) {
+    if (sig.endsWith('.ipa.sig')) {
+      problems.push(`${sig}: an .ipa has no updater signature (iOS updates through TestFlight and the App Store)`);
+      continue;
+    }
     const bundle = sig.slice(0, -4);
     if (!names.includes(bundle)) {
       problems.push(`${sig}: the bundle it signs is missing`);
@@ -205,8 +217,21 @@ export function verify({ dir, prefix, version, keys, pubkey }) {
     }
     if (!names.some((n) => patterns.some((p) => p.test(n)))) problems.push(`${key}: no signed bundle of ${prefix} ${version}`);
   }
+  const ipas = names.filter((n) => n.endsWith('.ipa'));
+  if (!ios) {
+    for (const n of ipas) problems.push(`${n}: an .ipa, and ${prefix} has no iOS app`);
+  } else {
+    const allowed = ipaNames(prefix, version);
+    for (const n of ipas) if (!allowed.includes(n)) problems.push(`${n}: not an .ipa of ${prefix} ${version} (${allowed.join(' or ')})`);
+    const own = ipas.filter((n) => allowed.includes(n));
+    if (own.length === 0) problems.push(`ios: no .ipa of ${prefix} ${version}`);
+    if (own.length > 1) problems.push(`ios: ${own.length} .ipa files (${own.join(', ')}); a release holds one`);
+  }
   return problems;
 }
+
+/** The names the .ipa of a release may have: signed (TestFlight, the App Store) or built without a signature. */
+export const ipaNames = (prefix, version) => [`${prefix}_${version}_ios-arm64.ipa`, `${prefix}_${version}_ios-arm64-unsigned.ipa`];
 
 function options(argv) {
   const out = {};
@@ -236,7 +261,10 @@ function main([command, ...rest]) {
     console.log(`latest.json: ${opts.version}, ${Object.keys(doc.platforms).join(' ')}`);
   } else if (command === 'verify') {
     need(opts, 'dir', 'prefix', 'version', 'pubkey');
-    const problems = verify({ dir: opts.dir, prefix: opts.prefix, version: opts.version, keys: (opts.keys ?? '').split(/\s+/).filter(Boolean), pubkey: opts.pubkey });
+    // build_ios of meta.sh, as the workflow passes it: anything but true or false is a mistake of the caller.
+    const ios = opts.ios ?? 'false';
+    if (ios !== 'true' && ios !== 'false') throw new Error(`--ios ${ios}: true or false`);
+    const problems = verify({ dir: opts.dir, prefix: opts.prefix, version: opts.version, keys: (opts.keys ?? '').split(/\s+/).filter(Boolean), pubkey: opts.pubkey, ios: ios === 'true' });
     for (const p of problems) console.error(`::error::${p}`);
     if (problems.length) process.exit(1);
     console.log(`verified: ${fs.readdirSync(opts.dir).length} files of ${opts.prefix} ${opts.version}`);

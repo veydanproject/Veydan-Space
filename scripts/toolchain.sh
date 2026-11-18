@@ -20,7 +20,18 @@ fi
 VEYDAN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export VEYDAN_ROOT
 
-TC_DIR="$VEYDAN_ROOT/data/toolchains"
+# data/ by its physical path. On the runner data/ is a link into the cache
+# kept between jobs, and the job's own folder is a new one every time
+# (gitea-runner 5 removes it after the job): a CARGO_HOME named through the
+# job's folder changes its name every job, and cargo, which remembers the
+# sources of a registry crate by their path, compiled every dependency again
+# in every job (890 crates in the job rust, 2026-11-18). Named through the
+# cache, the path is the same from job to job and the dependencies stay
+# built. Locally data/ is a folder and the path is the one it always was.
+mkdir -p "$VEYDAN_ROOT/data"
+VEYDAN_DATA_DIR="$(cd -P "$VEYDAN_ROOT/data" && pwd)"
+export VEYDAN_DATA_DIR
+TC_DIR="$VEYDAN_DATA_DIR/toolchains"
 export RUSTUP_HOME="$TC_DIR/rustup"
 export CARGO_HOME="$TC_DIR/cargo"
 NODE_DIR="$TC_DIR/node"
@@ -81,5 +92,5 @@ fi
 # only the latter it used ~/.local/share/pnpm/store); an older pnpm reads the
 # second. Not storeDir in ui/pnpm-workspace.yaml (nor store-dir in ui/.npmrc,
 # which pnpm 12 does not read): that file goes to the snapshots and to CI.
-export pnpm_config_store_dir="$VEYDAN_ROOT/data/pnpm-store"
+export pnpm_config_store_dir="$VEYDAN_DATA_DIR/pnpm-store"
 export npm_config_store_dir="$pnpm_config_store_dir"

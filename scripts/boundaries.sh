@@ -101,6 +101,29 @@ scan() {
   [ -z "$out" ] || while IFS= read -r line; do say "$line"; done <<<"$out"
 }
 
+# The same for the rows of `tables` in table_rows: one process reads each
+# crate once, where one scan per row read every other crate again. Findings
+# and failures are said in the order of the rows, as the scans one by one
+# would have said them.
+scan_tables() {
+  local rows out line row i last
+  [ ${#table_rows[@]} -gt 0 ] || return 0
+  rows=$(mktemp)
+  printf '%s\n' "${table_rows[@]}" >"$rows"
+  out=$(node scripts/boundaries.mjs tables-all "$rows") || out=$(for i in "${!table_rows[@]}"; do echo "F$i"; done)
+  rm -f "$rows"
+  for i in "${!table_rows[@]}"; do
+    row=${table_rows[$i]}
+    last=${row##*$'\t'}
+    while IFS= read -r line; do
+      case "$line" in
+        "L$i"$'\t'*) say "${line#*$'\t'}" ;;
+        "F$i") say "scripts/boundaries.mjs tables $last: the scan failed" ;;
+      esac
+    done <<<"$out"
+  done
+}
+
 is_tauri() { case "$1" in tauri|tauri-*) return 0 ;; *) return 1 ;; esac; }
 
 # The product a snapshot was published for; empty in the monorepo.
@@ -418,6 +441,7 @@ srcs=()
 while read -r dir _ row_kind _; do
   case "$row_kind" in lib | module | product) [ -d "$dir/src" ] && srcs+=("$dir/src") ;; esac
 done <<<"$MATRIX"
+table_rows=()
 while read -r dir row_pkg row_kind _; do
   case "$row_kind" in lib | module) ;; *) continue ;; esac
   others=()
@@ -427,17 +451,24 @@ while read -r dir row_pkg row_kind _; do
     else others+=("$src")
     fi
   done
-  scan tables "$row_kind" "$dir/src" "${others[@]}"
+  # One row for the batch, the words cut at tabs; the last word is what the
+  # message of a failed scan names.
+  row="$row_kind	$dir/src"
+  for src in "${others[@]}"; do row+="	$src"; done
+  table_rows+=("$row")
 done <<<"$MATRIX"
+scan_tables
 
 # 4b. The internal modules of a product are not scanned for their tables
 #     until they are crates (5.10), but none names the core's table `labels`:
 #     owners publish and retract their labels through the entity directory
 #     (10.2).
+table_rows=()
 while read -r dir _ row_kind _; do
   [ "$row_kind" = product ] || continue
-  scan tables product "$dir/src" labels
+  table_rows+=("product	$dir/src	labels")
 done <<<"$MATRIX"
+scan_tables
 
 # 5. The messenger: its crates depend neither on Tauri nor on the platform.
 #    Two paths leave crates/messenger: the crate `vlink` is built on the

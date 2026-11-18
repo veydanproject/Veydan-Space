@@ -35,7 +35,7 @@ async fn started(backend: &MemoryBackend) -> (tempfile::TempDir, MessengerRuntim
     let mut rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
     rt.relays().set_silent(true).await.unwrap();
     crate::servers::use_veydan_offline(&rt).await;
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     assert!(rt.refresh_signer().await.unwrap());
     rt.dm().set_gate(false);
     rt.media = rt.media.clone().with_backend(Arc::new(backend.clone()), Arc::new(MemFetch(backend.clone())));

@@ -91,7 +91,7 @@ async fn setup() -> Setup {
     }
     rt.relays().add_user(RELAY, None).await.unwrap();
     rt.relays().set_silent(false).await.unwrap();
-    rt.identity().create("pw").await.unwrap();
+    crate::testing::log_in(&rt).await;
     rt.refresh_signer().await.unwrap();
 
     let (gateway, private) = (MockServer::start().await, MockServer::start().await);

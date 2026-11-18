@@ -113,8 +113,14 @@ mod tests {
 
         settings::set_bool(&store, relays::KEY_SILENT, true).await.unwrap();
         assert!(event(&store, &url, &id).await.unwrap().is_none());
-        let came = tokio::time::timeout(Duration::from_millis(200), relay.accept()).await.is_ok();
-        assert!(!came, "no connection in silent mode");
+        // The call is over and leaves nothing running, so a connection it
+        // made is in the backlog of the listener by now: an accept that
+        // does not block finds it at once, or there is none. No while of
+        // quiet is waited for.
+        let relay = relay.into_std().unwrap();
+        let pending = relay.accept();
+        assert!(matches!(&pending, Err(e) if e.kind() == std::io::ErrorKind::WouldBlock), "no connection in silent mode: {pending:?}");
+        let relay = tokio::net::TcpListener::from_std(relay).unwrap();
 
         settings::set_bool(&store, relays::KEY_SILENT, false).await.unwrap();
         let came = tokio::select! {
