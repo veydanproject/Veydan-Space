@@ -20,6 +20,9 @@ sqlx-sqlite = { path = "vendor/sqlx-sqlite" }
 # the messenger workspace patches in; a product takes the engine through
 # messenger-runtime, and cargo wants the patch in the workspace it builds.
 webrtc-sys = { path = "crates/messenger/rtc/vendor/webrtc-sys" }
+# tao 0.35.3 with the scene configuration of iOS kept alive for UIKit (the
+# launch crash of the TestFlight build, vendor/tao/PATCH.md); tao 0.36 has it.
+tao = { path = "vendor/tao" }
 
 [profile.release]
 # Symbol tables go; the dynamic exports (Tauri's and the push handler's
