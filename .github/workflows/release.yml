@@ -567,7 +567,16 @@ jobs:
           printf '%s' "$IOS_API_KEY_P8" | base64 -d > "$RUNNER_TEMP/private_keys/AuthKey_$APPLE_API_KEY.p8"
           unset IOS_API_KEY_P8
           export APPLE_API_KEY_PATH="$RUNNER_TEMP/private_keys/AuthKey_$APPLE_API_KEY.p8"
-          bash scripts/ios/build.sh "$PRODUCT" device-signed
+          # The build number (CFBundleVersion) of each upload: App Store
+          # Connect takes a build number of a version once, so an rc and
+          # the release of one version need numbers of their own. The run
+          # number of this workflow only grows in the repository, the
+          # attempt tells a re-run apart; three integers, as Apple wants
+          # (Tauri's --build-number would append a fourth to X.Y.Z).
+          build_number="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT.0"
+          echo "iOS build number: $build_number" >> "$GITHUB_STEP_SUMMARY"
+          bash scripts/ios/build.sh "$PRODUCT" device-signed \
+            --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$build_number\"}}}"
 
       # TestFlight: the signed .ipa to App Store Connect with the same key,
       # which altool reads from ./private_keys/AuthKey_<id>.p8; the id and
