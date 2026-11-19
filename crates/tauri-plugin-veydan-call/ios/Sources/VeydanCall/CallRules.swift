@@ -77,6 +77,85 @@ final class RecentlyOver {
 }
 
 /**
+ * A VoIP push as PushKit hands it over (VPush spec/protocol.md, «VoIP
+ * pushes»): the keys of the alert the phone would have had, every value
+ * a string, without `aps`. It came from outside and is read so: the keys
+ * the push server writes, with a string of a sane length, and nothing
+ * else. What it says is the Rust side's to find out (`PushData`).
+ */
+struct VoipPush: Equatable {
+  static let keys: Set<String> = ["v", "type", "call", "event", "event_id", "relay", "group_id", "count", "trace"]
+  /** A VoIP push weighs 5120 bytes at most: no value of one is longer. */
+  static let maxValue = 5120
+
+  let data: [String: String]
+
+  init(_ payload: [AnyHashable: Any]) {
+    var data: [String: String] = [:]
+    for (key, value) in payload {
+      guard let key = key as? String, VoipPush.keys.contains(key), let value = value as? String,
+        !value.isEmpty, value.utf8.count <= VoipPush.maxValue
+      else { continue }
+      data[key] = value
+    }
+    self.data = data
+  }
+
+  /**
+   * An invitation to a call, as far as its outside says: a direct message
+   * marked as a call, with its event or where to fetch it. Whether it is
+   * one, and of whom, is known only once it is opened.
+   */
+  var isInvite: Bool {
+    data["type"] == "dm" && data["call"] == "1"
+      && (data["event"] != nil || (data["event_id"] != nil && data["relay"] != nil))
+  }
+
+  /** The push's name in the server's log, for this side's. */
+  var trace: String {
+    data["trace"].map { String($0.prefix(16)) } ?? "-"
+  }
+}
+
+/**
+ * The placeholders of VoIP pushes the app opened lately and found to be
+ * no call it rings (a stranger's, not an invitation). Every VoIP
+ * push must be reported to CallKit (Apple's rule: an app that does not is
+ * killed, and then handed no VoIP push at all), and anybody who knows the
+ * key can mark a wrap as a call, which the push server sends as VoIP up to
+ * its cap a minute. So past `limit` such placeholders within `windowMs`,
+ * a VoIP push is still reported but ended at once, without a ring, until
+ * the minute is over. Per process. Times are milliseconds of a monotonic
+ * clock (`Clock.uptimeMs`).
+ */
+final class PlaceholderGuard {
+  private let limit: Int
+  private let windowMs: Int64
+  private var failed: [Int64] = []
+
+  init(limit: Int = 3, windowMs: Int64 = 60_000) {
+    self.limit = limit
+    self.windowMs = windowMs
+  }
+
+  /** A placeholder was found at `now` to be no call. */
+  func cameToNothing(now: Int64) {
+    trim(now)
+    failed.append(now)
+  }
+
+  /** Whether a placeholder may ring at `now`. */
+  func rings(now: Int64) -> Bool {
+    trim(now)
+    return failed.count < limit
+  }
+
+  private func trim(_ now: Int64) {
+    failed.removeAll { now < $0 || now - $0 > windowMs }
+  }
+}
+
+/**
  * The calls on in groups this phone has dealt with, across its processes:
  * the ones whose quiet notification was shown (`shown`), and the ones that
  * went on here, which I was in (`joined`). Kept by `GroupCallNotices` in

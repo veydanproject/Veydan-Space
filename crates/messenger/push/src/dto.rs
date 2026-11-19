@@ -26,6 +26,12 @@ pub enum Channel {
         token: String,
         /// `production` or `sandbox`.
         environment: String,
+        /// The PushKit (VoIP) token, hex, of the same environment: the
+        /// server sends the invitations to a call to it as VoIP pushes,
+        /// which the app must report to CallKit. Absent: calls ring by an
+        /// alert to `token`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        voip_token: Option<String>,
     },
     /// Through the gateway, at a private push server (`spec/protocol.md`,
     /// "The gateway"): the ticket the gateway issued for the token of this
@@ -284,30 +290,44 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
 
-    const TOKEN: &str = "apns-token-of-the-test";
+    const TOKEN: &str = "8d3f4c2a1b0e9f8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d";
+    const VOIP: &str = "3c9e7a1f5b2d8c4e6a0f9b3d7e1c5a8f2b6d0e4c9a7f3b1d5e8c2a6f0b4d9e7c";
 
-    /// The server keeps no example of an iPhone's registration in
-    /// `golden`: the shape is the one `spec/protocol.md` writes under
-    /// "Through APNs", on the body of the example that is there.
-    fn apns_example(environment: &str) -> Value {
-        let path = format!("{}/tests/golden/device_put.json", env!("CARGO_MANIFEST_DIR"));
+    /// The registration of an iPhone as the server writes it in `golden`
+    /// (`spec/protocol.md`, "Through APNs"): both tokens.
+    fn apns_example() -> Value {
+        let path = format!("{}/tests/golden/device_put_apns.json", env!("CARGO_MANIFEST_DIR"));
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-        let mut example: Value = serde_json::from_str(&text).unwrap();
-        example["channel"] = json!({ "provider": "apns", "token": TOKEN, "environment": environment });
-        example
+        serde_json::from_str(&text).unwrap()
     }
 
     #[test]
     fn an_iphone_registers_as_the_protocol_writes() {
-        let path = format!("{}/tests/golden/device_put.json", env!("CARGO_MANIFEST_DIR"));
-        let mut put: DevicePut = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let example = apns_example();
+        let mut put: DevicePut = serde_json::from_value(example.clone()).unwrap();
+        assert_eq!(
+            put.channel,
+            Channel::Apns { token: TOKEN.into(), environment: "production".into(), voip_token: Some(VOIP.into()) }
+        );
+        assert_eq!(serde_json::to_value(&put).unwrap(), example, "sent word for word");
+
         for environment in ["production", "sandbox"] {
-            put.channel = Channel::Apns { token: TOKEN.into(), environment: environment.into() };
-            let sent = serde_json::to_value(&put).unwrap();
-            assert_eq!(sent, apns_example(environment));
-            let back: DevicePut = serde_json::from_value(sent).unwrap();
-            assert_eq!(back, put);
-            assert_eq!((back.channel.provider(), back.channel.token()), ("apns", TOKEN));
+            for voip_token in [Some(VOIP.to_string()), None] {
+                put.channel =
+                    Channel::Apns { token: TOKEN.into(), environment: environment.into(), voip_token: voip_token.clone() };
+                let sent = serde_json::to_value(&put).unwrap();
+                let mut expected = example.clone();
+                expected["channel"]["environment"] = json!(environment);
+                if voip_token.is_none() {
+                    // Left out, not `null`: a server before 0.8.0 reads the
+                    // channel as it always did.
+                    expected["channel"].as_object_mut().unwrap().remove("voip_token");
+                }
+                assert_eq!(sent, expected);
+                let back: DevicePut = serde_json::from_value(sent).unwrap();
+                assert_eq!(back, put);
+                assert_eq!((back.channel.provider(), back.channel.token()), ("apns", TOKEN));
+            }
         }
     }
 

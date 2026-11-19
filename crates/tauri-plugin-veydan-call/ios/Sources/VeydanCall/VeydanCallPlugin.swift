@@ -73,10 +73,29 @@ struct RemoveListenerArgs: Decodable {
   let channelId: UInt64
 }
 
+/** The call a VoIP push turned out to be (src/lib.rs: `VoipRing`). */
+struct VoipRingArgs: Decodable {
+  let pushId: String?
+  let callId: String?
+  let name: String?
+  let video: Bool?
+  let hideOnLockscreen: Bool?
+  /** Unix seconds; 0 or missing: not known. */
+  let expiresAt: Int64?
+}
+
+struct VoipEndArgs: Decodable {
+  let pushId: String?
+  /** `failed` (the default) or `remoteEnded`. */
+  let reason: String?
+}
+
 /**
  * The app's side of the call bridge on iOS. Called from the app's Rust code
  * only, by the same commands and with the same answers as the Kotlin side
- * (VeydanCallPlugin.kt); see src/lib.rs for the contract.
+ * (VeydanCallPlugin.kt); see src/lib.rs for the contract. The VoIP pushes
+ * of PushKit (`getVoipToken`, `takeVoipPushes`, `voipRing`, `voipEnd`)
+ * are iOS's alone.
  *
  * Tauri calls a command on a queue of its own; the state of a call lives
  * on the main thread, where CallKit's delegate, the audio session's
@@ -86,6 +105,9 @@ class VeydanCallPlugin: Plugin {
   override func load(webview: WKWebView) {
     callLog("loading")
     CallKitBridge.shared.load()
+    // Made at the end of the launch already (`initPlugin`); not when the
+    // plugin was made after it.
+    VoipPushes.shared.start()
     // The engine waits for CallKit's audio session before it starts its sound.
     RtcAudio.prepare()
     // The notices of calls on in groups a dead process left go.
@@ -300,9 +322,69 @@ class VeydanCallPlugin: Plugin {
   @objc func takeActions(_ invoke: Invoke) {
     onMain(invoke) { ["actions": CallEvents.shared.takeWaiting()] }
   }
+
+  /** `{ token? }`: the VoIP token PushKit gave this process, hex. */
+  @objc func getVoipToken(_ invoke: Invoke) {
+    onMain(invoke) {
+      guard let token = CallEvents.shared.currentVoipToken else { return [:] }
+      return ["token": token]
+    }
+  }
+
+  /**
+   * `{ pushes: [{ pushId, data }] }`: the VoIP pushes that came before the
+   * app listened, once.
+   */
+  @objc func takeVoipPushes(_ invoke: Invoke) {
+    onMain(invoke) {
+      let pushes = CallEvents.shared.takeVoipPushes()
+      let list: [JsonObject] = pushes.map { ["pushId": $0.id, "data": $0.data] }
+      return ["pushes": list]
+    }
+  }
+
+  @objc func voipRing(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(VoipRingArgs.self)
+    guard let pushId = args.pushId, !pushId.isEmpty, let callId = args.callId, !callId.isEmpty else {
+      invoke.reject("no push or call id")
+      return
+    }
+    let call = CallInfo(
+      callId: String(callId.prefix(128)), name: String((args.name ?? "").prefix(200)),
+      video: args.video ?? false, hidden: args.hideOnLockscreen ?? true)
+    let expiresAt = args.expiresAt ?? 0
+    onMain(invoke) {
+      CallKitBridge.shared.voipRing(pushId, call, expiresAt: expiresAt)
+      return nil
+    }
+  }
+
+  @objc func voipEnd(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(VoipEndArgs.self)
+    guard let pushId = args.pushId, !pushId.isEmpty else {
+      invoke.reject("no push id")
+      return
+    }
+    onMain(invoke) {
+      CallKitBridge.shared.voipEnd(pushId, overAlready: args.reason == "remoteEnded")
+      return nil
+    }
+  }
 }
 
+/**
+ * Made by Tauri's builder (`register_ios_plugin` in the plugin's setup),
+ * on the main thread and before UIApplicationMain, at every launch, the
+ * ones in the background for a VoIP push too: PushKit's registry is asked
+ * for at the end of the launch (`VoipPushes`), so that the push that
+ * started the app is handed over.
+ */
 @_cdecl("init_plugin_veydan_call")
 func initPlugin() -> Plugin {
+  if Thread.isMainThread {
+    VoipPushes.shared.startAtLaunch()
+  } else {
+    DispatchQueue.main.async { VoipPushes.shared.startAtLaunch() }
+  }
   return VeydanCallPlugin()
 }

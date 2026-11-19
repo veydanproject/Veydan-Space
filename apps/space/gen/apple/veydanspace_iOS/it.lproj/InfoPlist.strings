@@ -1,0 +1,10 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* The reasons iOS shows in the permission dialogs, one per language of the
+   app; English is also the NS*UsageDescription of Info.plist
+   (apps/space/Info.ios.plist), the fallback of every other language. */
+"NSCameraUsageDescription" = "Scansiona codici QR, scatta foto e registra video per le tue note e le chat, e fai videochiamate";
+"NSMicrophoneUsageDescription" = "Registra messaggi vocali e note audio, e fai chiamate";
+"NSPhotoLibraryUsageDescription" = "Allega foto e video dalla tua libreria";
+"NSPhotoLibraryAddUsageDescription" = "Salva nella tua libreria le foto e i video ricevuti";

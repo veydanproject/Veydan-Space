@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the dismiss_incoming command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_voip_token command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-voip-token",
+          "markdownDescription": "Enables the get_voip_token command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_voip_token command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-voip-token",
+          "markdownDescription": "Denies the get_voip_token command without any pre-configured scope."
+        },
+        {
           "description": "Enables the keep_awake command without any pre-configured scope.",
           "type": "string",
           "const": "allow-keep-awake",
@@ -497,6 +509,42 @@
           "type": "string",
           "const": "deny-take-actions",
           "markdownDescription": "Denies the take_actions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the take_voip_pushes command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-take-voip-pushes",
+          "markdownDescription": "Enables the take_voip_pushes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the take_voip_pushes command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-take-voip-pushes",
+          "markdownDescription": "Denies the take_voip_pushes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voip_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voip-end",
+          "markdownDescription": "Enables the voip_end command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voip_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voip-end",
+          "markdownDescription": "Denies the voip_end command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the voip_ring command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-voip-ring",
+          "markdownDescription": "Enables the voip_ring command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the voip_ring command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-voip-ring",
+          "markdownDescription": "Denies the voip_ring command without any pre-configured scope."
         },
         {
           "description": "No command of the call bridge is exposed to the web page.",

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-voip-end"
+description = "Enables the voip_end command without any pre-configured scope."
+commands.allow = ["voip_end"]
+
+[[permission]]
+identifier = "deny-voip-end"
+description = "Denies the voip_end command without any pre-configured scope."
+commands.deny = ["voip_end"]

@@ -11,6 +11,7 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
+  import { saveAs } from '$lib/core/ui/saveAs';
   import { isMobile } from '$lib/core/platform';
   import { product } from '$lib/core/product';
   import { pickPositions, splitWords, wordsMatch, RECOVERY_WORDS } from '$lib/core/lock/words';
@@ -72,11 +73,11 @@
   }
 
   async function saveToFile() {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const dest = await save({ defaultPath: `${product.id === 'space' ? 'veydan' : `veydan-${product.id}`}-recovery-key.txt` });
-    if (!dest) return;
-    const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-    await writeTextFile(dest, `${$t('lock_recovery_file_title')}\n${code}\n`);
+    const text = `${$t('lock_recovery_file_title')}\n${code}\n`;
+    await saveAs({ defaultPath: `${product.id === 'space' ? 'veydan' : `veydan-${product.id}`}-recovery-key.txt` }, async (dest) => {
+      const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+      await writeTextFile(dest, text);
+    });
   }
 </script>
 

@@ -12,7 +12,10 @@
 //! Android library), which keeps it in memory, tells the running app
 //! (`Java_net_veydan_shell_IncomingLinks_arrived`) and brings it forward;
 //! it is taken from there at the start, when told and each time the app
-//! comes back.
+//! comes back. An iPhone opens the app with it (`CFBundleURLTypes` of the
+//! product's `Info.ios.plist`), and the event loop gets it as
+//! `RunEvent::Opened` (`opened`), at a cold start too; the scheme is the
+//! same `plugins.deep-link` config.
 //!
 //! No plugin stands between: `tauri-plugin-deep-link` sends every link it
 //! gets to the page as an event (`deep-link://new-url`), the key of a group
@@ -25,7 +28,7 @@
 //! the app is unlocked. Nothing here opens anything.
 
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Emitted with nothing when a link came: the page asks for it.
 pub const EVENT_LINK: &str = "links://incoming";
@@ -261,15 +264,45 @@ fn desktop_entry(name: &str, exec: &str, mimes: &[String]) -> String {
     )
 }
 
-#[cfg(desktop)]
+/// The links an iPhone opened the app with (`RunEvent::Opened`: tao's
+/// `scene:openURLContexts:` while it runs, the connection options of the
+/// scene at a cold start, vendor/tao/PATCH.md). The system has brought the
+/// app forward already; the last link of the product's schemes is held, the
+/// page is told. A cold start's comes after the setup and before the page
+/// listens: the page asks for it when it starts.
+#[cfg(target_os = "ios")]
+pub(crate) fn opened(app: &AppHandle, urls: &[tauri::Url]) {
+    if let Some(link) = of_opened(app, urls.iter().map(|u| u.as_str())) {
+        hold(app, link);
+    }
+}
+
+/// The last of `urls` that is a link of the product's schemes; none before
+/// the setup or for a product that takes no link.
+#[cfg(any(target_os = "ios", test))]
+fn of_opened<'a, R: Runtime>(app: &AppHandle<R>, urls: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let schemes = app.try_state::<Schemes>()?;
+    urls.into_iter().filter_map(|u| accept(&schemes.0, u)).last()
+}
+
+#[cfg(any(desktop, target_os = "ios"))]
 fn hold(app: &AppHandle, link: String) {
-    let Some(inbox) = app.try_state::<Inbox>() else {
+    if !keep(app, link) {
         return;
-    };
-    *inbox.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(link);
+    }
     #[cfg(desktop)]
     crate::tray::show_main_window(app);
     let _ = app.emit(EVENT_LINK, ());
+}
+
+/// `link` in the inbox in place of the one that waited; false before the setup.
+#[cfg(any(desktop, target_os = "ios", test))]
+fn keep<R: Runtime>(app: &AppHandle<R>, link: String) -> bool {
+    let Some(inbox) = app.try_state::<Inbox>() else {
+        return false;
+    };
+    *inbox.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(link);
+    true
 }
 
 /// The link that waits, taken: the next call gets nothing until another
@@ -278,6 +311,10 @@ fn hold(app: &AppHandle, link: String) {
 pub fn take(app: &AppHandle) -> Option<String> {
     #[cfg(target_os = "android")]
     from_activity(app);
+    taken(app)
+}
+
+fn taken<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     let inbox = app.try_state::<Inbox>()?;
     let link = inbox.0.lock().unwrap_or_else(|e| e.into_inner()).take();
     link
@@ -333,6 +370,60 @@ mod tests {
         assert!(entry.contains("\nName=VeydanSpace\n"));
         assert!(entry.contains("\nExec=\"/home/u/Apps/Veydan Space.AppImage\" %u\n"));
         assert!(entry.contains("\nMimeType=x-scheme-handler/veydan;\n"));
+    }
+
+    /// What the setup puts in place for a product with `veydan://`.
+    fn set_up() -> tauri::App<tauri::test::MockRuntime> {
+        let app = tauri::test::mock_app();
+        app.manage(Schemes(veydan()));
+        app.manage(Inbox::default());
+        app
+    }
+
+    /// The shape of `RunEvent::Opened` on an iPhone: a link that comes
+    /// before the page listens (a cold start) waits, is handed once, and a
+    /// later one takes its place — one link at most, the last.
+    #[test]
+    fn a_link_opened_before_the_page_asks_is_kept_and_handed_once() {
+        let app = set_up();
+        let handle = app.handle();
+        let link = of_opened(handle, ["veydan://group/a#k"]).unwrap();
+        assert!(keep(handle, link));
+        assert_eq!(taken(handle).as_deref(), Some("veydan://group/a#k"));
+        assert_eq!(taken(handle), None, "handed once");
+
+        let first = of_opened(handle, ["veydan://contact/a"]).unwrap();
+        assert!(keep(handle, first));
+        let second = of_opened(handle, ["veydan://contact/b"]).unwrap();
+        assert!(keep(handle, second));
+        assert_eq!(taken(handle).as_deref(), Some("veydan://contact/b"), "the last one replaces");
+        assert_eq!(taken(handle), None);
+    }
+
+    #[test]
+    fn of_the_urls_opened_the_last_link_of_the_schemes_is_taken() {
+        let app = set_up();
+        let handle = app.handle();
+        assert_eq!(
+            of_opened(handle, ["veydan://contact/a", "veydan://group/b", "https://veydan.net/"]).as_deref(),
+            Some("veydan://group/b")
+        );
+        assert_eq!(of_opened(handle, ["https://veydan.net/", "veydan://"]), None);
+        assert_eq!(of_opened(handle, std::iter::empty::<&str>()), None);
+        // A product without a scheme holds nothing.
+        let none = tauri::test::mock_app();
+        none.manage(Schemes::default());
+        none.manage(Inbox::default());
+        assert_eq!(of_opened(none.handle(), ["veydan://contact/a"]), None);
+    }
+
+    #[test]
+    fn nothing_is_held_before_the_setup() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        assert_eq!(of_opened(handle, ["veydan://contact/a"]), None);
+        assert!(!keep(handle, "veydan://contact/a".into()));
+        assert_eq!(taken(handle), None);
     }
 
     #[test]

@@ -5,6 +5,8 @@
 //! (`veydan_sync_host::commands`) among them. The shell is a module too:
 //! they go through the same router as the commands of the product's modules.
 
+pub mod chrome;
+pub mod files;
 pub mod host;
 pub mod labels;
 pub mod media;
@@ -66,11 +68,20 @@ fn sync(registry: &mut veydan_sync_host::Registry) {
 fn commands() -> Module {
     crate::module! {
         id: "shell",
-        setup: |_app| Ok(()),
+        setup: |app| {
+            files::clear_stage(app.handle());
+            Ok(())
+        },
         commands: [
             start::app_start_error,
             host::host_info,
             host::open_url,
+            chrome::chrome_bars,
+            chrome::chrome_edges,
+            chrome::chrome_clipboard_has_image,
+            chrome::chrome_clipboard_image,
+            files::files_stage,
+            files::files_save,
             #[cfg(desktop)]
             host::clipboard_write_text,
             #[cfg(desktop)]

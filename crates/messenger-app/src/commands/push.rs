@@ -131,6 +131,8 @@ static LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool:
 ///   app is on the screen.
 /// - The plugin is told the chat open on the screen ([`open_chat`]): a push
 ///   of it is not shown while the app is on the screen, live or not.
+/// - An iPhone: the VoIP token of PushKit goes into the channel, and a
+///   change of it registers the phone again.
 /// - The push handler is given the keys while the settings want it to
 ///   (Android; iOS has no handler of its own before the Notification
 ///   Service Extension).
@@ -166,6 +168,10 @@ pub fn spawn_bridge(
             // no runtime. Asked only of a user who agreed to pushes.
             renew_token(&app, &push, &rt).await;
         }
+        // The second token of an iPhone, PushKit's, which the call plugin
+        // has: in the channel now, and again whenever it changes.
+        #[cfg(target_os = "ios")]
+        super::call_android::voip::follow_token(&app).await;
 
         let context = async {
             let mut told: Option<(bool, Option<String>)> = None;
@@ -190,7 +196,9 @@ pub fn spawn_bridge(
         tokio::join!(keep_handler_keys(app.clone(), rt.clone()), context);
         // Nothing on iOS reads the handler's keys before the Notification
         // Service Extension (a later stage), so none are handed over: keys
-        // kept where nothing needs them are only a risk.
+        // kept where nothing needs them are only a risk. A VoIP push (a
+        // call) is opened inside the app, with the session's own keys
+        // (call_android/voip.rs); under the app's PIN it waits for the unlock.
         #[cfg(target_os = "ios")]
         context.await;
     });
@@ -254,6 +262,8 @@ fn channel(app: &tauri::AppHandle, token: String, app_id: Option<String>) -> Pus
         app_version: Some(app.package_info().version.to_string()),
         // The environment is APNs' word (production or sandbox); FCM has none.
         environment: None,
+        // PushKit is an iPhone's: calls ring through FCM.
+        voip_token: None,
     }
 }
 
@@ -272,6 +282,10 @@ fn channel(app: &tauri::AppHandle, token: String, app_id: Option<String>) -> Pus
         app_id: app_id.unwrap_or_else(|| app.config().identifier.clone()),
         app_version: Some(app.package_info().version.to_string()),
         environment: Some(if cfg!(debug_assertions) { "sandbox" } else { "production" }.into()),
+        // The token of PushKit when the call plugin has one by now; one
+        // that comes later is put into the kept channel by the call
+        // bridge (`call_android::voip::follow_token`).
+        voip_token: super::call_android::voip::token(),
     }
 }
 

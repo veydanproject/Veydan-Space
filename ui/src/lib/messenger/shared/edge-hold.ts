@@ -4,16 +4,16 @@
 // A control at the edge of the screen that is held and dragged inward: on
 // Android the system takes such a drag for its own "back". The element
 // reserves the strip from itself to the right edge through the host's
-// `VeydanChrome.setGestureExclusion` (CSS pixels); elsewhere this does nothing.
+// `VeydanChrome.setGestureExclusion` (CSS pixels); on the iPhone the edges
+// the strip reaches wait for a second swipe of the system
+// ($lib/core/ui/chrome); elsewhere this does nothing.
 
-interface Bridge {
-  setGestureExclusion?: (left: number, top: number, width: number, height: number) => void;
-}
+import { chromeBridge } from '$lib/core/ui/chrome';
 
 const PAD = 8;
 
 export function edgeHold(node: HTMLElement) {
-  const bridge = (window as Window & { VeydanChrome?: Bridge }).VeydanChrome;
+  const bridge = chromeBridge();
   if (!bridge?.setGestureExclusion) return {};
 
   const report = () => {

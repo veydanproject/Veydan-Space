@@ -450,6 +450,7 @@
     "chan_where_no_files": "Server ini tidak menyimpan file: pilih yang lain.",
     "chan_keeper_here_line": "Pembaca baru diizinkan masuk oleh perangkat ini selama aplikasi terbuka.",
     "chan_keeper_phone": "Di ponsel, aplikasi tertidur di latar belakang: pembaca baru menunggu sampai Anda membukanya.",
+    "chan_keeper_iphone": "Penjaga tidak berfungsi di iPhone: perangkat lain yang menjaga kanal, atau biarkan aplikasi tetap terbuka.",
     "chan_keeper_keep_on": "Biarkan penjaga tetap aktif",
     "chan_keeper_keep_on_hint": "Ponsel menampilkan notifikasi dan mengizinkan pembaca masuk meski aplikasi tertutup. Lebih boros baterai.",
     "chan_keeper_background": "bekerja di latar belakang",

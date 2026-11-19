@@ -450,6 +450,7 @@
     "chan_where_no_files": "Bu sunucu dosya saklamaz: başka birini seçin.",
     "chan_keeper_here_line": "Yeni okurları, uygulama açık olduğu sürece bu cihaz içeri alır.",
     "chan_keeper_phone": "Telefonda uygulama arka planda uykuya geçer: yeni okurlar siz açana kadar bekler.",
+    "chan_keeper_iphone": "Bekçi iPhone’da çalışmaz: kanalı başka bir cihaz tutar ya da uygulamayı açık tutun.",
     "chan_keeper_keep_on": "Bekçiyi açık tut",
     "chan_keeper_keep_on_hint": "Telefon bir bildirim gösterir ve uygulama kapalıyken bile okurları içeri alır. Daha fazla pil harcar.",
     "chan_keeper_background": "arka planda çalışıyor",

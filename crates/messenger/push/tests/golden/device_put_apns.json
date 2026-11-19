@@ -1,0 +1,13 @@
+{
+  "app_id": "net.veydan.mobile",
+  "channel": {
+    "provider": "apns",
+    "token": "8d3f4c2a1b0e9f8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d",
+    "environment": "production",
+    "voip_token": "3c9e7a1f5b2d8c4e6a0f9b3d7e1c5a8f2b6d0e4c9a7f3b1d5e8c2a6f0b4d9e7c"
+  },
+  "app_version": "5.3.0",
+  "prefs": { "dm": true, "groups": true },
+  "relays": [{ "url": "wss://node-1.veydan.net", "dm": true, "groups": true }],
+  "groups": []
+}

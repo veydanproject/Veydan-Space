@@ -450,6 +450,7 @@
     "chan_where_no_files": "此服务器不保存文件，请选择其他服务器。",
     "chan_keeper_here_line": "新读者由此设备放行，前提是应用处于打开状态。",
     "chan_keeper_phone": "在手机上，应用会在后台休眠：新读者要等到你打开应用才能进入。",
+    "chan_keeper_iphone": "iPhone 上的守钥人无法工作：由其他设备保管频道，或保持应用开启。",
     "chan_keeper_keep_on": "保持守钥人开启",
     "chan_keeper_keep_on_hint": "手机会显示一条通知，即使应用关闭也能放行读者。耗电更多。",
     "chan_keeper_background": "正在后台运行",

@@ -450,6 +450,7 @@
     "chan_where_no_files": "Este servidor não guarda arquivos: escolha outro.",
     "chan_keeper_here_line": "Novos leitores são admitidos por este dispositivo enquanto o app estiver aberto.",
     "chan_keeper_phone": "No celular o app fica inativo em segundo plano: novos leitores esperam até você abri-lo.",
+    "chan_keeper_iphone": "O guardião não funciona no iPhone: outro dispositivo mantém o canal, ou deixe o app aberto.",
     "chan_keeper_keep_on": "Manter o guardião ativo",
     "chan_keeper_keep_on_hint": "O celular mostra uma notificação e admite leitores mesmo com o app fechado. Gasta mais bateria.",
     "chan_keeper_background": "ativo em segundo plano",

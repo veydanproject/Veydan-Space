@@ -44,6 +44,7 @@ fn channel() -> PushChannel {
         app_id: "net.veydan.mobile".into(),
         app_version: Some("4.1.0".into()),
         environment: None,
+        voip_token: None,
     }
 }
 
@@ -578,6 +579,7 @@ async fn an_iphone_is_told_to_a_private_server_through_the_gateway() {
         app_id: "net.veydan.mobile".into(),
         app_version: Some("5.2.0".into()),
         environment: Some("production".into()),
+        voip_token: None,
     }))
     .await
     .unwrap();

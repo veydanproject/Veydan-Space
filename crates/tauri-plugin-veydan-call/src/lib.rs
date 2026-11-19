@@ -216,6 +216,69 @@ struct PermissionAnswer {
     granted: bool,
 }
 
+/// A VoIP push of PushKit (iOS): the invitation to a call, as the push
+/// server sent it (VPush spec/protocol.md, «VoIP pushes»). The Swift side
+/// has reported it to CallKit already, with a placeholder («Incoming
+/// call», no name), as Apple demands before the handler of the push
+/// returns; the app now says what it is, by [`VeydanCall::voip_ring`] or
+/// [`VeydanCall::voip_end`] with its `push_id`, within a few seconds, or
+/// the placeholder ends as failed.
+#[cfg(target_os = "ios")]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoipPush {
+    /// The placeholder's name on the Swift side.
+    pub push_id: String,
+    /// The keys of the push with string values (`v`, `type`, `call`,
+    /// `event` or `event_id` and `relay`, `trace`), as FCM's data map
+    /// would carry them: what `messenger_notify::PushData` reads.
+    #[serde(default)]
+    pub data: std::collections::BTreeMap<String, String>,
+}
+
+/// What a VoIP push turned out to be: the call it rings, which takes the
+/// placeholder's place on CallKit's screen.
+#[cfg(target_os = "ios")]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoipRing {
+    pub push_id: String,
+    pub call_id: String,
+    /// Who calls, as the app shows them; empty for the app's own name.
+    pub name: String,
+    pub video: bool,
+    pub hide_on_lockscreen: bool,
+    /// When the invitation becomes a missed call, unix seconds (0: not
+    /// known): CallKit stops ringing then.
+    pub expires_at: i64,
+}
+
+/// Why a placeholder of a VoIP push ends without a call.
+#[cfg(target_os = "ios")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VoipEnd {
+    /// No call to ring: not opened in time, not an invitation, of nobody
+    /// I take calls from, expired.
+    Failed,
+    /// The call it rang for is over already.
+    RemoteEnded,
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug, Deserialize)]
+struct VoipTokenAnswer {
+    #[serde(default)]
+    token: Option<String>,
+}
+
+#[cfg(target_os = "ios")]
+#[derive(Debug, Deserialize)]
+struct VoipPushesAnswer {
+    #[serde(default)]
+    pushes: Vec<VoipPush>,
+}
+
 /// What the phone's side reports without being asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
@@ -225,6 +288,13 @@ pub enum Event {
     AudioRouteChanged,
     /// The phone's default network changed: [`NetworkChange`].
     NetworkChanged,
+    /// PushKit gave a VoIP token, or took it back (iOS): `{ token }`, hex,
+    /// empty for none.
+    #[cfg(target_os = "ios")]
+    VoipToken,
+    /// A VoIP push came and rings as a placeholder (iOS): [`VoipPush`].
+    #[cfg(target_os = "ios")]
+    VoipPush,
 }
 
 impl Event {
@@ -233,6 +303,10 @@ impl Event {
             Self::CallAction => "call_action",
             Self::AudioRouteChanged => "audio_route_changed",
             Self::NetworkChanged => "network_changed",
+            #[cfg(target_os = "ios")]
+            Self::VoipToken => "voip_token",
+            #[cfg(target_os = "ios")]
+            Self::VoipPush => "voip_push",
         }
     }
 }
@@ -404,6 +478,61 @@ impl<R: Runtime> VeydanCall<R> {
             }
         })
         .await
+    }
+
+    /// The VoIP token PushKit gave this process (hex), if it gave one yet.
+    #[cfg(target_os = "ios")]
+    pub async fn voip_token(&self) -> Result<Option<String>> {
+        Ok(self.call::<VoipTokenAnswer>("getVoipToken", ()).await?.token.filter(|t| !t.is_empty()))
+    }
+
+    /// [`Event::VoipToken`], read: `None` when PushKit took the token back.
+    #[cfg(target_os = "ios")]
+    pub async fn on_voip_token<F>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(Option<String>) + Send + Sync + 'static,
+    {
+        self.listen(Event::VoipToken, move |value| {
+            let token = value.get("token").and_then(|t| t.as_str()).filter(|t| !t.is_empty());
+            handler(token.map(str::to_string));
+        })
+        .await
+    }
+
+    /// [`Event::VoipPush`], read.
+    #[cfg(target_os = "ios")]
+    pub async fn on_voip_push<F>(&self, handler: F) -> Result<()>
+    where
+        F: Fn(VoipPush) + Send + Sync + 'static,
+    {
+        self.listen(Event::VoipPush, move |value| {
+            if let Ok(push) = serde_json::from_value(value) {
+                handler(push);
+            }
+        })
+        .await
+    }
+
+    /// The VoIP pushes that came before anyone listened (the push started
+    /// the process), oldest first, once; their placeholders ring meanwhile.
+    #[cfg(target_os = "ios")]
+    pub async fn take_voip_pushes(&self) -> Result<Vec<VoipPush>> {
+        Ok(self.call::<VoipPushesAnswer>("takeVoipPushes", ()).await?.pushes)
+    }
+
+    /// The VoIP push `ring.push_id` is this call: CallKit names it, and a
+    /// press made on the placeholder (Answer, Decline) comes as a
+    /// [`CallAction`] of `ring.call_id`. Nothing when the placeholder is
+    /// gone already, but for a Decline pressed on it, which comes then.
+    #[cfg(target_os = "ios")]
+    pub async fn voip_ring(&self, ring: &VoipRing) -> Result<()> {
+        self.run("voipRing", ring).await
+    }
+
+    /// The VoIP push `push_id` rings no call: its placeholder ends at once.
+    #[cfg(target_os = "ios")]
+    pub async fn voip_end(&self, push_id: &str, why: VoipEnd) -> Result<()> {
+        self.run("voipEnd", serde_json::json!({ "pushId": push_id, "reason": why })).await
     }
 }
 

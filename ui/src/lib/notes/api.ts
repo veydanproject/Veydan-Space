@@ -4,6 +4,7 @@
 // Commands of the notes module, and the notes' logic under the `sync_` prefix.
 
 import { api as core, call, mockCommand } from '$lib/core/api';
+import { saveAs } from '$lib/core/ui/saveAs';
 import type {
   NoteTag,
   NoteFolder,
@@ -147,10 +148,7 @@ export const api = {
 
 /** Save-as dialog, then copy the attachment to the chosen path. */
 export async function downloadNoteAttachment(noteId: string, name: string): Promise<void> {
-  const { save } = await import('@tauri-apps/plugin-dialog');
-  const dest = await save({ defaultPath: name });
-  if (!dest) return;
-  await api.notes.attachmentSave(noteId, name, dest);
+  await saveAs({ defaultPath: name }, (dest) => api.notes.attachmentSave(noteId, name, dest));
 }
 
 /** Notes-domain policy: when an attachment goes through chunked storage. */

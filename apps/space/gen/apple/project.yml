@@ -44,13 +44,9 @@ targets:
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
+        # Only the algorithms of the system and standard ones: exempt, and the
+        # one-time question of App Store Connect is answered there.
+        ITSAppUsesNonExemptEncryption: true
         CFBundleShortVersionString: 5.2.1
         CFBundleVersion: "5.2.1"
     entitlements:
@@ -62,6 +58,7 @@ targets:
     settings:
       base:
         ENABLE_BITCODE: false
+        TARGETED_DEVICE_FAMILY: "1"
         OTHER_LDFLAGS[sdk=iphoneos*]: $(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-device-arm64-release/lib/libwebrtc-objc.a
         OTHER_LDFLAGS[sdk=iphonesimulator*]: $(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-simulator-arm64-release/lib/libwebrtc-objc.a
         ARCHS: [arm64]
@@ -95,6 +92,7 @@ targets:
       - sdk: OpenGLES.framework
       - sdk: Photos.framework
       - sdk: PhotosUI.framework
+      - sdk: PushKit.framework
       - sdk: UniformTypeIdentifiers.framework
       - sdk: UserNotifications.framework
       - sdk: VideoToolbox.framework

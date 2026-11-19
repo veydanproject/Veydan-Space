@@ -23,3 +23,7 @@ the secret `2222…22` (public `466d7fca…`, the `sender`). The `blob` of
 with the same keys to the push of `push_dm.json` marked as a call,
 `"call": "1"` before the other keys. `wake.json` has no `urgent`, which
 reads as `false`.
+
+`device_put_apns.json` is the registration of an iPhone (`spec/protocol.md`,
+"Through APNs"): its device token, the environment, and the PushKit token
+the invitations to a call go to, `voip_token`, which may be left out.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { get, writable } from 'svelte/store';
+import { chromeBridge } from '$lib/core/ui/chrome';
 
 export type Theme = 'dark' | 'light';
 /** The colours of the interface (styles/palettes/<name>.css); the theme picks their dark or light half. */
@@ -123,8 +124,7 @@ function persist(key: string, val: string) {
 }
 
 export function syncAndroidChrome(t: Theme) {
-  const bridge = (window as Window & { VeydanChrome?: { setLightBars: (light: boolean) => void } }).VeydanChrome;
-  bridge?.setLightBars(t === 'light');
+  chromeBridge()?.setLightBars?.(t === 'light');
 }
 
 function applyAll(t: Theme, p: Palette, custom: ThemeCustom) {

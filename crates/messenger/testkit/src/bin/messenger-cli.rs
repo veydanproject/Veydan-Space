@@ -1342,6 +1342,7 @@ async fn main() {
                 app_id: take_flag(&mut args, "--app").unwrap_or_else(|| "net.veydan.mobile".into()),
                 app_version: Some(format!("cli {}", messenger_core::VERSION)),
                 environment: None,
+                voip_token: None,
             };
             rt.push_set_channel(Some(channel)).await.unwrap_or_else(die);
             if let Some(server) = server {

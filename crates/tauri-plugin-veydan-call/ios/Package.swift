@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The phone's side of a call on iOS: CallKit, the audio session, the
+// The phone's side of a call on iOS: CallKit, PushKit, the audio session, the
 // camera. tauri-plugin builds this package as a static library named after
 // the crate (build.rs: `.ios_path("ios")`) and links it into the app, where
 // the Rust side of the plugin lives in the same binary. The Tauri API is the
@@ -37,13 +37,15 @@ let package = Package(
       path: "Sources/VeydanCall",
       // Named as well as imported: the app links this library as an
       // archive, and the frameworks are what the final link must add.
-      // PushKit is not yet: a call rings only while the app runs.
+      // PushKit: the invitation to a call comes as a VoIP push, which wakes
+      // or starts the app and rings through CallKit (VoipPushes.swift).
       linkerSettings: [
         .linkedFramework("AVFoundation"),
         .linkedFramework("CallKit"),
         .linkedFramework("CoreMedia"),
         .linkedFramework("CoreVideo"),
         .linkedFramework("Network"),
+        .linkedFramework("PushKit"),
         .linkedFramework("UserNotifications"),
       ])
   ]

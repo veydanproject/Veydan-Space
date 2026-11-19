@@ -383,7 +383,7 @@ done <<<"$product_plugins"
 owner() {
   case "$1" in
     app_start_error|host_info|open_url|clipboard_write_text|update_supported|update_check|update_open|updater_check|updater_install|app_relaunch|window_minimize|media_grant_access) echo shell ;;
-    tray_*|app_locale_*|modules_*|labels_*) echo shell ;;
+    tray_*|app_locale_*|modules_*|labels_*|chrome_*|files_*) echo shell ;;
     demo_seed|app_clear_data) echo shell ;;
     lock_*|vault_replaced_keys|vault_replaced_keys_open) echo shell ;;
     sync_conflict_get|sync_conflict_resolve|sync_attachment_cancel) echo notes ;;

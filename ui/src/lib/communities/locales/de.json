@@ -450,6 +450,7 @@
     "chan_where_no_files": "Dieser Server speichert keine Dateien: Wähle einen anderen.",
     "chan_keeper_here_line": "Neue Leser lässt dieses Gerät ein, solange die App geöffnet ist.",
     "chan_keeper_phone": "Auf einem Handy schläft die App im Hintergrund: Neue Leser warten, bis du sie öffnest.",
+    "chan_keeper_iphone": "Der Schlüsselverwalter funktioniert auf dem iPhone nicht: Ein anderes Gerät hält den Kanal, oder lass die App geöffnet.",
     "chan_keeper_keep_on": "Schlüsselverwalter eingeschaltet lassen",
     "chan_keeper_keep_on_hint": "Das Handy zeigt eine Benachrichtigung und lässt Leser auch bei geschlossener App ein. Verbraucht mehr Akku.",
     "chan_keeper_background": "arbeitet im Hintergrund",

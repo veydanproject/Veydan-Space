@@ -450,6 +450,7 @@
     "chan_where_no_files": "Ce serveur ne garde pas de fichiers : choisissez-en un autre.",
     "chan_keeper_here_line": "Cet appareil laisse entrer les nouveaux lecteurs tant que l'app est ouverte.",
     "chan_keeper_phone": "Sur un téléphone, l'app s'endort en arrière-plan : les nouveaux lecteurs attendent que vous l'ouvriez.",
+    "chan_keeper_iphone": "Le gardien ne fonctionne pas sur iPhone : un autre appareil garde le canal, ou laissez l'app ouverte.",
     "chan_keeper_keep_on": "Garder le gardien actif",
     "chan_keeper_keep_on_hint": "Le téléphone affiche une notification et laisse entrer les lecteurs même app fermée. Consomme plus de batterie.",
     "chan_keeper_background": "actif en arrière-plan",

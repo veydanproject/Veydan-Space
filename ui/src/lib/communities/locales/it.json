@@ -450,6 +450,7 @@
     "chan_where_no_files": "Questo server non conserva file: scegline un altro.",
     "chan_keeper_here_line": "I nuovi lettori vengono fatti entrare da questo dispositivo finché l’app è aperta.",
     "chan_keeper_phone": "Sul telefono l’app va in pausa in background: i nuovi lettori aspettano che tu la apra.",
+    "chan_keeper_iphone": "Il custode non funziona su iPhone: il canale lo tiene un altro dispositivo, oppure tieni l'app aperta.",
     "chan_keeper_keep_on": "Tieni attivo il custode",
     "chan_keeper_keep_on_hint": "Il telefono mostra una notifica e fa entrare i lettori anche con l’app chiusa. Consuma più batteria.",
     "chan_keeper_background": "attivo in background",

@@ -6,6 +6,7 @@
   import { Editor } from '@tiptap/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { api, downloadNoteAttachment } from '$lib/notes/api';
+  import { saveAs } from '$lib/core/ui/saveAs';
   import { pasteHasHiddenFiles } from '$lib/notes/files';
   import {
     noteExtensions, setKnownAttachments, unclosedMarkAt, TPL_CLOSE, TPL_OPEN, WIKI_CLOSE, WIKI_OPEN, type KnownAttachments,
@@ -382,12 +383,11 @@
       await downloadNoteAttachment(noteId, name);
       return;
     }
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const dest = await save({ defaultPath: name });
-    if (!dest) return;
-    const buf = new Uint8Array(await (await fetch(resolveSrc(src))).arrayBuffer());
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
-    await writeFile(dest, buf);
+    await saveAs({ defaultPath: name }, async (dest) => {
+      const buf = new Uint8Array(await (await fetch(resolveSrc(src))).arrayBuffer());
+      const { writeFile } = await import('@tauri-apps/plugin-fs');
+      await writeFile(dest, buf);
+    });
   }
 </script>
 

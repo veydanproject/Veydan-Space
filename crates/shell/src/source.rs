@@ -74,7 +74,7 @@ pub(crate) fn open(app: &tauri::AppHandle, src: &str) -> Result<FileSource, AppE
 /// cache under that name (2026-11-04). The same lines in
 /// tauri-plugin-veydan-media: neither crate may depend on the other.
 #[cfg(target_os = "ios")]
-fn ios_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+pub(crate) fn ios_cache_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let id = objc2_foundation::NSBundle::mainBundle().bundleIdentifier()?.to_string();
     Some(app.path().cache_dir().ok()?.join(id))
 }

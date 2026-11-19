@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t, locale, localeTag } from '$lib/core/i18n';
+  import { saveAs as saveToPlace } from '$lib/core/ui/saveAs';
   import { mediaTitle } from '../push/wording';
   import Icon from '$lib/core/Icon.svelte';
   import { isTauriHost, mediaOf, messengerApi, type MessengerMessage, type MessengerTransferProgress, type TransferStatus as Status } from '../api';
@@ -210,9 +211,8 @@
   async function saveAs() {
     if (!isTauriHost || !media) return;
     await act(async () => {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const dest = await save({ defaultPath: media.name, filters: saveFilters(media.name, $t('msg_media_all_files')) });
-      if (dest) await messengerApi.media.saveAs(m.id, dest);
+      await saveToPlace({ defaultPath: media.name, filters: saveFilters(media.name, $t('msg_media_all_files')) },
+        (dest) => messengerApi.media.saveAs(m.id, dest));
     });
   }
 

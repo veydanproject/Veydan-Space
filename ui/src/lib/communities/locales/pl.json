@@ -450,6 +450,7 @@
     "chan_where_no_files": "Ten serwer nie przechowuje plików: wybierz inny.",
     "chan_keeper_here_line": "Nowych czytelników wpuszcza to urządzenie, dopóki aplikacja jest otwarta.",
     "chan_keeper_phone": "Na telefonie aplikacja w tle zasypia: nowi czytelnicy czekają, aż ją otworzysz.",
+    "chan_keeper_iphone": "Opiekun nie działa na iPhonie: kanał utrzymuje inne urządzenie albo trzymaj aplikację otwartą.",
     "chan_keeper_keep_on": "Trzymaj opiekuna włączonego",
     "chan_keeper_keep_on_hint": "Telefon pokazuje powiadomienie i wpuszcza czytelników nawet przy zamkniętej aplikacji. Zużywa więcej baterii.",
     "chan_keeper_background": "działa w tle",

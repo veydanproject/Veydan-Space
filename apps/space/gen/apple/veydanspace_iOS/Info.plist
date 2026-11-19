@@ -30,16 +30,11 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
+	<!-- Standard algorithms only (exempt); the one-time export compliance
+	     question is answered in App Store Connect. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record voice messages and audio notes, and make calls</string>
 	<key>NSCameraUsageDescription</key>

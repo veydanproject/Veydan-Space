@@ -49,6 +49,16 @@
     <key>UIApplicationSupportsMultipleScenes</key>
     <true/>
   </dict>
+  <!-- A phone only, upright: UISupportedInterfaceOrientations is portrait
+       alone, no ~ipad key (TARGETED_DEVICE_FAMILY is 1 in project.yml). -->
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <!-- Standard algorithms only (exempt); the owner answers the one-time
+       export compliance question in App Store Connect. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <true/>
   <key>UIFileSharingEnabled</key>
   <true/>
   <key>LSSupportsOpeningDocumentsInPlace</key>

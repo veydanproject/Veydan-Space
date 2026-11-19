@@ -450,6 +450,7 @@
     "chan_where_no_files": "이 서버는 파일을 보관하지 않습니다. 다른 서버를 고르세요.",
     "chan_keeper_here_line": "새 독자는 앱이 열려 있는 동안 이 기기가 받아 줍니다.",
     "chan_keeper_phone": "휴대폰에서는 앱이 백그라운드에서 잠들어, 앱을 열 때까지 새 독자가 기다리게 됩니다.",
+    "chan_keeper_iphone": "iPhone에서는 키퍼가 작동하지 않습니다. 다른 기기가 채널을 지키거나, 앱을 열어 두세요.",
     "chan_keeper_keep_on": "키퍼를 항상 켜 두기",
     "chan_keeper_keep_on_hint": "휴대폰에 알림이 표시되고 앱이 닫혀 있어도 독자를 받아들입니다. 배터리를 더 사용합니다.",
     "chan_keeper_background": "백그라운드에서 작동 중",

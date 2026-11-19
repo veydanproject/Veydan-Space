@@ -10,6 +10,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
+  import { saveAs as saveToPlace } from '$lib/core/ui/saveAs';
   import Icon from '$lib/core/Icon.svelte';
   import { portal } from '$lib/core/ui/portal';
   import { isTauriHost, messengerApi } from '../api';
@@ -203,9 +204,8 @@
   async function saveAs() {
     const it = viewer.item;
     if (!it || !isTauriHost) return;
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const dest = await save({ defaultPath: it.name, filters: saveFilters(it.name, $t('msg_media_all_files')) });
-    if (dest) await messengerApi.media.saveAs(it.messageId, dest).catch(() => {});
+    await saveToPlace({ defaultPath: it.name, filters: saveFilters(it.name, $t('msg_media_all_files')) },
+      (dest) => messengerApi.media.saveAs(it.messageId, dest)).catch(() => {});
   }
 </script>
 

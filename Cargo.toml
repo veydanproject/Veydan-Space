@@ -21,7 +21,8 @@ sqlx-sqlite = { path = "vendor/sqlx-sqlite" }
 # messenger-runtime, and cargo wants the patch in the workspace it builds.
 webrtc-sys = { path = "crates/messenger/rtc/vendor/webrtc-sys" }
 # tao 0.35.3 with the scene configuration of iOS kept alive for UIKit (the
-# launch crash of the TestFlight build, vendor/tao/PATCH.md); tao 0.36 has it.
+# launch crash of the TestFlight build; tao 0.36 has it) and the link of a
+# cold start on iOS sent as `Opened` (vendor/tao/PATCH.md).
 tao = { path = "vendor/tao" }
 
 [profile.release]

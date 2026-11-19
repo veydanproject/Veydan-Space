@@ -70,9 +70,17 @@
 //! it is an event (`call.audio_route`). The developer's command rings this
 //! phone with a call from nobody, so that the shell can be checked without
 //! a peer.
+//!
+//! An iPhone also rings from a VoIP push of PushKit while the app is
+//! away or not running: the Swift side shows a placeholder at once, and
+//! `voip.rs` names it as the call, or ends it.
 
 use serde::Deserialize;
 use veydan_core::{AppError, CmdResult};
+
+// The VoIP pushes of an iPhone; its decisions are tested on a computer.
+#[cfg(any(target_os = "ios", test))]
+pub(crate) mod voip;
 
 #[cfg(mobile)]
 use super::{MessengerState, EVENT_RUNTIME};
@@ -678,6 +686,10 @@ async fn listen(app: &tauri::AppHandle) {
     {
         eprintln!("messenger call: cannot listen for the network: {e}");
     }
+    // An iPhone: the VoIP pushes of PushKit, rung as placeholders until
+    // they are opened here (voip.rs).
+    #[cfg(target_os = "ios")]
+    voip::listen(app, &call).await;
     match call.take_actions().await {
         Ok(waiting) => {
             for press in waiting {

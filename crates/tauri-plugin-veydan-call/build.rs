@@ -20,6 +20,11 @@ const COMMANDS: &[&str] = &[
     "camera_stats",
     "request_permission",
     "take_actions",
+    // iOS only: the VoIP pushes of PushKit (VoipPushes.swift).
+    "get_voip_token",
+    "take_voip_pushes",
+    "voip_ring",
+    "voip_end",
     "register_listener",
     "remove_listener",
 ];

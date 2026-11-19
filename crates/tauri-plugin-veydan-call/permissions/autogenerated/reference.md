@@ -92,6 +92,32 @@ Denies the dismiss_incoming command without any pre-configured scope.
 <tr>
 <td>
 
+`veydan-call:allow-get-voip-token`
+
+</td>
+<td>
+
+Enables the get_voip_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-get-voip-token`
+
+</td>
+<td>
+
+Denies the get_voip_token command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `veydan-call:allow-keep-awake`
 
 </td>
@@ -449,6 +475,84 @@ Enables the take_actions command without any pre-configured scope.
 <td>
 
 Denies the take_actions command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:allow-take-voip-pushes`
+
+</td>
+<td>
+
+Enables the take_voip_pushes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-take-voip-pushes`
+
+</td>
+<td>
+
+Denies the take_voip_pushes command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:allow-voip-end`
+
+</td>
+<td>
+
+Enables the voip_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-voip-end`
+
+</td>
+<td>
+
+Denies the voip_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:allow-voip-ring`
+
+</td>
+<td>
+
+Enables the voip_ring command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`veydan-call:deny-voip-ring`
+
+</td>
+<td>
+
+Denies the voip_ring command without any pre-configured scope.
 
 </td>
 </tr>

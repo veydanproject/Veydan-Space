@@ -38,6 +38,11 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("demo_seed", r4(crate::demo::demo_seed)));
     v.push(("host_info", r1(crate::commands::host::host_info)));
     v.push(("open_url", r2(crate::commands::host::open_url)));
+    v.push(("chrome_bars", r3(crate::commands::chrome::chrome_bars)));
+    v.push(("chrome_edges", r2(crate::commands::chrome::chrome_edges)));
+    v.push(("chrome_clipboard_image", r1(crate::commands::chrome::chrome_clipboard_image)));
+    v.push(("files_stage", r2(crate::commands::files::files_stage)));
+    v.push(("files_save", r3(crate::commands::files::files_save)));
     #[cfg(desktop)]
     v.push(("clipboard_write_text", r1(crate::commands::host::clipboard_write_text)));
     v.push(("updater_check", r1(crate::updater::updater_check)));

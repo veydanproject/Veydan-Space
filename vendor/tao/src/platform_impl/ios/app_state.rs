@@ -509,6 +509,7 @@ pub unsafe fn connect_scene(scene: &UIScene, options: &UISceneConnectionOptions)
     on_app_ready();
   }
 
+  let mut handed_on = false;
   if let Some(window_scene) = scene.downcast_ref::<UIWindowScene>() {
     let window = {
       let mut this = AppState::get_mut();
@@ -524,11 +525,20 @@ pub unsafe fn connect_scene(scene: &UIScene, options: &UISceneConnectionOptions)
     } else if !is_first_scene {
       // only emit the SceneRequest event for scenes that were not requested by a tao window
       // also ignore the main scene
+      handed_on = true;
       handle_nonuser_event(EventWrapper::StaticEvent(Event::SceneRequested {
         scene: scene.retain(),
         options: options.retain(),
       }));
     }
+  }
+
+  // Veydan (PATCH.md): a URL that started the app comes in the connection
+  // options of the scene, not to `scene:openURLContexts:`; without this the
+  // link of a cold start was lost. A scene handed on with its options above
+  // reads them itself.
+  if !handed_on {
+    super::scene::opened_on_connect(options);
   }
 }
 

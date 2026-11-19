@@ -10,7 +10,10 @@
 // Chromium on a phone, often WKWebView). Where it only names them
 // (WebKitGTK and WKWebView list `Files`, `text/uri-list` or `image/*` and
 // give nothing), the computer's clipboard is read by the runtime
-// (`messenger_clipboard_paste`), the phone's through `VeydanChrome`.
+// (`messenger_clipboard_paste`), the phone's through `VeydanChrome`
+// ($lib/core/ui/chrome: Android's object, the iPhone's commands).
+
+import { chromeBridge } from '$lib/core/ui/chrome';
 
 export type PasteTake =
   | { kind: 'text' }
@@ -37,25 +40,19 @@ export function classifyPaste(dt: DataTransfer | null): PasteTake {
   return { kind: 'none' };
 }
 
-/** The phone's part of the shell's bridge (crates/shell/android, ActivityDelegate). */
-interface ClipBridge {
-  clipboardHasImage?: () => boolean;
-  clipboardImage?: () => string | null;
-  setTakesPictures?: (takes: boolean) => void;
-}
-
-function bridge(): ClipBridge | undefined {
-  return typeof window === 'undefined' ? undefined : (window as Window & { VeydanChrome?: ClipBridge }).VeydanChrome;
-}
+const bridge = chromeBridge;
 
 /** Whether the phone's clipboard holds a picture (only its description is read: Android says nothing). */
 export function clipboardHasPicture(): boolean {
   try { return !!bridge()?.clipboardHasImage?.(); } catch { return false; }
 }
 
-/** The `content://` URI of the picture on the phone's clipboard; read on the user's tap only (Android 12+ shows a toast). */
-export function clipboardPicture(): string | null {
-  try { return bridge()?.clipboardImage?.() ?? null; } catch { return null; }
+/**
+ * The picture on the phone's clipboard: a `content://` URI on Android, a copy in the app's cache on
+ * iOS. Read on the user's tap only (Android 12+ shows a toast, iOS asks «Allow Paste»).
+ */
+export async function clipboardPicture(): Promise<string | null> {
+  try { return (await bridge()?.clipboardImage?.()) ?? null; } catch { return null; }
 }
 
 /** Whether pictures a keyboard inserts come to the page as `veydan-received-content` (a phone). */

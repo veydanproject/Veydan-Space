@@ -80,6 +80,25 @@ pub struct PushChannel {
     /// kept before there were iPhones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
+    /// With `apns`: the PushKit (VoIP) token of the phone, hex, to which
+    /// the push server sends the invitations to a call (spec/protocol.md
+    /// of VPush, «VoIP pushes»). The call plugin of the app gives it, not
+    /// the push plugin, later than `token` or never; absent with `fcm`
+    /// and in a channel kept before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voip_token: Option<String>,
+}
+
+/// The longest VoIP token the push server takes (`bad_request` above it).
+const VOIP_TOKEN_MAX: usize = 4096;
+
+/// A VoIP token as the push server takes it: hex in lower case, not
+/// empty, at most [`VOIP_TOKEN_MAX`] long. Anything else is no token: a
+/// registration the server refuses would leave the phone without its
+/// alerts as well.
+pub fn voip_token_of(raw: Option<&str>) -> Option<String> {
+    let token = raw?.trim().to_ascii_lowercase();
+    (!token.is_empty() && token.len() <= VOIP_TOKEN_MAX && token.bytes().all(|b| b.is_ascii_hexdigit())).then_some(token)
 }
 
 impl PushChannel {
@@ -88,9 +107,11 @@ impl PushChannel {
         match self.provider.as_str() {
             "fcm" => Ok(Channel::Fcm { token: self.token.clone() }),
             "apns" => match self.environment.as_deref() {
-                Some(environment @ ("production" | "sandbox")) => {
-                    Ok(Channel::Apns { token: self.token.clone(), environment: environment.to_string() })
-                }
+                Some(environment @ ("production" | "sandbox")) => Ok(Channel::Apns {
+                    token: self.token.clone(),
+                    environment: environment.to_string(),
+                    voip_token: voip_token_of(self.voip_token.as_deref()),
+                }),
                 // Not guessed: a token sent to the other host is a dead
                 // token there, and the device would be dropped.
                 other => Err(MessengerError::Invalid(format!(
@@ -482,6 +503,28 @@ impl MessengerRuntime {
         }
     }
 
+    /// The PushKit token of an iPhone (`None`: it has none, or iOS took it
+    /// back), put into the channel kept when that is one of APNs. `true`
+    /// when the channel changed: the host then reconciles, and the push
+    /// server is told again, as for a new token. Without a channel nothing
+    /// is kept: the host puts the token into the channel it brings next
+    /// ([`PushChannel::voip_token`]).
+    pub async fn push_set_voip_token(&self, voip_token: Option<String>) -> Result<bool> {
+        let Some(mut channel) = self.push_channel().await? else {
+            return Ok(false);
+        };
+        if channel.provider != "apns" {
+            return Ok(false);
+        }
+        let voip_token = voip_token_of(voip_token.as_deref());
+        if channel.voip_token == voip_token {
+            return Ok(false);
+        }
+        channel.voip_token = voip_token;
+        self.push_set_channel(Some(channel)).await?;
+        Ok(true)
+    }
+
     pub async fn push_set_enabled(&self, enabled: bool) -> Result<PushStatus> {
         settings::set_bool(&self.store, KEY_OFFERED, true).await?;
         if enabled {
@@ -592,6 +635,7 @@ mod tests {
             app_id: "net.veydan.mobile".into(),
             app_version: Some("4.0.1".into()),
             environment: None,
+            voip_token: None,
         }
     }
 
@@ -703,6 +747,7 @@ mod tests {
             app_id: "net.veydan.mobile".into(),
             app_version: Some("5.2.0".into()),
             environment: environment.map(str::to_string),
+            voip_token: None,
         }
     }
 
@@ -712,7 +757,7 @@ mod tests {
             let channel = iphone(Some(environment));
             assert_eq!(
                 channel.dto().unwrap(),
-                Channel::Apns { token: channel.token.clone(), environment: environment.into() }
+                Channel::Apns { token: channel.token.clone(), environment: environment.into(), voip_token: None }
             );
         }
         for wrong in [None, Some("development"), Some("")] {
@@ -769,6 +814,84 @@ mod tests {
         assert_eq!(puts.len(), 2);
         let body: Value = serde_json::from_slice(&puts[1].body).unwrap();
         assert_eq!(body["channel"]["environment"], "production");
+    }
+
+    const VOIP: &str = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9";
+
+    #[test]
+    fn an_iphone_with_a_voip_token_names_it_and_only_a_good_one() {
+        let mut phone = iphone(Some("production"));
+        phone.voip_token = Some(VOIP.to_uppercase());
+        assert_eq!(
+            phone.dto().unwrap(),
+            Channel::Apns { token: phone.token.clone(), environment: "production".into(), voip_token: Some(VOIP.into()) },
+            "hex in lower case, as the server keeps it"
+        );
+        for wrong in ["", "  ", "not-hex", &"a".repeat(VOIP_TOKEN_MAX + 1)] {
+            phone.voip_token = Some(wrong.to_string());
+            assert_eq!(
+                phone.dto().unwrap(),
+                Channel::Apns { token: phone.token.clone(), environment: "production".into(), voip_token: None },
+                "{wrong:?} is no token, and the alerts still go"
+            );
+        }
+        // Android has none, whatever is kept.
+        let mut android = channel();
+        android.voip_token = Some(VOIP.into());
+        assert_eq!(android.dto().unwrap(), Channel::Fcm { token: "token-of-the-phone".into() });
+    }
+
+    #[test]
+    fn a_channel_kept_without_a_voip_token_is_read_and_kept_as_it_was() {
+        let kept = r#"{"provider":"apns","token":"t","app_id":"net.veydan.mobile","app_version":"5.2.0","environment":"sandbox"}"#;
+        let channel: PushChannel = serde_json::from_str(kept).unwrap();
+        assert_eq!(channel.voip_token, None);
+        assert_eq!(serde_json::to_string(&channel).unwrap(), kept);
+    }
+
+    #[tokio::test]
+    async fn a_voip_token_that_comes_or_goes_registers_the_iphone_again() {
+        let s = setup().await;
+        server_accepts(&s.server).await;
+        // Nothing to put it in yet: the host brings it with the channel.
+        assert!(!s.rt.push_set_voip_token(Some(VOIP.into())).await.unwrap());
+        s.rt.push_set_channel(Some(iphone(Some("sandbox")))).await.unwrap();
+        s.rt.push_set_server(Some(s.server.uri())).await.unwrap();
+        s.rt.push_set_enabled(true).await.unwrap();
+        let puts = asked(&s.server, "PUT").await;
+        assert_eq!(puts.len(), 1);
+        let body: Value = serde_json::from_slice(&puts[0].body).unwrap();
+        assert!(body["channel"].get("voip_token").is_none(), "{body}");
+
+        // PushKit answers after APNs: told again, with it.
+        assert!(s.rt.push_set_voip_token(Some(VOIP.into())).await.unwrap());
+        s.rt.push_reconcile(false).await.unwrap();
+        let puts = asked(&s.server, "PUT").await;
+        assert_eq!(puts.len(), 2);
+        let body: Value = serde_json::from_slice(&puts[1].body).unwrap();
+        assert_eq!(body["channel"]["voip_token"], VOIP);
+        assert_eq!(body["channel"]["token"], "apns-token-of-the-test", "the alerts' token stays");
+
+        // The same token again, as at every start: nothing to tell.
+        assert!(!s.rt.push_set_voip_token(Some(VOIP.into())).await.unwrap());
+        s.rt.push_reconcile(false).await.unwrap();
+        assert_eq!(asked(&s.server, "PUT").await.len(), 2);
+
+        // iOS took it back: told again, without it; the rings go as alerts.
+        assert!(s.rt.push_set_voip_token(None).await.unwrap());
+        s.rt.push_reconcile(false).await.unwrap();
+        let puts = asked(&s.server, "PUT").await;
+        assert_eq!(puts.len(), 3);
+        let body: Value = serde_json::from_slice(&puts[2].body).unwrap();
+        assert!(body["channel"].get("voip_token").is_none(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn a_voip_token_is_not_put_into_a_channel_of_fcm() {
+        let s = registered().await;
+        assert!(!s.rt.push_set_voip_token(Some(VOIP.into())).await.unwrap());
+        s.rt.push_reconcile(false).await.unwrap();
+        assert_eq!(asked(&s.server, "PUT").await.len(), 1);
     }
 
     #[tokio::test]

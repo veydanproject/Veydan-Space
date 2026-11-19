@@ -16,7 +16,8 @@ struct Press {
 /**
  * What the plugin, CallKit's delegate and the watchers share while the
  * process lives: the listeners of the app's Rust code and the presses
- * nobody heard (the twin of CallState.kt).
+ * nobody heard (the twin of CallState.kt); and, iOS alone, the VoIP
+ * token of PushKit and the VoIP pushes nobody heard yet (`VoipPushes`).
  *
  * A press can come before the app listens: CallKit may hand over an
  * answer before the Rust side has registered its listener. Such a press
@@ -35,14 +36,28 @@ final class CallEvents {
   static let action = "call_action"
   static let route = "audio_route_changed"
   static let network = "network_changed"
+  static let voipToken = "voip_token"
+  static let voipPush = "voip_push"
 
   /** The presses nobody heard; a few at most, the oldest go first. */
   private static let maxWaiting = 8
   private var waiting: [Press] = []
   private var listeners: [String: [Channel]] = [:]
 
+  /** The VoIP token PushKit gave this process (hex), and whether a change of it waits for a listener. */
+  private(set) var currentVoipToken: String?
+  private var voipTokenUntold = false
+  /** The VoIP pushes nobody heard (the push started the process); a few at most. */
+  private static let maxPushes = 4
+  private var pushes: [(id: String, data: [String: String])] = []
+
   func listen(_ event: String, _ channel: Channel) {
     listeners[event, default: []].append(channel)
+    if event == CallEvents.voipToken, voipTokenUntold {
+      voipTokenUntold = false
+      let data: JsonObject = ["token": currentVoipToken ?? ""]
+      channel.send(data)
+    }
   }
 
   func remove(_ event: String, channelId: UInt64) {
@@ -74,6 +89,44 @@ final class CallEvents {
   func takeWaiting() -> [JsonObject] {
     let out = waiting.map { $0.json }
     waiting.removeAll()
+    return out
+  }
+
+  /**
+   * PushKit gave a VoIP token, or took it back (nil): to the listener, or
+   * to the first one that comes (the token comes at the launch, before
+   * the app listens). The Rust side asks for it too (`getVoipToken`).
+   */
+  func voipTokenChanged(_ token: String?) {
+    guard token != currentVoipToken else { return }
+    currentVoipToken = token
+    callLog(token == nil ? "PushKit took the VoIP token back" : "PushKit gave a VoIP token")
+    if hasListener(CallEvents.voipToken) {
+      send(CallEvents.voipToken, ["token": token ?? ""])
+    } else {
+      voipTokenUntold = true
+    }
+  }
+
+  /**
+   * A VoIP push whose placeholder rings (`CallKitBridge.ringFromVoipPush`):
+   * to the listener when there is one, kept for `takeVoipPushes`
+   * otherwise. Answers whether a listener had it.
+   */
+  func voipPushed(_ id: String, _ data: [String: String]) -> Bool {
+    if hasListener(CallEvents.voipPush) {
+      send(CallEvents.voipPush, ["pushId": id, "data": data])
+      return true
+    }
+    pushes.append((id: id, data: data))
+    while pushes.count > CallEvents.maxPushes { pushes.removeFirst() }
+    return false
+  }
+
+  /** The VoIP pushes kept so far, oldest first, once. */
+  func takeVoipPushes() -> [(id: String, data: [String: String])] {
+    let out = pushes
+    pushes.removeAll()
     return out
   }
 

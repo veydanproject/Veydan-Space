@@ -453,6 +453,13 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
             if let tauri::RunEvent::Exit = run_event {
                 end_process(_app);
             }
+            // A `veydan://…` the iPhone opened the app with, at a cold start
+            // too (`crate::links`).
+            #[cfg(target_os = "ios")]
+            if let tauri::RunEvent::Opened { urls } = &run_event {
+                crate::links::opened(_app, urls);
+                return;
+            }
             let tauri::RunEvent::WindowEvent { event, .. } = run_event else {
                 return;
             };

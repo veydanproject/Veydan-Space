@@ -78,7 +78,11 @@ oslog = { version = "0.2", default-features = false }
 # The directory of the app out of the backups of iCloud (src/app.rs): the
 # same Objective-C bindings tauri and wry use on iOS.
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSError", "NSString", "NSURL", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSData", "NSError", "NSString", "NSURL", "NSValue"] }
+# The bridge of the page to the status bar, the clipboard and the edges of
+# the screen (src/commands/chrome/ios.rs); the document picker of «save as»
+# (src/commands/files/ios.rs).
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-foundation", "UIColor", "UIDocumentPickerViewController", "UIImage", "UIInterface", "UIPasteboard", "UIPresentationController", "UIResponder", "UIView", "UIViewController", "UIWindow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Native StatusNotifierItem impl: unlike Tauri's libappindicator backend it

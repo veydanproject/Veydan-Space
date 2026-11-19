@@ -19,7 +19,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
-  import { Avatar, MessageContent, PanelHead, confirmStore, isTauriHost, listStamp, longpress, myKey, onPhone, reportStore, serverStore, stamp, writeTo } from '$lib/messenger/seams/shared';
+  import { Avatar, MessageContent, PanelHead, confirmStore, isTauriHost, listStamp, longpress, myKey, onPhone, PHONE_OS, reportStore, serverStore, stamp, writeTo } from '$lib/messenger/seams/shared';
   import ChannelLink from './ChannelLink.svelte';
   import ChannelReaders from './ChannelReaders.svelte';
   import InvitePicker from './InvitePicker.svelte';
@@ -142,6 +142,8 @@
   /** The facts of the keeper kept here, for whoever wants them: closed by default. */
   let facts = $state(false);
   const phone = onPhone();
+  /** iPhone: the keeper does not run there (no background service, 2026-11-19), so the card says so instead of offering a switch. */
+  const iphone = PHONE_OS === 'ios';
 
   /**
    * Whether the keeper is about, as every reader can tell: this device when
@@ -436,14 +438,15 @@
     {#if move.place === 'taking'}<p class="text">{$t('chan_keeper_taking_hint')}</p>{/if}
     {#if keeper?.kept_here && keeper.storage_error}<p class="text warn">{$t('chan_storage_refused', { why: keeper.storage_error })}</p>{/if}
     {#if keeper?.kept_here && freeMedia}<p class="text">{$t('chan_free_media_note', { days: String(plan.retention_days) })}</p>{/if}
-    {#if move.place === 'take'}
+    {#if move.place === 'take' && !iphone}
       <button class="btn btn-ghost btn-sm wrap" disabled={busy} onclick={() => take(false)}><Icon name="smartphone" size={18} />{$t('chan_keeper_take')}</button>
     {/if}
     {#if move.emergency}
       <button class="btn btn-danger-soft btn-sm wrap" disabled={busy} onclick={() => take(true)}><Icon name="alert-triangle" size={18} />{$t('chan_keeper_emergency')}</button>
     {/if}
-    {#if background.asleep}<p class="text warn">{$t('chan_keeper_phone')}</p>{/if}
-    {#if background.switch}
+    {#if iphone}<p class="text warn">{$t('chan_keeper_iphone')}</p>
+    {:else if background.asleep}<p class="text warn">{$t('chan_keeper_phone')}</p>{/if}
+    {#if background.switch && !iphone}
       <div class="keep-on">
         <span class="keep-on-label">{$t('chan_keeper_keep_on')}</span>
         <button class="toggle" class:on={background.keepOn} role="switch" aria-checked={background.keepOn} aria-label={$t('chan_keeper_keep_on')}

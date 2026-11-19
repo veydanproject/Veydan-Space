@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-take-voip-pushes"
+description = "Enables the take_voip_pushes command without any pre-configured scope."
+commands.allow = ["take_voip_pushes"]
+
+[[permission]]
+identifier = "deny-take-voip-pushes"
+description = "Denies the take_voip_pushes command without any pre-configured scope."
+commands.deny = ["take_voip_pushes"]

@@ -450,6 +450,7 @@
     "chan_where_no_files": "Máy chủ này không lưu tệp: hãy chọn máy chủ khác.",
     "chan_keeper_here_line": "Người đọc mới được thiết bị này cho vào khi ứng dụng đang mở.",
     "chan_keeper_phone": "Trên điện thoại, ứng dụng ngủ ở chế độ nền: người đọc mới phải chờ đến khi bạn mở ứng dụng.",
+    "chan_keeper_iphone": "Người giữ khóa không hoạt động trên iPhone: một thiết bị khác giữ kênh, hoặc hãy để ứng dụng luôn mở.",
     "chan_keeper_keep_on": "Luôn bật người giữ khóa",
     "chan_keeper_keep_on_hint": "Điện thoại hiển thị thông báo và cho người đọc vào ngay cả khi ứng dụng đã đóng. Tốn pin hơn.",
     "chan_keeper_background": "đang chạy nền",

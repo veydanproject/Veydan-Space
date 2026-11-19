@@ -59,6 +59,7 @@ export { confirmStore } from '../shared/confirm.svelte';
 export { reportStore, type ReportTarget } from '../shared/report.svelte';
 export { longpress } from '../shared/longpress';
 export { onPhone } from '../shared/phone';
+export { PHONE_OS } from '../phone';
 /** The height of the on-screen keyboard over the page, as the composer follows it. */
 export { onKeyboard } from '../shared/keyboard';
 /** The marks of the composer's format menu on the selected part of a field (Markdown as it is typed). */

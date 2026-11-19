@@ -1038,7 +1038,7 @@
     try {
       // A computer's clipboard is read by the runtime; a phone's (the runtime answers nothing there) through the shell.
       let paths = await messengerApi.media.pasteClipboard();
-      if (!paths.length) paths = [clipboardPicture()].filter((u): u is string => !!u);
+      if (!paths.length) paths = [await clipboardPicture()].filter((u): u is string => !!u);
       if (paths.length) await attach(paths);
       else toast.info($t('msg_paste_empty'));
     } catch (e) {

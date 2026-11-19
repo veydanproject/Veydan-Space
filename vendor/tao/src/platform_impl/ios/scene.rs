@@ -47,6 +47,29 @@ pub unsafe fn multiple_scenes_enabled() -> bool {
   (*num).as_bool()
 }
 
+// Veydan (PATCH.md): the URLs a scene was connected with — the link that
+// started the app on the scene path — sent as `Event::Opened`, the way
+// `scene:openURLContexts:` sends the ones that come later.
+pub unsafe fn opened_on_connect(options: &UISceneConnectionOptions) {
+  let urls: Vec<url::Url> = options
+    .URLContexts()
+    .iter()
+    .filter_map(|ctx| {
+      // Not logged: a link may carry a key.
+      ctx.URL().absoluteString().and_then(|url| {
+        url
+          .to_string()
+          .parse()
+          .map_err(|e| log::error!("failed to parse a URL of the scene connection options: {e}"))
+          .ok()
+      })
+    })
+    .collect();
+  if !urls.is_empty() {
+    app_state::handle_nonuser_event(EventWrapper::StaticEvent(Event::Opened { urls }));
+  }
+}
+
 define_class!(
   #[unsafe(super(NSObject))]
   #[name = "TaoSceneDelegate"]
