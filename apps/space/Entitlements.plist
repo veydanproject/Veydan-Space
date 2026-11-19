@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The entitlements of the macOS app. The bundle is signed with the
+     hardened runtime, which notarization requires; under it the microphone
+     and the camera stay closed to an app without these two keys, whatever
+     the person answers to the system's question. -->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+</dict>
+</plist>

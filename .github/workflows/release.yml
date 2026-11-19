@@ -198,13 +198,59 @@ jobs:
             exit 1
           fi
 
+      # macOS: the Developer ID of Rookbeam Technologies LLC signs the app
+      # and Apple notarizes it, so Gatekeeper opens it without a warning.
+      # The secrets of the organization decide the path, and only the answer
+      # leaves the step: all six, a bundle signed and notarized; none, a
+      # bundle signed ad hoc as before (Gatekeeper warns), said in the
+      # summary of the run; some of them, a mistake that stops the job. The
+      # key of App Store Connect is the one of the iOS job (the role Admin
+      # notarizes too).
+      - id: apple
+        name: The Apple secrets (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          IOS_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          IOS_API_KEY_ID: ${{ secrets.IOS_API_KEY_ID }}
+          IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          set_count=0
+          for value in "$APPLE_CERTIFICATE" "$APPLE_CERTIFICATE_PASSWORD" "$APPLE_SIGNING_IDENTITY" \
+            "$IOS_API_ISSUER" "$IOS_API_KEY_ID" "$IOS_API_KEY_P8"; do
+            [ -z "$value" ] || set_count=$((set_count + 1))
+          done
+          case "$set_count" in
+            6) echo "signed=true" >> "$GITHUB_OUTPUT" ;;
+            0)
+              echo "signed=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::macOS is signed ad hoc and not notarized: the Apple secrets are not set for this repository"
+              {
+                echo "### macOS is not notarized"
+                echo
+                echo "The app is signed ad hoc: the Apple secrets are not set for this repository (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, IOS_API_ISSUER, IOS_API_KEY_ID, IOS_API_KEY_P8)."
+                echo "Gatekeeper warns on the first start."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::APPLE_CERTIFICATE (base64 of the .p12), APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, IOS_API_ISSUER, IOS_API_KEY_ID and IOS_API_KEY_P8 (base64 of the .p8) are set together or not at all; $set_count of 6 are set"
+              exit 1
+              ;;
+          esac
+
       # The CLI is the one of the UI project (ui/): TAURI_APP_PATH names the
       # product and TAURI_FRONTEND_PATH the UI project (13.2) — the CLI never
       # searches — and the product's beforeBuildCommand builds its UI there
       # through the launcher (node ../scripts/ui.mjs <product> build).
       # CARGO_TARGET_DIR is where .cargo/config.toml puts cargo's output.
-      # The runner's own shell: the line reads the same in each.
+      # The runner's own shell: the line reads the same in each. Windows,
+      # Linux and a macOS without the Apple secrets.
       - name: Build and sign the bundles
+        if: steps.apple.outputs.signed != 'true'
         env:
           TAURI_APP_PATH: ${{ github.workspace }}/apps/${{ needs.meta.outputs.product }}
           TAURI_FRONTEND_PATH: ${{ github.workspace }}/ui
@@ -213,6 +259,95 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --dir ui tauri build ${{ matrix.args }}
+
+      # The same build on macOS with the Developer ID: the variables the
+      # Tauri CLI reads, each from its secret in the env of this step alone.
+      # APPLE_CERTIFICATE goes into a keychain of the run; APPLE_SIGNING_IDENTITY
+      # takes the place of the "-" (ad hoc) of tauri.conf.json; the app is
+      # signed with the hardened runtime and the product's
+      # Entitlements.plist, sent to Apple's notary service with the key of
+      # App Store Connect (APPLE_API_KEY_PATH, a file of the run removed
+      # below whatever happens), and the ticket is stapled to it; the
+      # updater's .app.tar.gz is made of that app. Tauri signs the .dmg and
+      # does not notarize it: the .dmg goes to the notary service here and
+      # gets its own ticket, so a downloaded .dmg opens without a warning
+      # as well.
+      - name: Build, sign with the Developer ID and notarize (macOS)
+        if: steps.apple.outputs.signed == 'true'
+        shell: bash
+        env:
+          TAURI_APP_PATH: ${{ github.workspace }}/apps/${{ needs.meta.outputs.product }}
+          TAURI_FRONTEND_PATH: ${{ github.workspace }}/ui
+          CARGO_TARGET_DIR: ${{ github.workspace }}/data/target
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.IOS_API_KEY_ID }}
+          IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          keys="$RUNNER_TEMP/private_keys"
+          trap 'rm -rf "$keys"' EXIT
+          mkdir -p "$keys"
+          printf '%s' "$IOS_API_KEY_P8" | base64 -d > "$keys/AuthKey_$APPLE_API_KEY.p8"
+          unset IOS_API_KEY_P8
+          export APPLE_API_KEY_PATH="$keys/AuthKey_$APPLE_API_KEY.p8"
+          pnpm --dir ui tauri build ${{ matrix.args }}
+          dmgs=$(ls "data/target/$TARGET/release/bundle/dmg/"*.dmg)
+          [ "$(printf '%s\n' "$dmgs" | wc -l)" -eq 1 ] || { echo "::error::one .dmg expected: $dmgs"; exit 1; }
+          answer=$(xcrun notarytool submit "$dmgs" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --output-format json)
+          echo "$answer"
+          if ! printf '%s' "$answer" | grep -q '"status" *: *"Accepted"'; then
+            id=$(printf '%s' "$answer" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
+            [ -z "$id" ] || xcrun notarytool log "$id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
+            echo "::error::Apple's notary service did not accept $dmgs"
+            exit 1
+          fi
+          xcrun stapler staple -v "$dmgs"
+
+      # What Gatekeeper will say on a Mac where the app is downloaded: the
+      # signature holds, the authority is the Developer ID, the hardened
+      # runtime is on, the tickets are stapled to the app and the .dmg, and
+      # the assessment names a notarized Developer ID. A bundle that would
+      # warn fails the run here, not on a user's Mac.
+      - name: Gatekeeper accepts the app and the .dmg (macOS)
+        if: steps.apple.outputs.signed == 'true'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP=$(ls -d "data/target/$TARGET/release/bundle/macos/"*.app | head -n 1)
+          DMG=$(ls "data/target/$TARGET/release/bundle/dmg/"*.dmg | head -n 1)
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          details=$(codesign -dvv "$APP" 2>&1)
+          printf '%s\n' "$details" | grep -qF "Authority=$APPLE_SIGNING_IDENTITY" \
+            || { echo "::error::$APP is not signed with the Developer ID of the secrets"; exit 1; }
+          printf '%s\n' "$details" | grep -qE 'flags=.*runtime' \
+            || { echo "::error::$APP is signed without the hardened runtime"; exit 1; }
+          # Each output is read whole before grep: grep -q leaving a pipe
+          # early would fail the writer under pipefail.
+          if [ -f "apps/$PRODUCT/Entitlements.plist" ]; then
+            entitlements=$(codesign -d --entitlements - "$APP" 2>/dev/null)
+            printf '%s\n' "$entitlements" | grep -q 'com.apple.security.device.audio-input' \
+              || { echo "::error::$APP is signed without apps/$PRODUCT/Entitlements.plist"; exit 1; }
+          fi
+          xcrun stapler validate "$APP"
+          xcrun stapler validate "$DMG"
+          app_answer=$(spctl --assess --type execute -vv "$APP" 2>&1)
+          echo "$app_answer"
+          dmg_answer=$(spctl --assess --type open --context context:primary-signature -vv "$DMG" 2>&1)
+          echo "$dmg_answer"
+          printf '%s\n' "$app_answer" | grep -q 'source=Notarized Developer ID' \
+            || { echo "::error::Gatekeeper does not take $APP as a notarized Developer ID"; exit 1; }
+          printf '%s\n' "$dmg_answer" | grep -q 'source=Notarized Developer ID' \
+            || { echo "::error::Gatekeeper does not take $DMG as a notarized Developer ID"; exit 1; }
 
       # The Objective-C categories of libwebrtc reach the binary only with
       # -ObjC, which the product's build.rs asks for
