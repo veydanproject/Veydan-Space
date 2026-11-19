@@ -73,6 +73,27 @@ fn write(line: &[u8]) {
 pub(crate) fn redirect() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(redirect_once);
+    ONCE_HOOK.call_once(hook_panics);
+}
+
+static ONCE_HOOK: std::sync::Once = std::sync::Once::new();
+
+/// A panic goes to the log of the system before the process dies. The
+/// default hook writes it to stderr, which is the pipe above, and the
+/// abort that follows a panic (the phones build with `panic = "abort"`)
+/// kills the process before the thread of the pipe hands the line on: the
+/// first run of Space 5.2.2 rc.8 on an iPhone died at every start and
+/// left no word of why. Written straight to the sink, on the panicking
+/// thread, then the hook that was there (stderr, the pipe) has its turn.
+fn hook_panics() {
+    let before = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let text = format!("panicked: {info}");
+        for piece in text.as_bytes().chunks(sink::PIECE) {
+            sink::write(piece);
+        }
+        before(info);
+    }));
 }
 
 fn redirect_once() {

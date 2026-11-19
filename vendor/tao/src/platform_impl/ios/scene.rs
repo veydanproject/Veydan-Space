@@ -51,8 +51,16 @@ pub unsafe fn multiple_scenes_enabled() -> bool {
 // started the app on the scene path — sent as `Event::Opened`, the way
 // `scene:openURLContexts:` sends the ones that come later.
 pub unsafe fn opened_on_connect(options: &UISceneConnectionOptions) {
-  let urls: Vec<url::Url> = options
-    .URLContexts()
+  // The header says the set is never nil, and objc2's typed getter would
+  // panic on a nil; iOS 27 gives nil to an app started from its icon
+  // (Space 5.2.2 rc.8 died at every start that way), so the property is
+  // read as nullable and a nil is no URL.
+  let contexts: Option<Retained<NSSet<UIOpenURLContext>>> =
+    objc2::msg_send![options, URLContexts];
+  let Some(contexts) = contexts else {
+    return;
+  };
+  let urls: Vec<url::Url> = contexts
     .iter()
     .filter_map(|ctx| {
       // Not logged: a link may carry a key.

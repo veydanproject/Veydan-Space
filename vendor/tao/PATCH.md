@@ -31,6 +31,9 @@ never became `RunEvent::Opened` and was lost (`crates/shell/src/links.rs`).
 The event comes after `on_app_ready`, so Tauri's setup has run by then. A
 scene handed on with `SceneRequested` still reads its own options. Upstream
 tao (0.36, the `dev` branch as of 2026-11-19) does not read them either.
+The property is read as nullable: iOS 27 gives nil, not an empty set, to an
+app started from its icon, and objc2's typed getter panics on a nil (Space
+5.2.2 rc.8 died at every start).
 
 Tauri 2.11 takes tao 0.35, so the copy stays until Tauri moves to a tao that
 has both. Then remove this folder, its line in `[patch.crates-io]` of the
