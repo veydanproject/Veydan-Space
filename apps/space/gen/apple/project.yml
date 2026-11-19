@@ -44,9 +44,10 @@ targets:
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        # Only the algorithms of the system and standard ones: exempt, and the
-        # one-time question of App Store Connect is answered there.
-        ITSAppUsesNonExemptEncryption: true
+        # Standard algorithms only, not sold in France: App Store Connect needs
+        # no documentation (its answer of 2026-11-19); true wants a documentation
+        # code and the upload is refused without one (90592).
+        ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: 5.2.1
         CFBundleVersion: "5.2.1"
     entitlements:

@@ -55,10 +55,13 @@
   <array>
     <string>UIInterfaceOrientationPortrait</string>
   </array>
-  <!-- Standard algorithms only (exempt); the owner answers the one-time
-       export compliance question in App Store Connect. -->
+  <!-- Standard algorithms only, not sold in France: App Store Connect
+       answered on 2026-11-19 that no export documentation is needed and
+       that Info.plist may say so, so the question is not asked on every
+       build. `true` wants a documentation code (ITSEncryptionExportComplianceCode)
+       and the upload is refused without one (90592). -->
   <key>ITSAppUsesNonExemptEncryption</key>
-  <true/>
+  <false/>
   <key>UIFileSharingEnabled</key>
   <true/>
   <key>LSSupportsOpeningDocumentsInPlace</key>

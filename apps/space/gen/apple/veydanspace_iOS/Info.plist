@@ -31,10 +31,11 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-	<!-- Standard algorithms only (exempt); the one-time export compliance
-	     question is answered in App Store Connect. -->
+	<!-- Standard algorithms only, not sold in France: App Store Connect
+	     needs no documentation (its answer of 2026-11-19); `true` wants a
+	     documentation code and the upload is refused without one (90592). -->
 	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
+	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Record voice messages and audio notes, and make calls</string>
 	<key>NSCameraUsageDescription</key>
