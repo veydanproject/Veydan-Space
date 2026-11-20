@@ -205,12 +205,16 @@ jobs:
       # bundle signed ad hoc as before (Gatekeeper warns), said in the
       # summary of the run; some of them, a mistake that stops the job. The
       # key of App Store Connect is the one of the iOS job (the role Admin
-      # notarizes too).
+      # notarizes too). Only a release is signed so: an rc is signed ad hoc
+      # whatever the secrets, since the notary service makes each macOS row
+      # wait (the owner's decision of 2026-11-19); the rc is for us, the
+      # release is what people download.
       - id: apple
         name: The Apple secrets (macOS)
         if: startsWith(matrix.platform, 'macos')
         shell: bash
         env:
+          KIND: ${{ needs.meta.outputs.kind }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -219,6 +223,16 @@ jobs:
           IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
         run: |
           set -euo pipefail
+          if [ "$KIND" != "release" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::macOS of an $KIND is signed ad hoc: only a release is signed with the Developer ID and notarized"
+            {
+              echo "### macOS is not notarized"
+              echo
+              echo "An $KIND is signed ad hoc: only a release is signed with the Developer ID and notarized. Gatekeeper warns on the first start."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           set_count=0
           for value in "$APPLE_CERTIFICATE" "$APPLE_CERTIFICATE_PASSWORD" "$APPLE_SIGNING_IDENTITY" \
             "$IOS_API_ISSUER" "$IOS_API_KEY_ID" "$IOS_API_KEY_P8"; do
@@ -263,15 +277,22 @@ jobs:
       # The same build on macOS with the Developer ID: the variables the
       # Tauri CLI reads, each from its secret in the env of this step alone.
       # APPLE_CERTIFICATE goes into a keychain of the run; APPLE_SIGNING_IDENTITY
-      # takes the place of the "-" (ad hoc) of tauri.conf.json; the app is
-      # signed with the hardened runtime and the product's
-      # Entitlements.plist, sent to Apple's notary service with the key of
-      # App Store Connect (APPLE_API_KEY_PATH, a file of the run removed
-      # below whatever happens), and the ticket is stapled to it; the
-      # updater's .app.tar.gz is made of that app. Tauri signs the .dmg and
-      # does not notarize it: the .dmg goes to the notary service here and
-      # gets its own ticket, so a downloaded .dmg opens without a warning
-      # as well.
+      # takes the place of the "-" (ad hoc) of tauri.conf.json; the app and
+      # the .dmg are signed with the hardened runtime and the product's
+      # Entitlements.plist; the updater's .app.tar.gz is made of that app.
+      # Tauri does not notarize: it is given no key of App Store Connect
+      # (NOTARY_*, not APPLE_API_*), since its `notarytool --wait` holds one
+      # connection for as long as Apple takes and gives up on the first
+      # blink of the network (rc.10 of Space 5.2.2: the first submission
+      # of the Developer ID was still "In Progress" after 2.5 hours, the
+      # runner lost its route for a moment, the job died). The .dmg alone
+      # goes to the notary service, which notarizes the app inside it too
+      # (a ticket for each signed thing of the submission, published by
+      # Apple, which Gatekeeper finds online), and the step asks for the
+      # answer once a minute, a failed question asked again, for up to four
+      # and a half hours; then the ticket is stapled to the .dmg, so a
+      # downloaded .dmg opens without a warning even offline. The key is a
+      # file of the run removed by the trap whatever happens.
       - name: Build, sign with the Developer ID and notarize (macOS)
         if: steps.apple.outputs.signed == 'true'
         shell: bash
@@ -284,36 +305,63 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_ISSUER: ${{ secrets.IOS_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.IOS_API_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.IOS_API_ISSUER }}
+          NOTARY_KEY_ID: ${{ secrets.IOS_API_KEY_ID }}
           IOS_API_KEY_P8: ${{ secrets.IOS_API_KEY_P8 }}
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          keys="$RUNNER_TEMP/private_keys"
+          keys="$RUNNER_TEMP/notary"
           trap 'rm -rf "$keys"' EXIT
           mkdir -p "$keys"
-          printf '%s' "$IOS_API_KEY_P8" | base64 -d > "$keys/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s' "$IOS_API_KEY_P8" | base64 -d > "$keys/AuthKey_$NOTARY_KEY_ID.p8"
           unset IOS_API_KEY_P8
-          export APPLE_API_KEY_PATH="$keys/AuthKey_$APPLE_API_KEY.p8"
+          notary() { xcrun notarytool "$@" --key "$keys/AuthKey_$NOTARY_KEY_ID.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"; }
           pnpm --dir ui tauri build ${{ matrix.args }}
           dmgs=$(ls "data/target/$TARGET/release/bundle/dmg/"*.dmg)
           [ "$(printf '%s\n' "$dmgs" | wc -l)" -eq 1 ] || { echo "::error::one .dmg expected: $dmgs"; exit 1; }
-          answer=$(xcrun notarytool submit "$dmgs" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" --wait --output-format json)
-          echo "$answer"
-          if ! printf '%s' "$answer" | grep -q '"status" *: *"Accepted"'; then
-            id=$(printf '%s' "$answer" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
-            [ -z "$id" ] || xcrun notarytool log "$id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
-            echo "::error::Apple's notary service did not accept $dmgs"
-            exit 1
-          fi
-          xcrun stapler staple -v "$dmgs"
+          id=""
+          for attempt in 1 2 3 4 5; do
+            if answer=$(notary submit "$dmgs" --output-format json); then
+              id=$(printf '%s' "$answer" | sed -n 's/.*"id" *: *"\([^"]*\)".*/\1/p')
+              [ -n "$id" ] && break
+            fi
+            echo "the .dmg did not reach the notary service (attempt $attempt): ${answer:-no answer}"
+            sleep 30
+          done
+          [ -n "$id" ] || { echo "::error::the .dmg did not reach Apple's notary service"; exit 1; }
+          echo "submitted to the notary service: $id"
+          deadline=$((SECONDS + 270 * 60))
+          status=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if info=$(notary info "$id" --output-format json 2>&1); then
+              status=$(printf '%s' "$info" | sed -n 's/.*"status" *: *"\([^"]*\)".*/\1/p')
+              case "$status" in
+                Accepted) break ;;
+                Invalid|Rejected)
+                  notary log "$id" || true
+                  echo "::error::Apple's notary service answered $status for $dmgs"
+                  exit 1
+                  ;;
+              esac
+            else
+              echo "the question to the notary service failed, asked again in a minute: $info"
+            fi
+            sleep 60
+          done
+          [ "$status" = "Accepted" ] || { echo "::error::no answer of the notary service for $id within 270 minutes (last: ${status:-none})"; exit 1; }
+          echo "notarized after $((SECONDS / 60)) minutes of the step"
+          for attempt in 1 2 3 4 5; do
+            xcrun stapler staple -v "$dmgs" && break
+            [ "$attempt" -lt 5 ] || { echo "::error::the ticket was not stapled to $dmgs"; exit 1; }
+            sleep 30
+          done
 
       # What Gatekeeper will say on a Mac where the app is downloaded: the
       # signature holds, the authority is the Developer ID, the hardened
-      # runtime is on, the tickets are stapled to the app and the .dmg, and
-      # the assessment names a notarized Developer ID. A bundle that would
+      # runtime is on, the ticket is stapled to the .dmg, and the assessment
+      # names a notarized Developer ID for the .dmg and for the app in it
+      # (whose ticket Gatekeeper fetches from Apple). A bundle that would
       # warn fails the run here, not on a user's Mac.
       - name: Gatekeeper accepts the app and the .dmg (macOS)
         if: steps.apple.outputs.signed == 'true'
@@ -338,7 +386,6 @@ jobs:
             printf '%s\n' "$entitlements" | grep -q 'com.apple.security.device.audio-input' \
               || { echo "::error::$APP is signed without apps/$PRODUCT/Entitlements.plist"; exit 1; }
           fi
-          xcrun stapler validate "$APP"
           xcrun stapler validate "$DMG"
           app_answer=$(spctl --assess --type execute -vv "$APP" 2>&1)
           echo "$app_answer"
