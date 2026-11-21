@@ -4,6 +4,7 @@
 <script lang="ts">
   import { api, formatError, type NoteFilter, type NoteNav, type SmartViewInput } from '$lib/notes/mobile/api';
   import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import { t } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
@@ -109,25 +110,20 @@
 </script>
 
 <BottomSheet {open} title={viewId ? $t('notes_smart_edit') : $t('notes_smart_new')} {onclose}>
-    {#if error}<Notice tone="danger">{error}</Notice>{/if}
-    <input class="input" type="text" bind:value={name} placeholder={$t('notes_smart_name')} />
-    <div class="swatches">
-      {#each NAV_COLORS as c}
-        <button type="button" class="swatch" class:on={color === c} style:background={c} aria-label={c} onclick={() => (color = c)}></button>
-      {/each}
-    </div>
+    <input type="text" bind:value={name} placeholder={$t('notes_smart_name')} />
+    <ColorSwatches bind:value={color} label={$t('notes_smart_name')} />
 
     {#if nav.all_workspaces.length}
       <div class="group">
         <span class="lbl">{$t('notes_filter_workspaces')}</span>
         <div class="chips">
           {#each nav.all_workspaces as ws (ws.id)}
-            <button type="button" class="chip" class:on={bindings.includes(`workspace:${ws.id}`)} onclick={() => (bindings = toggle(bindings, `workspace:${ws.id}`))}>
+            <button type="button" class="chip" class:active={bindings.includes(`workspace:${ws.id}`)} onclick={() => (bindings = toggle(bindings, `workspace:${ws.id}`))}>
               <span class="dot" style:background={ws.color}></span>{ws.name}
             </button>
           {/each}
           {#each nav.all_profiles as p (p.id)}
-            <button type="button" class="chip" class:on={bindings.includes(`profile:${p.id}`)} onclick={() => (bindings = toggle(bindings, `profile:${p.id}`))}>
+            <button type="button" class="chip" class:active={bindings.includes(`profile:${p.id}`)} onclick={() => (bindings = toggle(bindings, `profile:${p.id}`))}>
               {p.name}
             </button>
           {/each}
@@ -135,7 +131,7 @@
       </div>
     {/if}
 
-    <input class="input" type="text" bind:value={domain} placeholder={$t('notes_smart_domain')} />
+    <input type="text" bind:value={domain} placeholder={$t('notes_smart_domain')} />
     <CustomSelect
       options={[{ value: '', label: $t('notes_smart_any_folder') }, ...nav.folders.map((f) => ({ value: f.id, label: f.name }))]}
       bind:value={folderId}
@@ -155,7 +151,7 @@
         </div>
         <div class="chips">
           {#each nav.tags as tag (tag.id)}
-            <button type="button" class="chip" class:on={tags.includes(tag.name)} onclick={() => (tags = toggle(tags, tag.name))}>
+            <button type="button" class="chip" class:active={tags.includes(tag.name)} onclick={() => (tags = toggle(tags, tag.name))}>
               <span class="dot" style:background={tag.color}></span>{tag.name}
             </button>
           {/each}
@@ -181,40 +177,22 @@
       <span class="days-lbl">{$t('notes_smart_days')}</span>
     </div>
 
-    <button type="button" class="m-btn-grad" disabled={!name.trim() || saving} onclick={save}>
-      {viewId ? $t('common_save') : $t('common_create')}
-    </button>
+    <!-- The long form scrolls under the foot: its verb and its error always in sight. -->
+    {#snippet footer()}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
+      <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+      <button type="button" class="btn btn-primary" disabled={!name.trim() || saving} onclick={save}>
+        {viewId ? $t('common_save') : $t('common_create')}
+      </button>
+    {/snippet}
 </BottomSheet>
 
 <style>
-  .input { width: 100%; border: 0; border-radius: var(--radius-field); background: var(--m-field); padding: 0 14px; }
-  .swatches { display: flex; gap: 12px; flex-wrap: wrap; padding: 3px; }
-  .swatch {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 3px solid transparent;
-    padding: 0;
-    box-shadow: 0 0 0 2px var(--m-card-border);
-  }
-  .swatch.on { border-color: var(--m-sheet); box-shadow: 0 0 0 2px var(--text); }
   .lbl { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
   .lbl-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-radius: var(--radius-pill);
-    border: 0;
-    background: var(--m-seg);
-    color: var(--text);
-    font: inherit;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semibold);
-  }
-  .chip.on { background: var(--accent); color: #fff; }
+  /* The common .chip, 32 high, --sp-2 apart: the zones of neighbours do not overlap. */
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .chip { min-height: 32px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; }
   .trow {
     display: flex;

@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
@@ -22,8 +23,10 @@
     onchat?: (pubkey: string) => void;
     /** The phone: its screen has the title and the add action; the contacts are a list, not a card. */
     compact?: boolean;
+    /** The phone: the open contact's actions, for the page to keep in its pinned foot (.page-foot). */
+    foot?: Snippet;
   }
-  let { onchat, compact = false }: Props = $props();
+  let { onchat, compact = false, foot = $bindable() }: Props = $props();
 
   let busy = $state(false);
   let openId = $state<string | null>(null);
@@ -72,12 +75,29 @@
     ];
   });
 
+  /** Whose fields the drafts hold: closing the row and opening it again keeps what was not saved yet. */
+  let draftFor: string | null = null;
+
   function toggle(c: MessengerContact) {
     if (openId === c.pubkey) { openId = null; return; }
     openId = c.pubkey;
+    if (draftFor === c.pubkey) return;
+    draftFor = c.pubkey;
     editNick = c.nickname ?? '';
     editNote = c.note ?? '';
   }
+
+  function save(c: MessengerContact) {
+    return run(async () => {
+      await messengerStore.updateContact(c.pubkey, { nickname: editNick.trim() || null, note: editNote.trim() || null });
+      toast.success($t('common_saved'));
+    });
+  }
+
+  const openContact = $derived(compact ? (messengerStore.contacts.find((c) => c.pubkey === openId) ?? null) : null);
+  $effect(() => {
+    foot = openContact ? contactFoot : undefined;
+  });
 
 </script>
 
@@ -96,7 +116,7 @@
   {#if !compact}<ContactAddForm />{/if}
 
   {#if messengerStore.contacts.length === 0}
-    <div class="muted small empty">{$t('msg_contacts_empty')}</div>
+    <div class="empty-state"><span class="empty-icon" aria-hidden="true"><Icon name="book-user" size={22} /></span><p>{$t('msg_contacts_empty')}</p></div>
   {:else if compact}
     <!-- The phone: the rows are the .list-row of a computer's list (64, an avatar of 48, a hairline from the text);
          the open one is a card with the head of ContactDetails: NIP-05 with its ✓/✗ and the «following» mark (T8-09). -->
@@ -181,22 +201,16 @@
       <label><span>{$t('msg_contacts_nickname')}</span><input type="text" bind:value={editNick} disabled={busy} /></label>
       <label><span>{$t('msg_contacts_note')}</span><input type="text" bind:value={editNote} disabled={busy} /></label>
     </div>
+    {#if !compact}
     <div class="actions">
       {#if onchat}
         <button class="btn btn-primary btn-sm" disabled={busy} onclick={() => onchat(c.pubkey)}>
           <Icon name="message-circle" size={12} />{$t('msg_contacts_write')}
         </button>
       {/if}
-      <button class="btn btn-ghost btn-sm" disabled={busy}
-        onclick={() => run(() => messengerStore.updateContact(c.pubkey, { nickname: editNick.trim() || null, note: editNote.trim() || null }))}>
+      <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => save(c)}>
         {$t('common_save')}
       </button>
-      {#if compact}
-        <span class="spacer"></span>
-        <button class="btn btn-ghost btn-sm more" disabled={busy} onclick={() => (moreFor = c)} aria-label={$t('msg_contacts_more')} title={$t('msg_contacts_more')}>
-          <Icon name="more-horizontal" size={16} />
-        </button>
-      {:else}
       <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => { sharing = c.pubkey; shareOpen = true; }}>
         <Icon name="share" size={12} />{$t('msg_share_contact')}
       </button>
@@ -217,9 +231,25 @@
       <button class="btn btn-danger-soft btn-sm" disabled={busy} onclick={() => remove(c)}>
         <Icon name="user-minus" size={12} />{$t('common_remove')}
       </button>
-      {/if}
     </div>
+    {/if}
   </div>
+{/snippet}
+
+<!-- The phone: Write, Save and «⋯» of the open contact, in the page's pinned foot. -->
+{#snippet contactFoot()}
+  {#if openContact}
+    {@const c = openContact}
+    {#if onchat}
+      <button class="btn btn-primary" disabled={busy} onclick={() => onchat(c.pubkey)}>
+        <Icon name="message-circle" size={16} />{$t('msg_contacts_write')}
+      </button>
+    {/if}
+    <button class="btn btn-ghost" disabled={busy} onclick={() => save(c)}>{$t('common_save')}</button>
+    <button class="icon-btn" disabled={busy} onclick={() => (moreFor = c)} aria-label={$t('msg_contacts_more')} title={$t('msg_contacts_more')}>
+      <Icon name="more-horizontal" size={20} />
+    </button>
+  {/if}
 {/snippet}
 
 {#if moreFor}
@@ -235,9 +265,8 @@
   .contacts { max-width: 680px; width: 100%; margin-inline: auto; display: flex; flex-direction: column; gap: var(--sp-3); }
   .card-title { display: flex; align-items: center; gap: var(--sp-2); }
   .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .title-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .title-actions { display: flex; align-items: center; gap: var(--sp-1-5); flex-wrap: wrap; justify-content: flex-end; }
   .muted { color: var(--text-2); font-size: var(--fs-sm); margin: 0; }
-  .small { font-size: var(--fs-xs); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); }
   .row { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
   .row.open { border-color: var(--accent-border); }
@@ -246,7 +275,7 @@
     background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: var(--sp-2) var(--sp-3);
   }
   .info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
+  .name { display: flex; align-items: center; gap: var(--sp-1-5); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
   .tag { font-size: var(--fs-xs); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text-2); }
   .meta { color: var(--text-3); font-size: var(--fs-xs); }
   .meta code { font-family: var(--font-mono); }
@@ -257,15 +286,14 @@
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-2); }
   .grid label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
   .grid input {
-    font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 6px 8px;
+    color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-1-5) var(--sp-2);
   }
   .actions { display: flex; gap: var(--sp-1); flex-wrap: wrap; align-items: center; }
   .spacer { flex: 1; }
 
   /* The phone: the rows lie on the screen's background as a computer's .list-row; the hint above them is 13 px --text-3. */
   .compact .muted { font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); padding: 0 var(--sp-3); }
-  .compact .empty { text-align: center; padding: var(--sp-6) var(--sp-4); font-size: var(--fs-sm); }
   .compact .list-rows { padding: 0; }
   /* The open one: a card, its head the row, then what ContactDetails has under its head. */
   .open-card {
@@ -284,5 +312,5 @@
   .follow-tag { flex-shrink: 0; line-height: var(--lh-snug); padding: 3px var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text); }
   .follow-tag::first-letter { text-transform: uppercase; }
   .compact .details { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top-color: var(--m-card-border, var(--border)); }
-  .compact .grid input { font-size: var(--fs-md); padding: 8px 10px; }
+  .compact .grid input { font-size: var(--fs-md); padding: var(--sp-2) var(--sp-2-5); }
 </style>

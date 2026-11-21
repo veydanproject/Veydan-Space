@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Відмовити",
     "chan_level_req_refuse_title": "Відмовити: {name}",
     "chan_level_req_refuse_hint": "Читач отримає відмову з вашою причиною. Його рівні не зміняться.",
-    "chan_level_req_reason": "Причина (необов’язково)"
+    "chan_level_req_reason": "Причина (необов’язково)",
+    "chan_err_not_found": "Файл більше недоступний у сховищі."
   },
   "mobile": {}
 }

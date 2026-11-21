@@ -7,9 +7,11 @@
   `button role="radio" aria-checked`; the caller puts the rows into a
   `role="radiogroup"` with its label and says what a press does.
   `surface`: `dialog` (the default, `--surface-3`) or `panel` (inside a panel
-  on `--surface`: `--surface-2`).
+  on `--surface`: `--surface-2`). `more`: what the row says under its hint
+  when it is more than words (a level's sections and rights, a «sent» mark).
 -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
 
   interface Props {
@@ -20,8 +22,9 @@
     onclick: () => void;
     disabled?: boolean;
     surface?: 'dialog' | 'panel';
+    more?: Snippet;
   }
-  let { icon, title, hint, checked, onclick, disabled = false, surface = 'dialog' }: Props = $props();
+  let { icon, title, hint, checked, onclick, disabled = false, surface = 'dialog', more }: Props = $props();
 </script>
 
 <button type="button" class="choice {surface}" class:on={checked} role="radio" aria-checked={checked} {disabled} {onclick}>
@@ -29,6 +32,7 @@
   <span class="words">
     <span class="title">{title}</span>
     {#if hint}<span class="hint">{hint}</span>{/if}
+    {@render more?.()}
   </span>
   {#if checked}<span class="check"><Icon name="check" size={18} /></span>{/if}
 </button>

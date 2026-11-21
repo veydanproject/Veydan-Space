@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Tolak",
     "chan_level_req_refuse_title": "Tolak: {name}",
     "chan_level_req_refuse_hint": "Pembaca menerima penolakan beserta alasan Anda. Levelnya tidak berubah.",
-    "chan_level_req_reason": "Alasan (opsional)"
+    "chan_level_req_reason": "Alasan (opsional)",
+    "chan_err_not_found": "File sudah tidak tersedia di penyimpanan."
   },
   "mobile": {}
 }

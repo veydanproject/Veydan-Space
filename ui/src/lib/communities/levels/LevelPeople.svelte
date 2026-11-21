@@ -12,8 +12,9 @@
   import { get } from 'svelte/store';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { Avatar, contactHaystacks, contacts as contactsOf, fold, matchesQuery, myKey } from '$lib/messenger/seams/shared';
+  import { Avatar, contactHaystacks, contacts as contactsOf, fold, matchesQuery, myKey, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
   import { nameStore, shortKey } from '../names.svelte';
@@ -27,6 +28,9 @@
     level: LevelView;
   }
   let { detail, level }: Props = $props();
+
+  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
+  const phone = onPhone();
 
   /** How many people a search lists to add: the rest is found by typing more. */
   const MAX_FOUND = 30;
@@ -84,45 +88,48 @@
 </script>
 
 <section class="people" aria-label={$t('chan_level_people')}>
-  <span class="label">{$t('chan_level_people')} · {held.length}</span>
-  <!-- The search and the people in one card: the field its head, the rows under a line. -->
+  <span class="form-label">{$t('chan_level_people')} · {held.length}</span>
+  <!-- The search and the people in one card: the field its head, the rows under it. -->
   <div class="box">
-  <div class="search">
+  <div class="search-field fill">
     <Icon name="search" size={16} />
     <input type="search" bind:value={query} placeholder={$t('chan_level_people_search')} aria-label={$t('chan_level_people_search')} spellcheck="false" autocomplete="off"
       onkeydown={(e) => { if (e.key === 'Enter' && found.length === 1 && !busy) { e.preventDefault(); change(found[0], true); } }} />
+    {#if query}
+      <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+    {/if}
   </div>
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   <div class="rows">
   {#snippet person(who: string)}
     {@const nm = nameStore.label(who)}
-    <Avatar url={nameStore.picture(who)} label={nm} seed={who} size={36} />
-    <span class="who">
-      <span class="name">{nm}{#if who === me} <span class="dim">({$t('chan_you')})</span>{/if}</span>
-      <code>{shortKey(who)}</code>
+    <Avatar url={nameStore.picture(who)} label={nm} seed={who} size={phone ? 48 : 36} />
+    <span class="list-row-body">
+      <span class="list-row-name">{nm}{#if who === me} <span class="dim">({$t('chan_you')})</span>{/if}</span>
+      <code class="list-row-line">{shortKey(who)}</code>
     </span>
   {/snippet}
 
   {#if found.length}
     <span class="sub-label">{$t('chan_level_people_add_to')}</span>
-    <ul class="list divided">
+    <ul class="list-rows list">
       {#each found as who (who)}
-        <li class="row">
+        <li><div class="list-row still" class:dense={!phone}>
           {@render person(who)}
           <button type="button" class="btn btn-ghost btn-sm" disabled={!!busy} aria-busy={busy === who} onclick={() => change(who, true)}>
             {#if busy === who}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="plus" size={18} />{/if}{$t('common_add')}
           </button>
-        </li>
+        </div></li>
       {/each}
     </ul>
   {/if}
 
   {#if shownHeld.length}
     {#if found.length}<span class="sub-label">{$t('chan_level_people_in')}</span>{/if}
-    <ul class="list divided">
+    <ul class="list-rows list">
       {#each shownHeld as who (who)}
-        <li class="row">
+        <li><div class="list-row still" class:dense={!phone}>
           {@render person(who)}
           {#if canSetLevels(detail, who, me)}
             <button type="button" class="icon-btn danger-soft" disabled={!!busy} aria-busy={busy === who} onclick={() => change(who, false)}
@@ -130,7 +137,7 @@
               {#if busy === who}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="x" size={16} />{/if}
             </button>
           {/if}
-        </li>
+        </div></li>
       {/each}
     </ul>
   {:else if !found.length}
@@ -143,33 +150,21 @@
 
 <style>
   .people { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   /* The words over a part of the list in sentence case. */
   .sub-label { font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-bold); margin-top: 2px; }
-  /* One card: the search 44 as its head, the people under a line. */
+  /* One card: the search as its head, the people under it. */
   .box { display: flex; flex-direction: column; min-width: 0; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); overflow: hidden; }
-  .box:has(.search input:focus-visible) { border-color: var(--accent-border); }
-  .search { position: relative; display: flex; align-items: center; color: var(--text-3); border-bottom: 1px solid var(--border-2); }
-  .search :global(svg) { position: absolute; left: var(--sp-3); pointer-events: none; }
-  .search input {
-    width: 100%; height: var(--control-h-lg); box-sizing: border-box; font: inherit; font-size: var(--fs-sm); color: var(--text); background: none;
-    border: 0; border-radius: 0; padding: 0 var(--sp-3) 0 36px;
-  }
-  .search input:focus { outline: none; box-shadow: none; }
+  .box > .search-field { width: auto; margin: var(--sp-2) var(--sp-2) 0; }
   .box > :global(.notice) { margin: var(--sp-2) var(--sp-3) 0; }
   .rows { display: flex; flex-direction: column; min-width: 0; }
   .rows .sub-label { padding: var(--sp-2) var(--sp-3) 0; }
   .empty { padding: var(--sp-3); }
-  /* The people: rows inside the card. */
-  .list { list-style: none; margin: 0; padding: 0 var(--sp-3); display: flex; flex-direction: column; }
-  .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) 0; min-width: 0; }
-  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The people: the dense rows of base.css inside the card (a phone's: the rows of 64). */
+  .list { padding: var(--sp-1); }
   .dim { color: var(--text-3); font-weight: var(--fw-normal); }
-  code { font-size: var(--fs-xs); color: var(--text-3); }
+  .list-row-line { font-family: var(--font-mono); }
   .btn { flex-shrink: 0; }
-  .icon-btn { flex-shrink: 0; width: 36px; height: 36px; padding: 0; }
-  .icon-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .icon-btn { flex-shrink: 0; }
   .btn:disabled { opacity: 0.45; cursor: default; }
   .hint { margin: 0; line-height: var(--lh-snug); }
   /* The desktop's dialog keeps its footer in sight: a long list scrolls in itself. */
@@ -177,7 +172,6 @@
     .rows { max-height: 264px; overflow-y: auto; }
   }
   @media (pointer: coarse) {
-    .search input { font-size: var(--fs-md); height: 44px; }
     .icon-btn { width: 44px; height: 44px; }
   }
 </style>

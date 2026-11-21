@@ -4,7 +4,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
-  import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
+  import Notice from '$lib/core/ui/Notice.svelte';
+  import PasswordForm, { fieldError } from '$lib/pass/mobile/PasswordForm.svelte';
   import { api } from '$lib/pass/api';
   import { formatError } from '$lib/core/utils';
   import { t } from '$lib/core/mobile/i18n';
@@ -76,7 +77,7 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="m-ibtn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+    <a class="icon-btn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     <h1 class="m-title">{$t('cmd_passwords_create')}</h1>
   </div>
   <div class="m-body">
@@ -94,8 +95,14 @@
       bind:tags
       bind:error
       {totp}
-      {saving}
-      onsave={save}
     />
+  </div>
+  <!-- Save in the page's foot, the error that is not a field's over it. -->
+  <div class="page-foot">
+    {#if error && !fieldError(error, $t)}<Notice tone="danger">{error}</Notice>{/if}
+    <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+      <Icon name="check" size={18} />
+      {$t('common_save')}
+    </button>
   </div>
 </div>

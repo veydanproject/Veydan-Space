@@ -63,18 +63,16 @@
 </script>
 
 {#if entry?.username}
-  <button type="button" class="chev" onclick={copyUsername} aria-label={$t('ctx_action_copy_username')}>
-    <Icon name="id" size={18} />
+  <button type="button" class="icon-btn" onclick={copyUsername} aria-label={$t('ctx_action_copy_username')}>
+    <Icon name="id" size={22} />
   </button>
 {/if}
-<button type="button" class="chev" onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
-  <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={18} />
+<button type="button" class="icon-btn" onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
+  <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={22} />
 </button>
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (!pendingCopy) return; pendingCopy = false; void copyPassword(); }} />
 
 <style>
-  .chev {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 40px; height: 44px; border: 0; background: transparent; color: var(--text-3);
-  }
+  /* Two icon buttons side by side: --sp-1 between them, so their zones of 44 do not cross. */
+  .icon-btn + .icon-btn { margin-left: var(--sp-1); }
 </style>

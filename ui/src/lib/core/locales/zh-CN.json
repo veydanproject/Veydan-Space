@@ -26,6 +26,8 @@
     "common_nothing_found": "未找到结果",
     "common_nothing_found_hint": "没有与“{q}”匹配的内容。",
     "common_clear": "清除",
+    "tabs_scroll_back": "上一组标签",
+    "tabs_scroll_more": "更多标签",
     "common_refresh": "刷新",
     "common_update": "更新",
     "common_restore": "恢复",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "SSH 连接",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "密码",
-    "suggest_group_note": "笔记"
+    "suggest_group_note": "笔记",
+    "kanban_color_violet": "紫色",
+    "kanban_color_blue": "蓝色",
+    "kanban_color_green": "绿色",
+    "kanban_color_amber": "琥珀色",
+    "kanban_color_red": "红色",
+    "kanban_color_pink": "粉色",
+    "kanban_color_teal": "蓝绿色",
+    "workspaces_color_custom": "自定义颜色"
   },
   "mobile": {
     "app_launcher": "应用",

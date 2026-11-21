@@ -145,7 +145,7 @@
   .counter { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
   .counter.over { color: var(--danger-text); font-weight: var(--fw-semibold); }
   .swatches {
-    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; border-radius: var(--radius-md);
+    display: flex; flex-wrap: wrap; gap: var(--sp-1-5); padding: 8px; border-radius: var(--radius-md);
     background: var(--surface-2); border: 1px solid var(--border);
   }
   .swatch {
@@ -159,7 +159,7 @@
   .invalid textarea { border-color: var(--danger); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .preview {
-    display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius-md);
+    display: flex; flex-direction: column; gap: 4px; padding: var(--sp-2-5) var(--sp-3); border-radius: var(--radius-md);
     background: var(--surface-2); border: 1px dashed var(--border-2);
   }
   .preview-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-dim); }

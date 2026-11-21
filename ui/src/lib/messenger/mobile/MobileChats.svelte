@@ -6,6 +6,7 @@
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import { messengerStore } from '../store.svelte';
@@ -92,10 +93,12 @@
     {#if netState === 'locked' || netState === 'silent'}
       <div class="strip"><Notice tone="warn" role="status">{$t(`msg_net_${netState}` as 'msg_net_locked', { connected: '0', total: '0' })}</Notice></div>
     {/if}
-    <div class="search">
+    <div class="search-field fill list-search">
       <Icon name="search" size={16} />
       <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search" />
-      {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
+      {#if query}
+        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+      {/if}
     </div>
     {#if host}
       {#if host.above}{@const Above = host.above}<Above />{/if}
@@ -118,7 +121,7 @@
 {#if host}{@const Create = host.create}<Create bind:open={creating} onopened={(id) => goto(sectionItemHref(id))} />{/if}
 
 <style>
-  .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
+  .net { width: 9px; height: 9px; border-radius: 50%; margin-left: var(--sp-2); background: var(--text-3); flex-shrink: 0; }
   .net.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
   .net.lost { background: var(--danger); }
@@ -126,20 +129,12 @@
   .note { padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-base); }
   .intro { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: var(--lh-base); }
   .strip { padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
-  .search {
-    display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3); padding: 0 var(--sp-4); flex-shrink: 0;
-    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
-  }
-  /* The pill is the field: its border is the one focus mark. */
-  .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
-  .search input::-webkit-search-cancel-button { display: none; }
-  .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }
+  .search-field.list-search { width: auto; margin: var(--sp-2) var(--sp-3); flex-shrink: 0; }
   /* Inside the list, whose own side gap (--sp-2) would add to the cards' margin: they keep the edge of the search. */
   .offers { margin: 0 calc(-1 * var(--sp-2)); }
   /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
   .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
   /* The list scrolls its last row out from under the «+»: the button (52), its offset and the list's own gap.
      The bar of sections lies under .content and holds the safe area itself. */
-  :global(.list-wrap):has(~ .m-fab) { padding-bottom: calc(52px + var(--sp-4) + var(--sp-2)); }
+  :global(.list-wrap):has(~ .m-fab) { padding-bottom: calc(var(--fab-size) + var(--sp-4) + var(--sp-2)); }
 </style>

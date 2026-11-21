@@ -116,7 +116,7 @@
       {/each}
       </ul>
     </section>
-    <button class="forget" onclick={forget}><Icon name="trash-2" size={14} />{$t('msg_calls_forget')}</button>
+    <button class="btn btn-sm btn-danger-soft forget" onclick={forget}><Icon name="trash-2" size={16} />{$t('msg_calls_forget')}</button>
   </div>
 {/if}
 
@@ -153,11 +153,5 @@
   .missed .glyph, .missed .title { color: var(--danger-text); }
   .when { font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
   /* «Удалить из истории»: a quiet button under the card. */
-  .forget {
-    align-self: center; display: inline-flex; align-items: center; gap: var(--sp-1); height: 36px; padding: 0 var(--sp-3);
-    border: none; border-radius: var(--radius); background: none; color: var(--text-3); font: inherit; font-size: var(--fs-sm); cursor: pointer;
-  }
-  .forget:hover { color: var(--danger-text); background: var(--danger-bg); }
-  .forget:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  @media (pointer: coarse) { .forget { height: 44px; } }
+  .forget { align-self: center; }
 </style>

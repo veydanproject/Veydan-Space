@@ -89,10 +89,10 @@
   .small { font-size: var(--fs-xs); }
   .send { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .send input {
-    flex: 1; min-width: 160px; min-height: 44px; font: inherit; font-size: var(--fs-base); color: var(--text);
+    flex: 1; min-width: 160px; min-height: var(--field-h); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
-  .send input:first-child { font-family: var(--font-mono); font-size: var(--fs-sm); }
+  .send input:first-child { font-family: var(--font-mono); }
   .send input:focus { outline: none; border-color: var(--accent-border); }
   .feed-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }

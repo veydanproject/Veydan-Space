@@ -40,6 +40,7 @@
   import { itemEntries } from './itemMenu';
   import { channelEntries } from './channelMenu';
   import { feedKey, feedStore, isLocal, localId, scopeOfKey } from './feedStore.svelte';
+  import { OpenThread } from './openThread.svelte';
   import { EVERYONE, hasSections, inScope, levelsOf, postTarget, scopeOf, sectionOf, sectionTiles, sectionTitle, type SectionTile } from './levels/sections';
   import { lookOf, ordered } from './levels/look';
   import SectionBadge from './levels/SectionBadge.svelte';
@@ -66,6 +67,8 @@
   let { chatId, onback }: Props = $props();
 
   const phone = onPhone();
+  // On a phone the foot floats over the feed as the composer of a chat does; the feed ends above it.
+  let bottomH = $state(0);
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const PAGE = 30;
   /** How long the events of a page the relays answered may take to reach the feed. */
@@ -81,7 +84,8 @@
   let panel = $state<'info' | 'thread' | null>(null);
   let moderation = $state(false);
   let modTab = $state<ModerationTab>('queue');
-  let threadOf = $state<FeedItemView | null>(null);
+  /** The post whose comments are open beside the feed; it follows the post in `items`. */
+  const opened = new OpenThread(() => items, () => (panel = null));
 
   /** The section shown (its tile picked): its id, or `null` for «Все», all I am in. */
   let scope = $state<string | null>(null);
@@ -121,7 +125,7 @@
     if (id === shownFor) return;
     shownFor = id;
     untrack(() => {
-      atBottom = true; settling = false; clearTimeout(settleTimer); settleTimer = undefined; error = ''; missing = false; panel = null; moderation = false; threadOf = null;
+      atBottom = true; settling = false; clearTimeout(settleTimer); settleTimer = undefined; error = ''; missing = false; panel = null; moderation = false; opened.post = null;
       scope = null; locked = null; tilesOpen = false; tray.clear(); editor = null;
       viewer.close();
       // The page of the channel kept here stays shown while it is read again; only a channel this device does not know goes.
@@ -465,7 +469,7 @@
     return m ? (isRecording(m) ? mediaTitle(m.kind, m.name, $t) : m.name) : '';
   }
 
-  const uploads = $derived(Object.values(channelStore.uploads).filter((u) => u.communityId === cid && !(u.postId && panel === 'thread' && threadOf?.id === u.postId)));
+  const uploads = $derived(Object.values(channelStore.uploads).filter((u) => u.communityId === cid && !(u.postId && panel === 'thread' && opened.post?.id === u.postId)));
 
   /**
    * A voice message or a circle recorded in the composer goes as a post of
@@ -557,7 +561,7 @@
   }
 
   function openThread(item: FeedItemView) {
-    threadOf = item; panel = 'thread'; moderation = false;
+    opened.post = item; panel = 'thread'; moderation = false;
   }
 
   function openInfo(tab?: ModerationTab) {
@@ -716,15 +720,6 @@
     headMenu = { open: true, x: r.right - HEAD_MENU_W, y: r.bottom + 4 };
   }
 
-  // The thread follows the post it is of: a new count, an edit, a removal.
-  $effect(() => {
-    const t0 = threadOf;
-    if (!t0) return;
-    const fresh = items.find((x) => x.id === t0.id);
-    if (fresh?.deleted) untrack(() => { panel = null; threadOf = null; });
-    else if (fresh && fresh !== t0) untrack(() => (threadOf = fresh));
-  });
-
   /** I post here: the channel lets me, and the section shown takes my posts. */
   const posting = $derived(canPost(detail, me) && target !== null);
   /**
@@ -754,20 +749,20 @@
   <PickedTray picked={tray} />
 {/snippet}
 
-{#snippet stateNote(icon: string, title: string, text: string, tone: '' | 'mute' = '')}
-  <div class="placeholder">
-    <span class="ph-icon" class:mute={tone === 'mute'}><Icon name={icon} size={24} /></span>
+{#snippet stateNote(icon: string, title: string, text: string)}
+  <div class="empty-state">
+    <span class="empty-icon"><Icon name={icon} size={22} /></span>
     <p>{title}</p>
     <span>{text}</span>
   </div>
 {/snippet}
 
 {#snippet window()}
-  <section class="window" class:phone>
-    <header class="head" class:phone class:on-glass={phone}>
+  <section class="window" class:phone style:--bottom-h={phone ? `${bottomH}px` : undefined}>
+    <header class="head" class:panel-head={!phone} class:phone class:on-glass={phone}>
       {#if onback}
-        {#if phone}<button class="icon back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
-        {:else}<button class="icon back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
+        {#if phone}<button class="icon-btn lg back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+        {:else}<button class="icon-btn lg back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
       {/if}
       <div class="ident" role="button" tabindex="0" onclick={() => (panel === 'info' ? (panel = null) : openInfo())}
         onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openInfo(); } }}>
@@ -786,7 +781,7 @@
       </div>
       {#if sectioned && (where === 'reading' || where === 'catching_up')}
         {#if phone}
-          <button bind:this={sectionButton} class="icon sec-icon" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
+          <button bind:this={sectionButton} class="icon-btn lg sec-icon" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
             aria-label={$t('chan_sections_button', { title: shownName })} title={$t('chan_sections_button', { title: shownName })}><Icon name="layout-grid" size={18} /></button>
         {:else}
           <button bind:this={sectionButton} class="sec-btn" style:--chip={shownColor} onclick={() => (tilesOpen = !tilesOpen)} aria-haspopup="dialog" aria-expanded={tilesOpen}
@@ -797,7 +792,7 @@
           </button>
         {/if}
       {/if}
-      <button class="icon menu-btn" class:on={headMenu.open} aria-expanded={headMenu.open} aria-haspopup="menu" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={18} />
+      <button class="icon-btn lg menu-btn" class:on={headMenu.open} aria-expanded={headMenu.open} aria-haspopup="menu" onclick={openHeadMenu} title={$t('chan_menu')} aria-label={waitingAll > 0 ? `${$t('chan_menu')}: ${waitingAll}` : $t('chan_menu')}><Icon name="more-vertical" size={18} />
         {#if waitingAll > 0}<span class="menu-count" aria-hidden="true">{waitingAll > 99 ? '99+' : waitingAll}</span>{/if}</button>
     </header>
     <!-- Under the head, the colour of the section shown (the accent for «Все»). -->
@@ -808,7 +803,7 @@
         <div class="plate locked-note"><Notice tone="info" icon="lock" role="status">
           <b>{$t('chan_scope_locked')}.</b> {lockedText}
           {#snippet action()}
-            <button class="icon" onclick={() => (locked = null)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
+            <button class="icon-btn" onclick={() => (locked = null)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
           {/snippet}
         </Notice></div>
       {/if}
@@ -853,8 +848,8 @@
         {:else if !detail}
           <div class="loading"><Icon name="loader" size={14} />{$t('chan_loading')}</div>
         {:else if waitingKey}
-          <div class="placeholder">
-            <span class="ph-icon away"><Icon name="key" size={24} /></span>
+          <div class="empty-state">
+            <span class="empty-icon"><Icon name="key" size={22} /></span>
             {#if needsInvite}
               <p>{$t('chan_needs_invite')}</p>
               <span>{$t('chan_needs_invite_text')}</span>
@@ -875,7 +870,7 @@
         {:else if where === 'rejected'}
           {@render stateNote('x', $t('chan_state_rejected'), $t('chan_rejected_text'))}
         {:else if where === 'disbanded'}
-          {@render stateNote('archive', $t('chan_state_disbanded'), $t('chan_disbanded_text'), 'mute')}
+          {@render stateNote('archive', $t('chan_state_disbanded'), $t('chan_disbanded_text'))}
         {:else if where === 'none'}
           {@render stateNote('lock-square-rounded', $t('chan_state_none'), $t('chan_none_text'))}
         {:else}
@@ -918,7 +913,7 @@
       </div>
     </div>
 
-    <div class="bottom">
+    <div class="bottom" class:float={phone} bind:clientHeight={bottomH}>
       <!-- Kept (hidden) in «Все»: a switch between a section and «Все» neither draws it anew nor loses its words. -->
       {#if posting || pickToPost}
         <div class="compose" class:off={!posting}>
@@ -950,11 +945,11 @@
 {/snippet}
 
 {#snippet side()}
-  {#if panel === 'thread' && threadOf && detail}
-    {@const look = sectionOf(lv.scopes, threadOf)}
-    <ThreadView {detail} post={threadOf} parts={albumOf.get(threadOf.id) ?? null} section={sectionTitle(lv.scopes, threadOf)}
+  {#if panel === 'thread' && opened.post && detail}
+    {@const look = sectionOf(lv.scopes, opened.post)}
+    <ThreadView {detail} post={opened.post} parts={albumOf.get(opened.post.id) ?? null} section={sectionTitle(lv.scopes, opened.post)}
       sectionColor={look ? lookOf(look).color : null} sectionIcon={look ? lookOf(look).icon : null}
-      onedit={openEdit} onclose={() => { panel = null; threadOf = null; }} />
+      onedit={openEdit} onclose={() => { panel = null; opened.post = null; }} />
   {:else if panel === 'info' && detail}
     <ChannelInfo {detail} bind:moderation bind:modTab onclose={() => (panel = null)} onforgotten={() => { panel = null; onback?.(); }} />
   {/if}
@@ -986,34 +981,31 @@
   .host { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; }
   .under { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .under > :global(*) { flex: 1; min-height: 0; }
-  .under.covered { visibility: hidden; }
+  /* Transparent too: a button with `transition: all` carries the inherited visibility through its 0.15 s. */
+  .under.covered { visibility: hidden; opacity: 0; }
   .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; container-type: inline-size; }
   /* The head (the redesign of the feed): who on the left, its name never gives way; the section, ⋮ with one count. */
-  .head { display: flex; align-items: center; gap: 10px; padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; min-height: 68px; box-sizing: border-box; }
+  /* A computer: the common .panel-head. */
+  .head { display: flex; align-items: center; flex-shrink: 0; }
   /* A phone and a tablet: the whole screen, the head floats inset as glass and the feed runs under it. */
   /* Over the feed's own layers (a post's ⋮ on its media), under the info panel that lies over the conversation (WithInfo):
      no layer of the scale sits there, so the base's plus two. */
-  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
+  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: var(--sp-1-5); margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
   .head.phone .back { color: var(--text); }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 160px; flex: 1 1 auto; cursor: pointer; border-radius: var(--radius-sm); }
-  .head.phone .ident { min-width: 0; gap: 10px; }
+  .head.phone .ident { min-width: 0; gap: var(--sp-2-5); }
   .ident:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; white-space: nowrap; }
+  .title { display: flex; align-items: center; gap: var(--sp-1-5); font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .sub { font-size: var(--fs-sm); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .warn-text { color: var(--warn-text); }
   .dim { color: var(--text-3); display: inline-flex; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
-  .head.phone .icon { width: 40px; height: 40px; border-radius: var(--radius-md); }
   .narrow-only { display: none; }
   @media (max-width: 860px) { .head .narrow-only { display: inline-flex; } }
   /* The button of the sections: the mark and the name of the section shown, the caret. */
   .sec-btn {
-    display: inline-flex; align-items: center; gap: var(--sp-2); height: 36px; max-width: 260px; padding: 0 10px 0 6px; flex-shrink: 0; min-width: 0;
+    display: inline-flex; align-items: center; gap: var(--sp-2); height: 36px; max-width: 260px; padding: 0 var(--sp-2-5) 0 var(--sp-1-5); flex-shrink: 0; min-width: 0;
     border: none; border-radius: var(--radius-md); background: none; cursor: pointer; font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text);
     transition: background var(--dur-fast);
   }
@@ -1023,8 +1015,8 @@
   .sec-caret { display: inline-flex; color: var(--text-3); transition: transform var(--dur-fast); }
   .sec-caret.up { transform: rotate(180deg); }
   /* On a phone an icon alone, beside the menu, in the ink of the section's colour. */
-  .sec-icon.icon { color: color-mix(in srgb, var(--chip) 65%, var(--text)); }
-  .sec-icon.icon[aria-expanded="true"] { background: var(--surface-2); }
+  .sec-icon.icon-btn { color: color-mix(in srgb, var(--chip) 65%, var(--text)); }
+  .sec-icon.icon-btn[aria-expanded="true"] { background: var(--surface-2); }
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
@@ -1033,7 +1025,7 @@
   .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-6) 0; flex-shrink: 0; }
   .strips:not(:has(> *)) { display: none; }
   .strip {
-    display: flex; align-items: center; gap: 10px; width: 100%; max-width: 720px; margin: 0 auto; min-height: 44px; box-sizing: border-box;
+    display: flex; align-items: center; gap: var(--sp-2-5); width: 100%; max-width: 720px; margin: 0 auto; min-height: 44px; box-sizing: border-box;
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--bubble-in-border); background: var(--bubble-in-bg);
     color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: var(--lh-snug); text-align: left;
   }
@@ -1041,7 +1033,7 @@
   /* The plates of the page (core/ui/Notice) the feed's width; the pinned bar stays a strip (it is a button). */
   .plate { width: 100%; max-width: 720px; margin: 0 auto; }
   .locked-note b { font-weight: var(--fw-semibold); }
-  .locked-note .icon { margin: -6px -8px -6px 0; }
+  .locked-note .icon-btn { margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-2)) calc(-1 * var(--sp-1-5)) 0; }
   .pinbar { cursor: pointer; }
   .pinbar:hover { background: var(--surface-hover); }
   .strip.pinbar:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -1056,30 +1048,36 @@
   .window.phone .strips:not(:has(> *)) + .scroll { isolation: isolate; margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   .window.phone .strips:has(> *) + .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); }
   .content { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-3); flex-shrink: 0; }
-  .content:has(> .placeholder) { margin-bottom: auto; }
+  .content:has(> .empty-state) { margin-bottom: auto; }
   /* The states without a feed. */
-  .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--text-2); text-align: center; padding: var(--sp-6); }
-  .ph-icon { width: 56px; height: 56px; margin-bottom: 6px; border-radius: var(--radius-lg); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
-  .placeholder p { margin: 0; color: var(--text); font-weight: var(--fw-bold); font-size: var(--fs-lg); }
-  .placeholder span { font-size: var(--fs-base); max-width: 380px; line-height: var(--lh-base); }
-  .ph-icon.away { background: var(--warn-bg); color: var(--warn-text); }
-  .ph-icon.mute { background: var(--surface-3); color: var(--text-3); }
-  .ph-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .content > .empty-state { margin: auto; }
+  .ph-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); }
   .loading { display: flex; justify-content: center; align-items: center; gap: var(--sp-2); color: var(--text-3); padding: var(--sp-2); font-size: var(--fs-xs); }
   .loading :global(svg) { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .earlier { display: flex; justify-content: center; }
   .history-start { text-align: center; color: var(--text-3); font-size: var(--fs-xs); padding: var(--sp-2) var(--sp-1) 0; }
-  .out-note { align-self: center; display: inline-flex; align-items: center; gap: 6px; text-align: center; line-height: var(--lh-snug); font-size: var(--fs-xs); color: var(--text-2); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); }
+  .out-note { align-self: center; display: inline-flex; align-items: center; gap: var(--sp-1-5); text-align: center; line-height: var(--lh-snug); font-size: var(--fs-xs); color: var(--text-2); padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); }
   /* A list kept hidden takes no place; the one shown lays its cards out as children of the feed. */
   .list { display: none; }
   .list.on { display: contents; }
   .day { display: flex; justify-content: center; }
   .day span { display: inline-flex; align-items: center; height: 26px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); padding: 0 var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-3); border: 1px solid var(--border); }
   .bottom { flex-shrink: 0; }
+  /* A phone: glass over the feed, as the composer of a chat (ChatWindow .bottom.float); the feed passes under it. */
+  .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; }
+  .window.phone .scroll { padding-bottom: calc(var(--sp-4) + var(--bottom-h, 0px)); }
+  .window.phone .no-composer { border-top: 0; }
+  .window.phone .nc-in {
+    /* The row of the composer (Composer.svelte .row): the same pane, edge and shadow. */
+    padding: var(--sp-1-5) var(--sp-1-5) var(--sp-1-5) var(--sp-4); border-radius: var(--radius-bar);
+    background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
+  }
+  .window.phone .no-composer .btn { border-radius: var(--radius-pill); }
   .compose.off { display: none; }
   /* The foot without a composer: what readers do, or the way to a section, the feed's width. */
-  .no-composer { padding: var(--sp-3) var(--sp-6); border-top: 1px solid var(--pane-border); }
+  /* Its bottom over the gesture stripe of a phone screen without the bar (--page-sab, mobile.css). */
+  .no-composer { padding: var(--sp-3) var(--sp-6) calc(var(--sp-3) + var(--page-sab, 0px)); border-top: 1px solid var(--pane-border); }
   .nc-in { max-width: 720px; margin: 0 auto; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: var(--sp-3); }
   .nc-in.to-section { justify-content: space-between; }
   .nc-hint { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-base); color: var(--text-3); }
@@ -1095,9 +1093,9 @@
   /* A phone (a tablet keeps the computer's room around the cards). */
   @container (max-width: 599px) {
     .window.phone .strips { padding: var(--sp-2) var(--sp-3) 0; }
-    .window.phone .scroll { padding: var(--sp-2) var(--sp-3) var(--sp-3); }
-    .window.phone .content { gap: 10px; }
-    .window.phone .no-composer { padding: 10px var(--sp-3) 14px; }
+    .window.phone .scroll { padding: var(--sp-2) var(--sp-3) calc(var(--sp-3) + var(--bottom-h, 0px)); }
+    .window.phone .content { gap: var(--sp-2-5); }
+    .window.phone .no-composer { padding: var(--sp-2) var(--sp-3) calc(var(--sp-3) + var(--page-sab, 0px)); }
   }
   /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
   .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }

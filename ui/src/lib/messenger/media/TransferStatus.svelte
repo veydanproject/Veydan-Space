@@ -231,8 +231,8 @@
   .line-x:hover:not(:disabled) { color: var(--text); }
   .line-x:disabled { opacity: 0.45; cursor: default; }
   /* Compact: inline beside a voice message, or laid over a picture. */
-  .compact { position: relative; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .compact.overlay { position: absolute; inset: 0; flex-direction: column; justify-content: center; gap: 5px; pointer-events: none; }
+  .compact { position: relative; display: inline-flex; align-items: center; gap: var(--sp-1-5); flex-shrink: 0; }
+  .compact.overlay { position: absolute; inset: 0; flex-direction: column; justify-content: center; gap: var(--sp-1); pointer-events: none; }
   .compact.overlay > * { pointer-events: auto; }
   .ring-wrap { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
   .overlay .ring-wrap { width: 44px; height: 44px; }
@@ -248,7 +248,7 @@
     display: flex; align-items: center; justify-content: center;
     background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text-2);
   }
-  .overlay .ring-btn { background: rgba(0, 0, 0, 0.45); color: #fff; }
+  .overlay .ring-btn { background: var(--on-media-scrim); color: #fff; }
   .ring-btn:disabled { cursor: default; }
   .ring-btn > span, .act > span:first-child { display: inline-flex; }
   .bad {
@@ -259,9 +259,9 @@
     width: 24px; height: 24px; border: none; border-radius: 50%; padding: 0; cursor: pointer; display: inline-flex;
     align-items: center; justify-content: center; background: var(--surface-3); color: var(--text-2);
   }
-  .overlay .mini { position: absolute; top: 6px; left: 6px; background: rgba(0, 0, 0, 0.5); color: #fff; }
+  .overlay .mini { position: absolute; top: 6px; left: 6px; background: var(--on-media-scrim); color: #fff; }
   .pill { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .overlay .pill { color: #fff; background: rgba(0, 0, 0, 0.45); padding: 1px 6px; border-radius: var(--radius-pill); }
+  .overlay .pill { color: #fff; background: var(--on-media-scrim); padding: 1px var(--sp-1-5); border-radius: var(--radius-pill); }
 
   /* Full: words, buttons, a thin bar. The buttons go under the words when the place is narrow. */
   .full { display: flex; flex-direction: column; gap: 4px; min-width: 0; width: 100%; }
@@ -273,9 +273,9 @@
   .btns { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
   .act {
     border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
-    padding: 6px; border-radius: var(--radius-sm); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
+    padding: var(--sp-1-5); border-radius: var(--radius-sm); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
   }
-  .act.worded { color: var(--accent-text-2); padding: 5px 8px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .act.worded { color: var(--accent-text-2); padding: var(--sp-1) var(--sp-2); background: color-mix(in srgb, var(--accent) 10%, transparent); }
   .act:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
   .act:disabled, .mini:disabled { opacity: 0.45; cursor: default; }
   .bar { display: block; height: 3px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
@@ -285,7 +285,7 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (pointer: coarse) {
     .act { padding: 9px; }
-    .act.worded { padding: 8px 10px; }
+    .act.worded { padding: var(--sp-2) var(--sp-2-5); }
     .mini { width: 30px; height: 30px; }
   }
 </style>

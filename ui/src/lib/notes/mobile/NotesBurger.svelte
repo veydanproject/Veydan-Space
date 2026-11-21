@@ -33,7 +33,7 @@
   onMount(load);
 </script>
 
-<button type="button" class="m-ibtn" onclick={() => (open = true)} aria-label={$t('notes_nav_open')}>
+<button type="button" class="icon-btn" onclick={() => (open = true)} aria-label={$t('notes_nav_open')}>
   <Icon name="menu" size={22} />
 </button>
 <NotesNav {open} {nav} {filter} onclose={() => (open = false)} onselect={go} onchange={load} />

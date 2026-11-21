@@ -110,7 +110,7 @@
   .field { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   textarea {
-    resize: vertical; min-height: 80px; font: inherit; font-size: var(--fs-base); line-height: var(--lh-snug); color: var(--text);
+    resize: vertical; min-height: 80px; line-height: var(--lh-snug); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3);
   }
   textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 0; }

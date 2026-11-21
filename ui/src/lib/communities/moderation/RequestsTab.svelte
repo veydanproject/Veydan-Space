@@ -15,6 +15,7 @@
   import { get } from 'svelte/store';
   import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
@@ -188,9 +189,12 @@
 {#if requests.length}
   <div class="tools">
     {#if requests.length > SEARCH_FROM || query}
-      <div class="search">
-        <Icon name="search" size={13} />
+      <div class="search-field fill">
+        <Icon name="search" size={16} />
         <input type="search" bind:value={query} placeholder={$t('msg_greq_search')} aria-label={$t('msg_greq_search')} />
+        {#if query}
+          <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+        {/if}
       </div>
     {/if}
     <div class="row">
@@ -223,7 +227,7 @@
   {/if}
 {:else if !bulk?.running}
   <div class="empty-state">
-    <div class="empty-icon"><Icon name="user-plus" size={24} /></div>
+    <div class="empty-icon"><Icon name="user-plus" size={22} /></div>
     <p>{$t('chan_req_empty')}</p>
     <span>{$t('chan_req_empty_hint')}</span>
   </div>
@@ -233,7 +237,7 @@
   <div class="bar" role="status">
     <div class="progress">
       <span>{$t(PROGRESS[bulk.kind], { done: String(bulkTried(bulk)), total: String(bulk.total) })}</span>
-      <span class="track"><span class="fill" style:width={`${(bulkTried(bulk) / Math.max(1, bulk.total)) * 100}%`}></span></span>
+      <span class="track"><span class="track-fill" style:width={`${(bulkTried(bulk) / Math.max(1, bulk.total)) * 100}%`}></span></span>
     </div>
   </div>
 {:else if selected.length}
@@ -256,19 +260,10 @@
 
 <style>
   .tools { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .search {
-    display: flex; align-items: center; gap: 6px; min-height: var(--control-h); padding: 0 12px; color: var(--text-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill);
-  }
-  .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-3); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
-  .seg-btn { height: 28px; padding: 0 var(--sp-3); font-size: var(--fs-xs); }
   .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .nothing { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
-  .empty-state { padding: var(--sp-10) var(--sp-4); }
-  .empty-state p { margin: 0; }
   .status {
     display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
     font-size: var(--fs-xs); line-height: var(--lh-snug);
@@ -290,14 +285,13 @@
   }
   .picked { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .bar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .bar-acts { display: flex; align-items: center; gap: 6px; }
+  .bar-acts { display: flex; align-items: center; gap: var(--sp-1-5); }
   .bar-acts .btn { flex: 1 1 0; justify-content: center; min-width: 0; }
   .bar-acts .btn.ban { flex: 0 0 auto; }
-  .progress { flex: 1; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 4px 0; }
+  .progress { flex: 1; display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); font-weight: var(--fw-semibold); padding: 4px 0; }
   .track { height: 4px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
-  .fill { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--dur-base) var(--ease); }
+  .track-fill { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--dur-base) var(--ease); }
   @media (pointer: coarse) {
-    .search input { font-size: var(--fs-md); min-height: 40px; }
     .bar-acts .btn { min-height: var(--control-h); }
   }
   @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }

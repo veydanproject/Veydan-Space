@@ -1,7 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- The pass module's part of a note's context card for a TOTP entry: its tags, the live code, the open button. -->
+<!-- The pass module's part of a note's context row for a TOTP entry: its tags, the live code, the open button in .foot. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -17,15 +17,15 @@
   const entry = $derived(totpStore.list.find((e) => e.id === id));
 </script>
 
+{@render children?.()}
 {#if entry}
   <PassTags tags={entry.tags} />
   <TotpLiveCode entryId={id} period={entry.period ?? 30} copiedLabel={$t('totp_copy')} />
 {/if}
-{@render children?.()}
 <div class="foot">
   <div class="pw-actions">
     <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(id)}>
-      <Icon name="external-link" size={13} />
+      <Icon name="external-link" size={18} />
     </button>
   </div>
 </div>
@@ -34,9 +34,8 @@
   .foot {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--sp-1-5);
     width: 100%;
-    margin-top: auto;
   }
-  .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
+  .pw-actions { display: flex; gap: var(--sp-1); margin-left: auto; }
 </style>

@@ -156,16 +156,16 @@
 
 <BottomSheet open={menu !== null} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={() => act(oninsert)}>
-      <Icon name="link" size={20} /><span class="m-row-label">{$t('notes_insert')}</span>
+    <button type="button" class="list-row dense" onclick={() => act(oninsert)}>
+      <Icon name="link" size={20} /><span class="list-row-label">{$t('notes_insert')}</span>
     </button>
-    <button type="button" class="m-row" onclick={() => act(onsave)}>
-      <Icon name="save" size={20} /><span class="m-row-label">{$t('notes_attach_save')}</span>
+    <button type="button" class="list-row dense" onclick={() => act(onsave)}>
+      <Icon name="save" size={20} /><span class="list-row-label">{$t('notes_attach_save')}</span>
     </button>
   </div>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={() => act(onremove)}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
+    <button type="button" class="list-row dense" onclick={() => act(onremove)}>
+      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
 </BottomSheet>
@@ -204,7 +204,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sp-2-5);
     padding: 8px 0;
     border: 0;
     background: none;
@@ -214,7 +214,7 @@
   .open img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); }
+  .size { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-xs); color: var(--text-3); }
   .size.err { color: var(--danger-text); }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-text); flex-shrink: 0; }
   .row.remote .dot { background: var(--text-3); }

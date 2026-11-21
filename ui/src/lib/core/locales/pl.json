@@ -26,6 +26,8 @@
     "common_nothing_found": "Nic nie znaleziono",
     "common_nothing_found_hint": "Nic nie pasuje do „{q}”.",
     "common_clear": "Wyczyść",
+    "tabs_scroll_back": "Poprzednie karty",
+    "tabs_scroll_more": "Kolejne karty",
     "common_refresh": "Odśwież",
     "common_update": "Aktualizuj",
     "common_restore": "Przywróć",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "Połączenia SSH",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "Hasła",
-    "suggest_group_note": "Notatki"
+    "suggest_group_note": "Notatki",
+    "kanban_color_violet": "Fioletowy",
+    "kanban_color_blue": "Niebieski",
+    "kanban_color_green": "Zielony",
+    "kanban_color_amber": "Bursztynowy",
+    "kanban_color_red": "Czerwony",
+    "kanban_color_pink": "Różowy",
+    "kanban_color_teal": "Morski",
+    "workspaces_color_custom": "Własny kolor"
   },
   "mobile": {
     "app_launcher": "Aplikacje",

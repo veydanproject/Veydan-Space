@@ -11,6 +11,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import { isMobile } from '$lib/core/platform';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import { SETUP_CARD_KEY, onboarding } from './store.svelte';
   import { doneCount, setupLines, type SetupLine } from './setup';
@@ -68,7 +69,7 @@
     <header>
       <strong id="setup-title">{$t('setup_title')}</strong>
       <span class="count">{$t('setup_progress', { done: String(done), total: String(lines.length) })}</span>
-      <button type="button" class="hide" onclick={forget} aria-label={$t('setup_dismiss')} title={$t('setup_dismiss')}><Icon name="x" size={16} /></button>
+      <button type="button" class={isMobile ? 'icon-btn hide' : 'hide'} onclick={forget} aria-label={$t('setup_dismiss')} title={$t('setup_dismiss')}><Icon name="x" size={isMobile ? 22 : 16} /></button>
     </header>
     <div class="bar" aria-hidden="true"><i style="width: {(done / lines.length) * 100}%"></i></div>
     <ul>
@@ -104,7 +105,9 @@
   header { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
   strong { flex: 1; min-width: 0; font-size: var(--fs-body); }
   .count { color: var(--text-2); font-size: var(--fs-sm); }
-  .hide { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: calc(var(--sp-2) * -1); border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; }
+  /* The ×: 28 on a computer; on a phone the common .icon-btn (40, its zone 44, mobile.css), on the card's edge as before. */
+  .hide.icon-btn { margin-right: calc(var(--sp-2) * -1); }
+  .hide:not(.icon-btn) { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-right: calc(var(--sp-2) * -1); border: 0; border-radius: 50%; background: none; color: var(--text-3); cursor: pointer; }
   .bar { height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent); transition: width 0.2s ease; }
   ul { list-style: none; margin: var(--sp-1) 0 0; padding: 0; }

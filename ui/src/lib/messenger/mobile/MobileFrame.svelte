@@ -18,6 +18,7 @@
   import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
   import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
   import { markPhone } from '../shared/phone';
+  import { PHONE_OS } from '../phone';
 
   interface Props {
     title?: string;
@@ -43,14 +44,14 @@
   onMount(() => onKeyboard((inset) => (kb = inset)));
 </script>
 
-<div class="m-page msg-m" class:bare class:kb-open={kb > 0} style:padding-bottom="{kb}px">
+<div class="m-page msg-m" class:bare class:kb-open={kb > 0} class:ios={PHONE_OS === 'ios'} style:padding-bottom="{kb}px">
   {#if !bare}
-    <header class="bar">
+    <header class="m-header">
       {#if onback}
-        <button class="ibtn" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+        <button class="icon-btn" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
       {/if}
       {#if hubButton && !onback}<HubButton />{/if}
-      <h1>{title}</h1>
+      <h1 class="m-title">{title}</h1>
       {#if lead}{@render lead()}{/if}
       <span class="spacer"></span>
       {#if actions}{@render actions()}{/if}
@@ -71,28 +72,21 @@
      opacity is under 1 the WebView draws no blur behind that glass, the first 0.2 s the posts showed through it
      as if over the head, and then the head as if over them (ROO-558). */
   .msg-m.bare { animation: none; }
-  .bar {
-    display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; min-height: 52px;
-    padding: var(--sp-1) var(--sp-2); background: none; border-bottom: 0;
-    --edge-l: var(--sp-2); --edge-r: var(--sp-2); --edge-t: var(--sp-1);
-  }
-  h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  h1:first-child { padding-left: var(--sp-2); }
-  .spacer { flex: 1; }
-  .bar :global(.ibtn), .ibtn {
-    display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0;
-    border: none; border-radius: var(--radius); background: none; color: var(--text); padding: 0;
-  }
-  .bar :global(.ibtn:active), .ibtn:active { background: var(--surface-3); }
-  .bar :global(.ibtn.accent) { color: var(--accent-text-2); }
+  /* The head is the shell's .m-header (56, back 24); a title next to a lead or the actions keeps its own width. */
+  .m-header > .m-title { flex: 0 1 auto; }
   /* With the keyboard up the home-indicator inset is under the keyboard. */
   .kb-open { --sab: 0px; }
+  /* iOS gives the whole height of the keyboard before the keyboard slides in: on the iPhone the page rises
+     with it (about its time and curve) instead of jumping above it at once. */
+  .msg-m.ios { transition: padding-bottom 260ms cubic-bezier(0.38, 0.7, 0.125, 1); }
   .content { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-  .content.scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3) var(--sp-3) calc(var(--sp-5) + var(--sab, 0px)); gap: var(--sp-3); }
+  /* A tablet, a phone on its side: a column of 560 at most in the middle, as the shell's .m-body (mobile.css); the content still scrolls the whole width. */
+  .content.scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3) max(var(--sp-3), calc((100% - 560px) / 2 + var(--sp-3))) calc(var(--sp-5) + var(--sab, 0px)); gap: var(--sp-3); }
   /* The settings' panels are the desktop's cards: on a phone they take the
-     look of the shell's own cards (mobile.css .m-card) and its tighter padding. */
+     look of the shell's own cards (mobile.css .m-card) and the padding of the
+     settings' cards on a computer (SettingsView): the same card, one padding. */
   .content.scroll :global(.card) {
-    max-width: none; width: 100%; padding: var(--sp-4);
+    max-width: none; width: 100%; padding: var(--sp-4) var(--sp-5);
     background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
     border-radius: var(--radius-card); box-shadow: var(--m-card-shadow, none);
   }

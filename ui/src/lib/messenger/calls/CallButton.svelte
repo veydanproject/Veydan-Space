@@ -81,12 +81,12 @@
 {#if callable}
   <span class="wrap">
     {#if !videoInMenu}
-      <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
+      <button class="icon-btn lg" disabled={!!reason || callStore.busy} onclick={() => press('video')} use:hold={toSettings}
         title={reason || $t('msg_call_video_start')} aria-label={$t('msg_call_video_start')}>
         <Icon name="video" size={18} />
       </button>
     {/if}
-    <button class="icon" disabled={!!reason || callStore.busy} onclick={() => press('audio')} use:hold={toSettings}
+    <button class="icon-btn lg" disabled={!!reason || callStore.busy} onclick={() => press('audio')} use:hold={toSettings}
       title={reason || $t('msg_call_start')} aria-label={$t('msg_call_start')}>
       <Icon name="phone" size={18} />
     </button>
@@ -96,14 +96,9 @@
 
 <style>
   .wrap { position: relative; display: inline-flex; }
-  .icon {
-    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-    width: 36px; height: 36px; padding: 0; border-radius: var(--radius); flex-shrink: 0;
-    -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
-  }
-  @media (hover: hover) { .icon:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
-  .icon:disabled { opacity: 0.45; cursor: default; }
-  /* A head's buttons: 36 on a computer, 40 for a finger (as the feed's). */
-  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  @media (pointer: coarse) { .icon { width: 40px; height: 40px; border-radius: var(--radius); } }
+  /* .icon-btn lg (36), held for the call's settings; a call lights green under the pointer. */
+  .icon-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+  @media (hover: hover) { .icon-btn:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
+  /* 40 for a finger (as the feed's head). */
+  @media (pointer: coarse) { .icon-btn { width: 40px; height: 40px; min-height: 0; } }
 </style>

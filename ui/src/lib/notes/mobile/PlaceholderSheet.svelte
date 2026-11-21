@@ -77,16 +77,16 @@
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="m-list">
     {#each rows as name (name)}
-      <button type="button" class="m-row" onclick={() => pick(name)}>
+      <button type="button" class="list-row dense" onclick={() => pick(name)}>
         <Icon name="code" size={18} />
-        <span class="m-row-label mono">{placeholderMarkup(name)}</span>
+        <span class="list-row-label mono">{placeholderMarkup(name)}</span>
         {#if !isTemplate}
-          <span class="m-row-value" class:muted={!values[name]}>{values[name] || '—'}</span>
+          <span class="list-row-value" class:muted={!values[name]}>{values[name] || '—'}</span>
         {/if}
       </button>
     {/each}
     {#if rows.length === 0}
-      <div class="m-row"><span class="m-row-label muted">{$t('notes_placeholder_none')}</span></div>
+      <div class="list-row dense still"><span class="list-row-label muted">{$t('notes_placeholder_none')}</span></div>
     {/if}
   </div>
 </BottomSheet>
@@ -97,7 +97,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 21;
+    z-index: calc(var(--z-base) + 21);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -113,10 +113,10 @@
   .strip { flex: 1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
   .strip::-webkit-scrollbar { display: none; }
   .pill {
-    flex-shrink: 0; min-height: 40px; padding: 0 14px;
+    flex-shrink: 0; min-height: 40px; padding: 0 var(--sp-3);
     border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text);
     font: inherit; font-size: var(--fs-base); font-family: var(--font-mono);
   }
   .muted { color: var(--text-3); }
-  .m-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

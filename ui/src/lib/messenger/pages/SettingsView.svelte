@@ -143,5 +143,5 @@
     background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
     box-shadow: var(--m-card-shadow, none);
   }
-  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: 2px 7px; border-radius: var(--radius-badge); }
+  code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-badge); }
 </style>

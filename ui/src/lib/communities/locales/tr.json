@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Reddet",
     "chan_level_req_refuse_title": "Reddet: {name}",
     "chan_level_req_refuse_hint": "Okur, gerekçenizle birlikte reddi alır. Seviyeleri değişmez.",
-    "chan_level_req_reason": "Gerekçe (isteğe bağlı)"
+    "chan_level_req_reason": "Gerekçe (isteğe bağlı)",
+    "chan_err_not_found": "Dosya artık depolamada mevcut değil."
   },
   "mobile": {}
 }

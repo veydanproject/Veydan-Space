@@ -49,7 +49,8 @@
 
 <Dialog bind:open title={$t('msg_group_invite_title', { name: group.name })} width="min(440px, calc(100vw - 24px))" footer={looksLikeKey ? keyFooter : undefined}>
   <div class="body">
-    <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} spellcheck="false" disabled={busy}
+    <input type="text" bind:value={key} placeholder={$t('msg_newchat_placeholder')} aria-label={$t('msg_newchat_placeholder')}
+      autocapitalize="off" autocomplete="off" spellcheck="false" disabled={busy}
       onkeydown={(e) => { if (e.key === 'Enter' && looksLikeKey) invite(key.trim()); }} />
     <p class="hint">{$t('msg_group_invite_hint')}</p>
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
@@ -79,7 +80,7 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   input {
-    font: inherit; font-size: var(--fs-sm); color: var(--text); width: 100%;
+    color: var(--text); width: 100%;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px;
   }
   input:focus { outline: none; border-color: var(--accent-border); }

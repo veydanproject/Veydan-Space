@@ -169,9 +169,10 @@
     <div class="label">{$t('msg_call_nodes_add_title')}</div>
     <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
       <input class="ref" type="text" bind:value={text} placeholder={$t('msg_call_nodes_add_placeholder')} spellcheck="false"
-        autocomplete="off" autocapitalize="off" disabled={callNodesStore.busy} aria-label={$t('msg_call_nodes_add_title')} />
+        inputmode="url" autocomplete="off" autocapitalize="off" disabled={callNodesStore.busy} aria-label={$t('msg_call_nodes_add_title')} />
       {#if keyed}
-        <input class="key" type="password" bind:value={key} placeholder={$t('msg_calls_node_key_placeholder')} autocomplete="off" disabled={callNodesStore.busy} />
+        <input class="key" type="password" bind:value={key} placeholder={$t('msg_calls_node_key_placeholder')} aria-label={$t('msg_calls_node_key_placeholder')}
+          autocapitalize="off" autocomplete="off" spellcheck="false" disabled={callNodesStore.busy} />
       {/if}
       <button class="btn btn-ghost" type="submit" disabled={callNodesStore.busy || !text.trim()}>
         <Icon name="plus" size={18} />{$t('common_add')}
@@ -207,7 +208,7 @@
   .meta .id { font-family: var(--font-mono); }
   .meta .key { display: inline-flex; }
   .tag {
-    display: inline-flex; align-items: center; padding: 0 7px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
     background: var(--surface-3); border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
   }
   .tag.own { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
@@ -215,7 +216,7 @@
   .registry { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-xs); color: var(--text-3); }
   .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add input {
-    min-width: 0; min-height: 44px; font: inherit; font-size: var(--fs-sm); color: var(--text);
+    min-width: 0; min-height: 44px; color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add .ref { flex: 2 1 220px; font-family: var(--font-mono); }

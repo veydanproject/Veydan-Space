@@ -116,7 +116,7 @@
 <div class={isMobile ? 'm-page' : 'page'} style:--page-max={isMobile ? undefined : 'var(--page-max-narrow)'}>
   {#if isMobile}
     <div class="m-header">
-      <a class="m-ibtn" href="/settings" aria-label={$t('dev_sync_back')}>
+      <a class="icon-btn" href="/settings" aria-label={$t('dev_sync_back')}>
         <Icon name="chevron-left" size={24} />
       </a>
       <h1 class="m-title">{$t('dev_sync_title')}</h1>
@@ -160,7 +160,7 @@
 
     <div class="log" bind:this={logEl} onscroll={onScroll}>
       {#if entries.length === 0}
-        <p class="empty">{$t('dev_sync_empty')}</p>
+        <p class="empty-state sm">{$t('dev_sync_empty')}</p>
       {:else}
         {#each entries as row (row.seq)}
           <div class="line" class:error={row.level === 'error'} class:retry={row.level === 'retry'} class:skip={row.level === 'skip'}>
@@ -182,7 +182,7 @@
   .back:hover { color: var(--text); text-decoration: underline; }
   .panel { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
-  .toggle-info { display: flex; flex-direction: column; gap: 0.2rem; }
+  .toggle-info { display: flex; flex-direction: column; gap: var(--sp-1); }
   .actions { display: flex; gap: var(--sp-2); }
   .log {
     font-family: var(--font-mono);
@@ -197,7 +197,6 @@
     border-radius: var(--radius);
     padding: var(--sp-3);
   }
-  .empty { margin: 0; color: var(--text-faint); }
   .line { white-space: pre-wrap; word-break: break-word; }
   .line.error { color: var(--danger-text); }
   .line.retry { color: var(--warn-text); }

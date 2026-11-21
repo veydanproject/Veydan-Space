@@ -6,6 +6,7 @@
 
 :root {
   --touch: 44px;
+  --field-h: var(--touch); /* a field is a finger's target too (tokens.css) */
   --kb: 0px; /* the keyboard's height: the host (Android) sets it on <html> as it comes and goes */
   --hit-row: 4px; /* the room a sideways-scrolling row keeps for its controls zones */
   --hit-max: 22px; /* the most a zone may grow on a side, see the hit area rule below */
@@ -13,7 +14,9 @@
   --nav-h: 68px;
   /* The floating «+» (.m-fab) stands this high on every screen, over the tab bar or where a screen has none: the bar's slot (68 + its 10 of air) and 16. */
   --fab-lift: calc(68px + 10px + var(--sp-4));
+  --fab-size: 52px; /* .m-fab; a list under it keeps this much room */
   --bar-plate-h: 64px; /* a plain bar (the attach strip, a bulk bar) */
+  --meta-label-w: 88px; /* the labels' column of a meta table (.m-meta) */
   /* No growth to the screen edge unless a control or its header says so (the hit area rule below). */
   --hit-t: 0px;
   --hit-b: 0px;
@@ -37,12 +40,11 @@
 [data-theme='light'] {
   --m-card: var(--surface);
   --m-card-border: var(--border);
-  --m-card-shadow: 0 1px 2px rgba(23, 20, 60, 0.05);
+  --m-card-shadow: var(--shadow-accent);
   --m-field: var(--surface-2);
   --m-seg: var(--surface-hover);
   --m-tile: var(--surface);
-  /* The header of a screen: glass over the glow; a bar over content: denser glass. */
-  --m-head: var(--pane);
+  /* A bar over content: denser glass. */
   --m-nav: var(--glass-bar);
   --m-tag: var(--accent-tint);
   --m-highlight: var(--accent-bg);
@@ -59,7 +61,6 @@
   --m-field: var(--surface-2);
   --m-seg: var(--surface-2);
   --m-tile: var(--surface-2);
-  --m-head: var(--pane);
   --m-nav: var(--glass-bar);
   --m-tag: var(--accent-tint);
   --m-highlight: var(--accent-bg);
@@ -95,7 +96,7 @@ html.scanning, html.scanning body, html.scanning .shell, html.scanning .screen {
 /* A scanner over the whole screen (core/ui/QrScanner) lives outside the shell:
    the shell goes while it scans, and only the camera and the scanner's own
    frame are left. */
-html.scan-cover .shell { visibility: hidden; }
+html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons with `transition: all` carry the visibility through their 0.15 s */
 
 /* ── Page frame ── */
 .m-page {
@@ -105,6 +106,10 @@ html.scan-cover .shell { visibility: hidden; }
   overflow: hidden;
   animation: vfade var(--dur-base) ease-out;
 }
+/* The screens of the bar come at once: a tab faded in from nothing, so every tap on the bar
+   blinked the whole screen (the owner, 2026-11-21, on an iPhone; the same CSS in every product).
+   A screen without the bar (a chat, a note, a setting) still comes in with vfade. */
+.shell:not(.no-bar) .m-page { animation: none; }
 :root:has(.shell.no-bar) {
   --nav-h: 0px;
   --nav-gap: 0px;
@@ -120,12 +125,48 @@ html.scan-cover .shell { visibility: hidden; }
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: var(--sp-3) var(--sp-4) calc(var(--sp-4) + var(--page-sab));
+  /* A tablet, a phone on its side: the content is a column of 560 at most in the middle, as a sheet (.m-sheet), its
+     fields, rows and cards not stretched from edge to edge; the body still scrolls the whole width. */
+  padding: var(--sp-3) max(var(--sp-4), calc((100% - 560px) / 2 + var(--sp-4))) calc(var(--sp-4) + var(--page-sab));
   background: transparent;
   /* Under a head without a bar the page dissolves at its top edge. */
   -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
   mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
 }
+/* The one foot of a page and a sheet (design 08): pinned under the scrolling body, the whole
+   width over a line; one button the whole width, two («Отмена» ghost and the verb) halves 48
+   high. A page's foot keeps the gesture stripe under it; a sheet's steps over the sheet's own
+   padding (BottomSheet). Buttons that do not fit side by side go under each other. The first
+   start's step foot (onboarding.css .ob-foot) is this one on a phone. */
+.page-foot,
+.ob.m .ob-foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--page-sab));
+  border-top: 1px solid var(--border);
+  background: var(--surface-drawer);
+}
+.page-foot > .btn,
+.ob.m .ob-foot > .btn {
+  flex: 1 1 0;
+  min-width: fit-content;
+  min-height: 48px;
+  justify-content: center;
+  font-size: var(--fs-base);
+}
+/* What is not a button (the form's error, a note) takes its own row over the buttons:
+   an error stands beside them, not at the end of a long body. */
+.page-foot > :not(.btn, button),
+.ob.m .ob-foot > :not(.btn, button) { flex-basis: 100%; margin: 0; }
+/* The first start's frame keeps the gesture stripe itself. Its steps have no «Отмена»: the verb
+   the whole width on top, the other ways («I have an account», «Later») under it. */
+.ob.m .ob-foot { flex-direction: column; align-items: stretch; padding-bottom: var(--sp-3); }
+.ob.m .ob-foot > * { flex: none; }
+/* The body over a foot ends with its own padding: the stripe is the foot's. */
+.m-body:has(+ .page-foot) { padding-bottom: var(--sp-4); }
 .m-title {
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
@@ -143,18 +184,9 @@ html.scan-cover .shell { visibility: hidden; }
   line-height: var(--lh-snug);
   margin-bottom: var(--sp-4);
 }
-.m-label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text-2);
-  padding: var(--sp-4) var(--sp-1) var(--sp-2);
-}
-.m-section {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text-2);
-  padding: var(--sp-4) var(--sp-1) var(--sp-2);
-}
+/* A group's label on a phone is the common .section-label (base.css, design 09). A page's body that stacks its
+   groups one after another keeps 16 above a label and 8 to its group; a container of its own sets its own gap. */
+.m-body > .section-label { margin: var(--sp-4) var(--sp-1) var(--sp-2); }
 /* .m-error is the error of a field, the same look as .error-msg (base.css);
    only the gap under it lives here. */
 .m-error { margin-bottom: var(--sp-3); }
@@ -165,7 +197,7 @@ html.scan-cover .shell { visibility: hidden; }
   align-items: center;
   gap: var(--sp-2);
   flex-shrink: 0;
-  /* A 40px .m-ibtn plus the padding: headers with and without buttons are equal. */
+  /* A 40px .icon-btn plus the padding: headers with and without buttons are equal. */
   min-height: 56px;
   margin: 0;
   padding: var(--sp-2) var(--sp-2);
@@ -184,23 +216,15 @@ html.scan-cover .shell { visibility: hidden; }
 /* A root screen has no back arrow: its title starts on the page's left edge. */
 .m-header > .m-title:first-child { padding-left: var(--sp-2); }
 .m-header .spacer { flex: 1; }
-.m-ibtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text);
-  text-decoration: none;
-  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-.m-ibtn:active { background: var(--m-seg); transform: scale(0.97); transition-duration: var(--dur-press); }
-.m-ibtn.on { color: var(--accent-text); background: var(--accent-tint); }
-.m-ibtn.accent { color: var(--accent-text); }
+/* ── Icon button ── one size on a phone, the common .icon-btn and its .lg (base.css, design 02): 40, --radius, no fill,
+   its zone 44 (the zones' rule below), the icon 22 in --text-soft, «back» 24 (Icon size={24}); a press and a hover
+   are --surface-hover. `.on` is a state that stays (a pinned note, an open search), `.accent` a coloured one. */
+.icon-btn, .icon-btn.lg { width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius); }
+.icon-btn > .icon { width: 22px; height: 22px; }
+.icon-btn > .icon[width='24'] { width: 24px; height: 24px; }
+.icon-btn:active:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.icon-btn.on, .icon-btn.on:hover:not(:disabled) { color: var(--accent-text); background: var(--accent-tint); }
+.icon-btn.accent { color: var(--accent-text); }
 
 /* Coloured icon tile: `--c` is the item colour */
 .m-doc {
@@ -218,19 +242,28 @@ html.scan-cover .shell { visibility: hidden; }
   --c: var(--text-3);
 }
 .m-doc.lg { width: 36px; height: 36px; border-radius: var(--radius); }
+/* The mark of a folder, the one of the drawer, the move sheet and the labels: `folder` 18 in the folder's colour
+   (`.tinted-text` with style:--chip, base.css), a folder without one (or «no folder») in --text-3. */
+.m-folder { display: inline-flex; flex-shrink: 0; color: var(--text-3); }
+/* The round tick of a row chosen in a multi-select (the notes' list). */
+.m-tick {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border: 2px solid var(--border-2); border-radius: 50%; color: #fff;
+}
+.m-tick.on { background: var(--accent); border-color: var(--accent); }
 
 /* ── Touch-sized controls ── */
-.btn, .icon-btn, .seg-btn { min-height: var(--touch); }
+.btn, .seg-btn { min-height: var(--touch); }
 /* A finger's zone, not the look: whatever is shorter or narrower than --touch
    keeps its size and grows an invisible zone to it, per axis, evenly on both
    sides (inset is 0 for a side already long enough). --hit-max caps the growth
    where neighbours stand close, so two zones never cross. Zero specificity: a
    control's own position, ::before or --hit-max wins. Inline links in a text
    run are left alone (a line is not a target); a row's own ::before too. */
-:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.m-ibtn, a.m-bar-item) {
+:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.icon-btn, a.m-bar-item) {
   position: relative;
 }
-:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.m-ibtn, a.m-bar-item)::before {
+:where(button:not(.list-row), [role='button'], [role='tab'], [role='switch'], [role='radio'], [role='checkbox'], [role='menuitem'], summary, a.icon-btn, a.m-bar-item)::before {
   content: '';
   position: absolute;
   top: min(max(calc(-1 * var(--hit-max)), min(0px, calc((100% - var(--touch)) / 2))), calc(-1 * var(--hit-t, 0px)));
@@ -241,107 +274,41 @@ html.scan-cover .shell { visibility: hidden; }
 /* A control in a corner or at the edge of the screen: --hit-t/-b/-l/-r grow its zone by that much on a
    side, past --hit-max, up to the edge of the content, so no strip beside it is dead. A header names the
    gaps of its own padding (--edge-l/-r/-t); its first control takes the left, its last the right, each the top. */
-:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn) { --hit-t: var(--edge-t, 0px); }
-:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn):first-child { --hit-l: var(--edge-l, 0px); }
-:where(header, .m-header) > :where(button, [role='button'], a.m-ibtn):last-child { --hit-r: var(--edge-r, 0px); }
+:where(header, .m-header) > :where(button, [role='button'], a.icon-btn) { --hit-t: var(--edge-t, 0px); }
+:where(header, .m-header) > :where(button, [role='button'], a.icon-btn):first-child { --hit-l: var(--edge-l, 0px); }
+:where(header, .m-header) > :where(button, [role='button'], a.icon-btn):last-child { --hit-r: var(--edge-r, 0px); }
 input, select, textarea {
-  min-height: var(--touch);
-  font-size: var(--fs-md); /* prevents iOS zoom on focus */
+  min-height: var(--field-h);
+  /* 16 keeps iOS and Android from zooming in on focus: a field's own rule sets no smaller size. */
+  font-size: var(--fs-md);
 }
 /* No mouse grip on the phone: a text area grows or scrolls by itself. */
 textarea { resize: none; }
 /* A mark big enough for a finger; its label, tapped, toggles it too. */
 input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-height: 0; }
 
-/* ── Search field ── */
-.m-search {
-  position: relative;
+/* ── Search row ── the search field is base.css's .search-field.fill; a button beside it («Отмена»)
+   stands to its right, not inside. */
+.m-find-row {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   margin-bottom: var(--sp-3);
 }
-.m-page > .m-search {
+.m-page > .m-find-row {
   flex-shrink: 0;
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
 }
-.m-page > .m-search:first-child {
+.m-page > .m-find-row:first-child {
   padding-top: var(--sp-2);
 }
-.m-search .field {
-  flex: 1;
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.m-search .field > svg {
-  position: absolute;
-  left: 12px;
-  color: var(--text-3);
-  pointer-events: none;
-}
-.m-search input {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 40px 0 38px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--m-field);
-  font-size: var(--fs-body);
-}
-.m-search input:focus { box-shadow: 0 0 0 2px var(--focus-ring); }
-.m-search .clear {
-  position: absolute;
-  right: 2px;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 50%;
-  padding: 0;
-  background: transparent;
-  color: var(--text-3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.m-search .cancel {
-  border: 0;
-  background: transparent;
-  color: var(--accent-text);
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-body);
-  padding: 0 var(--sp-1);
-}
 
-/* ── Segment bar ── */
-.m-page > .m-seg {
+/* ── Tabs ── a page's row of tabs (core/ui Tabs, `phone`) stands over its list and does not scroll with it; its line
+   reaches the screen's edges through this padding (Tabs' --tabs-bleed, 16). */
+.m-page > .m-tabs {
   flex-shrink: 0;
-  margin: 0;
-  padding: 0 var(--sp-4) var(--sp-2);
-}
-.m-seg {
-  display: flex;
-  gap: var(--sp-2);
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin-bottom: var(--sp-3);
-}
-.m-seg::-webkit-scrollbar { display: none; }
-.m-seg-btn {
-  flex-shrink: 0;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--m-seg);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-.m-seg-btn.active {
-  background: var(--accent);
-  color: #fff;
+  padding: 0 var(--sp-4);
 }
 
 /* ── Cards ── */
@@ -374,99 +341,51 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: var(--sp-2);
 }
 
-/* Note card: doc tile, title + date, preview */
-.m-note {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-3);
-  padding: 12px 14px;
-  color: var(--text);
-  text-decoration: none;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  position: relative;
-}
-.m-note:active { background: var(--surface-2); }
-.m-note .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.m-note .top { display: flex; align-items: center; gap: var(--sp-2); }
-.m-note .title {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.m-note .date {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--fs-xs);
-  color: var(--text-3);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.m-note .date svg { color: var(--accent-text); }
-.m-note .preview {
-  font-size: var(--fs-sm);
-  color: var(--text-2);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.m-note .check {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--border-2);
-  flex-shrink: 0;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-}
-.m-note .check.on { background: var(--accent); border-color: var(--accent); }
-.m-note.selected { outline: 2px solid var(--accent-border); }
-
 /* ── Grouped list rows (settings, tags, drawer) ── */
 .m-list {
+  color: var(--text);
+  font-size: var(--fs-body);
   background: var(--pane-strong);
   border: 1px solid var(--m-card-border);
   border-radius: var(--radius-card);
   box-shadow: var(--m-card-shadow);
   overflow: hidden;
 }
-.m-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  min-height: 52px;
-  padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--divider);
-  color: var(--text);
-  text-decoration: none;
-  background: none;
-  border-left: 0;
-  border-right: 0;
-  border-top: 0;
-  border-radius: 0;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  font-size: var(--fs-body);
+/* Its rows are the common dense row (base.css .list-row.dense, 56 on the phone) from edge to edge of the card:
+   no corners of their own, a hairline of --divider between two rows from the text, hidden beside a pressed row.
+   A row that only tells (a field, a message) is `.still`. The label is the body's text (the list's), the value --text-2.
+   The hairline is drawn by the row's text (its first part, or the part after a lead: an icon, a tile, an avatar, a
+   dot, a chip): placed on the row with no left of its own, it starts where the text begins, whatever the lead, and
+   runs to the card's edge, where the card clips it (with a right of its own its width would shrink to its content's: none).
+   The settings' tiles (.set-row) draw none. */
+.m-list .list-row { border-radius: 0; }
+.m-list .list-row:not(.set-row) + .list-row:not(.set-row) > :is(
+  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
+  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before {
+  content: ''; position: absolute; top: -0.5px; width: 100%; height: 1px;
+  background: var(--divider); pointer-events: none;
 }
-.m-row:last-child { border-bottom: 0; }
-.m-row:active { background: var(--surface-2); }
-.m-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-row-value { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
-.m-row .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
-.m-row .chev { color: var(--text-3); display: inline-flex; }
-.m-row.danger { color: var(--danger-text); justify-content: center; font-weight: var(--fw-semibold); }
+.m-list .list-row:not(.set-row):is(:hover, :active, .active) > :is(
+  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
+  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before,
+.m-list .list-row:not(.set-row):is(:hover, :active, .active) + .list-row:not(.set-row) > :is(
+  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
+  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before { opacity: 0; }
+.list-row:active:not(.still, :disabled) { background: var(--surface-hover); }
+.list-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-row-value { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
+.list-row.dense .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
+.list-row.dense .chev { color: var(--text-3); display: inline-flex; }
+.list-row.dense.danger { color: var(--danger-text); justify-content: center; font-weight: var(--fw-semibold); }
 .m-dot {
   width: 10px;
   height: 10px;
@@ -495,7 +414,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sp-1-5);
   min-height: 84px;
   padding: var(--sp-3) var(--sp-2);
   background: var(--pane-strong);
@@ -557,7 +476,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-bar-ico { position: relative; display: inline-flex; }
 /* A count (or a word, «новое») at the icon's corner. */
 .m-bar-badge {
-  position: absolute; top: -5px; left: calc(100% - 8px); min-width: 17px; height: 17px; padding: 0 4px;
+  position: absolute; top: -5px; left: calc(100% - 8px); min-width: 17px; height: 17px; padding: 0 var(--sp-1);
   border-radius: var(--radius-pill); background: var(--danger); color: #fff; box-shadow: 0 0 0 2px var(--pane-strong);
   display: inline-flex; align-items: center; justify-content: center;
   font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon); white-space: nowrap;
@@ -617,7 +536,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-btn-grad { transition: transform var(--dur-fast) var(--ease); }
 .m-btn-grad:active { filter: brightness(1.08); transform: scale(0.97); transition-duration: var(--dur-press); }
 @media (prefers-reduced-motion: reduce) {
-  .m-ibtn:active, .m-btn-grad:active { transform: none; }
+  .m-btn-grad:active { transform: none; }
 }
 .m-btn-grad:disabled { opacity: 0.45; box-shadow: none; }
 
@@ -628,11 +547,6 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   gap: var(--sp-1);
   margin-bottom: var(--sp-3);
 }
-.m-field label {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--text-2);
-}
 .m-field input, .m-field select { width: 100%; }
 
 /* ── FAB ── */
@@ -640,8 +554,8 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   position: fixed;
   right: var(--sp-4);
   bottom: calc(var(--fab-lift) + var(--sab));
-  width: 52px;
-  height: 52px;
+  width: var(--fab-size);
+  height: var(--fab-size);
   border-radius: 50%;
   border: 0;
   display: flex;
@@ -650,7 +564,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   background: var(--accent);
   color: #fff;
   box-shadow: var(--shadow-lg);
-  z-index: 5;
+  z-index: calc(var(--z-base) + 5);
 }
 .m-fab > .icon { width: 22px; height: 22px; }
 .m-fab:active { filter: brightness(1.08); }
@@ -665,9 +579,9 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-1);
   min-height: 28px;
-  padding: 0 12px;
+  padding: 0 var(--sp-3);
   border-radius: var(--radius-pill);
   border: 0;
   background: var(--m-tag);
@@ -687,7 +601,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-chips.scroll::-webkit-scrollbar { display: none; }
 .m-chip.active { background: var(--accent); color: #fff; }
-.m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-xs); }
+.m-chip.small { min-height: 20px; padding: 0 var(--sp-2); font-size: var(--fs-xs); }
 .m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
 /* A chip in the user's colour is `.m-chip.tinted` with `style:--chip`: its
    colours are the one rule of base.css (`.tinted`), as on the desktop. One
@@ -728,11 +642,13 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   font-size: var(--fs-body);
   flex-shrink: 0;
 }
+/* In a record's row (.list-row) the avatar is the row's: 48. */
+.list-row:not(.dense) .m-avatar { width: 48px; height: 48px; border-radius: var(--radius-md); font-size: var(--fs-lg); }
 
 /* ── Meta table ── */
 .m-meta {
   display: grid;
-  grid-template-columns: 88px 1fr;
+  grid-template-columns: var(--meta-label-w) 1fr;
   row-gap: var(--sp-2);
   column-gap: var(--sp-3);
   font-size: var(--fs-sm);
@@ -749,32 +665,19 @@ mark.m-highlight {
   padding: 1px 0;
 }
 
-/* ── Empty state ── */
-.m-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-10) var(--sp-4);
-  color: var(--text-3);
-  text-align: center;
-}
-.m-empty p { color: var(--text-2); font-weight: var(--fw-semibold); margin: 0; }
-.m-empty span { font-size: var(--fs-sm); }
-
 /* ── Bottom sheet chrome ── */
 .m-dim {
   position: fixed;
   inset: 0;
   background: var(--backdrop);
-  z-index: 50;
+  z-index: var(--z-panel);
 }
 .m-sheet {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 51;
+  z-index: calc(var(--z-panel) + 1);
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);
@@ -802,25 +705,13 @@ mark.m-highlight {
 /* The grip's zone grows upward only: the first row of the sheet stands right under it. */
 .m-sheet .handle::before { inset-block: calc(-1 * var(--touch) + 100%) 0; }
 
-/* A search field with the app's own clear button shows only that one: the
-   browser's cross of type="search" would stand beside it. */
-.m-search .field:has(.clear) input::-webkit-search-cancel-button,
-.m-search .field:has(.clear) input::-webkit-search-decoration {
-  -webkit-appearance: none;
-  appearance: none;
-  display: none;
-}
-
 /* A row that scrolls sideways (`overflow-x: auto`) clips its controls' zones above and below,
    because the other axis clips with it. `.hit-row` leaves them room: padding of --hit-row on both
    sides, taken back by an equal margin, so the row keeps its place; --hit-row is the growth the
-   shortest control needs ((44 - its height) / 2). `.m-seg` and `.m-chips.scroll` are such rows. */
+   shortest control needs ((44 - its height) / 2). `.m-chips.scroll` is such a row. */
 .hit-row.hit-row,
-.m-seg.m-seg,
 .m-chips.scroll.scroll {
   padding-block: var(--hit-row);
   margin-block: calc(-1 * var(--hit-row));
 }
 .m-chips.scroll.scroll { --hit-row: 8px; }
-.m-seg.m-seg { margin-bottom: calc(var(--sp-3) - var(--hit-row)); }
-.m-page > .m-seg.m-seg { margin: calc(-1 * var(--hit-row)) 0; padding-bottom: calc(var(--sp-2) + var(--hit-row)); }

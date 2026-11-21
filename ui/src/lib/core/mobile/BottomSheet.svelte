@@ -105,7 +105,8 @@
     style:bottom="{kb}px"
     style:max-height="{full ? viewH - kb : cap}px"
     style:height={full ? `${viewH - kb}px` : undefined}
-    style:padding-bottom={kb > 0 ? '12px' : undefined}
+    class:has-foot={!!footer}
+    style:padding-bottom={kb > 0 && !footer ? '12px' : undefined}
   >
     <div
       class="handle"
@@ -126,8 +127,8 @@
         onpointercancel={onPointerUp}
       >
         {#if onback}
-          <button type="button" class="m-ibtn" onclick={onback} aria-label={$t('common_back')} onpointerdown={(e) => e.stopPropagation()}>
-            <Icon name="chevron-left" size={18} />
+          <button type="button" class="icon-btn" onclick={onback} aria-label={$t('common_back')} onpointerdown={(e) => e.stopPropagation()}>
+            <Icon name="chevron-left" size={24} />
           </button>
         {/if}
         <!-- The «?» right after the title, outside the heading: its note is not read as part of the title. -->
@@ -143,8 +144,8 @@
     <div class="body">
       {@render children()}
     </div>
-    <!-- Outside the body: it never scrolls away; the sheet's bottom padding keeps it above the safe area. -->
-    {#if footer}<div class="foot">{@render footer()}</div>{/if}
+    <!-- Outside the body: it never scrolls away; the one foot of a page and a sheet (mobile.css .page-foot). -->
+    {#if footer}<div class="page-foot" style:padding-bottom={kb > 0 ? 'var(--sp-3)' : undefined}>{@render footer()}</div>{/if}
   </div>
 {/if}
 
@@ -160,7 +161,7 @@
   .m-sheet.full .body { flex: 1 1 auto; }
   .handle {
     touch-action: none;
-    padding: 10px 0 8px;
+    padding: var(--sp-2-5) 0 var(--sp-2);
     margin-bottom: 0;
     width: 100%;
     height: auto;
@@ -181,7 +182,8 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    min-height: 64px;
+    /* The phone's one head (mobile.css .m-header): 56, its back 24. */
+    min-height: 56px;
     margin-bottom: var(--sp-2);
     /* The × 12 from the sheet's right edge, as in Dialog and Drawer: the head steps out of the sheet's 20 by 8. */
     margin-right: calc(var(--sp-3) - var(--sp-5));
@@ -203,6 +205,12 @@
     touch-action: pan-y;
   }
   .body > :global(*) { flex-shrink: 0; }
-  /* Like the footer of Dialog and Drawer: 12 above, 20 at the sides (the sheet's own). */
-  .foot { flex-shrink: 0; padding: var(--sp-3) 0 0; }
+  /* The foot is the sheet's bottom edge: the whole width over its line, the stripe under it
+     its own; its buttons stand under the body's 20 at the sides. */
+  .m-sheet.has-foot { padding-bottom: 0; }
+  .page-foot {
+    margin: var(--sp-3) calc(-1 * var(--sp-5)) 0;
+    padding-inline: var(--sp-5);
+    padding-bottom: calc(var(--sp-3) + var(--sab));
+  }
 </style>

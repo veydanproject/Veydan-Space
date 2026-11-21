@@ -723,7 +723,7 @@
 {#snippet mdChip()}
   <span class="mdchip" title={$t('msg_fmt_md_on')}>
     <Icon name="file-code" size={13} /><span>Markdown</span>
-    <button class="icon" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
+    <button class="md-off" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
       <Icon name="x" size={12} />
     </button>
   </span>
@@ -795,7 +795,7 @@
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
         <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: readingOf(replyTo!), deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
       </span>
-      <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('common_back')}><Icon name="x" size={18} /></button>
+      <button class="icon-btn" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('common_back')}><Icon name="x" size={18} /></button>
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
@@ -910,7 +910,7 @@
   /* The field under the conversation's column: as wide (720) and in the middle; 52 high, its buttons 40 with icons 18. */
   .composer { position: relative; background: transparent; padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; max-width: calc(720px + 2 * var(--sp-3)); margin-inline: auto; box-sizing: border-box; }
   .row {
-    padding: 6px; border-radius: var(--radius-bar);
+    padding: var(--sp-1-5); border-radius: var(--radius-bar);
     background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .row:focus-within { border-color: var(--accent-border); }
@@ -937,7 +937,7 @@
      begins on one line. The bar is the app's own (base.css). */
   .cmd-list {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); align-content: start; gap: 1px var(--sp-3);
-    max-height: calc(6 * 44px + 5px + 8px); overflow-y: auto; padding: 4px;
+    max-height: calc(6 * 44px + 5px + 8px); overflow-y: auto; padding: var(--sp-1);
     border-radius: calc(var(--radius-md) - 1px);
   }
   /* A row as the row of a menu (.menu-item): grey under the pointer; the one chosen by the arrows (Enter's) grey with the keyboard's ring too — the pointer does not move it. */
@@ -954,7 +954,7 @@
   @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
   @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
-  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); border: 1px solid var(--border-2); }
+  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); border: 1px solid var(--border-2); }
   .tool.mdtag.on { color: var(--accent-text-2); background: var(--accent-tint); border-color: transparent; }
   .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-xs); color: var(--accent-text-2); }
   .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
@@ -986,7 +986,7 @@
   /* Its right edge on the button's: the row has no padding on the right. */
   .hint {
     position: absolute; right: 0; bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
-    padding: 7px 12px; border-radius: var(--radius); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
@@ -994,21 +994,24 @@
   .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
   .tool.on { color: var(--accent-text-2); background: var(--accent-tint); }
   .tool:disabled { opacity: 0.45; cursor: default; }
-  .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:hover { color: var(--text); background: var(--surface-3); }
   /* Over the field: the chip of Markdown, and on a computer the format menu of a selection. */
   .above { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: 28px; }
   .mdchip {
-    display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: var(--sp-1); height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
     background: var(--accent-tint); color: var(--accent-text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
-  .mdchip .icon { width: 18px; height: 18px; border-radius: 50%; color: inherit; }
+  /* The × of the chip: a part of it, round 18 in its ink. */
+  .md-off {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+    border: none; border-radius: 50%; background: none; color: inherit; cursor: pointer;
+  }
+  .md-off:hover { color: var(--text); background: var(--surface-3); }
   .fmt {
     display: inline-flex; align-items: center; gap: 2px; padding: 3px; align-self: flex-start;
     border-radius: var(--radius); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .fb {
-    height: 30px; min-width: 32px; padding: 0 7px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
+    height: 30px; min-width: 32px; padding: 0 var(--sp-2); border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
     color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
   .fb:hover { color: var(--text); background: var(--surface-hover); }
@@ -1020,7 +1023,7 @@
     display: flex; flex-direction: column;
     /* Under the row without the column's gap, edge to edge. */
     margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)) 0;
-    padding-top: 10px;
+    padding-top: var(--sp-2-5);
     overflow: hidden;
   }
   /* The panel itself, 10 under the row like the keyboard. */
@@ -1043,12 +1046,12 @@
   @media (prefers-reduced-motion: reduce) { .dock.glide { transition: none; } }
   /* The phone: a glass bar over the conversation; the field holds its own buttons and stays one line high until the text needs more. */
   @media (pointer: coarse) {
-    .composer { padding: var(--sp-1) var(--sp-2) calc(10px + var(--sab, 0px)); }
+    .composer { padding: var(--sp-1) var(--sp-2) calc(var(--sp-2-5) + var(--sab, 0px)); }
     .row {
       border-radius: var(--radius-bar);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
+    .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: var(--sp-1-5) var(--sp-2); }
     .field {
       flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: var(--radius-pill);
       background: none;
@@ -1067,13 +1070,13 @@
     .field .tool { width: 40px; height: 40px; margin-left: 2px; }
     .field .tool[data-emoji-toggle] { margin-left: 0; margin-right: 2px; }
     /* A finger's rows, the width of the bar: five of them, no higher than 45% of the screen over the keyboard. */
-    .cmds { position: absolute; z-index: 20; left: var(--sp-2); right: var(--sp-2); bottom: calc(100% + 8px); }
+    .cmds { position: absolute; z-index: calc(var(--z-base) + 20); left: var(--sp-2); right: var(--sp-2); bottom: calc(100% + 8px); }
     .cmd-list { max-height: min(calc(5 * 52px + 4px + 8px), calc(45vh - 2px)); }
     .cmd { min-height: 52px; }
     /* Over the conversation, under its head; in the body of the page, so no glass of the composer holds it. */
     .fmt-top {
-      position: fixed; left: 50%; z-index: 30; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
-      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      position: fixed; left: 50%; z-index: calc(var(--z-base) + 30); transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
+      display: flex; flex-direction: column; align-items: center; gap: var(--sp-1-5);
       animation: drop var(--dur-fast) var(--ease);
     }
     /* Over the conversation: glass like the head, so it reads over any bubble. */
@@ -1082,7 +1085,10 @@
       background: color-mix(in srgb, var(--accent-tint) 55%, var(--pane-strong)); box-shadow: var(--pane-highlight), var(--pane-shadow);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    .fmt-top .mdchip .icon { width: 24px; height: 24px; }
+    /* The × of the chip on a phone: a button of 40 (its zone 44), standing over the chip's height, as the other icon buttons. */
+    .mdchip .md-off { width: 40px; height: 40px; margin-block: -8px; margin-right: -2px; border-radius: var(--radius); }
+    .mdchip .md-off:hover { background: none; }
+    .mdchip .md-off:active { background: var(--surface-hover); }
     .fmt { align-self: center; border-radius: var(--radius-bar); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
     .fb { height: 36px; min-width: 40px; }
     .fb:hover { color: var(--text-soft); background: none; }
@@ -1091,7 +1097,7 @@
     .send { width: 40px; height: 40px; }
   }
   @keyframes halo { 50% { transform: scale(1.18); opacity: 0.1; } }
-  @keyframes drop { from { opacity: 0; margin-top: -6px; } }
+  @keyframes drop { from { opacity: 0; margin-top: calc(-1 * var(--sp-1-5)); } }
   @keyframes swap { from { transform: rotate(-70deg) scale(0.4); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after, .fmt-top { animation: none; } }
   /*

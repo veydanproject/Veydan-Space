@@ -375,7 +375,7 @@
   .dot.unknown { background: var(--text-3); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   input {
-    min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
+    min-height: 44px; font-family: var(--font-mono); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   input:focus { outline: none; border-color: var(--accent-border); }

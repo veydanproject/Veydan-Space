@@ -44,10 +44,10 @@
 
 
 <style>
-  .socials { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .socials { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); min-width: 0; }
   .social {
-    display: inline-flex; --hit-max: 3px; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
-    padding: 4px 10px; border-radius: var(--radius-pill); cursor: pointer;
+    display: inline-flex; --hit-max: 3px; align-items: center; gap: var(--sp-1-5); max-width: 100%; min-width: 0;
+    padding: var(--sp-1) var(--sp-2-5); border-radius: var(--radius-pill); cursor: pointer;
     font: inherit; font-size: var(--fs-xs); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border);
     transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
@@ -55,5 +55,5 @@
   .social:hover { background: var(--surface-hover); border-color: var(--border-2, var(--border)); }
   .social:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .handle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .compact .social { padding: 3px 8px; gap: 5px; }
+  .compact .social { padding: 3px 8px; gap: var(--sp-1); }
 </style>

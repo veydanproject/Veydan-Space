@@ -26,6 +26,8 @@
     "common_nothing_found": "見つかりません",
     "common_nothing_found_hint": "「{q}」に一致する項目はありません。",
     "common_clear": "クリア",
+    "tabs_scroll_back": "前のタブ",
+    "tabs_scroll_more": "次のタブ",
     "common_refresh": "再読み込み",
     "common_update": "アップデート",
     "common_restore": "復元",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "SSH 接続",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "パスワード",
-    "suggest_group_note": "ノート"
+    "suggest_group_note": "ノート",
+    "kanban_color_violet": "バイオレット",
+    "kanban_color_blue": "ブルー",
+    "kanban_color_green": "グリーン",
+    "kanban_color_amber": "アンバー",
+    "kanban_color_red": "レッド",
+    "kanban_color_pink": "ピンク",
+    "kanban_color_teal": "ティール",
+    "workspaces_color_custom": "カスタムカラー"
   },
   "mobile": {
     "app_launcher": "アプリ",

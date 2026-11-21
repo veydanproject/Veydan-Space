@@ -150,7 +150,7 @@
 
   .side-label {
     margin: 0;
-    padding: 0.35rem 0.6rem;
+    padding: var(--sp-1-5) var(--sp-2-5);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
@@ -165,7 +165,7 @@
   .git {
     list-style: none;
     margin: 0;
-    padding: 0.15rem 0;
+    padding: var(--sp-0-5) 0;
     max-height: 13rem;
     overflow: auto;
     font-family: var(--font-mono);
@@ -176,10 +176,10 @@
   .git li {
     display: grid;
     grid-template-columns: 2.4rem 1.75rem minmax(0, 1fr);
-    column-gap: 0.4rem;
+    column-gap: var(--sp-1-5);
     align-items: center;
     min-height: 1.75rem;
-    padding: 0 0.45rem;
+    padding: 0 var(--sp-2);
     white-space: pre;
   }
 

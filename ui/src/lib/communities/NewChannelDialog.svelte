@@ -239,7 +239,6 @@
       </section>
 
       <p class="note"><Icon name="info" size={18} /><span>{$t('chan_keeper_note')}</span></p>
-      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {:else}
       {#if fromCard && !showLink}
         <button type="button" class="link-toggle" aria-expanded="false" onclick={() => (showLink = true)}><Icon name="link" size={18} />{$t('chan_join_show_link')}</button>
@@ -281,11 +280,12 @@
       {:else}
         <p class="hint">{$t('chan_join_hint')}</p>
       {/if}
-      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {/if}
   </div>
 
   {#snippet footer()}
+    <!-- The error over the button, not at the end of the long form. -->
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if tab === 'create'}
       <button class="btn btn-primary go" disabled={busy || !name.trim() || !serversOk} aria-busy={busy} onclick={create}>
         {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('chan_create')}
@@ -300,7 +300,7 @@
 
 <style>
   /* The spinner of a primary button, on its fill. */
-  .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+  .spinner.light { border-color: color-mix(in srgb, var(--on-media-text) 40%, transparent); border-top-color: var(--on-media-text); }
   .body { display: flex; flex-direction: column; gap: var(--sp-4); }
   .body > :global(*) { flex-shrink: 0; min-width: 0; }
   .tabs { display: flex; width: 100%; }
@@ -313,7 +313,7 @@
     width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--accent-border); background: var(--accent-bg);
     color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
-  .cover.picked { border-style: solid; background: var(--accent-grad); color: #fff; }
+  .cover.picked { border-style: solid; background: var(--accent-grad); color: var(--on-media-text); }
   .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 
   .sec { display: flex; flex-direction: column; gap: var(--sp-2); }

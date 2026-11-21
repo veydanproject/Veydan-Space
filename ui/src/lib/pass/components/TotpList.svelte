@@ -43,6 +43,11 @@
     return 'var(--accent)';
   }
 
+  /** The digits are text: --accent-text (4.5:1 in either theme) where the ring is --accent. */
+  function codeColor(secondsLeft: number): string {
+    return secondsLeft <= 10 ? ringColor(secondsLeft) : 'var(--accent-text)';
+  }
+
   async function loadCodes() {
     if (entries.length === 0) return;
     const ids = entries.map((e) => e.id);
@@ -121,12 +126,12 @@
   </div>
 {:else}
   <!-- A container: a row lays itself out by the width of its list (a 300px pane or a 440px drawer). -->
-  <div class="list divided">
+  <ul class="list-rows list">
     {#each entries as entry (entry.id)}
       {@const code = codes.get(entry.id)}
       {@const pname = showProfileBadge ? profileName(entry.tags) : null}
       {@const labels = userLabels(entry.tags)}
-      <div class="entry">
+      <li><div class="list-row entry">
         <div class="entry-info">
           <div class="entry-name" title={entry.name}>{entry.name}</div>
           {#if entry.issuer}
@@ -161,7 +166,7 @@
           </svg>
           <span
             class="code-value"
-            style:color={code ? ringColor(code.seconds_left) : undefined}
+            style:color={code ? codeColor(code.seconds_left) : undefined}
           >
             {code ? formatCode(code.code) : '••• •••'}
           </span>
@@ -189,33 +194,19 @@
             <Icon name="trash-2" size={13} />
           </button>
         </div>
-      </div>
+      </div></li>
     {/each}
-  </div>
+  </ul>
 {/if}
 
 <style>
+  /* The rows of base.css (64, no avatar: the hairline from the text); the row is not a button, its own are. */
   .list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    --rows-gap: 2px;
+    --list-line: var(--sp-3);
     container-type: inline-size;
   }
 
-  .entry {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3);
-    min-height: 64px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-lg);
-    transition: background var(--dur-fast);
-  }
-
-  .entry:hover { background: var(--surface-hover); }
+  .entry { cursor: default; }
 
   .entry-info {
     flex: 1;
@@ -235,7 +226,7 @@
   .entry-issuer {
     font-size: var(--fs-xs);
     color: var(--text-2);
-    margin-top: 0.1rem;
+    margin-top: var(--sp-0-5);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -244,8 +235,8 @@
   .entry-labels {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
-    margin-top: 0.25rem;
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
   }
 
   .label-badge {
@@ -253,7 +244,7 @@
     border-radius: var(--radius-pill);
     color: var(--text-2);
     font-size: var(--fs-xs);
-    padding: 0.05rem 0.35rem;
+    padding: var(--sp-0-5) var(--sp-1-5);
   }
 
   .profile-badge {
@@ -262,7 +253,7 @@
     color: var(--accent-text-2);
     border-radius: var(--radius-sm);
     font-size: var(--fs-xs);
-    padding: 0.1rem 0.4rem;
+    padding: var(--sp-0-5) var(--sp-1-5);
     font-weight: var(--fw-medium);
   }
 

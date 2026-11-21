@@ -44,7 +44,7 @@
 </div>
 
 <style>
-  .copy-field { display: flex; flex-direction: column; gap: 6px; }
+  .copy-field { display: flex; flex-direction: column; gap: var(--sp-1-5); }
   .label { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .row { display: flex; align-items: flex-start; gap: var(--sp-2); }
   /* A key is long: it wraps inside its box instead of running out of it. */

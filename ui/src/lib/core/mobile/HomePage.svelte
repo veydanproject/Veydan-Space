@@ -66,10 +66,10 @@
     </header>
 
     {#if search}
-      <a class="search" href={search}>
-        <Icon name="search" size={18} />
-        <span>{$t('home_search')}</span>
-      </a>
+      <div class="search-field fill">
+        <Icon name="search" size={16} />
+        <a class="search-link" href={search}>{$t('home_search')}</a>
+      </div>
     {/if}
 
     <!-- What the first start left to set up. -->
@@ -97,23 +97,11 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: var(--sp-0-5);
     margin-bottom: var(--sp-6);
   }
   .logo { width: 64px; height: 64px; object-fit: contain; margin-bottom: var(--sp-2); }
   h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
   p { margin: 0; color: var(--text-2); font-size: var(--fs-body); }
-  .search {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    min-height: 44px;
-    padding: 0 14px;
-    border-radius: var(--radius-pill);
-    background: var(--m-field);
-    color: var(--text-3);
-    font-size: var(--fs-body);
-    text-decoration: none;
-    margin-bottom: var(--sp-5);
-  }
+  .search-field { margin-bottom: var(--sp-5); }
 </style>

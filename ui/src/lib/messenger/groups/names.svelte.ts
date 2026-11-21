@@ -3,10 +3,15 @@
 
 // Who is behind a key: my own name for a contact first, then what they
 // call themselves, then a short form of the key. Profiles of people who
-// are not contacts are read once and kept for the session.
+// are not contacts are read once and kept for the session; one this
+// device has never seen is asked of the relays, once, and comes back as
+// `profile.updated`; asked again when the ask failed or a relay is back.
 
 import { contactLabel, messengerApi, profileLabel, type MessengerProfile } from '../api';
 import { messengerStore } from '../store.svelte';
+
+/** How long a profile asked of the relays is awaited before it counts as not found. */
+const SEEK_MS = 15_000;
 
 export function shortKey(pubkey: string): string {
   return pubkey.length > 12 ? `${pubkey.slice(0, 6)}…${pubkey.slice(-4)}` : pubkey;
@@ -15,6 +20,11 @@ export function shortKey(pubkey: string): string {
 class NameStore {
   private profiles = $state<Record<string, MessengerProfile | null>>({});
   private asked = new Set<string>();
+  /** Asked of the relays: once is enough while the relays hold the subscription. */
+  private sought = new Set<string>();
+  /** Asked of the relays and not answered yet: not «not found» while so. */
+  private seeking = $state<Record<string, true>>({});
+  private turns = new Map<string, number>();
 
   isMe(pubkey: string): boolean {
     return !!messengerStore.identity && messengerStore.identity.pubkey === pubkey;
@@ -46,7 +56,7 @@ class NameStore {
    */
   missing(pubkey: string): boolean {
     if (this.isMe(pubkey) || messengerStore.contacts.find((x) => x.pubkey === pubkey)?.profile) return false;
-    return this.profiles[pubkey] === null;
+    return this.profiles[pubkey] === null && !this.seeking[pubkey];
   }
 
   picture(pubkey: string): string | null {
@@ -61,9 +71,48 @@ class NameStore {
     // Outside the render that asked: state must not change while reading it.
     queueMicrotask(() => {
       messengerApi.profiles.get(pubkey)
-        .then((p) => { this.profiles = { ...this.profiles, [pubkey]: p ?? null }; })
+        .then((p) => {
+          this.profiles = { ...this.profiles, [pubkey]: p ?? null };
+          if (!p) this.seek(pubkey);
+        })
         .catch(() => { this.profiles = { ...this.profiles, [pubkey]: null }; });
     });
+  }
+
+  /**
+   * Not in the cache (a stranger, who is neither a contact nor in a group
+   * of mine, whose profile nothing else follows): asked of the relays once.
+   */
+  private seek(pubkey: string) {
+    if (this.sought.has(pubkey)) return;
+    this.sought.add(pubkey);
+    this.seeking = { ...this.seeking, [pubkey]: true };
+    // An earlier ask's end must not cut this one's wait short.
+    const turn = (this.turns.get(pubkey) ?? 0) + 1;
+    this.turns.set(pubkey, turn);
+    const done = () => {
+      if (this.turns.get(pubkey) !== turn || !this.seeking[pubkey]) return;
+      const { [pubkey]: _, ...rest } = this.seeking;
+      this.seeking = rest;
+    };
+    setTimeout(done, SEEK_MS);
+    messengerApi.profiles.request(pubkey).catch(() => {
+      if (this.turns.get(pubkey) === turn) this.sought.delete(pubkey);
+      done();
+    });
+  }
+
+  /**
+   * A relay is connected again after none was: the profiles not found yet
+   * (asked while offline, or the subscription lost with the connection)
+   * are asked again, so the key becomes a name without leaving the screen.
+   */
+  reconnected() {
+    for (const [pubkey, p] of Object.entries(this.profiles)) {
+      if (p !== null) continue;
+      this.sought.delete(pubkey);
+      this.seek(pubkey);
+    }
   }
 
   /** A profile arrived from the network: read it again. */

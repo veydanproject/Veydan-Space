@@ -151,46 +151,46 @@
 
 <style>
   .screen {
-    position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px;
+    position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-1-5);
     padding: calc(var(--sat, 0px) + 4px) 0 calc(var(--sab, 0px) + var(--sp-5));
     background: var(--call-bg); color: #fff;
   }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .top { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 8px; }
+  .top { display: flex; align-items: center; gap: var(--sp-1-5); min-height: 48px; padding: 0 8px; }
   .round-btn {
     border: none; background: none; color: inherit; width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
-  .round-btn.lit { background: rgba(255, 255, 255, 0.16); }
+  .round-btn.lit { background: var(--on-media-bg-hover); }
   .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: var(--lh-tight); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { display: flex; gap: 5px; font-size: var(--fs-xs); color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
+  .sub { display: flex; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--on-media-text-2); white-space: nowrap; }
   .clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); padding: 0 16px; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); white-space: nowrap;
+    background: var(--on-media-bg); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
   }
-  .chip.quiet { color: rgba(255, 255, 255, 0.65); }
+  .chip.quiet { color: var(--on-media-text-2); }
   .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
   .chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 16px; right: 16px; top: 8px; margin: 0 auto; max-width: 420px;
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
-    background: var(--call-glass); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 12px; padding: var(--sp-2-5) var(--sp-3); border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
+    background: var(--call-glass); border: 1px solid var(--on-media-border); color: var(--on-media-text); box-shadow: var(--shadow);
   }
   .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
   .spin { width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .stage { position: relative; flex: 1; min-height: 0; }
-  .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: rgba(255, 255, 255, 0.85); }
+  .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: var(--on-media-text); }
   .error {
-    align-self: center; margin: 0 16px; padding: 6px 12px; border-radius: var(--radius-md); text-align: center;
+    align-self: center; margin: 0 16px; padding: var(--sp-1-5) var(--sp-3); border-radius: var(--radius-md); text-align: center;
     background: var(--danger-bg); border: 1px solid var(--danger-border);
   }
   .controls { display: flex; justify-content: center; gap: clamp(18px, 7vw, 64px); padding-top: 8px; }
-  .controls.many { gap: clamp(6px, 2.5vw, 22px); }
-  .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.88); }
+  .controls.many { gap: clamp(var(--sp-1-5), 2.5vw, var(--sp-6)); }
+  .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--on-media-text); }
   .many .action { font-size: var(--fs-xs); width: 62px; text-align: center; }
   .round {
     width: 66px; height: 66px; border-radius: 50%; border: none; cursor: pointer; color: #fff;
@@ -201,10 +201,10 @@
   .round:active:not(:disabled) { transform: scale(0.94); }
   .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
-  .soft { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.22); }
+  .soft { background: var(--on-media-bg-hover); border: 1px solid rgba(255, 255, 255, 0.22); }
   .soft.on { background: #fff; color: #111; }
   .soft.lit { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.3)); border-color: transparent; }
-  .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
+  .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: var(--on-media-scrim); cursor: pointer; }
   .sheet {
     position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 70%; display: flex; flex-direction: column;
     padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--glass-bg); color: var(--text);

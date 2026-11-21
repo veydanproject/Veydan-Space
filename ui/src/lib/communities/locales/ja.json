@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "断る",
     "chan_level_req_refuse_title": "断る：{name}",
     "chan_level_req_refuse_hint": "読者には、あなたの理由とともに断りの連絡が届きます。読者のレベルは変わりません。",
-    "chan_level_req_reason": "理由（任意）"
+    "chan_level_req_reason": "理由（任意）",
+    "chan_err_not_found": "ファイルはもうストレージ上で利用できません。"
   },
   "mobile": {}
 }

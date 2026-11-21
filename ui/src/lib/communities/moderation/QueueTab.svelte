@@ -15,7 +15,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { Avatar, listStamp, myKey, stamp } from '$lib/messenger/seams/shared';
+  import { Avatar, listStamp, myKey, onPhone, stamp } from '$lib/messenger/seams/shared';
   import { nameStore } from '../names.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { canBan } from '../permissions';
@@ -28,6 +28,9 @@
     detail: ChannelDetail;
   }
   let { detail }: Props = $props();
+
+  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
+  const phone = onPhone();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const PAGE = 50;
@@ -135,11 +138,11 @@
       {@const name = nameStore.label(row.author)}
       {@const more = row.more_from_author}
       {@const n = count(row)}
-      <li class="card" class:busy={busy === row.author || busy === '*'}>
-        <div class="top">
+      <li class="queue-card" class:busy={busy === row.author || busy === '*'}>
+        <div class="top" class:list-row={phone} class:still={phone}>
           <input class="tick" type="checkbox" checked={selected.includes(row.author)} onchange={() => tick(row.author)} aria-label={name} />
           <button class="open" onclick={() => (author = row.author)} aria-label={$t('chan_mod_author_open', { name })} title={$t('chan_mod_author_open', { name })}>
-            <Avatar url={nameStore.picture(row.author)} label={name} seed={row.author} size={36} />
+            <Avatar url={nameStore.picture(row.author)} label={name} seed={row.author} size={phone ? 48 : 36} />
             <span class="who">
               <span class="line">
                 <span class="name">{name}</span>
@@ -167,7 +170,7 @@
   </ul>
 {:else if !loading && !error}
   <div class="empty-state">
-    <div class="empty-icon"><Icon name="shield-check" size={24} /></div>
+    <div class="empty-icon"><Icon name="shield-check" size={22} /></div>
     <p>{$t('chan_mod_queue_empty')}</p>
     <span>{detail.premod === 'off' ? $t('chan_mod_queue_off_hint') : $t('chan_mod_queue_empty_hint')}</span>
   </div>
@@ -180,19 +183,24 @@
 <style>
   .bulk { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; padding: 0 4px; }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
-  .bulk-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bulk-acts { display: flex; gap: var(--sp-1-5); flex-wrap: wrap; }
   .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-card); background: var(--surface-2); border: 1px solid var(--border); container-type: inline-size; }
-  .card.busy { opacity: 0.6; }
+  /* A list's card (design 09), not the page's .card. */
+  .queue-card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border); container-type: inline-size; }
+  .queue-card.busy { opacity: 0.6; }
   .top { display: flex; gap: var(--sp-2); align-items: flex-start; }
   .open {
     flex: 1; min-width: 0; display: flex; gap: var(--sp-2); align-items: flex-start; padding: 0; border: none; background: none;
     color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
-  .open > :global(svg) { flex-shrink: 0; margin-top: 10px; color: var(--text-3); }
-  .tick { margin-top: 10px; flex-shrink: 0; }
+  .open > :global(svg) { flex-shrink: 0; margin-top: var(--sp-2-5); color: var(--text-3); }
+  .tick { margin-top: var(--sp-2-5); flex-shrink: 0; }
+  /* A phone's head is the common row (base.css .list-row, 64), its padding over the card's. */
+  .top.list-row { width: auto; margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) 0; align-items: center; }
+  .top.list-row .open { align-items: center; gap: var(--sp-3); }
+  .top.list-row .tick, .top.list-row .open > :global(svg) { margin-top: 0; }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .line { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
   .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
@@ -202,12 +210,10 @@
   .acts .spam { flex: 0 0 auto; padding-inline: var(--sp-3); }
   .spam { color: var(--danger-text); }
   @container (max-width: 360px) {
-    .acts { gap: 6px; }
+    .acts { gap: var(--sp-1-5); }
     .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: var(--lh-tight); }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
-  .empty-state { padding: var(--sp-8) var(--sp-4); }
-  .empty-state p { margin: 0; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) { .acts .btn { min-height: 44px; } }

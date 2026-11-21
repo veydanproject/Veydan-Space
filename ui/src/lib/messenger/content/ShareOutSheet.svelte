@@ -112,7 +112,7 @@
 <style>
   .ways { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .way {
-    width: 100%; display: flex; align-items: center; gap: var(--sp-3); padding: 8px 6px; min-height: 44px;
+    width: 100%; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-1-5); min-height: 44px;
     border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
     font: inherit; font-size: var(--fs-sm); color: var(--text); text-align: left;
   }

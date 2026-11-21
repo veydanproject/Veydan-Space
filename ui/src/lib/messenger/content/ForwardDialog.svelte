@@ -232,7 +232,7 @@
   .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: var(--lh-snug); }
   .toggle:disabled { opacity: 0.45; cursor: default; }
   .hint { margin: 0; line-height: var(--lh-snug); }
-  .send { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .send { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1-5); }
   .send :global(svg) { flex-shrink: 0; }
   .spin { display: inline-flex; animation: spin 1.1s linear infinite; }
   @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

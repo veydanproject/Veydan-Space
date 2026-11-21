@@ -32,6 +32,9 @@ export function channelRefusal(e: unknown, tr: Translate): string | null {
   const short = code.slice('channel_'.length);
   // A host that refused a file: what it answered (its address, its words), after the code.
   const answer = errorText(e).trim().replace(/^channel_[a-z_]+:\s*(channel: upload refused:\s*)?/, '');
+  // A host that answered it has no such file (an old one its keeping rules dropped) is not a
+  // connection lost: the reader is told the file is gone, as a chat tells it.
+  if (short === 'transport' && answer.startsWith('err.not_found')) return tr('chan_err_not_found', { code, answer });
   return tr(KNOWN.has(short) ? `chan_err_${SAME[short] ?? short}` : 'chan_err_other', { code, answer });
 }
 

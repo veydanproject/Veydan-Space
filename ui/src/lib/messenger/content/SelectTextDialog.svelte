@@ -141,7 +141,7 @@
   .box { position: relative; display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-3); width: min(620px, 100%); max-height: 100%; outline: none; }
   .bubble {
     align-self: flex-start; box-sizing: border-box; max-width: 100%; max-height: 70vh; overflow-y: auto; overscroll-behavior: contain;
-    padding: 6px var(--sp-3); display: flex; flex-direction: column; gap: 2px; min-width: 64px;
+    padding: var(--sp-1-5) var(--sp-3); display: flex; flex-direction: column; gap: 2px; min-width: 64px;
     background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
     border-radius: var(--radius-bubble); border-bottom-left-radius: var(--radius-badge);
     box-shadow: var(--shadow-lg);

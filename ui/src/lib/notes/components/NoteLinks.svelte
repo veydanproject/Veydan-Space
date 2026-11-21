@@ -42,7 +42,7 @@
   <div class="group">
     <div class="label"><Icon name={icon} size={11} /> {label} <span class="count">{items.length}</span></div>
     {#if items.length === 0}
-      <span class="empty">{$t('note_links_none')}</span>
+      <p class="empty-state sm">{$t('note_links_none')}</p>
     {:else}
       {#each items as n (n.id)}
         <button class="item" onclick={() => onopen(n.id)}>
@@ -82,23 +82,23 @@
     border-top: 1px solid var(--border);
     background: var(--bg-2);
   }
-  .group { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  .group { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
   .label {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     font-size: var(--fs-xs);
     color: var(--text-3);
     font-weight: var(--fw-semibold);
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--sp-1);
   }
   .count { margin-left: auto; font-weight: var(--fw-normal); }
   .item {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.1rem;
-    padding: 0.3rem 0.45rem;
+    gap: var(--sp-0-5);
+    padding: var(--sp-1) var(--sp-2);
     border: 0;
     border-radius: var(--radius-xs);
     background: transparent;
@@ -112,5 +112,4 @@
   .title { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .title.unresolved { color: var(--text-2); text-decoration: underline dotted; }
   .preview { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-  .empty { font-size: var(--fs-xs); color: var(--text-3); padding: 0.2rem 0.45rem; }
 </style>

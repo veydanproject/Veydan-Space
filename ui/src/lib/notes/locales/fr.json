@@ -270,8 +270,6 @@
     "notes_tag_hint": "Utilisez « / » pour les sous-groupes :",
     "notes_tag_hint_example": "Groupe/tag",
     "notes_tag_name_ph": "nom du tag",
-    "notes_color": "Couleur {c}",
-    "notes_color_custom": "Couleur personnalisée",
     "notes_section_fold": "Réduire",
     "notes_section_unfold": "Développer",
     "notes_section_fold_all": "Tout réduire",

@@ -16,6 +16,7 @@
     ProxyCheckResult,
   } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import { pinnedHead } from '$lib/core/pinnedHead';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
@@ -35,6 +36,7 @@
   import { explainError } from '$lib/browser/tor-error';
   import ProxyAddress from '$lib/browser/components/ProxyAddress.svelte';
   import { registry } from '$lib/core/registry';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   let workspaceId = $derived($page.params.id ?? '');
 
@@ -307,7 +309,7 @@
             <Icon name="plus" size={15} />{$t('proxies_new')}
           </button>
         {:else}
-          <button class="btn btn-ghost btn-sm" style="min-height: 36px" onclick={() => (showImportModal = true)}>
+          <button class="btn btn-ghost btn-sm" onclick={() => (showImportModal = true)}>
             <Icon name="file-import" size={18} />{$t('workspace_btn_import')}
           </button>
           <button class="btn btn-primary" onclick={() => (showCreatePanel = true)}>
@@ -338,17 +340,17 @@
 
     <!-- Tabs + View Switcher (segment controls per redesign) -->
     <div class="tabs-row">
-      <div class="tab-bar">
-        <button class="tab" class:active={tab === 'board'} onclick={() => (tab = 'board')}>
+      <TabBar selected={tab}>
+        <button class="tab" role="tab" aria-selected={tab === 'board'} class:active={tab === 'board'} onclick={() => (tab = 'board')}>
           <Icon name="columns" size={18} />{$t('workspace_tab_board')}
         </button>
-        <button class="tab" class:active={tab === 'proxies'} onclick={() => (tab = 'proxies')}>
+        <button class="tab" role="tab" aria-selected={tab === 'proxies'} class:active={tab === 'proxies'} onclick={() => (tab = 'proxies')}>
           <Icon name="network" size={18} />{$t('workspace_tab_proxies')}
         </button>
-        <button class="tab" class:active={tab === 'topology'} onclick={() => (tab = 'topology')}>
+        <button class="tab" role="tab" aria-selected={tab === 'topology'} class:active={tab === 'topology'} onclick={() => (tab = 'topology')}>
           <Icon name="git-fork" size={18} />{$t('workspace_tab_topology')}
         </button>
-      </div>
+      </TabBar>
 
       <div class="seg view-switcher" class:hidden={tab !== 'board'}>
           <button
@@ -412,24 +414,21 @@
           {:else}
             <div class="filter-bar">
               <div class="search-field wide">
-                <Icon name="search" size={13} />
+                <Icon name="search" size={16} />
                 <input
                   type="text"
                   bind:value={proxySearch}
                   placeholder={$t('proxies_search_placeholder')}
                 />
                 {#if proxySearch}
-                  <button class="search-clear" onclick={() => (proxySearch = '')}><Icon name="x" size={11} /></button>
+                  <button type="button" class="search-clear" onclick={(e) => { proxySearch = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
                 {/if}
               </div>
               <span class="count-badge">{filteredProxies.length} / {proxies.length}</span>
             </div>
 
             {#if filteredProxies.length === 0}
-              <div class="empty-state" style="padding:2rem">
-                <Icon name="search" size={28} strokeWidth={1.5} />
-                <p>{$t('common_nothing_found')}</p>
-              </div>
+              <p class="empty-state sm">{$t('common_nothing_found')}</p>
             {:else}
               <div class="data-table table-scroll" use:pinnedHead>
                 <table class="proxy-table pinned-head">
@@ -462,10 +461,10 @@
                         </td>
                         <td class="col-actions">
                           <div class="row-acts">
-                            <button class="act-btn" title={$t('proxy_btn_check')} disabled={result?.checking} onclick={(e) => { e.stopPropagation(); checkProxy(proxy.id); }}>
+                            <button class="icon-btn" title={$t('proxy_btn_check')} disabled={result?.checking} onclick={(e) => { e.stopPropagation(); checkProxy(proxy.id); }}>
                               <Icon name="refresh-cw" size={12} />
                             </button>
-                            <button class="act-btn" title={$t('common_edit')} onclick={(e) => { e.stopPropagation(); proxyPanelProxy = proxy; }}>
+                            <button class="icon-btn" title={$t('common_edit')} onclick={(e) => { e.stopPropagation(); proxyPanelProxy = proxy; }}>
                               <Icon name="pencil" size={12} />
                             </button>
                             <button class="icon-btn danger-soft" title={$t('common_delete')} onclick={(e) => { e.stopPropagation(); askDeleteProxy(proxy); }}>
@@ -592,7 +591,7 @@
 
   .ws-header {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
-    padding-bottom: 0.625rem;
+    padding-bottom: var(--sp-2-5);
   }
 
   .breadcrumb {
@@ -601,7 +600,7 @@
   .crumb-sep { color: var(--text-3); }
 
   .back-link {
-    display: flex; align-items: center; gap: 7px;
+    display: flex; align-items: center; gap: var(--sp-2);
     color: var(--text-2); text-decoration: none; transition: color 0.15s;
     font-size: var(--fs-base);
   }
@@ -610,19 +609,21 @@
   /* Workspace name in breadcrumb — accent per redesign */
   .ws-name { font-weight: var(--fw-bold); font-size: var(--fs-lg); color: var(--accent-text); }
 
-  .ws-meta { display: flex; align-items: center; gap: 0.4rem; flex: 1; }
+  .ws-meta { display: flex; align-items: center; gap: var(--sp-1-5); flex: 1; }
 
   .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
 
-  .ws-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-left: auto; }
+  .ws-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-left: auto; }
 
   /* Tabs row: segment control + view switcher (both .seg primitives) */
   .tabs-row {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
     flex-shrink: 0;
   }
+  /* The line of the tabs runs up to the view switcher. */
+  .tabs-row > :global(.tab-row) { flex: 1; }
 
-  .view-switcher.hidden { visibility: hidden; pointer-events: none; }
+  .view-switcher.hidden { visibility: hidden; opacity: 0; pointer-events: none; }
 
   /* Tab Content */
   .tab-content {
@@ -630,7 +631,7 @@
   }
 
   /* Proxies Tab */
-  .proxies-tab { display: flex; flex-direction: column; gap: 0.625rem; flex: 1; min-height: 0; }
+  .proxies-tab { display: flex; flex-direction: column; gap: var(--sp-2-5); flex: 1; min-height: 0; }
 
   /* панель фильтров — единые примитивы .filter-bar/.search-field/.count-badge из base.css */
   /* The proxies search names four fields: the width of the SSH keys search, so it is read whole. */
@@ -664,7 +665,7 @@
   .type-tor { background: var(--accent-tint); color: var(--accent-text-2); }
 
   .status-badge {
-    display: inline-flex; align-items: center; gap: 7px;
+    display: inline-flex; align-items: center; gap: var(--sp-2);
     font-size: var(--fs-xs); font-weight: var(--fw-bold);
     padding: 4px 11px; border-radius: var(--radius-pill);
   }
@@ -673,16 +674,8 @@
   .status-failed { background: var(--danger-bg); color: var(--danger-text); }
   .status-unknown { background: var(--surface-2); color: var(--text-2); }
 
-  .row-acts { display: flex; gap: 5px; justify-content: flex-end; }
-  .act-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px;
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    color: var(--text-soft); cursor: pointer; padding: 0; transition: all 0.15s;
-  }
-  .act-btn:hover { border-color: var(--border-2); color: var(--text); }
-  .act-btn:first-child:hover { border-color: var(--accent); color: var(--accent-text); } /* check/refresh → accent */
-  .act-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row-acts { display: flex; gap: var(--sp-1); justify-content: flex-end; }
+  .row-acts .icon-btn:first-child:hover:not(:disabled) { color: var(--accent-text); } /* check/refresh → accent */
   /* Notes Tab */
   .notes-tab { display: flex; flex-direction: column; gap: var(--sp-3); flex: 1; }
   .notes-area { flex: 1; resize: none; min-height: 200px; font-size: var(--fs-sm); line-height: var(--lh-base); }

@@ -60,6 +60,7 @@ class PasswordStore {
 
   /** Remove the soft note tag and the leftover password binding on that note. */
   async unlinkNote(passwordId: string, noteId: string) {
+    await this.ensureLoaded();
     const tag = `note:${noteId}`;
     const entry = this.list.find((e) => e.id === passwordId);
     if (entry?.tags.includes(tag)) {

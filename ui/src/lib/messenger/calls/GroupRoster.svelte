@@ -68,12 +68,12 @@
 <style>
   .roster { display: flex; flex-direction: column; min-height: 0; color: var(--text); }
   .head {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 12px 6px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: var(--sp-2-5) var(--sp-3) var(--sp-1-5);
     font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3);
   }
   .count { font-variant-numeric: tabular-nums; }
-  ul { list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; flex: 1; min-height: 0; }
-  li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: var(--radius-sm); }
+  ul { list-style: none; margin: 0; padding: 0 var(--sp-1-5); overflow-y: auto; flex: 1; min-height: 0; }
+  li { display: flex; align-items: center; gap: var(--sp-2-5); padding: var(--sp-1-5); border-radius: var(--radius-sm); }
   li.unverified { opacity: 0.7; }
   .who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -85,11 +85,11 @@
   .mark, .talk { display: inline-flex; }
   .mark.off { color: var(--danger-text); }
   .talk { color: var(--success-text); }
-  .note { display: flex; gap: 5px; align-items: flex-start; margin: 0; padding: 8px 12px 10px; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
+  .note { display: flex; gap: var(--sp-1); align-items: flex-start; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-2-5); font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
   .note :global(svg) { margin-top: 1px; }
 
   .dark { color: #fff; }
-  .dark .head, .dark .note, .dark .marks { color: rgba(255, 255, 255, 0.6); }
+  .dark .head, .dark .note, .dark .marks { color: var(--on-media-text-2); }
   .dark .ok { color: var(--call-ok); }
   .dark .wait { color: var(--call-warn); }
   .dark .talk { color: var(--call-ok); }

@@ -22,14 +22,16 @@
 {#if isMobile}
   <div class="m-page">
     <div class="m-header">
-      <a class="m-ibtn" href={back} onclick={arrow} aria-label={$t('common_back')}>
+      <a class="icon-btn" href={back} onclick={arrow} aria-label={$t('common_back')}>
         <Icon name="chevron-left" size={24} />
       </a>
-      <h1 class="m-title" class:long={title.length > 24}>{title}</h1>
+      <h1 class="m-title" {title}>{title}</h1>
     </div>
     <div class="m-body">
       <div class="m-card sheet">{@render children()}</div>
     </div>
+    <!-- The step's buttons (Actions) come here: pinned under the body; none, no foot. -->
+    <div class="page-foot cloud-foot"></div>
   </div>
 {:else}
   <div class="page screen">
@@ -46,6 +48,5 @@
   .body, .sheet { display: flex; flex-direction: column; gap: var(--sp-4); }
   .body { padding: var(--sp-6); }
   .sheet { padding: var(--sp-4); margin-top: var(--sp-2); }
-  /* A long title keeps all its words: smaller and on two lines, never cut. */
-  .m-title.long { font-size: var(--fs-md); line-height: var(--lh-tight); white-space: normal; overflow-wrap: anywhere; }
+  .cloud-foot:empty { display: none; }
 </style>

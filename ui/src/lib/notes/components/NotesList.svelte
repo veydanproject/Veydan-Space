@@ -89,7 +89,7 @@
   const relative = (iso: string) => relativeTime(iso, $t);
 </script>
 
-<div class="notes-list divided">
+<div class="notes-list">
   {#if notes.length === 0}
     <div class="empty-state">
       {#if search?.trim()}
@@ -107,10 +107,12 @@
       {/if}
     </div>
   {:else}
+    <ul class="list-rows">
     {#each notes as note (note.id)}
+      <li>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div
-        class="note-card"
+        class="list-row note-card"
         class:active={note.id === activeId}
         onclick={() => onselect(note.id)}
         role="button"
@@ -156,7 +158,9 @@
           </div>
         {/if}
       </div>
+      </li>
     {/each}
+    </ul>
   {/if}
 </div>
 
@@ -164,35 +168,23 @@
   .notes-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    --rows-gap: 10px;
   }
 
+  /* A row of base.css (64 at least, its hover and its chosen look, the hairline from the text); a note's lines
+     stand one under another, a preview makes it higher. */
+  .list-rows { --list-line: var(--sp-3); }
   .note-card {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-lg);
-    padding: var(--sp-4);
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-    display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .note-card:hover { background: var(--surface-hover); }
-  /* Active card per design: raised surface + accent ring + soft glow */
-  .note-card.active {
-    border-color: var(--accent-border);
-    background: var(--accent-bg);
-    box-shadow: none;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--sp-1);
   }
 
   .card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
   }
 
   .note-title {
@@ -204,7 +196,7 @@
     text-overflow: ellipsis;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     flex: 1;
     min-width: 0;
   }
@@ -212,7 +204,7 @@
   .note-meta {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     flex-shrink: 0;
   }
 
@@ -222,7 +214,7 @@
     color: var(--text-faint);
     font-family: var(--font-mono);
     background: var(--border);
-    padding: 2px 6px;
+    padding: var(--sp-0-5) var(--sp-1-5);
     border-radius: var(--radius-badge);
   }
 
@@ -238,7 +230,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
   }
 
   .scope-badge {
@@ -299,6 +291,6 @@
   .tag-more {
     font-size: var(--fs-xs);
     color: var(--text-2);
-    padding: 0.1rem 0.2rem;
+    padding: var(--sp-0-5) var(--sp-1);
   }
 </style>

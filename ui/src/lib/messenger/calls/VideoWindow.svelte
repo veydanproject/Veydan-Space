@@ -144,7 +144,7 @@
 
 <style>
   .win {
-    position: fixed; z-index: 70; right: 16px; bottom: 16px;
+    position: fixed; z-index: calc(var(--z-panel) + 20); right: 16px; bottom: 16px;
     width: clamp(300px, 34vw, 460px); aspect-ratio: 16 / 10;
     border-radius: var(--radius-card); overflow: hidden; background: var(--call-bg);
     border: 1px solid var(--border-strong); box-shadow: var(--shadow-lg);
@@ -161,9 +161,9 @@
   }
   .bar {
     position: absolute; z-index: 5; left: 50%; bottom: 10px; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: var(--radius-pill);
+    display: flex; align-items: center; gap: var(--sp-1-5); padding: var(--sp-1); border-radius: var(--radius-pill);
     background: var(--call-scrim); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--on-media-border);
     opacity: 0; transition: opacity var(--dur-fast) var(--ease);
   }
   .win:hover .bar, .win:focus-within .bar, .win.big .bar { opacity: 1; }
@@ -171,7 +171,7 @@
   .ctl {
     width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255, 255, 255, 0.14); color: #fff;
+    background: var(--on-media-bg); color: #fff;
     transition: background var(--dur-fast) var(--ease);
   }
   .ctl:hover:not(:disabled) { background: rgba(255, 255, 255, 0.26); }

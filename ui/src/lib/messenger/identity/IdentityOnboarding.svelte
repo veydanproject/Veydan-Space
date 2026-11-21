@@ -157,19 +157,19 @@
   .choice-row, .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .link-device { align-self: flex-start; font-size: var(--fs-sm); color: var(--accent-text); }
   .actions { justify-content: flex-end; }
-  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); }
   .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input, .field textarea {
-    font: inherit; color: var(--text);
+    color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: 8px 10px;
+    padding: var(--sp-2) var(--sp-2-5);
   }
-  .field textarea { font-size: var(--fs-xs); resize: vertical; }
+  .field textarea { resize: vertical; }
   .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent-border); }
   .kind-tabs { display: flex; gap: var(--sp-1); }
   .kind-tab {
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
-    border-radius: var(--radius-sm); padding: 6px 12px; font-size: var(--fs-sm); cursor: pointer;
+    border-radius: var(--radius-sm); padding: var(--sp-1-5) var(--sp-3); font-size: var(--fs-sm); cursor: pointer;
   }
   .kind-tab.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
 </style>

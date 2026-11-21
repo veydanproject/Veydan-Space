@@ -28,33 +28,33 @@
 
 <BottomSheet {open} title={$t('notes_actions')} {onclose}>
   <div class="m-list">
-    <button type="button" class="m-row" disabled={isNew} onclick={onpin}>
-      <Icon name="pin" size={20} /><span class="m-row-label">{pinned ? $t('notes_unpin') : $t('notes_pin')}</span>
+    <button type="button" class="list-row dense" disabled={isNew} onclick={onpin}>
+      <Icon name="pin" size={20} /><span class="list-row-label">{pinned ? $t('notes_unpin') : $t('notes_pin')}</span>
     </button>
-    <button type="button" class="m-row" disabled={isNew} onclick={onmove}>
-      <Icon name="folder" size={20} /><span class="m-row-label">{$t('notes_move')}</span>
+    <button type="button" class="list-row dense" disabled={isNew} onclick={onmove}>
+      <Icon name="folder" size={20} /><span class="list-row-label">{$t('notes_move')}</span>
     </button>
     {#if onworkspace}
-      <button type="button" class="m-row" onclick={onworkspace}>
-        <Icon name="layers" size={20} /><span class="m-row-label">{$t('notes_workspace_add')}</span>
+      <button type="button" class="list-row dense" onclick={onworkspace}>
+        <Icon name="layers" size={20} /><span class="list-row-label">{$t('notes_workspace_add')}</span>
       </button>
     {/if}
-    <button type="button" class="m-row" disabled={isNew} onclick={onarchive}>
-      <Icon name={archived ? 'archive-restore' : 'archive'} size={20} /><span class="m-row-label">{archived ? $t('notes_unarchive') : $t('notes_archive')}</span>
+    <button type="button" class="list-row dense" disabled={isNew} onclick={onarchive}>
+      <Icon name={archived ? 'archive-restore' : 'archive'} size={20} /><span class="list-row-label">{archived ? $t('notes_unarchive') : $t('notes_archive')}</span>
     </button>
-    <button type="button" class="m-row" disabled={isNew} onclick={onhistory}>
-      <Icon name="clock" size={20} /><span class="m-row-label">{$t('notes_history')}</span>
+    <button type="button" class="list-row dense" disabled={isNew} onclick={onhistory}>
+      <Icon name="clock" size={20} /><span class="list-row-label">{$t('notes_history')}</span>
     </button>
   </div>
 
   <div class="m-list">
-    <button type="button" class="m-row" onclick={ondelete}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('notes_delete')}</span>
+    <button type="button" class="list-row dense" onclick={ondelete}>
+      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('notes_delete')}</span>
     </button>
   </div>
 </BottomSheet>
 
 <style>
-  .m-row:disabled { opacity: 0.45; }
+  .list-row:disabled { opacity: 0.45; }
   .danger { color: var(--danger-text); }
 </style>

@@ -28,6 +28,7 @@
     totpSecret = $bindable(''),
     suggestName = '',
   }: Props = $props();
+  const uid = $props.id();
 
   let open = $state(false);
   let query = $state('');
@@ -71,8 +72,9 @@
   }
 </script>
 
-<div class="m-field">
-  <span class="caption">{$t('pw_field_totp')}</span>
+<!-- An .m-field like the fields around it: its label names the group, as no single control is labelled. -->
+<div class="m-field" role="group" aria-labelledby="{uid}-label">
+  <span class="form-label" id="{uid}-label">{$t('pw_field_totp')}</span>
   {#each linked as item (item.id)}
     {@const label = item.issuer || item.name}
     <div class="picked">
@@ -81,16 +83,18 @@
         <span class="name">{label}</span>
         {#if item.issuer}<span class="sub">{item.name}</span>{/if}
       </span>
-      <button type="button" class="m-ibtn" onclick={() => remove(item.id)} aria-label={$t('pass_remove')}>
-        <Icon name="x" size={20} />
+      <button type="button" class="icon-btn" onclick={() => remove(item.id)} aria-label={$t('pass_remove')}>
+        <Icon name="x" size={22} />
       </button>
     </div>
   {/each}
   {#if creating}
     <div class="draft">
-      <input bind:value={totpName} placeholder={$t('totp_field_name')} autocomplete="off" />
-      <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} autocomplete="off" />
-      <input bind:value={totpSecret} placeholder={$t('totp_field_secret')} autocomplete="off" />
+      <input bind:value={totpName} placeholder={$t('totp_field_name')} aria-label={$t('totp_field_name')} autocomplete="off" enterkeyhint="next" />
+      <input bind:value={totpIssuer} placeholder={$t('totp_field_issuer')} aria-label={$t('totp_field_issuer')} autocomplete="off" enterkeyhint="next" />
+      <!-- The key as in the TOTP page's field: capitals, no corrections. -->
+      <input class="mono" bind:value={totpSecret} placeholder={$t('totp_field_secret_placeholder')} aria-label={$t('totp_field_secret')}
+        autocomplete="off" autocapitalize="characters" spellcheck="false" />
       <button type="button" class="m-link cancel" onclick={cancelCreate}>{$t('common_cancel')}</button>
     </div>
   {:else}
@@ -102,40 +106,33 @@
 
 <BottomSheet {open} title={$t('pw_field_totp')} share={0.45} onclose={() => (open = false)}>
   <div class="m-list create">
-    <button type="button" class="m-row" onclick={startCreate}>
+    <button type="button" class="list-row dense" onclick={startCreate}>
       <Icon name="plus" size={18} />
-      <span class="m-row-label">{$t('totp_pick_new')}</span>
+      <span class="list-row-label">{$t('totp_pick_new')}</span>
     </button>
   </div>
   {#if entries.length === 0}
-    <p class="none">{$t('totp_empty')}</p>
+    <p class="empty-state sm">{$t('totp_empty')}</p>
   {:else}
     <input class="find" bind:value={query} placeholder={$t('totp_search_placeholder')} autocomplete="off" />
     {#if hits.length}
       <div class="m-list hits">
         {#each hits as item (item.id)}
           {@const label = item.issuer || item.name}
-          <button type="button" class="m-row" onclick={() => add(item.id)}>
+          <button type="button" class="list-row dense" onclick={() => add(item.id)}>
             <span class="m-avatar small" style:--c={colorOf(label)}>{label.charAt(0).toUpperCase()}</span>
-            <span class="m-row-label">{labelOf(item)}</span>
+            <span class="list-row-label">{labelOf(item)}</span>
           </button>
         {/each}
       </div>
     {:else}
-      <p class="none">{q ? $t('common_nothing_found') : $t('totp_empty')}</p>
+      <p class="empty-state sm">{q ? $t('common_nothing_found') : $t('totp_empty')}</p>
     {/if}
   {/if}
 </BottomSheet>
 
 <style>
-  /* Like the labels of the other fields (.m-field label). */
-  .caption {
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    color: var(--text-2);
-  }
   .add { align-self: flex-start; padding: 0; }
-  .none { margin: var(--sp-3) 0; color: var(--text-3); text-align: center; font-size: var(--fs-sm); }
   .picked {
     display: flex;
     align-items: center;
@@ -154,6 +151,6 @@
   .find { width: 100%; margin-bottom: var(--sp-3); }
   /* The suggestions of a phone: rows of 44; the sheet keeps to 45% of the screen (share), they scroll inside it. */
   .hits.hits { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-  .hits .m-row { min-height: 44px; }
+  .hits .list-row { min-height: 44px; }
   .m-avatar.small { width: 28px; height: 28px; font-size: var(--fs-sm); }
 </style>

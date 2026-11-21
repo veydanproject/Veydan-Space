@@ -3,6 +3,8 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { PALETTE } from '$lib/core/palette';
+  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import { t } from '$lib/core/i18n';
   import { api } from '$lib/pass/api';
   import { readQr } from '$lib/pass/qr';
@@ -22,6 +24,7 @@
   import TotpSecretField, { type KeyChange } from '$lib/pass/components/TotpSecretField.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   interface Props {
     initialTags?: string[];
@@ -38,11 +41,6 @@
     saving?: boolean;
   }
 
-  const TAG_COLORS = [
-    // The kit's presets (N.colors); the colour is the user's, never the kind.
-    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
-  ];
-
   let { initialTags = [], entry = null, onclose, onadded, frame = 'drawer', saving = $bindable(false) }: Props = $props();
   const editing = $derived(entry !== null);
 
@@ -57,7 +55,7 @@
   let period = $state(30);
   let query = $state('');
   let suggest = $state(false);
-  let pickedColor = $state(TAG_COLORS[0]);
+  let pickedColor = $state(PALETTE[0]);
   let labelNames = $state<string[]>([]);
   let extraBindings = $state<string[]>([]);
   let seeded = false;
@@ -333,13 +331,15 @@
 
 {#snippet form()}
   {#if !editing}
-  <div class="tab-bar">
-    <button class="tab" class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
-      <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
-    </button>
-    <button class="tab" class:active={tab === 'qr'} onclick={() => { tab = 'qr'; }}>
-      <Icon name="scan" size={13} /> {$t('totp_tab_qr')}
-    </button>
+  <div class="tabs">
+    <TabBar selected={tab}>
+      <button class="tab" role="tab" aria-selected={tab === 'manual'} class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
+        <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
+      </button>
+      <button class="tab" role="tab" aria-selected={tab === 'qr'} class:active={tab === 'qr'} onclick={() => { tab = 'qr'; }}>
+        <Icon name="scan" size={13} /> {$t('totp_tab_qr')}
+      </button>
+    </TabBar>
   </div>
   {/if}
 
@@ -477,18 +477,7 @@
       {#if suggest && tagItems.length > 0}
         <Suggest bind:this={tagList} items={tagItems} anchor={tagField} label={$t('totp_field_tags')} onpick={pickTag} onclose={() => (suggest = false)}>
           {#snippet extra()}
-            <div class="color-row">
-              {#each TAG_COLORS as color (color)}
-                <button
-                  type="button"
-                  class="swatch"
-                  class:active={pickedColor === color}
-                  style:background={color}
-                  aria-label={color}
-                  onclick={() => (pickedColor = color)}
-                ></button>
-              {/each}
-            </div>
+            <div class="color-row"><ColorSwatches bind:value={pickedColor} label={$t('totp_field_tags')} /></div>
           {/snippet}
         </Suggest>
       {/if}
@@ -513,10 +502,7 @@
 {/snippet}
 
 <style>
-  /* .tab-bar / .tab styling is global (base.css); only local deltas kept below */
-  .tab-bar { padding-top: 0.3rem; margin-bottom: var(--sp-4); }
-  .tab { justify-content: center; }
-
+  .tabs { margin-bottom: var(--sp-4); }
   .end { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 
   .totp-form {
@@ -528,7 +514,7 @@
     align-items: center;
     gap: var(--sp-1);
     font-size: var(--fs-xs);
-    padding: 0.2rem 0.6rem;
+    padding: var(--sp-1) var(--sp-2-5);
     border-radius: var(--radius-sm);
     border-width: 1px;
     border-style: solid;
@@ -542,7 +528,7 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--sp-1-5);
   }
   .form-row .label-row { position: static; }
 
@@ -550,13 +536,13 @@
   .form-row { position: relative; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: var(--sp-3); }
 
   .label-chips {
-    display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.3rem;
+    display: flex; flex-wrap: wrap; gap: var(--sp-1-5); margin-top: var(--sp-1);
   }
 
   .label-chip {
     display: inline-flex; align-items: center; gap: var(--sp-1);
     border-width: 1px; border-style: solid;
-    border-radius: var(--radius-pill); font-size: var(--fs-xs); padding: 0.15rem var(--sp-2);
+    border-radius: var(--radius-pill); font-size: var(--fs-xs); padding: var(--sp-0-5) var(--sp-2);
   }
 
   /* The chip's ink, faded: a fixed --text-2 does not follow the tint. */
@@ -577,16 +563,7 @@
     line-height: var(--lh-icon);
   }
 
-  .color-row { display: flex; gap: 0.35rem; padding: 0.25rem 0.45rem; }
-  .swatch {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    padding: 0;
-    cursor: pointer;
-  }
-  .swatch.active { border-color: var(--text); }
+  .color-row { padding: var(--sp-1) var(--sp-2); }
 
   /* QR */
   .qr-section {
@@ -596,7 +573,7 @@
   }
 
   .qr-detected {
-    display: flex; align-items: center; gap: 0.4rem;
+    display: flex; align-items: center; gap: var(--sp-1-5);
     font-size: var(--fs-sm); color: var(--success-text); flex-wrap: wrap;
   }
 

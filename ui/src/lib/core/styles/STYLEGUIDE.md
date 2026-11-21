@@ -104,8 +104,8 @@ field is a pill.
 ## Primitives
 
 `.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`/`.card-title`
-· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-danger-soft/-sm`)
-· `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
+· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-danger/-danger-soft/-sm`; `.btn-ghost.active` the current one of a row)
+· `.icon-btn`(+`.success/.danger/.danger-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
 · `.tab-bar`/`.tab`(+`.active`: `--accent-text` over a bar of `--accent`; its count a `.count-pill.sm.quiet`) · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
@@ -125,7 +125,7 @@ field is a pill.
   Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
 · `.menu-count` (the count on the corner of a head's ⋮: a `.count-pill` of 18 under its own name; the button is `position: relative`).
 A button and an icon button sink to .97 under the press (`--dur-press`); the
-phone's `.m-ibtn` and `.m-btn-grad` too.
+phone's `.m-btn-grad` too.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with
 `accent-color` (20px on the phone); do not re-declare `width: auto` locally.
 A value read or copied character by character — a password, a key, a secret,

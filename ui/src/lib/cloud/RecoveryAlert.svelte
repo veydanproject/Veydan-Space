@@ -14,6 +14,7 @@
   import { page } from '$app/state';
   import { t, locale } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { isMobile } from '$lib/core/platform';
   import { dateOf } from '$lib/cloud/account';
   import { cardsOnScreen } from '$lib/cloud/onScreen.svelte';
   import { alertsStore, socialErrorKey } from '$lib/cloud/social.svelte';
@@ -85,7 +86,7 @@
     <div class="body">
       <div class="head">
         <p class="text">{errorText}</p>
-        <button class="close" type="button" aria-label={$t('common_close')} title={$t('common_close')} onclick={() => (alertsStore.error = null)}><Icon name="x" size={14} /></button>
+        <button class={isMobile ? 'icon-btn' : 'close'} type="button" aria-label={$t('common_close')} title={$t('common_close')} onclick={() => (alertsStore.error = null)}><Icon name="x" size={isMobile ? 22 : 14} /></button>
       </div>
       <div class="buttons">
         <button class="btn btn-ghost btn-sm" type="button" disabled={alertsStore.busy} onclick={() => alertsStore.load()}>{$t('common_try_again')}</button>
@@ -117,6 +118,7 @@
   .buttons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .head { display: flex; align-items: flex-start; gap: var(--sp-2); }
   .head .text { flex: 1; }
+  /* The ×: 28 on a computer; on a phone the common .icon-btn (40, its zone 44, mobile.css). */
   .close {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-3); cursor: pointer;

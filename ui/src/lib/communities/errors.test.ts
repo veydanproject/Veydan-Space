@@ -24,6 +24,12 @@ describe('a refusal of the module of channels', () => {
     expect(channelError(new Error('the relay is away'), tr)).toBe('the relay is away');
   });
 
+  it('says a file its hosts no longer keep is gone, and a lost connection is no connection', () => {
+    // The owner's iPhone, 2026-11-21: the files of a channel a month old said «No connection».
+    expect(channelError({ code: 'other', message: 'channel_transport: err.not_found' }, tr)).toBe('chan_err_not_found');
+    expect(channelError({ code: 'other', message: 'channel_transport: err.timeout' }, tr)).toBe('chan_err_not_delivered');
+  });
+
   it('says the lock closed when the vault is locked', () => {
     expect(channelError({ code: 'vault_locked', message: 'locked' }, tr)).toBe('chan_err_locked');
   });

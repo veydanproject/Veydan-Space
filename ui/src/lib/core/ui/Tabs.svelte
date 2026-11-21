@@ -2,17 +2,15 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  The parts of a page, one at a time: a row of words on the page's own
-  background, no bar under them, the chosen one bold with a short mark. One look for «Аккаунт» and «Настройки чата» (ROO-259 item 8).
-  On a phone the row is one line that scrolls, reaching the edges of the
-  screen through the page's padding (`--tabs-bleed`, that padding at the
-  sides; 16 by default), a clipped edge fading while there is more of the
-  row on that side; the chosen tab is kept in view (`scrollTabs`). The arrows move along the
-  tabs.
+  The parts of a page, one at a time: the row of tabs of the whole interface
+  (TabBar, design 01) for a list of words. The arrows move along the tabs.
+  On a phone (`phone`) a tab is 48 and the row reaches the edges of the
+  screen through the page's padding (`--tabs-bleed`, 16 by default); it
+  scrolls under the finger, a clipped edge fading, the chosen tab kept in view.
 -->
 <script lang="ts" generics="T extends string">
   import { tick } from 'svelte';
-  import { scrollTabs } from './scrollTabs';
+  import TabBar from './TabBar.svelte';
 
   interface Props {
     tabs: { id: T; label: string }[];
@@ -36,12 +34,13 @@
   }
 </script>
 
-<div class="tabs" class:m={phone} role="tablist" aria-label={label} tabindex="-1" bind:this={row} onkeydown={key} use:scrollTabs={{ selected, watch: tabs, fadeStart: true }}>
+<TabBar {selected} watch={tabs} {label} {phone} tabindex={-1} onkeydown={key} bind:row>
   {#each tabs as x (x.id)}
     <button
       type="button"
       role="tab"
-      class="ctab"
+      class="tab"
+      class:active={selected === x.id}
       id={idPrefix ? `${idPrefix}-tab-${x.id}` : undefined}
       aria-selected={selected === x.id}
       aria-controls={idPrefix ? `${idPrefix}-panel-${x.id}` : undefined}
@@ -49,28 +48,4 @@
       onclick={() => onpick(x.id)}
     >{x.label}</button>
   {/each}
-</div>
-
-<style>
-  /* The row scrolls and clips: 4px of room around the tabs for the keyboard's ring, given back by the margin. */
-  .tabs { display: flex; gap: var(--sp-5); padding: var(--sp-1); margin: calc(-1 * var(--sp-1)); overflow-x: auto; scrollbar-width: none; }
-  .tabs::-webkit-scrollbar { display: none; }
-  .ctab {
-    position: relative; flex-shrink: 0; min-height: var(--control-h-lg); padding: 0;
-    border: 0; border-radius: var(--radius-sm); background: none;
-    color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
-    transition: color var(--dur-fast);
-  }
-  .ctab:hover { color: var(--text); }
-  .ctab[aria-selected='true'] { color: var(--accent-text); font-weight: var(--fw-bold); }
-  /* The short mark under the chosen word. */
-  .ctab[aria-selected='true']::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
-  .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
-  .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
-  .tabs:global(.fade-start.fade-end) {
-    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-  }
-  .m { margin: calc(-1 * var(--sp-1)) calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: var(--sp-1) var(--sp-4); }
-  .m .ctab { min-height: var(--sp-12); font-size: var(--fs-body); }
-</style>
+</TabBar>

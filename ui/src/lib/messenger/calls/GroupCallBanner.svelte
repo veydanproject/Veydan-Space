@@ -74,10 +74,10 @@
       </span>
     {/if}
     {#if mine}
-      <button class="btn-join soft" onclick={() => openGroupRoom(phone)}>{$t('common_open')}</button>
+      <button class="btn btn-sm btn-ghost" onclick={() => openGroupRoom(phone)}>{$t('common_open')}</button>
     {:else}
-      <button class="btn-join" disabled={!!reason || groupCallStore.busy} title={reason || undefined} onclick={join}>
-        <Icon name="phone" size={13} />{$t('msg_gcall_join')}
+      <button class="btn btn-sm btn-success" disabled={!!reason || groupCallStore.busy} title={reason || undefined} onclick={join}>
+        <Icon name="phone" size={16} />{$t('msg_gcall_join')}
       </button>
     {/if}
   </div>
@@ -86,7 +86,7 @@
 <style>
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .banner {
-    display: flex; align-items: center; gap: var(--sp-2); padding: 7px var(--sp-3) 7px var(--sp-4);
+    display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
     background: var(--success-bg); border-bottom: 1px solid var(--success-border); color: var(--success-text);
     font-size: var(--fs-xs); min-width: 0;
   }
@@ -98,25 +98,18 @@
     content: ''; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--success);
     animation: pulse 2s ease-out infinite;
   }
-  .words { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; flex: 1; }
+  .words { display: flex; align-items: baseline; gap: var(--sp-1-5); flex-wrap: wrap; min-width: 0; flex: 1; }
   .what { font-weight: var(--fw-bold); white-space: nowrap; }
   .count { color: var(--text-2); white-space: nowrap; }
   .clock { font-variant-numeric: tabular-nums; color: var(--text-2); }
   .faces { display: inline-flex; align-items: center; flex-shrink: 0; }
-  .face { margin-left: -6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--success-bg); display: inline-flex; }
+  .face { margin-left: calc(-1 * var(--sp-1-5)); border-radius: 50%; box-shadow: 0 0 0 2px var(--success-bg); display: inline-flex; }
   .face:first-child { margin-left: 0; }
   .face.more {
     width: 22px; height: 22px; align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: var(--fw-bold);
     background: var(--surface-3); color: var(--text-2);
   }
-  .btn-join {
-    display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; padding: 5px 12px; border-radius: var(--radius-pill);
-    border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--success); color: #fff;
-  }
-  .btn-join.soft { background: var(--surface); color: var(--success-text); border: 1px solid var(--success-border); }
-  .btn-join:disabled { opacity: 0.45; cursor: default; }
-  @media (hover: hover) { .btn-join:hover:not(:disabled) { filter: brightness(1.08); } }
-  @media (pointer: coarse) { .btn-join { padding: 7px 14px; } }
+  .banner > .btn { flex-shrink: 0; }
   @keyframes pulse { from { transform: scale(1); opacity: 0.7; } to { transform: scale(1.45); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .banner .dot::after { animation: none; opacity: 0; } }
 </style>

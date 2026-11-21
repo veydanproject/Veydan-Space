@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
+  import { DEFAULT_COLOR } from '$lib/core/palette';
   import { goto } from '$app/navigation';
   import { api } from '$lib/browser/api';
   import { t, locale, countKey } from '$lib/core/i18n';
@@ -10,6 +11,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import { workspacesStore } from '$lib/browser/store/workspaces.svelte';
   import { profilesStore } from '$lib/browser/store/profiles.svelte';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
@@ -28,12 +30,12 @@
 
   let createModal = $state(false);
   let editModal = $state<{ open: boolean; id: string; name: string; description: string; color: string }>({
-    open: false, id: '', name: '', description: '', color: '#8b7bff',
+    open: false, id: '', name: '', description: '', color: DEFAULT_COLOR,
   });
   let deleteModal = $state<{ open: boolean; id: string; name: string }>({
     open: false, id: '', name: '',
   });
-  let createForm = $state<CreateWorkspaceRequest>({ name: '', description: '', color: '#8b7bff' });
+  let createForm = $state<CreateWorkspaceRequest>({ name: '', description: '', color: DEFAULT_COLOR });
   let saving = $state(false);
 
   let dragSrcIndex = $state(-1);
@@ -41,12 +43,6 @@
   let ghostActive = $state(false);
   let ghostX = $state(0);
   let ghostY = $state(0);
-
-  // Category palette from the redesign (workspace accents); stored per-workspace as data.
-  const COLORS = [
-    // The kit's presets (N.colors); the colour is the user's, never the kind.
-    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
-  ];
 
   onMount(() => {
     // The cached list is shown at once; the store refreshes it in the background.
@@ -185,7 +181,7 @@
       stats = { ...stats, [w.id]: { id: w.id, profile_count: 0, proxy_count: 0, active_count: 0 } };
       saveOrder(workspaces.map((ws) => ws.id));
       createModal = false;
-      createForm = { name: '', description: '', color: '#8b7bff' };
+      createForm = { name: '', description: '', color: DEFAULT_COLOR };
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -205,7 +201,7 @@
         description: editModal.description || null,
         color: editModal.color,
       });
-      editModal = { open: false, id: '', name: '', description: '', color: '#8b7bff' };
+      editModal = { open: false, id: '', name: '', description: '', color: DEFAULT_COLOR };
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -245,7 +241,7 @@
   </div>
 
   {#if error}
-    <div style="margin-bottom:1rem"><Notice tone="danger">{error}</Notice></div>
+    <Notice tone="danger">{error}</Notice>
   {/if}
 
   {#if loading}
@@ -337,7 +333,7 @@
 {#if ghostActive && dragSrcIndex !== -1}
   <div
     class="drag-ghost"
-    style="left:{ghostX}px; top:{ghostY}px; --ws-color:{workspaces[dragSrcIndex]?.color ?? '#8b7bff'}"
+    style="left:{ghostX}px; top:{ghostY}px; --ws-color:{workspaces[dragSrcIndex]?.color ?? DEFAULT_COLOR}"
   >
     <div class="card-accent"></div>
     <div class="ghost-name">{workspaces[dragSrcIndex]?.name}</div>
@@ -364,29 +360,7 @@
   </div>
   <div class="form-group">
     <label for="ws-color">{$t('workspaces_form_color')}</label>
-    <div id="ws-color" class="color-picker" role="group" aria-label={$t('workspaces_form_color')}>
-      {#each COLORS as c}
-        <button
-          class="color-swatch"
-          class:selected={createForm.color === c}
-          style="background: {c}"
-          aria-label={c}
-          aria-pressed={createForm.color === c}
-          onclick={() => (createForm.color = c)}
-        ></button>
-      {/each}
-      <label
-        class="color-swatch color-swatch-custom"
-        class:selected={!COLORS.includes(createForm.color ?? '')}
-        title={$t('workspaces_color_custom')}
-        aria-label={$t('workspaces_color_custom')}
-      >
-        <input type="color" bind:value={createForm.color} />
-        {#if !COLORS.includes(createForm.color ?? '')}
-          <span class="custom-dot" style="background:{createForm.color}"></span>
-        {/if}
-      </label>
-    </div>
+    <ColorSwatches id="ws-color" bind:value={createForm.color} label={$t('workspaces_form_color')} />
   </div>
   </div>
   {#snippet footer()}
@@ -410,29 +384,7 @@
   </div>
   <div class="form-group">
     <label for="edit-color">{$t('workspaces_form_color')}</label>
-    <div id="edit-color" class="color-picker" role="group" aria-label={$t('workspaces_form_color')}>
-      {#each COLORS as c}
-        <button
-          class="color-swatch"
-          class:selected={editModal.color === c}
-          style="background: {c}"
-          aria-label={c}
-          aria-pressed={editModal.color === c}
-          onclick={() => (editModal.color = c)}
-        ></button>
-      {/each}
-      <label
-        class="color-swatch color-swatch-custom"
-        class:selected={!COLORS.includes(editModal.color)}
-        title={$t('workspaces_color_custom')}
-        aria-label={$t('workspaces_color_custom')}
-      >
-        <input type="color" bind:value={editModal.color} />
-        {#if !COLORS.includes(editModal.color)}
-          <span class="custom-dot" style="background:{editModal.color}"></span>
-        {/if}
-      </label>
-    </div>
+    <ColorSwatches id="edit-color" bind:value={editModal.color} label={$t('workspaces_form_color')} />
   </div>
   </div>
   {#snippet footer()}
@@ -445,26 +397,24 @@
 
 <!-- Delete Workspace Modal -->
 <Dialog open={deleteModal.open} title={$t('common_delete')} onclose={() => (deleteModal = { ...deleteModal, open: false })}>
-  <p class="delete-warning">
-    <Icon name="alert-triangle" size={16} />
-    <!-- one flex item: the gap of the row stays between the icon and the text -->
-    <span>{#each $t('workspaces_delete_question').split('{name}') as part, i}{#if i > 0}<strong>{deleteModal.name}</strong>{/if}{part}{/each}</span>
-  </p>
-  <div class="delete-options">
-    <button class="delete-option" onclick={() => confirmDelete('move_to_default')}>
-      <Icon name="chevron-left" size={14} />
-      <div>
-        <div class="option-title">{$t('workspaces_delete_move')}</div>
-        <div class="option-desc">{$t('workspaces_delete_move_hint')}</div>
-      </div>
-    </button>
-    <button class="delete-option danger" onclick={() => confirmDelete('delete_all')}>
-      <Icon name="trash-2" size={14} />
-      <div>
-        <div class="option-title">{$t('workspaces_delete_all')}</div>
-        <div class="option-desc">{$t('workspaces_delete_all_hint')}</div>
-      </div>
-    </button>
+  <div class="delete-body">
+    <Notice tone="warn">{#each $t('workspaces_delete_question').split('{name}') as part, i}{#if i > 0}<strong>{deleteModal.name}</strong>{/if}{part}{/each}</Notice>
+    <div class="delete-options">
+      <button class="delete-option" onclick={() => confirmDelete('move_to_default')}>
+        <Icon name="chevron-left" size={14} />
+        <div>
+          <div class="option-title">{$t('workspaces_delete_move')}</div>
+          <div class="option-desc">{$t('workspaces_delete_move_hint')}</div>
+        </div>
+      </button>
+      <button class="delete-option danger" onclick={() => confirmDelete('delete_all')}>
+        <Icon name="trash-2" size={14} />
+        <div>
+          <div class="option-title">{$t('workspaces_delete_all')}</div>
+          <div class="option-desc">{$t('workspaces_delete_all_hint')}</div>
+        </div>
+      </button>
+    </div>
   </div>
   {#snippet footer()}
     <button class="btn btn-ghost" onclick={() => (deleteModal = { ...deleteModal, open: false })}>{$t('common_cancel')}</button>
@@ -474,7 +424,7 @@
 <style>
   /* Screen entry animation (design: vfade) */
   .page { animation: vfade 0.25s ease; }
-  .page-title-group { display: flex; flex-direction: column; gap: 6px; }
+  .page-title-group { display: flex; flex-direction: column; gap: var(--sp-1-5); }
 
   /* ── Grid ── */
   .workspace-grid {
@@ -512,14 +462,14 @@
     border-radius: var(--radius);
     box-shadow: var(--shadow-lg);
     pointer-events: none;
-    z-index: 9999;
+    z-index: var(--z-max);
     opacity: 0.93;
     transform: translate(-50%, -50%) rotate(2deg) scale(1.04);
     overflow: hidden;
     user-select: none;
   }
   .ghost-name {
-    padding: 0.625rem 0.875rem;
+    padding: var(--sp-2-5) var(--sp-3);
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     white-space: nowrap;
@@ -552,7 +502,7 @@
     padding: var(--sp-5) var(--sp-5) 4px;
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: var(--sp-4);
     flex: 1;
   }
 
@@ -578,8 +528,9 @@
   .card-title { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card-desc { font-size: var(--fs-sm); color: var(--text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  /* Over the card's head (positioned after it): a press on ✎ or 🗑 is theirs, not the card's. */
   .card-menu {
-    position: absolute; top: 10px; right: 12px;
+    position: absolute; top: 10px; right: 12px; z-index: 1;
     display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s;
   }
   .workspace-card:hover .card-menu,
@@ -593,7 +544,7 @@
   .menu-btn.danger:hover { background: var(--danger-bg); color: var(--danger-text); }
 
   .card-stats { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
-  .stat { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--text-soft); }
+  .stat { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-soft); }
   .stat :global(svg) { color: var(--text-dim); }
   .stat.active { color: var(--success-text); font-weight: var(--fw-medium); }
   .stat.active :global(svg) { color: var(--success); }
@@ -601,21 +552,21 @@
 
   .card-footer {
     border-top: 1px solid var(--border);
-    margin: 14px 22px 0;
-    padding: 14px 0 18px;
+    margin: var(--sp-4) var(--sp-6) 0;
+    padding: var(--sp-3) 0 var(--sp-5);
   }
 
   .open-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-1-5);
     font-size: var(--fs-base);
     font-weight: var(--fw-semibold);
     color: var(--accent-text-3);
     text-decoration: none;
     transition: gap 0.15s, color 0.15s;
   }
-  .open-btn:hover { color: var(--accent-text); gap: 10px; }
+  .open-btn:hover { color: var(--accent-text); gap: var(--sp-2-5); }
 
   /* ── Add card ── */
   .add-card {
@@ -636,42 +587,9 @@
   .add-card:hover { border-color: var(--border-2); color: var(--text-2); background: var(--surface); }
 
   /* ── Modal form layout (dialog body) ── */
-  .ws-form { display: flex; flex-direction: column; gap: 0.875rem; }
+  .ws-form { display: flex; flex-direction: column; gap: var(--sp-4); }
 
-  .color-picker { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
-  .color-swatch {
-    width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent;
-    cursor: pointer; transition: transform 0.1s, border-color 0.1s;
-    padding: 0; flex-shrink: 0;
-  }
-  .color-swatch:hover { transform: scale(1.15); }
-  .color-swatch.selected { border-color: var(--text); transform: scale(1.15); }
-
-  .color-swatch-custom {
-    position: relative;
-    background: conic-gradient(
-      #f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #f43f5e
-    );
-    display: flex; align-items: center; justify-content: center;
-    overflow: hidden;
-  }
-  .color-swatch-custom input[type="color"] {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0;
-  }
-  .color-swatch-custom .custom-dot {
-    position: absolute; inset: 3px; border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,0.6);
-    pointer-events: none;
-  }
-
-  .delete-warning {
-    display: flex; align-items: center; gap: var(--sp-2);
-    color: var(--warn-text); font-size: var(--fs-sm);
-    background: var(--warn-bg); padding: 0.625rem 0.875rem;
-    border-radius: var(--radius-md);
-    margin-bottom: var(--sp-3);
-  }
+  .delete-body { display: flex; flex-direction: column; gap: var(--sp-3); }
 
   .delete-options { display: flex; flex-direction: column; gap: var(--sp-2); }
   .delete-option {
@@ -683,6 +601,6 @@
   .delete-option:hover { border-color: var(--border-2); background: var(--surface); }
   .delete-option.danger { color: var(--danger-text); }
   .delete-option.danger:hover { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }
-  .option-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin-bottom: 0.15rem; }
+  .option-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); margin-bottom: var(--sp-0-5); }
   .option-desc { font-size: var(--fs-xs); color: var(--text-2); }
 </style>

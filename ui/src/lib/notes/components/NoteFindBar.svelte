@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import { t } from '$lib/core/i18n';
 
   interface Props {
@@ -81,15 +82,20 @@
 </script>
 
 <div class="find-bar" role="search">
-  <div class="find-field">
-    <Icon name="search" size={13} />
-    <input
-      bind:this={inputEl}
-      bind:value={query}
-      type="text"
-      placeholder={$t('note_find_placeholder')}
-      onkeydown={onKey}
-    />
+  <div class="find-group">
+    <div class="search-field fill">
+      <Icon name="search" size={16} />
+      <input
+        bind:this={inputEl}
+        bind:value={query}
+        type="text"
+        placeholder={$t('note_find_placeholder')}
+        onkeydown={onKey}
+      />
+      {#if query}
+        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+      {/if}
+    </div>
     <span class="find-count">{matches.length ? `${current + 1 || 0}/${matches.length}` : '0'}</span>
     <button class="fb-btn" class:active={caseSensitive} title={$t('note_find_case')} onclick={() => (caseSensitive = !caseSensitive)}>
       <Icon name="case-sensitive" size={13} />
@@ -98,9 +104,11 @@
     <button class="fb-btn" title={$t('note_find_next')} onclick={next} disabled={!matches.length}><Icon name="chevron-down" size={13} /></button>
   </div>
   {#if !readonly}
-    <div class="find-field">
-      <Icon name="replace" size={13} />
-      <input bind:value={replacement} type="text" placeholder={$t('note_replace_placeholder')} onkeydown={onKey} />
+    <div class="find-group">
+      <div class="search-field fill">
+        <Icon name="replace" size={16} />
+        <input bind:value={replacement} type="text" placeholder={$t('note_replace_placeholder')} onkeydown={onKey} />
+      </div>
       <button class="fb-text" onclick={replaceOne} disabled={!matches.length}>{$t('note_replace_one')}</button>
       <button class="fb-text" onclick={replaceAll} disabled={!matches.length}>{$t('note_replace_all')}</button>
     </div>
@@ -113,41 +121,20 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: 0.3rem var(--sp-3);
+    padding: var(--sp-1) var(--sp-3);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
     flex-wrap: wrap;
   }
-  .find-field {
+  /* The field, then its count and buttons beside it, not inside */
+  .find-group {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    background: var(--surface-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    padding: 0 0.4rem;
-    height: 28px;
-    color: var(--text-3);
+    gap: var(--sp-1);
     flex: 1;
     min-width: 200px;
   }
-  .find-field:focus-within { border-color: var(--accent-border); }
-  /* Reset the global input chrome from base.css: the field draws the border */
-  .find-field input {
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
-    height: 100%;
-    padding: 0;
-    background: none;
-    border: none;
-    border-radius: 0;
-    outline: none;
-    font-size: var(--fs-sm);
-    color: var(--text);
-  }
-  .find-field input:focus { box-shadow: none; }
   .find-count {
     font-size: var(--fs-xs);
     font-family: var(--font-mono);
@@ -162,7 +149,7 @@
     border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
-    padding: 0.15rem 0.3rem;
+    padding: var(--sp-0-5) var(--sp-1);
   }
   .fb-text { font-size: var(--fs-xs); white-space: nowrap; }
   .fb-btn:hover:not(:disabled), .fb-text:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }

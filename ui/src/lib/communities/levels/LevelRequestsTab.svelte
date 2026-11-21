@@ -17,7 +17,7 @@
   import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
-  import { Avatar, shortKey } from '$lib/messenger/seams/shared';
+  import { Avatar, onPhone, shortKey } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { nameStore } from '../names.svelte';
   import { channelError } from '../errors';
@@ -30,6 +30,9 @@
     detail: ChannelDetail;
   }
   let { detail }: Props = $props();
+
+  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
+  const phone = onPhone();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const cid = $derived(detail.channel.id);
@@ -92,11 +95,12 @@
   }
 </script>
 
-{#if error}<Notice tone="danger">{error}</Notice>{/if}
+<!-- While the refusal is open its error stands in its foot, over its buttons. -->
+{#if error && !refusing.open}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if loaded && requests.length === 0}
   <div class="empty-state">
-    <div class="empty-icon"><Icon name="layers" size={24} /></div>
+    <div class="empty-icon"><Icon name="layers" size={22} /></div>
     <p>{$t('chan_level_req_empty')}</p>
     <span>{$t('chan_level_req_empty_hint')}</span>
   </div>
@@ -108,9 +112,9 @@
       {@const level = levelOf(r.level)}
       {@const wait = waited(r.created_at, now)}
       {@const busy = acting !== null}
-      <li class="card" aria-label={name}>
-        <div class="head">
-          <Avatar url={nameStore.picture(r.requester)} label={name} seed={r.requester} size={40} />
+      <li class="req-card" aria-label={name}>
+        <div class="head" class:list-row={phone} class:still={phone}>
+          <Avatar url={nameStore.picture(r.requester)} label={name} seed={r.requester} size={phone ? 48 : 40} />
           <div class="who">
             <span class="name" title={name}>{name}</span>
             {#if p?.nip05?.trim()}
@@ -136,7 +140,7 @@
             <span class="wait">{wait ? $t('chan_req_waiting', { time: waitedText(wait, lang) }) : $t('chan_req_just_now')}</span>
           </span>
           <span class="acts">
-            <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={() => (refusing = { open: true, r, reason: '' })}>{$t('chan_level_req_refuse')}</button>
+            <button type="button" class="btn btn-ghost btn-sm" disabled={busy} onclick={() => { error = ''; refusing = { open: true, r, reason: '' }; }}>{$t('chan_level_req_refuse')}</button>
             <button type="button" class="btn btn-primary btn-sm" disabled={busy || !level} onclick={() => answer(r, true)}><Icon name="check" size={14} />{$t('chan_level_req_grant')}</button>
           </span>
         </div>
@@ -151,6 +155,7 @@
     <textarea class="field" rows="3" maxlength="500" bind:value={refusing.reason} placeholder={$t('chan_level_req_reason')} aria-label={$t('chan_level_req_reason')} disabled={acting !== null}></textarea>
   </div>
   {#snippet footer()}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <button type="button" class="btn btn-ghost" disabled={acting !== null} onclick={() => (refusing.open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-danger" disabled={acting !== null}
       onclick={() => refusing.r && answer(refusing.r, false, refusing.reason.trim() || undefined)}>{$t('chan_level_req_refuse')}</button>
@@ -159,18 +164,21 @@
 
 <style>
   .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
-  .card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; }
+  /* A list's card (design 09), not the page's .card. */
+  .req-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); min-width: 0; }
   .head { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+  /* A phone's head is the common row (base.css .list-row, 64), its padding over the card's. */
+  .head.list-row { width: auto; margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) 0; align-items: center; }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nip05 { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .nip05-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .npub { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); }
+  .npub { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-1); border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3); }
   .npub:hover { color: var(--accent-text); }
   .level { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
   .lvl {
-    display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 4px; padding: var(--sp-0-5) var(--sp-2-5); border-radius: var(--radius-pill);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2); background: var(--accent-tint);
   }
   .opens { font-size: var(--fs-xs); color: var(--text-2); }
@@ -180,16 +188,14 @@
   }
   .note-none { margin: 0; font-size: var(--fs-sm); color: var(--text-3); font-style: italic; }
   .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; padding-top: 2px; }
-  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
+  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-0-5) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .wait { color: var(--text-2); font-weight: var(--fw-semibold); }
-  .acts { display: flex; gap: 6px; margin-left: auto; }
-  .empty-state { padding: var(--sp-10) var(--sp-4); }
-  .empty-state p { margin: 0; }
+  .acts { display: flex; gap: var(--sp-1-5); margin-left: auto; }
   .dlg { display: flex; flex-direction: column; gap: var(--sp-3); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .field {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px; resize: vertical;
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-2-5); resize: vertical;
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
   @media (pointer: coarse) {

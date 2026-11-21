@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Rifiuta",
     "chan_level_req_refuse_title": "Rifiuta: {name}",
     "chan_level_req_refuse_hint": "Il lettore riceverà il rifiuto con il tuo motivo. I suoi livelli non cambiano.",
-    "chan_level_req_reason": "Motivo (facoltativo)"
+    "chan_level_req_reason": "Motivo (facoltativo)",
+    "chan_err_not_found": "Il file non è più disponibile sullo storage."
   },
   "mobile": {}
 }

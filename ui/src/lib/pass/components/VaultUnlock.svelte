@@ -47,9 +47,12 @@
   }
 </script>
 
+<!-- A phone's sheet: the field under its label, focused; the verb in the sheet's foot (it submits the form by its id). -->
 {#snippet form()}
-  <form class="form" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
+  <form id="vault-unlock" class="form" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
+    {#if isMobile}<label class="form-label" for="vault-unlock-pw">{$t('lock_password')}</label>{/if}
     <input
+      id="vault-unlock-pw"
       class:pin={appLock.status.kind === 'pin'}
       type={appLock.status.kind === 'pin' ? 'text' : 'password'}
       inputmode={appLock.status.kind === 'pin' ? 'numeric' : 'text'}
@@ -60,15 +63,19 @@
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
+      {@attach (el: HTMLInputElement) => { if (isMobile) el.focus(); }}
     />
-    {#if wrong}<p class="error-msg">{$t('lock_wrong')}</p>{/if}
-    <button class="btn btn-primary" type="submit" disabled={!password || busy}>{$t('lock_unlock')}</button>
+    {#if wrong}<p class="error-msg" role="alert">{$t('lock_wrong')}</p>{/if}
+    {#if !isMobile}<button class="btn btn-primary" type="submit" disabled={!password || busy}>{$t('lock_unlock')}</button>{/if}
   </form>
 {/snippet}
 
 {#if isMobile}
   <BottomSheet {open} title={$t('lock_title')} onclose={close}>
     {@render form()}
+    {#snippet footer()}
+      <button class="btn btn-primary" type="submit" form="vault-unlock" disabled={!password || busy}>{$t('lock_unlock')}</button>
+    {/snippet}
   </BottomSheet>
 {:else}
   <Dialog bind:open title={$t('lock_title')} onclose={close} width="360px">
@@ -78,15 +85,15 @@
 
 <style>
   .form { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .form-label { margin-bottom: calc(var(--sp-1) - var(--sp-3)); }
   input {
     width: 100%;
-    min-height: 40px;
-    padding: 0 10px;
+    min-height: var(--field-h);
+    padding: 0 var(--sp-2-5);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface-3);
     color: var(--text);
-    font: inherit;
   }
   .error-msg { margin: 0; }
   input.pin { -webkit-text-security: disc; }

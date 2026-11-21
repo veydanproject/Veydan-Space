@@ -10,6 +10,7 @@
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { formatError } from '$lib/core/utils';
   import { torLabel } from '$lib/browser/proxy-label';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   interface Props {
     workspaceId: string;
@@ -130,9 +131,9 @@
 
 <Dialog {open} title={$t('import_title')} width="420px" {onclose}>
 
-      <div class="tab-bar">
+      <TabBar selected={activeTab}>
         <button
-          class="tab"
+          class="tab" role="tab" aria-selected={activeTab === 'file'}
           class:active={activeTab === 'file'}
           onclick={() => { activeTab = 'file'; reset(); }}
         >
@@ -140,14 +141,14 @@
           {$t('import_tab_file')}
         </button>
         <button
-          class="tab"
+          class="tab" role="tab" aria-selected={activeTab === 'json'}
           class:active={activeTab === 'json'}
           onclick={() => { activeTab = 'json'; reset(); }}
         >
           <Icon name="code" size={13} />
           {$t('import_tab_json')}
         </button>
-      </div>
+      </TabBar>
 
       {#if activeTab === 'file'}
         <div class="file-section">
@@ -246,10 +247,6 @@
 </Dialog>
 
 <style>
-  /* .tab-bar / .tab styling is global (base.css); only local deltas kept below */
-  .tab-bar { padding-top: 0.3rem; }
-  .tab { justify-content: center; }
-
   .file-section {
     display: flex;
     flex-direction: column;
@@ -263,7 +260,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
     cursor: pointer;
     color: var(--text-2);
     font-size: var(--fs-base);
@@ -289,7 +286,7 @@
     border-radius: var(--radius);
     color: var(--text);
     font-size: var(--fs-sm);
-    padding: 0.6rem var(--sp-3);
+    padding: var(--sp-2-5) var(--sp-3);
     resize: vertical;
     box-sizing: border-box;
   }
@@ -301,17 +298,17 @@
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    padding: 0.6rem var(--sp-3);
+    padding: var(--sp-2-5) var(--sp-3);
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: var(--sp-1);
   }
 
   .preview-title {
     font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
     color: var(--text-dim);
-    margin-bottom: 0.2rem;
+    margin-bottom: var(--sp-1);
   }
 
   .preview-row {
@@ -331,7 +328,7 @@
   .proxy-value {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     font-family: var(--font-mono);
     font-size: var(--fs-sm);
   }
@@ -339,7 +336,7 @@
   .zip-note {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--sp-1-5);
     font-size: var(--fs-sm);
     color: var(--text-3);
   }

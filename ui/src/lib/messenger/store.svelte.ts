@@ -261,7 +261,9 @@ class MessengerStore {
     const { listen } = await import('@tauri-apps/api/event');
     this._unlisten.push(
       await listen<MessengerRelay[]>(RELAY_STATUS_EVENT, (e) => {
+        const wasOffline = !this.relays.some((r) => r.state === 'connected');
         this.relays = e.payload;
+        if (wasOffline && this.relays.some((r) => r.state === 'connected')) nameStore.reconnected();
         this.scheduleStatusRefresh();
       }),
       await listen<MessengerUiEvent>(RUNTIME_EVENT, (e) => {

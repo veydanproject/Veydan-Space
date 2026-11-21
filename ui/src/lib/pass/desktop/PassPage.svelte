@@ -17,6 +17,7 @@
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
   import { totpStore } from '$lib/pass/store/totp.svelte';
   import { passUi, type PassSection as Section } from '$lib/pass/store/ui.svelte';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   const SECTIONS: { id: Section; title: TranslationKey; icon: string; count?: () => number }[] = [
     { id: 'passwords', title: 'pw_title', icon: 'lock-password', count: () => passwordStore.list.length },
@@ -39,7 +40,7 @@
 
 <div class="page page--fill pass-page" bind:clientWidth={width}>
   {#if !wide}
-    <div class="tab-bar" role="tablist">
+    <TabBar selected={passUi.section}>
       {#each SECTIONS as s (s.id)}
         {@const n = s.count?.() ?? 0}
         <button
@@ -54,7 +55,7 @@
           {#if n > 0}<span class="count-pill sm quiet">{n}</span>{/if}
         </button>
       {/each}
-    </div>
+    </TabBar>
   {/if}
 
   <div class="panes" class:wide>

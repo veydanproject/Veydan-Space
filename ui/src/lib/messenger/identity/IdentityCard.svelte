@@ -113,10 +113,10 @@
     margin: 0; font-size: var(--fs-sm); color: var(--text-body);
     background: var(--danger-bg); border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3);
   }
-  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); }
   .field span { color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
   .field input {
-    font: inherit; color: var(--text);
+    color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
     min-height: 44px; padding: 0 var(--sp-3);
   }

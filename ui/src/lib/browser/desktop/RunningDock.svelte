@@ -39,8 +39,8 @@
     border-top: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0 1rem;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -48,7 +48,7 @@
   .dock-label {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
     font-size: var(--fs-xs);
     color: var(--text-2);
     white-space: nowrap;
@@ -69,7 +69,7 @@
 
   .dock-sessions {
     display: flex;
-    gap: 0.35rem;
+    gap: var(--sp-1-5);
     overflow-x: auto;
     flex: 1;
   }
@@ -79,8 +79,8 @@
   .dock-item {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.2rem 0.55rem;
+    gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2);
     background: var(--success-bg);
     border: 1px solid color-mix(in srgb, var(--success) 25%, var(--border));
     border-radius: var(--radius-pill);

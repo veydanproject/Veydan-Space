@@ -116,8 +116,8 @@
 
 {#snippet footer()}
   {#if retryable}
-    <button class="retry-all" onclick={retryAll} disabled={retrying}>
-      <Icon name="arrow-forward-up" size={14} />{$t('msg_xfer_retry_all')}
+    <button class="btn btn-sm btn-ghost retry-all" onclick={retryAll} disabled={retrying}>
+      <Icon name="arrow-forward-up" size={16} />{$t('msg_xfer_retry_all')}
     </button>
   {/if}
 {/snippet}
@@ -135,7 +135,7 @@
       style:top={`${(anchor?.bottom ?? 58) + 6}px`} style:left={`${place.left}px`} style:width={`${place.width}px`}>
       <div class="head">
         <span class="title">{$t('msg_xfer_title')}</span>
-        <button class="close" onclick={() => (open = false)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
+        <button class="icon-btn lg" onclick={() => (open = false)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
       </div>
       <div class="body">{@render rows()}</div>
       {#if retryable}<div class="foot">{@render footer()}</div>{/if}
@@ -153,8 +153,6 @@
   }
   .head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
   .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
-  .close { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .close:hover { color: var(--text); background: var(--surface-3); }
   .body { overflow-y: auto; padding: var(--sp-1) var(--sp-2); }
   .foot { padding: var(--sp-2); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -178,11 +176,5 @@
   .who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .retry-all {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: none; cursor: pointer; font: inherit;
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 8px 12px; border-radius: var(--radius-md);
-    background: var(--accent-tint); color: var(--accent-text-2);
-  }
-  .retry-all:disabled { opacity: 0.45; cursor: default; }
-  @media (pointer: coarse) { .retry-all { width: 100%; padding: 12px; } }
+  @media (pointer: coarse) { .retry-all { width: 100%; } }
 </style>

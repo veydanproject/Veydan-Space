@@ -223,12 +223,12 @@
   .caption::after { content: ''; display: block; clear: both; }
   .uploaded { display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: var(--fs-xs); color: var(--text-3); }
   .reactions { margin-top: var(--sp-1); max-width: min(420px, 78%); }
-  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: var(--lh-icon); padding: 0 8px 5px; white-space: nowrap; }
+  .meta { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-end; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-2); line-height: var(--lh-icon); padding: 0 var(--sp-2) var(--sp-1); white-space: nowrap; }
   .line.out .meta:not(.on-picture) { color: var(--bubble-out-meta); }
   /* After the words: a float takes the room left on their last line, or a line of its own at the right. */
   .meta.inline { float: right; margin-left: var(--sp-3); padding: 0; box-sizing: border-box; height: calc(var(--fs-body) * var(--lh-body)); align-items: flex-end; padding-bottom: var(--sp-1); }
   .meta.on-picture {
-    position: absolute; right: 6px; bottom: 6px; padding: 3px 7px; border-radius: var(--radius-pill);
+    position: absolute; right: 6px; bottom: 6px; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-pill);
     background: rgba(0, 0, 0, 0.5); color: #fff; pointer-events: none;
   }
   .status { display: inline-flex; }

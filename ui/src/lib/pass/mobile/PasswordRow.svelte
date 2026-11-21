@@ -43,8 +43,8 @@
   const totp = $derived(entry.totp_ids[0]);
 </script>
 
-<div class="m-card row" {@attach longpress(onmenu)}>
-  <button type="button" class="open" onclick={onopen}>
+<div class="list-row row" {@attach longpress(onmenu)}>
+  <button type="button" class="list-row-main" onclick={onopen}>
     <span class="m-avatar" style:--c={avatarColor(entry.title)}>{entry.title.charAt(0).toUpperCase()}</span>
     <span class="meta">
       <span class="name">{entry.title}</span>
@@ -69,36 +69,12 @@
 </div>
 
 <style>
-  /* A flat row of the list (the design kit), not a card. */
-  .row {
-    display: flex;
-    align-items: center;
-    min-height: 64px;
-    padding-right: var(--sp-2);
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-    border-radius: var(--radius-lg);
-  }
-  .row:active { background: var(--surface-hover); }
-  .open {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-4);
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    text-align: left;
-  }
-  .row:active { background: var(--surface-2); }
-  .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  /* The common row of a record (base.css .list-row, 64): the avatar of 48, the code at the end. */
+  .row { cursor: default; }
+  .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); }
   .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .tagline { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
   .tagline .m-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .code { flex-shrink: 0; }
 </style>

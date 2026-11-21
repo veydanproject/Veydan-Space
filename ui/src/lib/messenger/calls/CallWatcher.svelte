@@ -84,9 +84,9 @@
   /* A capsule just under the top bar of the screen below: over the start of
      what scrolls, never over the bar's name, back button and actions. */
   .back-to-call {
-    position: fixed; z-index: 75; top: calc(var(--sat, 0px) + 66px); left: 50%; transform: translateX(-50%);
-    max-width: calc(100vw - 48px); display: flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border: none; border-radius: var(--radius-pill); cursor: pointer;
+    position: fixed; z-index: calc(var(--z-panel) + 25); top: calc(var(--sat, 0px) + 66px); left: 50%; transform: translateX(-50%);
+    max-width: calc(100vw - 48px); display: flex; align-items: center; gap: var(--sp-1-5);
+    padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-pill); cursor: pointer;
     background: var(--success); color: #fff; font: inherit; font-size: var(--fs-xs); box-shadow: var(--shadow-lg);
   }
   .back-to-call.ringing { background: var(--accent); }

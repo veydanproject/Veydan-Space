@@ -26,6 +26,8 @@
     "common_nothing_found": "Không tìm thấy gì",
     "common_nothing_found_hint": "Không có kết quả nào khớp với “{q}”.",
     "common_clear": "Xóa",
+    "tabs_scroll_back": "Các thẻ trước",
+    "tabs_scroll_more": "Thêm thẻ",
     "common_refresh": "Làm mới",
     "common_update": "Cập nhật",
     "common_restore": "Khôi phục",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "Kết nối SSH",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "Mật khẩu",
-    "suggest_group_note": "Ghi chú"
+    "suggest_group_note": "Ghi chú",
+    "kanban_color_violet": "Tím",
+    "kanban_color_blue": "Xanh dương",
+    "kanban_color_green": "Xanh lá",
+    "kanban_color_amber": "Hổ phách",
+    "kanban_color_red": "Đỏ",
+    "kanban_color_pink": "Hồng",
+    "kanban_color_teal": "Xanh mòng két",
+    "workspaces_color_custom": "Màu tùy chỉnh"
   },
   "mobile": {
     "app_launcher": "Ứng dụng",

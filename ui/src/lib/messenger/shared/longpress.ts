@@ -6,6 +6,8 @@
 // While the finger rests the element sinks a little under an accent tint
 // (design kit, M17: .lp-pressing over the 450 ms, .lp-release fading it).
 
+import { swallowNextClick } from '$lib/core/ui/ghost-click';
+
 export interface LongPressOptions {
   /** `target` is what the finger went down on: a shared parent finds the part pressed. */
   onpress: (point: { x: number; y: number; target: EventTarget | null }) => void;
@@ -51,6 +53,7 @@ export function longpress(node: HTMLElement, options: LongPressOptions) {
       fired = true;
       press(false);
       navigator.vibrate?.(12);
+      swallowNextClick(); // iOS clicks what the press opened under the finger
       opts.onpress({ x: start.x, y: start.y, target });
     }, opts.delay ?? 450);
   };

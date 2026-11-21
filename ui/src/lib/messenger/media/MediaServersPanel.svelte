@@ -171,7 +171,7 @@
   .form .wide { grid-column: 1 / -1; }
   .form label { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .form input {
-    font: inherit; font-size: var(--fs-base); font-weight: var(--fw-normal); color: var(--text); min-height: 44px; min-width: 0;
+    font-weight: var(--fw-normal); color: var(--text); min-height: 44px; min-width: 0;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .form input:focus { outline: none; border-color: var(--accent-border); }

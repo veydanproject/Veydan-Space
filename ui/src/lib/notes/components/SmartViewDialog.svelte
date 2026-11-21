@@ -3,16 +3,13 @@
 
 <script lang="ts">
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import { PALETTE } from '$lib/core/palette';
+  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import type { NoteFilter, NoteSmartView, SmartViewInput } from '$lib/notes/types';
   import { notesStore } from '$lib/notes/store/notes.svelte';
   import { directory } from '$lib/core/directory';
   import { t } from '$lib/core/i18n';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
-
-  const COLORS = [
-    // The kit's presets (N.colors); the colour is the user's, never the kind.
-    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
-  ];
 
   interface Props {
     open: boolean;
@@ -24,7 +21,7 @@
   let { open, view, onclose }: Props = $props();
 
   let name = $state('');
-  let color = $state(COLORS[0]);
+  let color = $state(PALETTE[0]);
   let bindings = $state<string[]>([]);
   let domain = $state('');
   let folderId = $state('');
@@ -49,7 +46,7 @@
     if (!open) return;
     const c: NoteFilter = view?.conditions ?? {};
     name = view?.name ?? '';
-    color = view?.color ?? COLORS[0];
+    color = view?.color ?? PALETTE[0];
     const any = c.bindings_any ?? [];
     bindings = any.filter((b) => !b.startsWith('domain:'));
     domain = any.find((b) => b.startsWith('domain:'))?.slice('domain:'.length) ?? '';
@@ -107,11 +104,7 @@
       onkeydown={(e) => { if (e.key === 'Enter') void save(); }}
     />
 
-    <div class="color-row">
-      {#each COLORS as c}
-        <button class="swatch" class:active={color === c} style="background:{c}" aria-label={c} onclick={() => (color = c)}></button>
-      {/each}
-    </div>
+    <ColorSwatches bind:value={color} label={$t('notes_smart_name')} />
 
     {#if directory.list('workspace').length > 0}
       <div class="group">
@@ -193,11 +186,11 @@
 </Dialog>
 
 <style>
-  .body { display: flex; flex-direction: column; gap: 0.6rem; }
+  .body { display: flex; flex-direction: column; gap: var(--sp-2-5); }
   .input {
     width: 100%;
     min-width: 0;
-    padding: 0.4rem 0.55rem;
+    padding: var(--sp-1-5) var(--sp-2);
     font-size: var(--fs-sm);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
@@ -205,28 +198,22 @@
     background-color: var(--bg-2);
     color: var(--text);
   }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-1-5); }
   .pick { min-width: 0; }
-  .color-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
-  .swatch {
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 2px solid transparent; cursor: pointer; padding: 0;
-  }
-  .swatch.active { border-color: var(--text); }
-  .group { display: flex; flex-direction: column; gap: 0.3rem; }
+  .group { display: flex; flex-direction: column; gap: var(--sp-1); }
   .label-row { display: flex; justify-content: space-between; align-items: center; }
   .label {
     font-size: var(--fs-xs);
     color: var(--text-3);
     font-weight: var(--fw-semibold);
   }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
   /* A long list of profiles scrolls inside its group: the dialog keeps the window's height. */
   .chips-scroll { max-height: 120px; overflow-y: auto; align-content: flex-start; }
-  .profile-search { width: 180px; padding-top: 0.25rem; padding-bottom: 0.25rem; font-size: var(--fs-xs); }
+  .profile-search { width: 180px; padding-top: var(--sp-1); padding-bottom: var(--sp-1); font-size: var(--fs-xs); }
   .chip {
-    display: inline-flex; align-items: center; gap: 0.3rem;
-    padding: 0.2rem 0.5rem;
+    display: inline-flex; align-items: center; gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2);
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
     border-radius: var(--radius-pill);
@@ -236,10 +223,10 @@
   }
   .chip.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 15%, transparent); }
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .checks { display: flex; flex-direction: column; gap: 0.3rem; }
-  .check { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); color: var(--text-2); }
+  .checks { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .check { display: flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--text-2); }
   /* base.css gives every input width:100% + padding; keep the box inline */
   .check input[type="checkbox"] { margin: 0; flex-shrink: 0; }
   .check.small { font-size: var(--fs-xs); }
-  .days { width: 4.5rem; padding: 0.2rem 0.4rem; }
+  .days { width: 4.5rem; padding: var(--sp-1) var(--sp-1-5); }
 </style>

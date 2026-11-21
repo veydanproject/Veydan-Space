@@ -13,9 +13,15 @@
   so the words stay in the card's column).
 -->
 <script lang="ts">
+  import type { Snippet } from 'svelte';
+
   interface Props {
     title: string;
     hint?: string;
+    /** The hint, when it is more than words (a key chip in it); in place of `hint`. */
+    hintContent?: Snippet;
+    /** Before the words: a module's tile. */
+    lead?: Snippet;
     on?: boolean;
     onclick?: () => void;
     disabled?: boolean;
@@ -23,7 +29,7 @@
     label?: string;
     surface?: 'strong' | 'panel' | 'row';
   }
-  let { title, hint, on = $bindable(false), onclick, disabled = false, label, surface = 'strong' }: Props = $props();
+  let { title, hint, hintContent, lead, on = $bindable(false), onclick, disabled = false, label, surface = 'strong' }: Props = $props();
 
   function press() {
     if (onclick) onclick();
@@ -32,9 +38,10 @@
 </script>
 
 <button type="button" class="toggle-row {surface}" role="switch" aria-checked={on} aria-label={label} {disabled} onclick={press}>
+  {@render lead?.()}
   <span class="info">
     <span class="title">{title}</span>
-    {#if hint}<span class="hint">{hint}</span>{/if}
+    {#if hintContent}<span class="hint">{@render hintContent()}</span>{:else if hint}<span class="hint">{hint}</span>{/if}
   </span>
   <span class="toggle" class:on aria-hidden="true"></span>
 </button>

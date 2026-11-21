@@ -8,7 +8,9 @@
 // sheet of a forward over it) are a stack: a back pops only the newest,
 // and places let go are given back from the top down one at a time,
 // whatever the order they were let go in (two backs asked together would
-// go back once).
+// go back once). A page that leaves the sheet for another page waits for
+// that back first (`afterBacks`): a navigation started meanwhile would be
+// undone by the back, or the back would take its place.
 
 import { pushState } from '$app/navigation';
 import { page } from '$app/state';
@@ -25,7 +27,7 @@ export interface SheetBackEnv {
 }
 
 /** What holds a place of the history (`App.PageState`). */
-export type BackPlace = 'attachSheet' | 'chooseMessages' | 'searchMessages' | 'forwardSheet' | 'emojiDock' | 'selectSheet' | 'selectText';
+export type BackPlace = 'attachSheet' | 'chooseMessages' | 'searchMessages' | 'forwardSheet' | 'emojiDock' | 'selectSheet' | 'selectText' | 'drawer';
 
 const browser = (place: BackPlace): SheetBackEnv => ({
   push: () => pushState('', { ...page.state, [place]: true }),
@@ -44,6 +46,17 @@ interface Held {
 let held: Held[] = [];
 /** A back of ours is on its way. */
 let going = false;
+/** Who waits for the backs to arrive (`afterBacks`). */
+let waiting: (() => void)[] = [];
+
+/** No back of ours is on its way or owed now (one let go under a place still held waits for that one). */
+const settled = () => !going && !held[held.length - 1]?.released;
+
+const wake = () => {
+  const w = waiting;
+  waiting = [];
+  for (const f of w) f();
+};
 
 const drop = (h: Held) => {
   const i = held.indexOf(h);
@@ -55,7 +68,7 @@ const drop = (h: Held) => {
 function giveBack() {
   if (going) return;
   const top = held[held.length - 1];
-  if (!top?.released) return;
+  if (!top?.released) return wake();
   // The page may have left the place meanwhile (a back of its own, a navigation).
   if (!top.env.stepped()) {
     drop(top);
@@ -98,8 +111,17 @@ export function holdBack(close: () => void, env: SheetBackEnv | BackPlace = 'att
   };
 }
 
+/** Resolves once the places let go are given back: a navigation starts after it, not under the back. */
+export function afterBacks(): Promise<void> {
+  return new Promise((resolve) => {
+    waiting.push(resolve);
+    if (settled()) wake();
+  });
+}
+
 /** Only for tests: forget the backs under way. */
 export function resetBacks() {
   held = [];
   going = false;
+  waiting = [];
 }

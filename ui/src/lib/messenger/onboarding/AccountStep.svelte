@@ -239,12 +239,12 @@
   /* The password and its repeat side by side in the window of a computer, one under the other on a phone. */
   .pw { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-3); }
   :global(.ob.m) .pw { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
-  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); }
+  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-base); }
   .field span { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .field input {
-    font: inherit; color: var(--text); min-height: var(--control-h-lg);
+    color: var(--text); min-height: var(--control-h-lg);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: 8px 10px;
+    padding: var(--sp-2) var(--sp-2-5);
   }
   :global(.ob.m) .field input { min-height: var(--sp-12); font-size: var(--fs-md); }
   .field input:focus { outline: none; border-color: var(--accent-border); }

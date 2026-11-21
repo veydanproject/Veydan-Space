@@ -324,15 +324,15 @@
 <div class="panel on-glass" class:phone>
   <!-- The bar of the page: «Пост» with its section and channel under it (the mockup c6.js); the menu of the post; the way back. -->
   <header class="phead" class:phone>
-    {#if phone}<button class="icon back" onclick={onclose} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>{/if}
+    {#if phone}<button class="icon-btn lg back" onclick={onclose} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>{/if}
     <div class="ph-titles">
       <span class="ph-title">{$t('chan_post_page')}</span>
       <span class="ph-sub">{section ? `${section} · ` : ''}{detail.channel.name}</span>
     </div>
     {#if !isLocal(post.id)}
-      <button class="icon" onclick={postMenu} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}><Icon name="more-vertical" size={phone ? 20 : 18} /></button>
+      <button class="icon-btn lg more" onclick={postMenu} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}><Icon name="more-vertical" size={phone ? 22 : 18} /></button>
     {/if}
-    {#if !phone}<button class="icon" onclick={onclose} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>{/if}
+    {#if !phone}<button class="icon-btn lg" onclick={onclose} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>{/if}
   </header>
   <div class="scroll" bind:this={scroller} {onscroll}>
     <div class="post-box">
@@ -369,7 +369,7 @@
       <div class="replying">
         <Icon name="reply" size={13} />
         <span class="r-text">{$t('chan_replying_to', { name: nameStore.label(replyTo.author) })}</span>
-        <button class="x" onclick={() => (replyTo = null)} aria-label={$t('common_cancel')}><Icon name="x" size={18} /></button>
+        <button class="icon-btn" onclick={() => (replyTo = null)} aria-label={$t('common_cancel')}><Icon name="x" size={18} /></button>
       </div>
     {/if}
     <Composer replyTo={null} editing={null} peerTitle={detail.channel.name} {placeholder} oncancel={() => (replyTo = null)} onsend={send} {tools}
@@ -389,10 +389,6 @@
   .ph-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .ph-title { font-weight: var(--fw-bold); font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ph-sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* The buttons of the bar: 36 with their icons 18 (44 on a phone). */
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:hover { color: var(--text); background: var(--surface-3); }
-  .icon:focus-visible, .x:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   /* On a phone the bar floats inset, as the head of the channel over its feed. */
   .phead.phone {
     position: relative; z-index: 2; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1);
@@ -402,7 +398,6 @@
   }
   .phead.phone .ph-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
   .phead.phone .back { color: var(--text); }
-  .phead.phone .icon { width: 44px; height: 44px; }
   /* On a phone the page of a post covers the feed and paints no fill: the shell's glow is behind it, up under
      the status bar (a fill of its own started under it and left a band of the glow above). */
   .panel.phone { background: transparent; }
@@ -429,10 +424,9 @@
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   /* «печатает…» under the comments, above the field: a quiet line of the thread. */
   .typing { display: flex; min-width: 0; padding: 2px var(--sp-4) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); }
-  .replying { display: flex; align-items: center; gap: 6px; padding: 6px var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--accent-text-2); background: var(--surface-2); }
+  .replying { display: flex; align-items: center; gap: var(--sp-1-5); padding: var(--sp-1-5) var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--accent-text-2); background: var(--surface-2); }
   .r-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .x { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-3); }
+  .no-composer { display: flex; align-items: center; justify-content: center; gap: var(--sp-1-5); padding: var(--sp-3) var(--sp-3) calc(var(--sp-3) + var(--page-sab, 0px)); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-3); }
   /* The reactions over the menu of a post: round 40, spread across it (the mockup c6.js). */
   .quick { display: flex; justify-content: space-between; gap: var(--sp-1); padding: var(--sp-1) var(--sp-2); }
   /* The circles shrink to fit any width of the menu (40 at most, 44 on a finger), evenly spread, none cut. */

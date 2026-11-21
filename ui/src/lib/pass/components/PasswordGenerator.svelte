@@ -188,7 +188,7 @@
       {#if $pwSettings.historyEnabled}
         <div class="section on-glass">
           <div class="section-header-row">
-            <span class="section-label">
+            <span class="section-label label-icon">
               <Icon name="clock" size={13} />
               {$t('pwgen_history_title', { n: String(history.length) })}
             </span>
@@ -201,7 +201,7 @@
           </div>
 
           {#if history.length === 0}
-            <p class="empty-note">{$t('pwgen_history_empty')}</p>
+            <p class="empty-state sm">{$t('pwgen_history_empty')}</p>
           {:else}
             <ul class="history-list">
               {#each history as entry (entry.id)}
@@ -244,7 +244,7 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--sp-2-5);
   }
 
   .pw-field-wrap {
@@ -270,7 +270,7 @@
     min-height: var(--control-h-lg);
     display: flex;
     align-items: center;
-    padding: 0.55rem 0.75rem;
+    padding: var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
     line-height: var(--lh-snug);
     overflow-wrap: anywhere;
@@ -280,7 +280,7 @@
   }
   .pw-value.masked { user-select: none; -webkit-user-select: none; }
   /* Room for the reveal and copy buttons, which show once there is a password. */
-  .pw-field.filled { padding-right: 4.5rem; }
+  .pw-field.filled { padding-right: calc(var(--sp-12) + var(--sp-6)); }
   /* The hint is a sentence, not a password: the UI font (the empty field is not `.mono`), so it fits a narrow pane in either language. */
   .pw-field::placeholder {
     font-size: var(--fs-base);
@@ -303,13 +303,7 @@
     border: none;
   }
 
-  .btn-generate {
-    width: 100%;
-    justify-content: center;
-    gap: var(--sp-2);
-    height: 42px;
-    border-radius: var(--radius-field);
-  }
+  .btn-generate { width: 100%; }
 
   /* Sections — nested cards (--surface-2 + radius-md) */
   .section {
@@ -325,7 +319,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: 0.55rem var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
     background: transparent;
     border: none;
     border-radius: 0;
@@ -345,7 +339,7 @@
     padding: var(--sp-3);
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: var(--sp-2-5);
     border-top: 1px solid var(--border);
     background: transparent;
   }
@@ -376,7 +370,7 @@
   .checkboxes {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: var(--sp-1-5);
   }
 
   .cb-label {
@@ -392,13 +386,13 @@
   .divider {
     height: 1px;
     background: var(--border);
-    margin: 0.1rem 0;
+    margin: var(--sp-0-5) 0;
   }
 
   .warn-note {
     background: var(--warn-bg);
     color: var(--warn-text);
-    padding: 0.4rem 0.6rem;
+    padding: var(--sp-1-5) var(--sp-2-5);
     border-radius: var(--radius-md);
     font-size: var(--fs-xs);
   }
@@ -413,20 +407,11 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .section-label {
+  /* The common .section-label with its icon on the left. */
+  .label-icon {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-bold);
-    color: var(--text-dim);
-  }
-
-  .empty-note {
-    padding: var(--sp-3);
-    font-size: var(--fs-sm);
-    color: var(--text-3);
-    text-align: center;
+    gap: var(--sp-1-5);
   }
 
   /* History */
@@ -440,7 +425,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.45rem var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
     border-top: 1px solid var(--border);
     gap: var(--sp-2);
   }
@@ -450,7 +435,7 @@
   .history-pw {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--sp-0-5);
     min-width: 0;
   }
 
@@ -472,7 +457,7 @@
 
   .history-actions {
     display: flex;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     flex-shrink: 0;
   }
 

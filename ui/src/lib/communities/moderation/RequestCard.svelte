@@ -12,7 +12,7 @@
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { copied, toast } from '$lib/core/ui/toast.svelte';
-  import { Avatar, shortKey } from '$lib/messenger/seams/shared';
+  import { Avatar, onPhone, shortKey } from '$lib/messenger/seams/shared';
   import { errorText, type RequestView } from '../api';
   import { cameAt, waited, waitedText, type RequestFacts } from './requests';
 
@@ -29,6 +29,9 @@
     onmenu: (at: { x: number; y: number }) => void;
   }
   let { request, facts, selected, busy, now, ontick, onanswer, onmenu }: Props = $props();
+
+  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
+  const phone = onPhone();
 
   let noteBox = $state<HTMLElement | null>(null);
   let open = $state(false);
@@ -66,12 +69,12 @@
   }
 </script>
 
-<li class="card" class:selected aria-label={facts.name}>
-  <div class="head">
+<li class="req-card" class:selected aria-label={facts.name}>
+  <div class="list-row still head" class:dense={!phone}>
     <input class="tick" type="checkbox" checked={selected} disabled={busy} onchange={ontick} aria-label={$t('chan_req_select', { name: facts.name })} />
-    <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={36} />
-    <div class="who">
-      <span class="name" title={facts.name}>{facts.name}</span>
+    <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={phone ? 48 : 36} />
+    <div class="list-row-body">
+      <span class="list-row-name" title={facts.name}>{facts.name}</span>
       {#if facts.nip05}
         <span class="nip05" class:ok={facts.nip05Verified} title={facts.nip05Verified ? $t('chan_req_nip05_ok') : $t('chan_req_nip05_unchecked')}>
           <Icon name={facts.nip05Verified ? 'rosette-discount-check' : 'world'} size={12} /><span class="nip05-text">{facts.nip05}</span>
@@ -119,22 +122,22 @@
 </li>
 
 <style>
-  .card {
+  /* A list's card (design 09), not the page's .card. */
+  .req-card {
     list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); min-width: 0;
     transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
-  .card.selected { background: var(--accent-bg); border-color: var(--accent-border); }
-  .head { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
-  .tick { margin-top: 11px; flex-shrink: 0; }
-  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 1px; }
-  .name { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .req-card.selected { background: var(--accent-bg); border-color: var(--accent-border); }
+  /* Who: the dense row of base.css (a phone's: the row of 64), its padding over the card's. */
+  .head { width: auto; margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-3)) 0; }
+  .tick { flex-shrink: 0; }
   .nip05 { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .nip05.ok { color: var(--success-text, var(--success)); }
   .nip05 :global(svg) { flex-shrink: 0; }
   .nip05-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .npub {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+    align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%;
     border: none; background: none; padding: 0; cursor: pointer; font-size: var(--fs-xs); color: var(--text-3);
   }
   .npub:hover { color: var(--accent-text); }
@@ -155,7 +158,7 @@
     font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text);
   }
   .note-none { margin: 0; font-size: var(--fs-sm); color: var(--text-3); font-style: italic; }
-  .facts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .facts { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); }
   .fact {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); background: var(--surface-3); border: 1px solid var(--border);
@@ -164,12 +167,11 @@
   .fact.warn { color: var(--warn-text); }
   .about { margin: 0; font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; padding-top: 2px; }
-  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 5px; font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
+  .when { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-0-5) var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); min-width: 0; }
   .when :global(svg) { flex-shrink: 0; }
   .wait { color: var(--text-2); font-weight: var(--fw-semibold); }
-  .acts { display: flex; gap: 6px; margin-left: auto; }
+  .acts { display: flex; gap: var(--sp-1-5); margin-left: auto; }
   @media (pointer: coarse) {
-    .tick { margin-top: 10px; }
     .npub { padding: 4px 0; font-size: var(--fs-xs); }
     .acts { flex: 1 1 100%; }
     .acts .btn { flex: 1; justify-content: center; min-height: var(--control-h); }

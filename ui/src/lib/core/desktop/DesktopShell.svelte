@@ -443,29 +443,29 @@
       <div class="topbar-right" class:scrolls={navScrolls}>
         {#if !isCsd}
           {#each titleTools as tool (tool.id)}
-            <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
+            <button class="icon-btn lg" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
               <Icon name={tool.icon} size={15} />
             </button>
           {/each}
         {/if}
         {#if !isCsd && titleTools.length && barTools.length}{@render toolsSep()}{/if}
         {#each barTools as tool (tool.id)}
-          <button class="theme-toggle" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
+          <button class="icon-btn lg" onclick={tool.onclick} title={$t(tool.title as TranslationKey)}>
             <Icon name={tool.icon} size={15} />
           </button>
         {/each}
         {#if ((!isCsd && titleTools.length) || barTools.length)}{@render toolsSep()}{/if}
-        <button class="theme-toggle" onclick={toggleTheme} title={$t('theme_toggle')}>
+        <button class="icon-btn lg" onclick={toggleTheme} title={$t('theme_toggle')}>
           {@render themeIcon()}
         </button>
         {#if single}
           <!-- Named, so it is not taken for a module's own settings gear. -->
-          <button class="theme-toggle labelled" class:active={isActive('/settings')} onclick={toggleSettings} aria-pressed={isActive('/settings')}>
+          <button class="icon-btn lg labelled" class:active={isActive('/settings')} onclick={toggleSettings} aria-pressed={isActive('/settings')}>
             <Icon name="settings" size={15} />
             <span>{$t('nav_settings')}</span>
           </button>
         {:else if !isCsd}
-          <button class="theme-toggle" onclick={() => goto('/settings')} title={$t('nav_settings')}>
+          <button class="icon-btn lg" onclick={() => goto('/settings')} title={$t('nav_settings')}>
             <Icon name="settings" size={15} />
           </button>
         {/if}
@@ -527,7 +527,7 @@
   /* The way back from Settings, after the name in the title bar. */
   :global(.titlebar-btn.titlebar-back) {
     margin-left: var(--sp-2);
-    padding: 0 10px 0 6px;
+    padding: 0 var(--sp-2-5) 0 var(--sp-1-5);
     text-decoration: none;
     color: var(--text-2);
   }
@@ -556,9 +556,7 @@
   .topbar.slim .brand-tile,
   .topbar.slim .brand-logo { width: 26px; height: 26px; }
   .topbar.slim .brand-name { font-size: var(--fs-base); }
-  .topbar.slim .nav-link,
-  .topbar.slim .theme-toggle { height: 34px; }
-  .topbar.slim .theme-toggle { width: 34px; }
+  .topbar.slim .nav-link { height: 34px; }
 
   .topbar-inner {
     display: flex;
@@ -629,9 +627,9 @@
   /* The steps of fitNav(): tighter spacing, then icons only. Each element
      carries its own class: WebKitGTK does not restyle descendants when only
      an ancestor's class changes under a scoped (`:where`) selector. */
-  .topbar-inner.fit-tight { gap: 0.75rem; }
+  .topbar-inner.fit-tight { gap: var(--sp-3); }
   .nav-link.tight { padding: 0 8px; }
-  .nav-link.icon-only { gap: 4px; padding: 0 10px; }
+  .nav-link.icon-only { gap: 4px; padding: 0 var(--sp-2-5); }
   .nav-label.hidden,
   .brand-name.hidden { display: none; }
   /* The last step: the icons keep their size and the bar scrolls, faded at
@@ -654,33 +652,16 @@
     flex-shrink: 0;
   }
 
-  /* The quick buttons: 36, flat until hovered, an 18px glyph. */
-  .theme-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    color: var(--text-soft);
-    cursor: pointer;
-    transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
-  }
   .tools-sep { flex: none; width: 1px; height: 20px; align-self: center; background: var(--border); margin: 0 var(--sp-1); }
-  .theme-toggle > :global(.icon) { width: 18px; height: 18px; }
-  .theme-toggle.labelled {
+  /* The quick buttons of the bar are .icon-btn lg; «Settings» with its name is as wide as it needs. */
+  .icon-btn.labelled {
     width: auto;
-    gap: 6px;
-    padding: 0 10px;
+    gap: var(--sp-1-5);
+    padding: 0 var(--sp-2-5);
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
   }
-  .topbar.slim .theme-toggle.labelled { width: auto; }
-  .theme-toggle.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-  .theme-toggle:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }
+  .icon-btn.labelled.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
 
   /* ── Content ── */
   .content {

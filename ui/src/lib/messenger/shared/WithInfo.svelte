@@ -69,13 +69,14 @@
   @media (max-width: 1100px) {
     .wrap.with-info, .wrap.with-info.phone { grid-template-columns: minmax(0, 1fr); }
     /* No room for two columns: the panel lies over the conversation, as wide as on a wide window. */
-    .side { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--side-w, 340px), 100%); z-index: 5; box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18); }
+    .side { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--side-w, 340px), 100%); z-index: 5; box-shadow: var(--shadow-drawer); }
     .edge { position: absolute; top: 0; bottom: 0; right: min(var(--side-w, 340px), 100%); z-index: 6; }
     /* On a phone the panel is a screen of its own and paints no fill (the design system: the panel about a
        chat has none): the shell's glow is behind it, up under the status bar as on every screen. A fill of
        its own started under the status bar and left a band of the glow above it. The conversation under it
-       is hidden, kept as it was. */
+       is hidden, kept as it was: transparent too, since a button with `transition: all` carries the inherited
+       visibility through its 0.15 s and showed over the panel for a frame or two (the owner's iPhone). */
     .wrap.phone .side { left: 0; width: auto; border-left: none; box-shadow: none; background: transparent; }
-    .wrap.with-info.phone .main { visibility: hidden; }
+    .wrap.with-info.phone .main { visibility: hidden; opacity: 0; }
   }
 </style>

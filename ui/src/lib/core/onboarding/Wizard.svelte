@@ -68,13 +68,13 @@
 {#if onboarding.active && !onboarding.hidden && step}
   {#if isMobile}
     <div class="ob m" role="dialog" aria-modal="true" aria-label={product.name}>
-      <div class="ob-top">
+      <div class="m-header ob-top">
         {#if atFloor}
-          <button type="button" class="ob-back" onclick={() => onboarding.close()} aria-label={$t('common_close')}>
+          <button type="button" class="icon-btn" onclick={() => onboarding.close()} aria-label={$t('common_close')}>
             <Icon name="x" size={22} />
           </button>
         {:else if at > 0}
-          <button type="button" class="ob-back" onclick={() => onboarding.back()} aria-label={$t('common_back')}>
+          <button type="button" class="icon-btn" onclick={() => onboarding.back()} aria-label={$t('common_back')}>
             <Icon name="chevron-left" size={24} />
           </button>
         {:else}

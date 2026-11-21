@@ -26,6 +26,8 @@
     "common_nothing_found": "Tidak ditemukan apa pun",
     "common_nothing_found_hint": "Tidak ada yang cocok dengan “{q}”.",
     "common_clear": "Bersihkan",
+    "tabs_scroll_back": "Tab sebelumnya",
+    "tabs_scroll_more": "Tab lainnya",
     "common_refresh": "Segarkan",
     "common_update": "Perbarui",
     "common_restore": "Pulihkan",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "Koneksi SSH",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "Kata sandi",
-    "suggest_group_note": "Catatan"
+    "suggest_group_note": "Catatan",
+    "kanban_color_violet": "Ungu",
+    "kanban_color_blue": "Biru",
+    "kanban_color_green": "Hijau",
+    "kanban_color_amber": "Kuning amber",
+    "kanban_color_red": "Merah",
+    "kanban_color_pink": "Merah muda",
+    "kanban_color_teal": "Toska",
+    "workspaces_color_custom": "Warna khusus"
   },
   "mobile": {
     "app_launcher": "Aplikasi",

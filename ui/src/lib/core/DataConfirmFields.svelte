@@ -91,8 +91,6 @@
     height: var(--control-h-lg);
     margin-top: var(--sp-2);
     padding: 0 var(--sp-3);
-    font: inherit;
-    font-size: var(--fs-sm);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
     background-color: var(--surface-3);

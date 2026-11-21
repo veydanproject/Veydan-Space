@@ -291,7 +291,7 @@
 
   .sg-group {
     flex-shrink: 0;
-    padding: 6px var(--sp-2) 2px;
+    padding: var(--sp-1-5) var(--sp-2) var(--sp-0-5);
     font-size: var(--fs-xs);
     color: var(--text-3);
   }

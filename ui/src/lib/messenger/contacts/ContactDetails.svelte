@@ -134,7 +134,7 @@
     <h3>{$t('msg_id_npub')}</h3>
     <div class="key">
       <code>{contact.npub}</code>
-      <button class="icon" onclick={copyKey} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
+      <button class="icon-btn" onclick={copyKey} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
     </div>
   </section>
 
@@ -204,13 +204,11 @@
   .about { margin: 0; font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text-body); white-space: pre-wrap; }
   .key { display: flex; align-items: flex-start; gap: var(--sp-2); }
   .key code { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--surface-3); font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-2); overflow-wrap: anywhere; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); }
-  .icon:hover { color: var(--text); background: var(--surface-hover); }
-  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .key .icon-btn { flex-shrink: 0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
   .grid label { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-2); }
   .grid input {
-    font: inherit; font-size: var(--fs-base); color: var(--text); height: var(--control-h);
+    color: var(--text); height: var(--field-h);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
     scroll-margin-bottom: 96px; /* a field reached by the keyboard stops above the bar of an unsaved edit */
   }

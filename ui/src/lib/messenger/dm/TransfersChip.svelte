@@ -63,11 +63,11 @@
   .xfer:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .n { display: inline-flex; align-items: center; gap: 2px; }
   .n.failed { color: var(--danger-text); }
-  .wide { display: inline-flex; align-items: center; gap: 6px; }
+  .wide { display: inline-flex; align-items: center; gap: var(--sp-1-5); }
   .narrow { display: none; }
   @media (pointer: coarse) { .xfer:not(.phone) { height: 36px; } }
   @media (max-width: 520px) {
     .wide { display: none; }
-    .narrow { display: inline-flex; align-items: center; gap: 5px; }
+    .narrow { display: inline-flex; align-items: center; gap: var(--sp-1); }
   }
 </style>

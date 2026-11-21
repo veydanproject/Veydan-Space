@@ -26,6 +26,8 @@
     "common_nothing_found": "Sonuç bulunamadı",
     "common_nothing_found_hint": "“{q}” ile eşleşen sonuç yok.",
     "common_clear": "Temizle",
+    "tabs_scroll_back": "Önceki sekmeler",
+    "tabs_scroll_more": "Diğer sekmeler",
     "common_refresh": "Yenile",
     "common_update": "Güncelle",
     "common_restore": "Geri yükle",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "SSH bağlantıları",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "Parolalar",
-    "suggest_group_note": "Notlar"
+    "suggest_group_note": "Notlar",
+    "kanban_color_violet": "Mor",
+    "kanban_color_blue": "Mavi",
+    "kanban_color_green": "Yeşil",
+    "kanban_color_amber": "Kehribar",
+    "kanban_color_red": "Kırmızı",
+    "kanban_color_pink": "Pembe",
+    "kanban_color_teal": "Deniz mavisi",
+    "workspaces_color_custom": "Özel renk"
   },
   "mobile": {
     "app_launcher": "Uygulamalar",

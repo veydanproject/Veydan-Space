@@ -51,7 +51,7 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .lead { margin: 0; font-size: var(--fs-sm); color: var(--text-body); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .server { display: flex; flex-direction: column; gap: 6px; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .server { display: flex; flex-direction: column; gap: var(--sp-1-5); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
   .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text-2); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .whose { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }

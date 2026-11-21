@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
@@ -21,6 +21,8 @@
   markPhone();
 
   let adding = $state(false);
+  /** The open contact's actions (ContactsPanel), kept in the page's pinned foot. */
+  let foot = $state<Snippet>();
 
   onMount(() => { messengerStore.ensureLoaded().catch(() => {}); });
 
@@ -38,9 +40,13 @@
 
 <MobileFrame hubButton title={$t('msg_contacts_title')} {actions} scroll={false}>
   <div class="scroller">
-    <ContactsPanel compact onchat={(pk) => write(pk).catch(() => {})} />
+    <ContactsPanel compact bind:foot onchat={(pk) => write(pk).catch(() => {})} />
   </div>
-  <button class="m-fab" onclick={() => (adding = true)} aria-label={$t('msg_contacts_new')}><Icon name="user-plus" size={22} /></button>
+  {#if foot}
+    <div class="page-foot">{@render foot()}</div>
+  {:else}
+    <button class="m-fab" onclick={() => (adding = true)} aria-label={$t('msg_contacts_new')}><Icon name="user-plus" size={22} /></button>
+  {/if}
 </MobileFrame>
 
 <!-- On the phone a Dialog is a bottom sheet. -->
@@ -53,8 +59,10 @@
   .scroller {
     flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
-    padding: var(--sp-3) var(--sp-3) calc(52px + var(--sp-4) + var(--sp-2)); display: flex; flex-direction: column; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-3) calc(var(--fab-size) + var(--sp-4) + var(--sp-2)); display: flex; flex-direction: column; gap: var(--sp-3);
   }
+  /* An open contact's foot stands in place of the «+»: the list ends with the usual padding. */
+  .scroller:has(+ .page-foot) { padding-bottom: var(--sp-4); }
   /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
   .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
 </style>

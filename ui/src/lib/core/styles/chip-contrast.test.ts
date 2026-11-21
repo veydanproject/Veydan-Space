@@ -18,6 +18,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { NAV_COLORS } from '$lib/core/mobile/nav-colors';
+import { PALETTE } from '$lib/core/palette';
 
 type RGB = [number, number, number];
 type Theme = 'light' | 'dark';
@@ -94,9 +95,9 @@ function contrast(a: RGB, b: RGB): number {
   return (x + 0.05) / (y + 0.05);
 }
 
-/** Every `#rrggbb` of the colour lists the pickers offer (`const COLORS = [...]`, `TAG_COLORS`, `PALETTE`), across the UI. */
+/** Every `#rrggbb` the pickers offer: the one palette (core/palette.ts) and any other colour list (`const COLORS = [...]`, `TAG_COLORS`), across the UI. */
 function pickerPalettes(): string[] {
-  const out = new Set<string>(NAV_COLORS);
+  const out = new Set<string>(PALETTE);
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
@@ -119,9 +120,7 @@ function themePresets(): { accent: string[] } {
   return { accent: list(/ACCENT_PRESETS\s*=\s*\[([^\]]*)\]/) };
 }
 
-/** The kit's preset colours (`N.colors` of the prototypes, 2026-10-17). */
-const KIT_PRESETS = ['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6'];
-const PALETTE = pickerPalettes();
+const PICKED = pickerPalettes();
 const PRESETS = themePresets();
 const EXTREMES = ['#000000', '#ffffff', '#fef08a', '#fffbeb', '#000080', '#1e1b4b', '#f472b6', '#808080', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff'];
 /** Colour tokens (once a profile's accent, a workspace's green, a domain's grey; now chips of entities are neutral) and the category colours: still swept. */
@@ -162,7 +161,7 @@ function chipColors(theme: Theme): RGB[] {
   const hit = chipCache.get(theme);
   if (hit) return hit;
   const tokenColors = TOKEN_CHIPS.map((name) => color(resolve(theme, name) ?? '')).filter((c): c is RGB => !!c);
-  const out = [...PALETTE, ...PRESETS.accent, ...EXTREMES].map(hex).concat(tokenColors, cube());
+  const out = [...PICKED, ...PRESETS.accent, ...EXTREMES].map(hex).concat(tokenColors, cube());
   chipCache.set(theme, out);
   return out;
 }
@@ -186,7 +185,7 @@ function worst(theme: Theme, ink: number, tints: number[]): { ratio: number; chi
 describe('a chip coloured from data reads in both themes (.tinted)', () => {
   it('finds the colours the pickers offer and the presets of Settings', () => {
     // If a picker or the presets change shape, the sweep must not silently shrink.
-    expect(PALETTE.length).toBeGreaterThanOrEqual(8);
+    expect(PICKED.length).toBeGreaterThanOrEqual(8);
     expect(PRESETS.accent.length).toBeGreaterThan(0);
   });
 
@@ -270,8 +269,9 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
     }
   });
 
-  it('offers the kit\'s six presets in the pickers', () => {
-    expect(NAV_COLORS).toEqual(KIT_PRESETS);
+  it('offers the one palette of seven in the pickers: the kit\'s six presets and teal', () => {
+    expect(PALETTE).toEqual(['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6', '#2dd4bf']);
+    expect(NAV_COLORS).toBe(PALETTE);
   });
 
   for (const theme of ['light', 'dark'] as Theme[]) {
@@ -286,7 +286,7 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
       const under = theme === 'light' ? surfaces(theme) : ['--bg', '--pane', '--surface'].map((n) => color(resolve(theme, n)!, page)!);
       const tints = theme === 'light' ? [0, percent(theme, '--chip-tint'), percent(theme, '--chip-tint-strong')] : [percent(theme, '--chip-tint')];
       const floor = theme === 'light' ? 5.3 : 7.5;
-      for (const preset of KIT_PRESETS.map(hex)) {
+      for (const preset of PALETTE.map(hex)) {
         const fg = mix(preset, text, ink);
         for (const bg of under) {
           for (const tint of tints) {

@@ -80,16 +80,16 @@
 
 <style>
   .sync-badge {
-    display: inline-flex; align-items: center; gap: 0.3rem;
-    padding: 0.1rem 0.45rem; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: var(--sp-1);
+    padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-pill);
     font-size: var(--fs-xs); border: 1px solid var(--border);
     white-space: nowrap;
   }
-  .sync-badge.block { margin-bottom: 0.5rem; }
+  .sync-badge.block { margin-bottom: var(--sp-2); }
   .sync-badge.lease { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
   .sync-badge.unsent { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
   .sync-badge.unsent.failed { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
   .sync-badge.diverged { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
-  .sync-block { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; margin-bottom: 0.6rem; }
-  .sync-actions { display: flex; gap: 0.4rem; }
+  .sync-block { display: flex; flex-direction: column; gap: var(--sp-1-5); align-items: flex-start; margin-bottom: var(--sp-2-5); }
+  .sync-actions { display: flex; gap: var(--sp-1-5); }
 </style>

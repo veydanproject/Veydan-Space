@@ -7,6 +7,7 @@
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { messengerStore } from '../store.svelte';
@@ -114,7 +115,7 @@
   async function openSearch() {
     commitList(null);
     await tick();
-    col?.querySelector<HTMLInputElement>('.search input')?.focus();
+    col?.querySelector<HTMLInputElement>('.search-field input')?.focus();
   }
 
   // The covers show the banners over the list (the invitations, the offer of a bridge) as an icon each; a press
@@ -216,7 +217,7 @@
 {#snippet coversTop(add: () => void, addTitle: string, addIcon: string, search: string, searching: boolean)}
   <div class="covers-top">
     <button class="icon-btn create" onclick={add} title={addTitle} aria-label={addTitle}><Icon name={addIcon} size={18} /></button>
-    <button class="icon" class:active={searching} onclick={openSearch} title={search} aria-label={search}><Icon name="search" size={18} /></button>
+    <button class="icon-btn lg" class:active={searching} onclick={openSearch} title={search} aria-label={search}><Icon name="search" size={18} /></button>
   </div>
 {/snippet}
 
@@ -306,10 +307,12 @@
           <MyQrButton icon disabled={!s.runtime?.session_active} />
           <button class="icon-btn create" onclick={() => (addingContact = true)} title={$t('msg_contacts_new')}><Icon name="user-plus" size={18} /></button>
         </div>
-        <div class="search">
+        <div class="search-field fill list-search">
           <Icon name="search" size={16} />
           <input type="text" bind:value={contactQuery} placeholder={$t('msg_contacts_search')} spellcheck="false" />
-          {#if contactQuery}<button class="icon sm" onclick={() => (contactQuery = '')}><Icon name="x" size={12} /></button>{/if}
+          {#if contactQuery}
+            <button type="button" class="search-clear" onclick={(e) => { contactQuery = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+          {/if}
         </div>
         {/if}
         <ContactList query={contactQuery} selected={contactKey} onselect={(c) => (contactKey = c.pubkey)} {covers} />
@@ -342,10 +345,12 @@
           <span class="spacer"></span>
           <button class="icon-btn create" onclick={() => (creating[host.id] = true)} title={$t(host.newTitle)}><Icon name={host.newIcon} size={18} /></button>
         </div>
-        <div class="search">
+        <div class="search-field fill list-search">
           <Icon name="search" size={16} />
           <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
-          {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
+          {#if query}
+            <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+          {/if}
         </div>
         {#if host.above}{@const Above = host.above}<Above />{/if}
         {/if}
@@ -375,10 +380,12 @@
         {#if requestsUi.shown}
           <RequestsList onopen={(r) => (requestStore.selected = r.peer)} onback={() => requestsUi.close()} />
         {:else}
-          <div class="search">
+          <div class="search-field fill list-search">
             <Icon name="search" size={16} />
             <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
-            {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
+            {#if query}
+              <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+            {/if}
           </div>
           {#if view === 'groups'}<InvitesBar />{:else}<BridgeOffer />{/if}
           <ChatList {query} kind={view === 'groups' ? 'group' : 'dm'} onopen={openChat} />
@@ -545,23 +552,9 @@
   .net.lost { background: var(--danger); }
   .net.silent, .net.locked { background: var(--text-3); }
   @keyframes pulse { 50% { opacity: 0.35; } }
-  .icon { border: none; background: none; color: var(--text-soft); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon :global(.icon) { width: 18px; height: 18px; }
-  .icon:hover { color: var(--text); background: var(--surface-hover); }
-  .icon.active { color: var(--accent-text-2); background: var(--accent-tint); }
-  .icon.accent { color: var(--accent-text-2); }
-  .icon.sm { width: 24px; height: 24px; }
-  /* The QR buttons of the contacts (their own components) look like the head's icons. */
-  .rail-head :global(.ibtn) { border: none; background: none; color: var(--text-soft); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .rail-head :global(.ibtn:hover:not(:disabled)) { color: var(--text); background: var(--surface-hover); }
-  .rail-head :global(.ibtn:disabled) { opacity: 0.45; cursor: default; }
-  .search {
-    display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 var(--sp-3) var(--sp-2); padding: 0 var(--sp-4);
-    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
-  }
-  .search:focus-within { border-color: var(--accent-border); }
-  /* The pill is the field: its border is the one focus mark. */
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-base); color: var(--text); padding: 7px 0; }
+  .icon-btn.active { color: var(--accent-text-2); background: var(--accent-tint); }
+  /* The search of a list: the column's width less its side gaps. */
+  .search-field.list-search { width: auto; margin: 0 var(--sp-3) var(--sp-2); }
   .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .setnav { padding: var(--sp-5) var(--sp-2) var(--sp-3); gap: var(--sp-3); overflow-y: auto; }
   .setnav-title { padding: 0 var(--sp-3); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }

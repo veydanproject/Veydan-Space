@@ -203,13 +203,13 @@
             <span class="when">{$t('msg_notice_now')}</span>
             {#if desk}
               <button
-                class="close"
+                class="icon-btn close"
                 aria-label={$t('common_close')}
                 title={$t('common_close')}
                 onpointerdown={(e) => e.stopPropagation()}
                 onkeydown={(e) => e.stopPropagation()}
                 onclick={(e) => { e.stopPropagation(); leave(card); }}
-              ><Icon name="x" size={14} /></button>
+              ><Icon name="x" size={18} /></button>
             {/if}
           </div>
           {#if card.request}<div class="label">{$t('msg_notice_request')}</div>{/if}
@@ -243,12 +243,8 @@
   .stack.under .card { pointer-events: none; }
   /* A desk: in the middle, under the navigation bar. */
   .stack.desk { top: 72px; }
-  .close {
-    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; margin: -3px -4px -3px 0; padding: 0; border: none; border-radius: var(--radius-sm);
-    background: transparent; color: var(--text-3); cursor: pointer;
-  }
-  .close:hover { background: var(--surface-2); color: var(--text); }
+  /* The plain .icon-btn of 32, standing out of the head's line as the 22 it was. */
+  .close { flex-shrink: 0; margin: -8px -6px -8px 0; }
   .card {
     position: relative; overflow: hidden; pointer-events: auto; touch-action: none; user-select: none;
     width: 100%; max-width: 420px;
@@ -257,7 +253,7 @@
     border: 1px solid var(--border); border-radius: var(--radius-md);
     /* Opaque: --surface is glass on a phone, and the list showed through the card. */
     background: var(--bg-2); color: var(--text);
-    box-shadow: 0 10px 28px rgb(0 0 0 / 0.18);
+    box-shadow: var(--shadow-lg);
     transform: translate(var(--dx), var(--dy)); opacity: var(--fade);
     transition: transform 180ms ease, opacity 180ms ease;
     animation: drop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -272,7 +268,7 @@
     background: var(--accent); color: #fff; border: 2px solid var(--bg-2);
   }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .head { display: flex; align-items: baseline; gap: var(--sp-1-5); min-width: 0; }
   .title { font-weight: var(--fw-semibold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .more {
     flex-shrink: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold);

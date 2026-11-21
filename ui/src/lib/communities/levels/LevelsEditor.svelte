@@ -78,13 +78,13 @@
 
 {#if part !== 'sections'}
 <section class="block" aria-label={$t('chan_levels')}>
-  <Box tag="ul">
+  <ul class="card list-rows levels">
     {#each levels as l (l.id)}
       <li>
-        <button class="row as-button" onclick={() => (editing = { open: true, level: l })}>
+        <button class="list-row dense" onclick={() => (editing = { open: true, level: l })}>
           <Tile icon={l.id === BASE_LEVEL ? 'users' : 'layers'} tone={l.id === BASE_LEVEL ? 'accent' : 'plain'} />
-          <span class="row-text">
-            <span class="row-name">{l.name}{#if l.id === BASE_LEVEL}<span class="tag">{$t('chan_level_base')}</span>{/if}</span>
+          <span class="list-row-body">
+            <span class="list-row-name row-name">{l.name}{#if l.id === BASE_LEVEL}<span class="tag">{$t('chan_level_base')}</span>{/if}</span>
             <span class="row-sub"><Icon name="folder" size={14} />{opens(l)}</span>
             {#if rights(l).length}<span class="row-sub"><Icon name="pencil" size={14} />{rights(l).join(' · ')}</span>{/if}
           </span>
@@ -94,9 +94,9 @@
       </li>
     {/each}
     {#if levels.length < MAX_LEVELS}
-      <li><button class="add" disabled={busy} onclick={() => (editing = { open: true, level: null })}><Tile icon="plus" tone="dashed" />{$t('chan_level_add')}</button></li>
+      <li><button class="list-row dense add" disabled={busy} onclick={() => (editing = { open: true, level: null })}><Tile icon="plus" tone="dashed" />{$t('chan_level_add')}</button></li>
     {/if}
-  </Box>
+  </ul>
   <p class="hint">{$t('chan_levels_hint')}</p>
 </section>
 {/if}
@@ -147,7 +147,11 @@
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
-  /* A row of the box (the hairline between two is the box's). */
+  /* The levels: the dense rows of base.css in a card, the tile in place of the avatar. */
+  .levels { padding: var(--sp-1); border-radius: var(--radius-lg); }
+  .levels .row-name { font-weight: var(--fw-semibold); }
+  .list-row.add { color: var(--accent-text); font-size: var(--fs-base); font-weight: var(--fw-bold); }
+  /* A row of the sections' box (the hairline between two is the box's). */
   .row {
     display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
     border-radius: var(--radius-md); min-width: 0; color: var(--text-2);

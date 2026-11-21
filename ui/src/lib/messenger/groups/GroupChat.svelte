@@ -326,7 +326,7 @@
     display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3);
     border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-2);
   }
-  .closed span { display: inline-flex; align-items: center; gap: 6px; }
+  .closed span { display: inline-flex; align-items: center; gap: var(--sp-1-5); }
   /* What I wrote with my request: one line here, the whole of it on hover. */
   .closed .mine { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

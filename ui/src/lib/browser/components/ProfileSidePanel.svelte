@@ -12,7 +12,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
-  import { scrollTabs } from '$lib/core/ui/scrollTabs';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import ExportProfileModal from '$lib/browser/components/ExportProfileModal.svelte';
@@ -176,19 +176,21 @@
     </span>
   {/snippet}
   {#snippet subheader()}
-    <div class="tab-bar psp-tabs" role="tablist" use:scrollTabs={{ selected: activeTab, watch: tabCounts, wheel: true, fadeStart: true }}>
-      <button class="tab" role="tab" aria-selected={activeTab === 'info'} class:active={activeTab === 'info'} onclick={() => (activeTab = 'info')}>
-        <Icon name="info" size={12} /> {$t('panel_tab_info')}
-      </button>
-      {#each tabs as tab (tab.id)}
-        {@const count = tab.count?.(profile.id) ?? 0}
-        <button class="tab" role="tab" aria-selected={activeTab === tab.id} class:active={activeTab === tab.id} onclick={() => (activeTab = tab.id)}>
-          <Icon name={tab.icon} size={12} /> {$t(tab.title as TranslationKey)}
-          {#if count > 0}
-            <span class="count-pill sm quiet">{count}</span>
-          {/if}
+    <div class="psp-tabs">
+      <TabBar selected={activeTab} watch={tabCounts} wheel>
+        <button class="tab" role="tab" aria-selected={activeTab === 'info'} class:active={activeTab === 'info'} onclick={() => (activeTab = 'info')}>
+          <Icon name="info" size={12} /> {$t('panel_tab_info')}
         </button>
-      {/each}
+        {#each tabs as tab (tab.id)}
+          {@const count = tab.count?.(profile.id) ?? 0}
+          <button class="tab" role="tab" aria-selected={activeTab === tab.id} class:active={activeTab === tab.id} onclick={() => (activeTab = tab.id)}>
+            <Icon name={tab.icon} size={12} /> {$t(tab.title as TranslationKey)}
+            {#if count > 0}
+              <span class="count-pill sm quiet">{count}</span>
+            {/if}
+          </button>
+        {/each}
+      </TabBar>
     </div>
   {/snippet}
   <div class="psp-body">
@@ -373,7 +375,7 @@
 
 <style>
   .status-badge {
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: var(--sp-1-5);
     font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 4px 11px;
     border-radius: var(--radius-pill);
     background: var(--surface-2); color: var(--text-2);
@@ -390,7 +392,7 @@
     min-height: 100%;
   }
 
-  .info-section { display: flex; flex-direction: column; gap: 14px; }
+  .info-section { display: flex; flex-direction: column; gap: var(--sp-4); }
 
   /* Design: grid 135px / 1fr rows */
   .info-row {
@@ -419,7 +421,7 @@
     font-size: var(--fs-xs);
     background: var(--surface-2);
     border: 1px solid var(--border);
-    padding: 0 0.35rem;
+    padding: 0 var(--sp-1-5);
     border-radius: var(--radius-pill);
     color: var(--text-2);
   }
@@ -427,27 +429,17 @@
   .notes-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
     font-size: var(--fs-base);
     color: var(--text-2);
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: var(--sp-2) 0.65rem;
+    padding: var(--sp-2) var(--sp-2-5);
   }
 
-  /* The panel is 440 whatever its tabs: the row scrolls sideways in its own strip when they do not fit, a clipped
-     edge fades (scrollTabs marks it). */
-  .psp-tabs { overflow-x: auto; scrollbar-width: none; }
-  .psp-tabs::-webkit-scrollbar { display: none; }
-  .psp-tabs :global(.tab) { flex-shrink: 0; }
-  .psp-tabs :global(.tab:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-  .psp-tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
-  .psp-tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
-  .psp-tabs:global(.fade-start.fade-end) {
-    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-  }
+  /* The panel is 440 whatever its tabs: the row scrolls sideways when they do not fit, an arrow at a clipped edge. */
+  .psp-tabs { padding: var(--sp-2) var(--sp-4) 0; }
 
   .panel-actions {
     display: grid;
@@ -470,14 +462,13 @@
     grid-column: 1 / -1;
     justify-content: center;
   }
-  .panel-actions .btn-main { height: 42px; font-size: var(--fs-body); font-weight: var(--fw-bold); }
 
   .crm-count {
     font-size: var(--fs-xl);
     font-weight: var(--fw-extrabold);
     color: var(--text);
     line-height: var(--lh-icon);
-    margin-bottom: 0.65rem;
+    margin-bottom: var(--sp-2-5);
   }
 
   .crm-domains-label {
@@ -500,16 +491,16 @@
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
-    padding: 0.1rem 0.4rem;
+    padding: var(--sp-0-5) var(--sp-1-5);
     color: var(--text-2);
     font-family: var(--font-mono);
   }
 
   /* Tags */
-  .tags-section { display: flex; flex-direction: column; gap: 10px; }
+  .tags-section { display: flex; flex-direction: column; gap: var(--sp-2-5); }
   .tags-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); }
   .no-tags { font-size: var(--fs-sm); color: var(--text-2); }
-  .column-select-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .column-select-row { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); }
   /* Colours: the tinted rule of base.css (`.active`: the pressed tint, a
      border and ring in the ink). The picked column also has a check, so it
      does not hang on colour alone. An unpicked column stays readable: no
@@ -517,7 +508,7 @@
   .col-chip {
     display: inline-flex; align-items: center; gap: var(--sp-1);
     border-width: 1px; border-style: solid;
-    border-radius: var(--radius); padding: 5px 13px;
+    border-radius: var(--radius); padding: var(--sp-1) var(--sp-3);
     font-size: var(--fs-sm); font-weight: var(--fw-semibold);
     cursor: pointer; transition: all 0.15s;
   }

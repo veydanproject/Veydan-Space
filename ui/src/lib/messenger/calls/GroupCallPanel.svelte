@@ -32,7 +32,7 @@
 </script>
 
 {#if call}
-  <div class="card" role="group" aria-label={name}>
+  <div class="call-bar on-glass" role="group" aria-label={name}>
     <CallFace peer={face} size={30} level={talking ? 0.6 : 0} />
     <button class="who" onclick={() => (groupCallStore.shown = true)} title={$t('msg_gcall_unfold')}>
       <span class="name">{name}</span>
@@ -61,11 +61,12 @@
 {/if}
 
 <style>
-  .card {
-    position: fixed; top: calc(var(--overlay-inset, 0px) + 5px); left: 50%; z-index: 72; transform: translateX(-50%);
+  /* The floating bar of a call: not the page's .card (design 09); .on-glass keeps the glass's tokens for what sits on it. */
+  .call-bar {
+    position: fixed; top: calc(var(--overlay-inset, 0px) + 5px); left: 50%; z-index: calc(var(--z-panel) + 22); transform: translateX(-50%);
     width: max-content; max-width: min(620px, calc(100vw - 24px));
     display: flex; align-items: center; gap: var(--sp-2);
-    padding: 4px 4px 4px 5px; border-radius: var(--radius-pill);
+    padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-1); border-radius: var(--radius-pill);
     background: var(--glass-bg-raised); color: var(--text); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     animation: drop 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
@@ -75,11 +76,11 @@
     border: none; background: none; color: inherit; font: inherit; cursor: pointer; text-align: left;
   }
   .name { font-weight: var(--fw-bold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-  .status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-2); }
+  .status { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-xs); color: var(--text-2); }
   .phase.clock { font-variant-numeric: tabular-nums; color: var(--success-text); font-weight: var(--fw-semibold); }
   .people { display: inline-flex; align-items: center; gap: 3px; }
   .muted-mark {
-    display: inline-flex; padding: 2px 5px; border-radius: var(--radius-pill);
+    display: inline-flex; padding: var(--sp-0-5) var(--sp-1); border-radius: var(--radius-pill);
     background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text);
   }
   .controls { display: flex; gap: 4px; flex-shrink: 0; }

@@ -29,5 +29,5 @@
   }
   .banners > :global(*) { pointer-events: auto; }
   /* The scanner takes the whole screen and shows the camera through it: nothing of the app lies over that. */
-  :global(html.scan-cover) .banners { visibility: hidden; }
+  :global(html.scan-cover) .banners { visibility: hidden; opacity: 0; }
 </style>

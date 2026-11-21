@@ -12,6 +12,7 @@
   import { t } from '$lib/core/i18n';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import MessageContent from './MessageContent.svelte';
@@ -154,20 +155,26 @@
         {/if}
       {/if}
     {:else if text}<div class="what"><MessageContent {text} /></div>{/if}
-    <input type="text" class="search" bind:value={query} placeholder={$t('msg_share_search')} spellcheck="false" />
+    <div class="search-field fill">
+      <Icon name="search" size={16} />
+      <input type="text" bind:value={query} placeholder={$t('msg_share_search')} spellcheck="false" />
+      {#if query}
+        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+      {/if}
+    </div>
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if chats.length}
-      <ul class="list divided">
+      <ul class="list-rows list">
         {#each chats as c (c.id)}
           {@const done = sent.includes(c.id)}
           {@const blocked = phoneBlocked(c)}
           <li>
-            <button class="row" disabled={busy || done || blocked || (!card && !text)} onclick={() => send(c)}
+            <button class="list-row dense" disabled={busy || done || blocked || (!card && !text)} onclick={() => send(c)}
               title={blocked ? $t('msg_profile_send_card_public_group') : undefined}>
               <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={36} />
-              <span class="name-col">
-                <span class="name">{c.title}</span>
-                {#if blocked}<span class="why">{$t('msg_profile_send_card_public_group')}</span>{/if}
+              <span class="list-row-body">
+                <span class="list-row-name">{c.title}</span>
+                {#if blocked}<span class="list-row-line">{$t('msg_profile_send_card_public_group')}</span>{/if}
               </span>
               {#if c.kind === 'group'}<span class="dim"><Icon name="users" size={12} /></span>{/if}
               <span class="state" class:done><Icon name={done ? 'check' : blocked ? 'lock-square-rounded' : 'send'} size={13} />{done ? $t('msg_share_sent') : ''}</span>
@@ -184,11 +191,6 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .what { display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
-  .search {
-    font: inherit; font-size: var(--fs-sm); color: var(--text); width: 100%;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); height: var(--control-h); padding: 0 12px;
-  }
-  .search:focus { outline: none; border-color: var(--accent-border); }
   .whose {
     display: flex; align-items: center; gap: var(--sp-3); min-width: 0;
     padding: var(--sp-3); border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--surface-2);
@@ -200,21 +202,13 @@
   .phone input { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .num { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
-  .server { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+  .server { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); }
   .phone-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
-  .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-1) var(--sp-2); text-align: left;
-    border: none; border-radius: var(--radius-md); background: none; color: inherit; font: inherit; cursor: pointer;
-  }
-  .row:hover:not(:disabled) { background: var(--surface-row-hover); }
-  .row:disabled { cursor: default; }
-  .name-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .why { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The dense rows of base.css; a long list scrolls in itself. */
+  .list { padding: 0; max-height: 300px; overflow-y: auto; }
   .dim { color: var(--text-3); display: inline-flex; }
   .state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--accent-text-2); flex-shrink: 0; }
   .state.done { color: var(--success-text, var(--success)); }
   .hint { margin: 0; }
-  @media (pointer: coarse) { .search { font-size: var(--fs-md); } .row { min-height: 56px; } .phone input { width: 18px; height: 18px; } }
+  @media (pointer: coarse) { .phone input { width: 18px; height: 18px; } }
 </style>

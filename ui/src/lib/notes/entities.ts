@@ -53,6 +53,8 @@ export const noteEntities: EntityKindDef[] = [
         await notesStore.addNoteBinding(id, reference);
       },
       remove: async (id, reference) => {
+        // The phone's note page reads its note without the store: an unknown note is not one without the reference.
+        if (!noteBindings(id)) await loadAll();
         // A note without the reference is left alone: a write would rewrite its manifest.
         if (!noteBindings(id)?.includes(reference)) return;
         await notesStore.removeNoteBinding(id, reference);

@@ -378,6 +378,16 @@ export function virtualTypes(product) {
   return lines.join('\n');
 }
 
+/**
+ * What vitest leaves out for a product: its defaults and the UI folders of the
+ * modules the product has not (vite.config.js gives it to every test project).
+ * @param {Product} product
+ * @param {string[]} defaults vitest's own (`configDefaults.exclude`)
+ */
+export function testExcludes(product, defaults) {
+  return [...defaults, ...product.absent.map((m) => `${relUi(m.ui)}/**`)];
+}
+
 /** @param {Product} product @returns {import('vite').Plugin} */
 export function veydanModules(product) {
   /** @param {string} file @returns {{ module: ModuleEntry, stub: string } | null} */
@@ -406,16 +416,8 @@ export function veydanModules(product) {
     name: 'veydan-modules',
     enforce: 'pre',
 
-    async config() {
-      /** @type {import('vite').UserConfig & { test?: object }} */
-      const extra = { define: productDefines(product) };
-      if (process.env.VITEST && product.absent.length) {
-        const { configDefaults } = await import('vitest/config');
-        extra.test = {
-          exclude: [...configDefaults.exclude, ...product.absent.map((m) => `${relUi(m.ui)}/**`)],
-        };
-      }
-      return extra;
+    config() {
+      return { define: productDefines(product) };
     },
 
     resolveId: {

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Veydan Project
 # SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 #
-# HEAD of the branch ios on the owner's iPhone, from WSL, with no Mac
+# HEAD of the branch development (IOS_BRANCH) on the owner's iPhone, from WSL, with no Mac
 # (docs/ci-cd.md, "The iOS lab"):
 #   scripts/ios/phone.sh status          # HEAD built or not, the runs, the minutes of the month, the app on the phone
 #   scripts/ios/phone.sh build [--dry-run] # the snapshot of HEAD to the lab (scripts/ios/lab-push.sh), which builds it
@@ -14,12 +14,13 @@
 # A run is its number (#21), its id, or nothing: the run of HEAD, else the
 # latest. Space alone: the app on the phone is its bundle.
 #
-# A build costs: the lab is private since 2026-11-04 and a minute of macOS
-# counts ten of the 2000 free ones (a build is 10–25 min). So nothing here
+# A build takes 10–25 min of macOS: free since the lab is public again
+# (2026-11-21; private from 2026-11-04, when a minute counted ten of the
+# 2000 free ones). Still nothing here
 # builds by itself: `build` (and `all`) alone push, never for a commit the
 # lab built already (the run is found by "iOS lab: space of <sha> — …", the
 # message lab-push.sh writes), never over a run in progress (the workflow
-# cancels it), never from a tree with changes or a HEAD that origin/ios
+# cancels it), never from a tree with changes or a HEAD that origin/<branch>
 # does not hold; it lists the commits since the last build and the minutes
 # of the month, so a build is a batch.
 #
@@ -48,13 +49,13 @@ cd "$ROOT_DIR"
 PRODUCT=space
 LAB_REPO="${IOS_LAB_REPO:-veydanproject/Veydan-iOS-Lab}"
 TOKEN_FILE="${IOS_LAB_TOKEN_FILE:-$HOME/.veydan/ios-lab.token}"
-BRANCH="${IOS_BRANCH:-ios}"
+BRANCH="${IOS_BRANCH:-development}"
 BUNDLE="${IOS_BUNDLE:-net.veydan.mobile.9233V6SRGP}"
 SIGN_HOME="${IOS_SIGN_HOME:-$HOME/.veydan/ios-sign}"
 PLUME_VERSION=2.7.2
 PLUME_SHA256=daaa6f296247a501c899de6167ebcf1b03ab2a4c8d3ca3ec6ec4c27613701aa2
 PLUME="$ROOT_DIR/data/toolchains/plumesign/$PLUME_VERSION/plumesign"
-MINUTE_RATE=10 FREE_MINUTES=2000 PRIVATE_SINCE=2026-11-04
+MINUTE_RATE=10 FREE_MINUTES=2000 PRIVATE_SINCE=2026-11-04 PUBLIC_SINCE=2026-11-21
 
 die() { echo ">> $*" >&2; exit 1; }
 command -v jq >/dev/null || die "jq is missing (apt install jq)"
@@ -94,8 +95,8 @@ resolve_run() { # resolve_run [number|id] → the line of runs_tsv
   [ -n "$line" ] || die "no run ${arg:+$arg }in $LAB_REPO"
   printf '%s\n' "$line"
 }
-# The minutes the plan counts: this month's, and only since the lab is private
-# (a public repository builds for free).
+# The minutes the plan counted: this month's, and only while the lab was
+# private (2026-11-04 to 2026-11-21; a public repository builds for free).
 billed_since() { local m; m="$(date -u +%Y-%m)-01"; [[ "$m" > "$PRIVATE_SINCE" ]] && echo "$m" || echo "$PRIVATE_SINCE"; }
 month_minutes() { # "<runs> <minutes>" since billed_since (a run without a job is 0)
   runs_json | jq -r --arg s "$(billed_since)" '[.workflow_runs[] | select(.created_at >= $s)]
@@ -103,6 +104,7 @@ month_minutes() { # "<runs> <minutes>" since billed_since (a run without a job i
       - ((.run_started_at // .created_at) | fromdateiso8601)) / 60 | ceil)] | add // 0)"'
 }
 print_minutes() {
+  if [[ ! "$(date -u +%F)" < "$PUBLIC_SINCE" ]]; then echo ">> the lab is public since $PUBLIC_SINCE: its builds cost no minutes"; return; fi
   local runs mins; read -r runs mins < <(month_minutes)
   echo ">> since $(billed_since): $runs runs of the lab, ~$mins min of macOS ≈ $((mins * MINUTE_RATE)) of the $FREE_MINUTES free minutes of the month"
 }

@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import type { NavChild } from '$lib/notes/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
@@ -64,9 +65,9 @@
       <span class="caret"></span>
     {/if}
     <button type="button" class="pick" class:on={picked === f.id} onclick={() => (picked = f.id)}>
-      <span class="m-doc" style:--c={f.color}><Icon name="folder" size={16} /></span>
+      <span class="m-folder tinted-text" style:--chip={f.color || undefined}><Icon name="folder" size={18} /></span>
       <span class="name" class:bold={depth === 0}>{f.name}</span>
-      <span class="radio" class:on={picked === f.id}></span>
+      {#if picked === f.id}<Icon name="check" size={18} />{/if}
     </button>
   </div>
 {/snippet}
@@ -79,10 +80,13 @@
 {/snippet}
 
 <BottomSheet {open} title={$t('notes_move')} {onclose}>
-  <div class="m-search">
-    <div class="field">
+  <div class="m-find-row">
+    <div class="search-field fill">
       <Icon name="search" size={16} />
       <input type="search" bind:value={query} placeholder={$t('notes_move_search')} />
+      {#if query}
+        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+      {/if}
     </div>
   </div>
 
@@ -90,9 +94,9 @@
     <div class="row">
       <span class="caret"></span>
       <button type="button" class="pick" class:on={picked === null} onclick={() => (picked = null)}>
-        <span class="m-doc muted"><Icon name="folder" size={16} /></span>
+        <span class="m-folder"><Icon name="folder" size={18} /></span>
         <span class="name">{$t('notes_move_none')}</span>
-        <span class="radio" class:on={picked === null}></span>
+        {#if picked === null}<Icon name="check" size={18} />{/if}
       </button>
     </div>
     {#if q}
@@ -102,17 +106,21 @@
     {/if}
   </div>
 
-  <button type="button" class="m-btn-grad" disabled={busy || picked === current} onclick={() => onmove(picked)}>
-    {$t('notes_move_btn')}
-  </button>
+  {#snippet footer()}
+    <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
+    <button type="button" class="btn btn-primary" disabled={busy || picked === current} onclick={() => onmove(picked)}>
+      {$t('notes_move_btn')}
+    </button>
+  {/snippet}
 </BottomSheet>
 
 <style>
+  /* Rows of 56 (a dense row, base.css); the chosen one is the tint with a check at the end, as WorkspaceSheet. */
   .tree { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .row { display: flex; align-items: center; }
   .caret {
     width: 28px;
-    height: 44px;
+    height: 56px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -127,7 +135,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    min-height: 48px;
+    min-height: 56px;
     padding: 0 var(--sp-2);
     border: 0;
     border-radius: var(--radius-md);
@@ -140,20 +148,4 @@
   .pick.on { background: var(--accent-bg); }
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .name.bold { font-weight: var(--fw-bold); }
-  .radio {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 2px solid var(--border-2);
-    flex-shrink: 0;
-    position: relative;
-  }
-  .radio.on { border-color: var(--accent); }
-  .radio.on::after {
-    content: '';
-    position: absolute;
-    inset: 3px;
-    border-radius: 50%;
-    background: var(--accent);
-  }
 </style>

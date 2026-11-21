@@ -89,7 +89,7 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="m-ibtn" href="/totp" aria-label={$t('common_back')}>
+    <a class="icon-btn" href="/totp" aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('totp_add_title')}</h1>
@@ -193,19 +193,18 @@
     <TotpNoteLinks mobile {notes} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
   {/if}
 
-  {#if error && !errField}
-    <div class="err"><Notice tone="danger">{error}</Notice></div>
-  {/if}
-
-  <button type="button" class="m-btn-grad save" onclick={save} disabled={saving}>
-    <Icon name="check" size={18} />
-    {$t('common_save')}
-  </button>
+  </div>
+  <!-- Save in the page's foot, the error that is not a field's over it. -->
+  <div class="page-foot">
+    {#if error && !errField}<Notice tone="danger">{error}</Notice>{/if}
+    <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+      <Icon name="check" size={18} />
+      {$t('common_save')}
+    </button>
   </div>
 </div>
 
 <style>
-  .err { margin-bottom: var(--sp-3); }
   .mode {
     display: flex;
     width: 100%;
@@ -215,7 +214,6 @@
   textarea {
     width: 100%;
     resize: none;
-    font-size: var(--fs-base);
   }
   .preview {
     display: flex;
@@ -247,5 +245,4 @@
     grid-template-columns: 1fr 1fr 1fr;
     gap: var(--sp-3);
   }
-  .save { margin-top: var(--sp-4); }
 </style>

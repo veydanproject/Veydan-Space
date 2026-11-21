@@ -381,7 +381,7 @@
     overflow-y: auto;
     outline: none;
     padding: var(--sp-2) 0;
-    font-size: var(--fs-body);
+    font-size: var(--fs-md);
     line-height: var(--lh-base);
     word-wrap: break-word;
     white-space: pre-wrap;
@@ -409,7 +409,7 @@
   }
   .host :global(code) {
     font-family: var(--font-mono);
-    font-size: 0.88em;
+    font-size: var(--fs-sm);
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
@@ -465,7 +465,7 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     color: var(--text-3);
-    font-size: 0.9em;
+    font-size: var(--fs-sm);
     overflow-wrap: anywhere;
     vertical-align: middle;
     user-select: none;
@@ -497,7 +497,7 @@
   .lightbox {
     position: fixed;
     inset: 0;
-    z-index: 80;
+    z-index: calc(var(--z-panel) + 30);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -518,7 +518,7 @@
     border-radius: 0;
   }
   .host :global(.tableWrapper) { overflow-x: auto; margin: 0 0 1em; }
-  .host :global(table) { border-collapse: collapse; font-size: 0.92em; }
+  .host :global(table) { border-collapse: collapse; font-size: var(--fs-sm); }
   .host :global(th), .host :global(td) { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
   .host :global(th > p), .host :global(td > p) { margin: 0; }
   .host :global(th) { background: var(--surface-2); }

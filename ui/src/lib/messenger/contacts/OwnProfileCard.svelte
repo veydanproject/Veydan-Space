@@ -224,7 +224,7 @@
   .link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .private-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
-  .saved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--success-text); }
+  .saved { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--success-text); }
   .send { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .hint { margin: 0; flex: 1; min-width: 200px; line-height: var(--lh-snug); }
   @media (pointer: coarse) {

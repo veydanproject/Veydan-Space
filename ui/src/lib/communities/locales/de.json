@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Ablehnen",
     "chan_level_req_refuse_title": "Ablehnen: {name}",
     "chan_level_req_refuse_hint": "Der Leser erhält die Absage mit deiner Begründung. Seine Stufen bleiben, wie sie sind.",
-    "chan_level_req_reason": "Begründung (optional)"
+    "chan_level_req_reason": "Begründung (optional)",
+    "chan_err_not_found": "Die Datei ist im Speicher nicht mehr verfügbar."
   },
   "mobile": {}
 }

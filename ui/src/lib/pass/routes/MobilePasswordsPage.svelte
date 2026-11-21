@@ -11,6 +11,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
@@ -153,14 +154,17 @@
 <div class="m-page">
   <div class="m-header">
     {#if hasHome()}
-      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title title-with-badge">{$t('pw_title')}<PasswordLockBadge size={11} /></h1>
   </div>
-  <div class="m-search">
-    <div class="field">
+  <div class="m-find-row">
+    <div class="search-field fill">
       <Icon name="search" size={16} />
-      <input type="search" bind:value={search} placeholder={$t('pw_search')} />
+      <input type="search" bind:value={search} placeholder={$t('pw_search')} aria-label={$t('pw_search')} />
+      {#if search}
+        <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+      {/if}
     </div>
   </div>
   <div class="m-body">
@@ -169,16 +173,16 @@
       <!-- The shape of the rows, no empty-state flash before the list arrives. -->
       <Skeleton height={56} avatar="square" />
     {:else if entries.length === 0}
-      <div class="m-empty">
-        <Icon name="lock-password" size={40} />
+      <div class="empty-state">
+        <span class="empty-icon"><Icon name="lock-password" size={22} /></span>
         <p>{$t('pw_empty')}</p>
         {#if canAdd}
           <a class="m-btn-grad cta" href="/passwords/add"><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
         {/if}
       </div>
     {:else if filtered.length === 0}
-      <div class="m-empty">
-        <Icon name="search" size={40} />
+      <div class="empty-state">
+        <span class="empty-icon"><Icon name="search" size={22} /></span>
         <p>{$t('common_nothing_found')}</p>
         <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       </div>
@@ -196,7 +200,8 @@
       </div>
     {/if}
   </div>
-  {#if canAdd}
+  <!-- The empty list has its own add, in the middle: the + would be a second one. -->
+  {#if canAdd && !(loaded && entries.length === 0)}
     <a class="m-fab" href="/passwords/add" aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={22} /></a>
   {/if}
 </div>
@@ -206,19 +211,19 @@
     {@const entry = menu}
     <div class="m-list">
       {#if entry.username}
-        <button type="button" class="m-row" onclick={() => copyUsername(entry)}>
-          <Icon name="id" size={20} /><span class="m-row-label">{$t('ctx_action_copy_username')}</span>
+        <button type="button" class="list-row dense" onclick={() => copyUsername(entry)}>
+          <Icon name="id" size={20} /><span class="list-row-label">{$t('ctx_action_copy_username')}</span>
         </button>
       {/if}
-      <button type="button" class="m-row" onclick={() => copyPassword(entry)}>
-        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
+      <button type="button" class="list-row dense" onclick={() => copyPassword(entry)}>
+        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="list-row-label">{$t('ctx_action_copy_password')}</span>
       </button>
       {#if canAdd}
-        <button type="button" class="m-row" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
-          <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
+        <button type="button" class="list-row dense" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
+          <Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span>
         </button>
-        <button type="button" class="m-row" onclick={() => remove(entry)}>
-          <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
+        <button type="button" class="list-row dense" onclick={() => remove(entry)}>
+          <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
         </button>
       {/if}
     </div>

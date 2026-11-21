@@ -109,7 +109,7 @@
 </script>
 
 <div class="who">
-  <button class="icon back" onclick={onback} title={$t('common_back')} aria-label={$t('common_back')}><Icon name="chevron-left" size={18} /></button>
+  <button class="icon-btn lg back" onclick={onback} title={$t('common_back')} aria-label={$t('common_back')}><Icon name="chevron-left" size={18} /></button>
   <Avatar url={nameStore.picture(author)} label={name} seed={author} size={36} />
   <div class="who-text">
     <span class="name">{name}</span>
@@ -158,8 +158,8 @@
           <div class="text"><MessageContent text={row.text} cards={false} /></div>
         </div>
         <div class="row-acts">
-          <button class="icon ok" disabled={busy} title={$t('msg_mod_approve')} aria-label={$t('msg_mod_approve')} onclick={() => decide([row], 'approve')}><Icon name="check" size={18} /></button>
-          <button class="icon" disabled={busy} title={$t('msg_mod_reject')} aria-label={$t('msg_mod_reject')} onclick={() => decide([row], 'reject')}><Icon name="x" size={18} /></button>
+          <button class="icon-btn ok" disabled={busy} title={$t('msg_mod_approve')} aria-label={$t('msg_mod_approve')} onclick={() => decide([row], 'approve')}><Icon name="check" size={18} /></button>
+          <button class="icon-btn" disabled={busy} title={$t('msg_mod_reject')} aria-label={$t('msg_mod_reject')} onclick={() => decide([row], 'reject')}><Icon name="x" size={18} /></button>
         </div>
       </li>
     {/each}
@@ -171,23 +171,23 @@
 
 <style>
   .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-  .back { margin-left: -6px; }
+  .back { margin-left: calc(-1 * var(--sp-1-5)); }
   .who-text { display: flex; flex-direction: column; min-width: 0; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count { font-size: var(--fs-xs); color: var(--text-3); }
   .bulk { padding: 0 4px; }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
   .acts { display: flex; gap: var(--sp-2); }
-  .acts .btn { flex: 1 1 0; min-width: 0; justify-content: center; gap: 6px; min-height: 40px; }
+  .acts .btn { flex: 1 1 0; min-width: 0; justify-content: center; gap: var(--sp-1-5); min-height: 40px; }
   .acts-box { container-type: inline-size; }
   .acts .spam { flex: 0 0 auto; color: var(--danger-text); padding-inline: var(--sp-3); }
   @container (max-width: 360px) {
-    .acts { gap: 6px; }
+    .acts { gap: var(--sp-1-5); }
     .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: var(--lh-tight); }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .msg { display: flex; gap: var(--sp-2); padding: 10px 4px; align-items: flex-start; }
+  .msg { display: flex; gap: var(--sp-2); padding: var(--sp-2-5) var(--sp-1); align-items: flex-start; }
   .msg.open { background: var(--surface-row-hover); }
   .tick { margin-top: 3px; flex-shrink: 0; }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -198,9 +198,7 @@
   .said { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .said-at { font-size: var(--fs-xs); }
   .row-acts { display: flex; gap: 2px; flex-shrink: 0; }
-  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
-  .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
-  .icon.ok { color: var(--success-text, var(--success)); }
+  .icon-btn.ok { color: var(--success-text, var(--success)); }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) {

@@ -12,7 +12,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import { Avatar, contactHaystacks, contactLabel, contacts as contactsOf, matchesQuery } from '$lib/messenger/seams/shared';
+  import { Avatar, contactHaystacks, contactLabel, contacts as contactsOf, matchesQuery, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
   import { staffOf } from './permissions';
@@ -28,6 +28,9 @@
     purpose?: 'invite' | 'author';
   }
   let { open = $bindable(), detail, purpose = 'invite' }: Props = $props();
+
+  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
+  const phone = onPhone();
 
   let key = $state('');
   let busy = $state(false);
@@ -84,8 +87,8 @@
     {#if shown.length}
       <ul class="list divided">
         {#each shown as c (c.pubkey)}
-          <li class="row">
-            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={36} />
+          <li class="row" class:list-row={phone} class:still={phone}>
+            <Avatar url={c.profile?.picture ?? null} label={contactLabel(c)} seed={c.pubkey} size={phone ? 48 : 36} />
             <span class="name">{contactLabel(c)}</span>
             {#if done.includes(c.pubkey)}
               <span class="done"><Icon name="check" size={13} />{purpose === 'author' ? $t('chan_made_author') : $t('chan_invite_sent')}</span>
@@ -95,6 +98,10 @@
           </li>
         {/each}
       </ul>
+    {:else if !all.length}
+      <p class="empty-state sm">{$t('msg_contacts_empty')}</p>
+    {:else if key.trim() && !looksLikeKey}
+      <p class="empty-state sm">{$t('common_nothing_found')}</p>
     {/if}
   </div>
 </Dialog>
@@ -107,13 +114,15 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   input {
-    font: inherit; font-size: var(--fs-sm); color: var(--text); width: 100%;
+    color: var(--text); width: 100%;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 9px 12px;
   }
   input:focus { outline: none; border-color: var(--accent-border); }
   .hint { margin: 0; }
   .list { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
   .row { display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-md); }
+  /* A phone's row is the common row (base.css .list-row, 64) with the avatar of 48. */
+  .row.list-row { min-height: 64px; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .done { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text, var(--success)); }
   @media (pointer: coarse) { input { font-size: var(--fs-md); min-height: 44px; } .row { min-height: 56px; } }

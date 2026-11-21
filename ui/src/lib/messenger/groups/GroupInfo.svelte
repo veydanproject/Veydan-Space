@@ -28,7 +28,6 @@
   import SharedList from '../content/shared/SharedList.svelte';
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import Tile, { type TileTone } from '$lib/core/ui/Tile.svelte';
-  import Chev from '$lib/core/ui/Chev.svelte';
   import Pill, { type PillTone } from '$lib/core/ui/Pill.svelte';
   import { groupStore } from './groupStore.svelte';
   import { nameStore, shortKey } from './names.svelte';
@@ -411,15 +410,15 @@
 {#snippet membersBody()}
   <section class="block" aria-label={$t('msg_group_members')}>
     {#if manager}<button class="btn btn-ghost wide" onclick={() => (inviting = true)}><Icon name="mail" size={18} />{$t('msg_group_invite')}</button>{/if}
-    <ul class="box card rows">
+    <ul class="card list-rows people">
       {#each group.members as m (m.pubkey)}
         <li>
-          <button class="person as-button" class:still={!entriesFor(m).length} oncontextmenu={(e) => openMenu(e, m)} onclick={(e) => openMenu(e, m)}
+          <button class="list-row dense" class:still={!entriesFor(m).length} oncontextmenu={(e) => openMenu(e, m)} onclick={(e) => openMenu(e, m)}
             use:longpress={{ onpress: (p) => openMenu(p, m) }}>
             <Avatar url={nameStore.picture(m.pubkey)} label={nameStore.label(m.pubkey)} seed={m.pubkey} size={36} />
-            <span class="who">
-              <span class="who-name">{nameStore.label(m.pubkey)}{#if m.is_me} <span class="me">({$t('msg_you')})</span>{/if}</span>
-              <code>{shortKey(m.pubkey)}</code>
+            <span class="list-row-body">
+              <span class="list-row-name">{nameStore.label(m.pubkey)}{#if m.is_me} <span class="me">({$t('msg_you')})</span>{/if}</span>
+              <code class="list-row-line">{shortKey(m.pubkey)}</code>
             </span>
             {#if m.trusted && checksMessages(group)}<span class="dim" title={$t('msg_mod_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
             {#if mutedNow(m)}
@@ -435,13 +434,13 @@
 
 {#snippet bannedBody()}
   <section class="block" aria-label={$t('msg_group_banned')}>
-    <ul class="box card rows">
+    <ul class="card list-rows people">
       {#each group.banned as b (b)}
-        <li class="person">
+        <li><div class="list-row dense still">
           <Avatar url={nameStore.picture(b)} label={nameStore.label(b)} seed={b} size={36} />
-          <span class="who"><span class="who-name">{nameStore.label(b)}</span><code>{shortKey(b)}</code></span>
+          <span class="list-row-body"><span class="list-row-name">{nameStore.label(b)}</span><code class="list-row-line">{shortKey(b)}</code></span>
           <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => unban(b)}>{$t('msg_group_unban')}</button>
-        </li>
+        </div></li>
       {/each}
     </ul>
   </section>
@@ -510,7 +509,7 @@
           </div>
         </div>
         {#if manager}
-          <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
+          <button type="button" class="icon-btn lg edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
         {/if}
       </div>
       {#if group.about}<div class="about"><MessageContent text={group.about} cards={false} /></div>{/if}
@@ -531,14 +530,9 @@
     {/if}
 
     {#if seesModeration(group)}
-      <button class="mod-row" class:waits={!!waiting} onclick={openModeration}>
-        <Tile icon="shield-check" tone={waiting ? 'accent' : 'plain'} />
-        <span class="mod-text">
-          <span class="mod-name">{$t('msg_mod_title')}</span>
-          {#if waiting}<span class="mod-waiting">{waiting}</span>{:else}<span class="mod-hint">{$t('msg_mod_row_hint')}</span>{/if}
-        </span>
-        <Chev />
-      </button>
+      <div class="nav-group card">
+        <NavRow icon="shield-check" tone={waiting ? 'accent' : 'plain'} title={$t('msg_mod_title')} sub={waiting || $t('msg_mod_row_hint')} onclick={openModeration} />
+      </div>
     {/if}
 
     <!-- The contents: each row opens the page of what it names. -->
@@ -628,12 +622,7 @@
   .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow-wrap: anywhere; word-break: break-word; }
   .kind-line :global(svg) { flex: none; margin-top: 2px; }
   .kind-line { display: flex; align-items: flex-start; gap: var(--sp-1); line-height: var(--lh-snug); font-size: var(--fs-sm); color: var(--text-3); }
-  .edit-btn {
-    align-self: flex-start; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: none; border-radius: var(--radius);
-    background: var(--surface-2); color: var(--text); cursor: pointer; transition: background var(--dur-fast) var(--ease);
-  }
-  .edit-btn:hover { background: var(--surface-hover); }
-  .edit-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .edit-btn { align-self: flex-start; }
   .about { font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text); }
   .fact {
     display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding-top: var(--sp-3); border-top: 1px solid var(--border-2);
@@ -645,7 +634,7 @@
   .edit { display: flex; flex-direction: column; gap: var(--sp-3); }
   .field {
     width: 100%; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
-    border: 1px solid var(--border); border-radius: var(--radius); padding: 10px var(--sp-3); resize: vertical;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-2-5) var(--sp-3); resize: vertical;
   }
   input.field { min-height: var(--control-h-lg); }
   .field:focus { outline: none; border-color: var(--accent-border); }
@@ -667,19 +656,6 @@
     background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
   }
   .state :global(svg) { flex: none; }
-
-  /* The moderation: first of the contents. */
-  .mod-row {
-    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-3); text-align: left; cursor: pointer; font: inherit; color: var(--text);
-    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); transition: background var(--dur-fast) var(--ease);
-  }
-  .mod-row:hover { background: var(--surface-row-hover); }
-  .mod-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .mod-name { font-size: var(--fs-body); font-weight: var(--fw-bold); }
-  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
-  .mod-row.waits { border-color: var(--accent-border); background: var(--accent-bg); }
-  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: var(--lh-snug); }
 
   /* The contents: groups of rows. */
   .nav-group > :global(.nav + .nav)::before { content: ''; position: absolute; top: 0; left: 60px; right: var(--sp-3); height: 1px; background: var(--border-2); }
@@ -708,18 +684,8 @@
   /* The pages of people: a card of rows. */
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
   .wide { min-height: var(--control-h); gap: var(--sp-2); justify-content: center; }
-  .rows { list-style: none; margin: 0; padding: var(--sp-1); display: flex; flex-direction: column; }
-  .rows > li { position: relative; }
-  .rows > li + li::before { content: ''; position: absolute; top: 0; left: var(--sp-3); right: var(--sp-3); height: 1px; background: var(--border-2); }
-  .person { display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md); min-width: 0; }
-  .as-button { width: 100%; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
-  .as-button:hover { background: var(--surface-row-hover); }
-  .as-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-  .as-button.still { cursor: default; }
-  .as-button.still:hover { background: none; }
-  .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .who code { font-size: var(--fs-xs); color: var(--text-3); }
+  /* The people: the dense rows of base.css in a card. */
+  .people { padding: var(--sp-1); border-radius: var(--radius-lg); }
   .me { color: var(--text-3); font-weight: var(--fw-medium); }
   .dim { flex: none; color: var(--text-3); display: inline-flex; }
   .role {
@@ -735,7 +701,6 @@
   .zone-btns .btn { min-height: var(--control-h); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
 
   @media (pointer: coarse) {
-    .person { min-height: 56px; }
     .field { font-size: var(--fs-md); }
     .zone-btns .btn, .foot .btn, .wide { min-height: var(--control-h-lg); }
   }

@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { theme } from '$lib/core/theme';
+  import Icon from '$lib/core/Icon.svelte';
   import type { Profile, Proxy } from '$lib/browser/types';
 
   interface Props {
@@ -149,14 +150,14 @@
 
     // Canvas can't read CSS vars — resolve the design tokens at draw time
     const css = getComputedStyle(document.body);
-    const tok = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-    const edgeColor = tok('--graph-edge', 'rgba(138,138,150,0.2)');
-    const proxyFill = tok('--cat-blue', '#60a5fa');
-    const profileFill = tok('--success', '#34d399');
-    const profileStoppedFill = tok('--border-2', '#2c2c38');
-    const textColor = tok('--text', '#eaeaf0');
-    const bgColor = tok('--bg', '#08080c');
-    const uiFont = tok('--font-ui', 'sans-serif');
+    const tok = (name: string) => css.getPropertyValue(name).trim();
+    const edgeColor = tok('--graph-edge');
+    const proxyFill = tok('--cat-blue');
+    const profileFill = tok('--success');
+    const profileStoppedFill = tok('--border-2');
+    const textColor = tok('--text');
+    const bgColor = tok('--bg');
+    const uiFont = tok('--font-ui') || 'sans-serif';
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = bgColor;
@@ -192,7 +193,7 @@
       ctx.fill();
 
       if (isHovered) {
-        ctx.strokeStyle = tok('--graph-node-ring', 'rgba(255,255,255,0.4)');
+        ctx.strokeStyle = tok('--graph-node-ring');
         ctx.lineWidth = 2;
         ctx.stroke();
       }
@@ -258,7 +259,10 @@
 
 <div class="topology-wrap">
   {#if connectedProfiles.length === 0}
-    <div class="empty">{$t('topology_empty')}</div>
+    <div class="empty-state">
+      <span class="empty-icon" aria-hidden="true"><Icon name="git-fork" size={22} /></span>
+      <p>{$t('topology_empty')}</p>
+    </div>
   {:else}
     <div class="legend">
       <span class="legend-item proxy"><span class="dot"></span>{$t('panel_proxy')}</span>
@@ -295,12 +299,6 @@
     height: 100%;
   }
 
-  .empty {
-    text-align: center;
-    color: var(--text-2);
-    padding: 4rem;
-  }
-
   .legend {
     display: flex;
     gap: var(--sp-4);
@@ -309,7 +307,7 @@
     color: var(--text-2);
   }
 
-  .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+  .legend-item { display: flex; align-items: center; gap: var(--sp-1); }
   .legend-item .dot { width: 8px; height: 8px; border-radius: 50%; }
   .legend-item.proxy .dot { background: var(--cat-blue); }
   .legend-item.running .dot { background: var(--success); }

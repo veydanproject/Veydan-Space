@@ -239,7 +239,7 @@
   </button>
 {/snippet}
 {#snippet saveBtn()}
-  <button class="act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={18} /></button>
+  <button class="icon-btn act" onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="save" size={18} /></button>
 {/snippet}
 
 {#snippet foreignNote()}
@@ -334,9 +334,9 @@
 <style>
   /* A server only the sender named: a quiet word under the file, the reason in its title. */
   .foreign { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
-  .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px 6px; border-radius: var(--radius-badge); background: rgba(0, 0, 0, 0.55); }
+  .foreign-tag { position: absolute; left: 6px; bottom: 6px; z-index: 1; pointer-events: none; padding: 1px var(--sp-1-5); border-radius: var(--radius-badge); background: var(--on-media-scrim); }
   .foreign-tag .foreign { color: #fff; }
-  .media { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .media { display: flex; flex-direction: column; gap: var(--sp-1-5); min-width: 0; }
   .media.kind-circle, .media.kind-voice { min-width: 0; }
   /* A file in an album: a line of its list, as a file alone. */
   .card-file { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -371,7 +371,7 @@
   .tile.shown .hit { cursor: zoom-in; }
   .center {
     position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.45); color: #fff; pointer-events: none;
+    display: flex; align-items: center; justify-content: center; background: var(--on-media-scrim); color: #fff; pointer-events: none;
   }
   .bad {
     position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center;
@@ -388,8 +388,8 @@
   .circle-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
   .player { max-width: 100%; max-height: 320px; border-radius: calc(var(--radius-bubble) - 3px); background: #000; }
   .audio { width: 100%; height: 36px; }
-  .act { position: relative; border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  /* .icon-btn (32) with a zone to press a little wider than itself. */
+  .act { position: relative; flex-shrink: 0; }
   .act::before { content: ''; position: absolute; inset: -10px -8px; }
-  .act:hover:not(:disabled) { color: var(--text); }
   .fail { font-size: var(--fs-xs); color: var(--danger-text); }
 </style>

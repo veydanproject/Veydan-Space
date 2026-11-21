@@ -1,17 +1,19 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
-<!-- Context cards: Veydan entities bound to or mentioned in a note, with actions. -->
+<!-- The note's context: Veydan entities bound to or mentioned in a note, a row each with its actions. -->
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
+  // «mentioned» and the empty line are the phone's words; its t() reads them in every language.
+  import { t as mt } from '$lib/core/mobile/i18n';
   import { formatError } from '$lib/core/utils';
   import { parseBinding, isEntityKind, type EntityKind } from '$lib/core/bindings';
   import { directory, foreignName } from '$lib/core/directory';
   import { entityKinds, entitySummary, type EntityAction, type EntityStatus } from '$lib/notes/context';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   onMount(() => {
     void directory.ensureLoaded();
@@ -30,7 +32,7 @@
     noteId?: string | null;
     /** `[[kind:id]]` mentions found in the body */
     mentions: string[];
-    /** Binding to highlight, e.g. after clicking a mention in the text */
+    /** Binding to select and scroll into view, e.g. after clicking a mention in the text */
     focus?: string | null;
     readonly?: boolean;
     onbind: (binding: string) => void;
@@ -68,6 +70,16 @@
     return out;
   });
 
+  let listEl = $state<HTMLElement>();
+  $effect(() => {
+    const target = focus;
+    if (!target || !listEl) return;
+    void tick().then(() => {
+      const row = [...(listEl?.querySelectorAll<HTMLElement>('[data-binding]') ?? [])].find((el) => el.dataset.binding === target);
+      row?.scrollIntoView({ block: 'nearest' });
+    });
+  });
+
   let busy = $state<string | null>(null);
   let error = $state<string | null>(null);
 
@@ -95,147 +107,133 @@
   }
 </script>
 
-{#if cards.length > 0}
-  <div class="context">
-    {#each cards as card (card.binding)}
-      {@const def = directory.get(card.kind)}
-      {@const entity = entitySummary(card.kind, card.id)}
-      {#if def && !def.fallback}
-      <div class="card tinted" class:focus={focus === card.binding} class:mention={!card.bound} style:--chip={entity?.color || undefined}>
-        <div class="head">
-          <span class="mark"><Icon name={def.icon} size={13} /></span>
-          <span class="name" title={entity?.name ?? card.id}>{entity?.name ?? $t('ctx_missing')}</span>
-          {#if entity?.status}
-            <span class="dot {entity.status}" title={$t(STATUS_LABEL[entity.status])}></span>
-          {/if}
-          {#if !readonly && (def.link ? !!noteId : card.bound && !card.fromTag)}
-            <button class="x" onclick={() => unbind(card, entity?.name)} title={$t('ctx_unbind')}>×</button>
-          {/if}
-        </div>
-        <div class="sub">
-          <span class="kind">{$t(def.label)}</span>
-          {#if entity?.subtitle}<span class="sep">·</span><span class="subtitle">{entity.subtitle}</span>{/if}
-        </div>
-        {#if entity}
-          <div class="actions">
-            {#snippet bind()}
-              {#if !card.bound && !card.fromTag && !readonly}
-                <button class="btn btn-ghost btn-xs bind" onclick={() => onbind(card.binding)}>
-                  <Icon name="plus" size={11} />
-                  {$t('ctx_bind')}
-                </button>
-              {/if}
-            {/snippet}
-            {#if def.inline}
-              <!-- The owner shows its own entity: tags, live codes, copy buttons. -->
-              <def.inline id={card.id}>{@render bind()}</def.inline>
-            {:else}
-              {@render bind()}
-              <div class="foot">
-                <div class="pw-actions">
-                  {#if def.open}
-                    <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(card.id)}>
-                      <Icon name="external-link" size={13} />
-                    </button>
-                  {/if}
-                  {#each def.actions.filter((a) => a.id !== 'open') as action (action.id)}
-                    <button
-                      type="button"
-                      class="icon-btn"
-                      title={$t(action.label)}
-                      disabled={busy !== null}
-                      onclick={() => run(card, action)}
-                    >
-                      <Icon name={action.icon} size={13} />
-                    </button>
-                  {/each}
-                </div>
-              </div>
+<div class="context" bind:this={listEl}>
+  {#each cards as card (card.binding)}
+    {@const def = directory.get(card.kind)}
+    {@const entity = entitySummary(card.kind, card.id)}
+    {#if def && !def.fallback}
+      {@const name = entity?.name ?? card.id}
+      <div class="row" class:focus={focus === card.binding} class:mention={!card.bound} data-binding={card.binding}>
+        <span class="mark" style:color={entity?.color || undefined}><Icon name={def.icon} size={18} /></span>
+        <div class="text">
+          <div class="head">
+            <span class="name" title={name}>{entity?.name ?? $t('ctx_missing')}</span>
+            {#if entity?.status}
+              <span class="dot {entity.status}" title={$t(STATUS_LABEL[entity.status])}></span>
             {/if}
           </div>
+          <span class="sub">{$t(def.label)}{#if entity?.subtitle} · {entity.subtitle}{/if}{#if !card.bound && !card.fromTag} · {$mt('notes_context_mentioned')}{/if}</span>
+        </div>
+        {#if !readonly && (card.bound && (def.link ? !!noteId : !card.fromTag))}
+          <button type="button" class="icon-btn x" onclick={() => unbind(card, entity?.name)} title={$t('ctx_unbind')} aria-label={$t('ctx_unbind')}>
+            <Icon name="x" size={18} />
+          </button>
+        {/if}
+        {#if entity}
+          {#snippet bind()}
+            {#if !card.bound && !card.fromTag && !readonly}
+              <button type="button" class="btn btn-sm btn-ghost bind" onclick={() => onbind(card.binding)}>
+                <Icon name="plus" size={16} />
+                {$t('ctx_bind')}
+              </button>
+            {/if}
+          {/snippet}
+          {#if def.inline}
+            <!-- The owner shows its own entity: its actions (.foot) on the first line, tags, live codes and «more» under the name. -->
+            <div class="owned"><def.inline id={card.id}>{@render bind()}</def.inline></div>
+          {:else}
+            <div class="acts">
+              {#if def.open}
+                <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(card.id)}>
+                  <Icon name="external-link" size={18} />
+                </button>
+              {/if}
+              {#each def.actions.filter((a) => a.id !== 'open') as action (action.id)}
+                <button
+                  type="button"
+                  class="icon-btn"
+                  title={$t(action.label)}
+                  disabled={busy !== null}
+                  onclick={() => run(card, action)}
+                >
+                  <Icon name={action.icon} size={18} />
+                </button>
+              {/each}
+            </div>
+            {#if !card.bound && !card.fromTag && !readonly}<div class="more">{@render bind()}</div>{/if}
+          {/if}
         {/if}
       </div>
-      {:else}
-        {@const foreign = directory.foreign(card.kind, card.id)}
-        {#if foreign}
-          <!-- No owner here: the kind's icon, the name and the color from the labels, no actions (10.3). -->
-          <div class="card tinted" class:focus={focus === card.binding} class:mention={!card.bound} style:--chip={foreign.color}>
-            <div class="head">
-              <span class="mark"><Icon name={foreign.icon} size={13} /></span>
-              <span class="name" title={foreignName(foreign, $t)}>{foreignName(foreign, $t)}</span>
-              {#if !readonly && card.bound && !card.fromTag}
-                <button class="x" onclick={() => unbind(card, foreignName(foreign, $t))} title={$t('ctx_unbind')}>×</button>
-              {/if}
-            </div>
-            <div class="sub">
-              <span class="kind">{$t(foreign.kindLabel)}</span>
-            </div>
+    {:else}
+      {@const foreign = directory.foreign(card.kind, card.id)}
+      {#if foreign}
+        <!-- No owner here: the kind's icon, the name and the color from the labels, no actions (10.3). -->
+        <div class="row" class:focus={focus === card.binding} class:mention={!card.bound} data-binding={card.binding}>
+          <span class="mark" style:color={foreign.color || undefined}><Icon name={foreign.icon} size={18} /></span>
+          <div class="text">
+            <div class="head"><span class="name" title={foreignName(foreign, $t)}>{foreignName(foreign, $t)}</span></div>
+            <span class="sub">{$t(foreign.kindLabel)}{#if !card.bound && !card.fromTag} · {$mt('notes_context_mentioned')}{/if}</span>
           </div>
-        {/if}
+          {#if !readonly && card.bound && !card.fromTag}
+            <button type="button" class="icon-btn x" onclick={() => unbind(card, foreignName(foreign, $t))} title={$t('ctx_unbind')} aria-label={$t('ctx_unbind')}>
+              <Icon name="x" size={18} />
+            </button>
+          {/if}
+        </div>
       {/if}
-    {/each}
-    {#if error}
-      <div class="err"><Notice tone="danger">{error}</Notice></div>
     {/if}
-  </div>
-{/if}
+  {:else}
+    <p class="empty-state sm">{$mt('notes_context_empty')}</p>
+  {/each}
+  {#if error}
+    <Notice tone="danger">{error}</Notice>
+  {/if}
+</div>
 
 <style>
-  /* The cards are bounded and scroll on their own: the editor below keeps its height. */
-  .context {
-    flex-shrink: 0;
-    max-height: min(38%, 240px);
-    overflow-y: auto;
+  /* Rows in one column under the drawer's head; the drawer's body scrolls. */
+  .context { display: flex; flex-direction: column; }
+  /* The icon, the name over «kind · subtitle», the actions and the ×; under the name what the owner shows. */
+  .row {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-4);
-    border-top: 1px solid var(--border);
-    background: var(--bg-2);
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
+    column-gap: var(--sp-3);
+    row-gap: var(--sp-1);
+    align-items: center;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-md);
+    position: relative;
   }
-  .card {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    gap: 0.25rem;
-    padding: 0.45rem 0.6rem;
-    border-width: 1px;
-    border-style: solid;
-    border-radius: var(--radius-sm);
-    min-width: 0;
+  /* The hairline between rows, under the row's rounded hover. */
+  .row + .row::before {
+    content: '';
+    position: absolute;
+    top: 0; left: var(--sp-3); right: var(--sp-3);
+    border-top: 1px solid var(--divider);
   }
-  .card.focus { border-color: var(--accent-border); }
-  .card.mention { border-style: dashed; }
-  .head { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .card:not([style*='--chip']) .name { color: var(--text); }
-  .mark { display: inline-flex; }
+  .row:hover { background: var(--surface-hover); }
+  .row.focus { background: var(--accent-bg); }
+  .row:hover::before, .row:hover + .row::before, .row.focus::before, .row.focus + .row::before { border-color: transparent; }
+  .mark { grid-column: 1; grid-row: 1; display: inline-flex; color: var(--text-2); }
+  .text { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
+  .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .name {
+    font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row.mention .name { color: var(--text-2); }
   .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .dot.ok { background: var(--success); }
   .dot.bad { background: var(--danger-text); }
   .dot.unknown { background: var(--text-3); }
-  .x {
-    background: none; border: 0; padding: 0; cursor: pointer;
-    color: inherit; opacity: var(--chip-fade); font-size: var(--fs-sm); line-height: var(--lh-icon);
-  }
-  .x:hover { opacity: 1; }
-  .sub { display: flex; align-items: center; gap: 0.3rem; font-size: var(--fs-xs); min-width: 0; }
-  /* The kind's name is in the card's ink, as its name and icon. */
-  /* The × and the subtitle fade the card's ink: a fixed --text-3 does not follow the tint. */
-  .sep, .subtitle { color: inherit; opacity: var(--chip-fade); }
-  .subtitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* What the owner shows inside keeps the ordinary text, not the card's ink. */
-  .actions { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; margin-top: 0.15rem; flex: 1; color: var(--text); }
-  .foot {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    margin-top: auto;
-  }
-  .btn-xs { font-size: var(--fs-xs); padding: 0.15rem 0.45rem; gap: 0.25rem; }
-  .bind { color: var(--accent-text); }
-  .spinning { opacity: 0.6; }
-  .err { grid-column: 1 / -1; }
-  .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acts, .owned > :global(.foot) { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 2px; }
+  .owned > :global(.foot .pw-actions) { gap: 2px; }
+  .x { grid-column: 4; grid-row: 1; }
+  /* The owner's parts are the row's own cells: its actions go right of the name, the rest under it. */
+  .owned { display: contents; }
+  .owned > :global(*:not(.foot)), .more { grid-column: 2 / -1; min-width: 0; }
+  .owned > :global(.pw-tags) { flex-wrap: wrap; overflow: visible; }
+  .bind { justify-self: start; }
+  .context > :global(.notice) { margin-top: var(--sp-2); }
 </style>

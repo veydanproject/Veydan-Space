@@ -78,6 +78,6 @@
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
   .text { margin: 0; font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
-  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .row { display: flex; align-items: center; gap: var(--sp-1-5); flex-wrap: wrap; }
   .known { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); padding: 0 4px; }
 </style>

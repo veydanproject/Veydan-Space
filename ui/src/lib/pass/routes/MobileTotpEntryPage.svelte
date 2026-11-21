@@ -81,7 +81,7 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="m-ibtn" href="/totp" aria-label={$t('common_back')}>
+    <a class="icon-btn" href="/totp" aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('totp_edit_title')}</h1>
@@ -93,7 +93,8 @@
     {/if}
 
     {#if missing}
-      <div class="m-empty">
+      <div class="empty-state">
+        <span class="empty-icon" aria-hidden="true"><Icon name="search" size={22} /></span>
         <p>{$t('totp_not_found')}</p>
       </div>
     {:else if ready}
@@ -111,20 +112,23 @@
       {#if directory.owned('note')}
     <TotpNoteLinks mobile {notes} selected={noteIds} onchange={(ids) => (noteIds = ids)} />
   {/if}
-
-      {#if error && !nameErr}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
-      <button type="button" class="m-btn-grad save" onclick={save} disabled={saving}>
-        <Icon name="check" size={18} />
-        {$t('common_save')}
-      </button>
     {:else if !error}
       <p class="wait">{$t('loading')}</p>
     {/if}
   </div>
+  {#if ready && !missing}
+    <!-- Save in the page's foot, the error that is not a field's over it. -->
+    <div class="page-foot">
+      {#if error && !nameErr}<Notice tone="danger">{error}</Notice>{/if}
+      <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+        <Icon name="check" size={18} />
+        {$t('common_save')}
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
   .err { margin-bottom: var(--sp-3); }
-  .save { margin-top: var(--sp-4); }
   .wait { color: var(--text-2); font-size: var(--fs-sm); }
 </style>

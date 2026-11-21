@@ -107,12 +107,12 @@
       </button>
     {:else if !menuStarts}
       {#if kinds.includes('video')}
-        <button class="icon" disabled={!!reason || groupCallStore.busy} onclick={() => press('video')} use:hold={toSettings}
+        <button class="icon-btn lg" disabled={!!reason || groupCallStore.busy} onclick={() => press('video')} use:hold={toSettings}
           title={reason || $t('msg_gcall_video_start')} aria-label={$t('msg_gcall_video_start')}>
           <Icon name="video" size={18} />
         </button>
       {/if}
-      <button class="icon" disabled={!!reason || groupCallStore.busy} onclick={() => press('audio')} use:hold={toSettings}
+      <button class="icon-btn lg" disabled={!!reason || groupCallStore.busy} onclick={() => press('audio')} use:hold={toSettings}
         title={reason || $t('msg_gcall_start')} aria-label={$t('msg_gcall_start')}>
         <Icon name="phone" size={18} />
       </button>
@@ -124,21 +124,18 @@
 
 <style>
   .wrap { position: relative; display: inline-flex; align-items: center; }
-  .icon {
-    border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius);
-    -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
-  }
-  @media (hover: hover) { .icon:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
-  .icon:disabled, .pill:disabled { opacity: 0.45; cursor: default; }
+  .icon-btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+  @media (hover: hover) { .icon-btn:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); } }
+  .pill:disabled { opacity: 0.45; cursor: default; }
   .pill {
-    display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 4px 10px 4px 8px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: var(--sp-1); margin: 0 4px; padding: var(--sp-1) var(--sp-2-5) var(--sp-1) var(--sp-2); border-radius: var(--radius-pill);
     border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold);
     background: var(--success); color: #fff; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
   }
   .pill.on { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
   @media (hover: hover) { .pill:hover:not(:disabled) { filter: brightness(1.08); } }
   .label { white-space: nowrap; }
-  @media (pointer: coarse) { .pill { padding: 6px 12px 6px 10px; } }
+  @media (pointer: coarse) { .pill { padding: var(--sp-1-5) var(--sp-3) var(--sp-1-5) var(--sp-2-5); } }
   /* A phone: the pill is a round button, its words are the banner's. */
   .pill.round { padding: 8px; }
 </style>

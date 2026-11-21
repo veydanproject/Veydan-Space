@@ -105,8 +105,8 @@
         {@render children()}
         {#snippet failed(_error, reset)}
           <div class="m-page">
-            <div class="m-empty">
-              <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
+            <div class="empty-state">
+              <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
               <p>{$t('screen_failed')}</p>
               <div class="actions">
                 <button type="button" class="btn btn-ghost btn-sm" onclick={reset}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>

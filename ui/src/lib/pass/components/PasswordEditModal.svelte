@@ -315,14 +315,14 @@
       />
       <button
         type="button"
-        class="icon-btn"
+        class="field-btn"
         onclick={() => (showPassword = !showPassword)}
         title={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
         aria-label={$t(showPassword ? 'pw_btn_hide' : 'pw_btn_reveal')}
       >
         <Icon name={showPassword ? 'eye-off' : 'eye'} size={14} />
       </button>
-      <button type="button" class="icon-btn" onclick={generate} title={$t('pw_btn_generate')} aria-label={$t('pw_btn_generate')}>
+      <button type="button" class="field-btn" onclick={generate} title={$t('pw_btn_generate')} aria-label={$t('pw_btn_generate')}>
         <Icon name="dices" size={14} />
       </button>
     </span>
@@ -438,15 +438,9 @@
   .secret input { padding-right: calc(2 * 28px + 3 * var(--sp-1) + var(--sp-2)); text-overflow: ellipsis; }
   /* The password is `.mono`, as on its card; the hint stays a sentence in the UI font. */
   .secret input::placeholder { font-family: var(--font-ui); }
-  .secret .icon-btn {
-    position: absolute;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border-color: transparent;
-  }
-  .secret .icon-btn:last-child { right: var(--sp-1); }
-  .secret .icon-btn:nth-last-child(2) { right: calc(var(--sp-1) * 2 + 28px); }
+  .secret .field-btn { position: absolute; }
+  .secret .field-btn:last-child { right: var(--sp-1); }
+  .secret .field-btn:nth-last-child(2) { right: calc(var(--sp-1) * 2 + 28px); }
   .row { display: flex; gap: var(--sp-2); align-items: center; }
   .row input { flex: 1; min-width: 0; }
   .row .btn { flex-shrink: 0; }

@@ -293,7 +293,7 @@
     border-radius: var(--radius);
     color: var(--text);
     font-size: var(--fs-sm);
-    padding: 0.6rem var(--sp-3);
+    padding: var(--sp-2-5) var(--sp-3);
     resize: vertical;
     box-sizing: border-box;
   }
@@ -328,7 +328,7 @@
   .check-progress {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
     font-size: var(--fs-sm);
     color: var(--text-2);
   }
@@ -346,7 +346,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: 0.35rem var(--sp-3);
+    padding: var(--sp-1-5) var(--sp-3);
     border-bottom: 1px solid var(--divider);
     min-width: 0;
   }
@@ -374,7 +374,7 @@
   .status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-1-5);
     font-size: var(--fs-xs);
     font-weight: var(--fw-bold);
     padding: 3px 9px;
@@ -391,7 +391,7 @@
   .status-unknown { background: var(--surface-3); color: var(--text-2); }
 
   .more-lines {
-    padding: 0.35rem var(--sp-3);
+    padding: var(--sp-1-5) var(--sp-3);
     font-size: var(--fs-xs);
     color: var(--text-3);
   }

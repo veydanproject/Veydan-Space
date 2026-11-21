@@ -195,7 +195,7 @@
     background: var(--surface-3);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 0.45rem 0.75rem;
+    padding: var(--sp-2) var(--sp-3);
   }
 
   .options {
@@ -213,7 +213,7 @@
     cursor: pointer;
   }
 
-  .option-row.indent { padding-left: 1.4rem; }
+  .option-row.indent { padding-left: var(--sp-6); }
 
   .option-row input[type="checkbox"] {
     flex-shrink: 0;
@@ -228,14 +228,14 @@
     color: var(--danger-text);
     border: 1px solid var(--danger-border);
     border-radius: var(--radius-xs);
-    padding: 1px 5px;
+    padding: 1px var(--sp-1);
   }
 
   .note {
     font-size: var(--fs-sm);
     color: var(--text-3);
     margin: 0;
-    padding-left: 1.4rem;
+    padding-left: var(--sp-6);
   }
 
   /* JSON preview — mono block on --surface-3, nested-card radius */
@@ -249,7 +249,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.35rem 0.6rem;
+    padding: var(--sp-1-5) var(--sp-2-5);
     background: var(--surface-2);
     border-bottom: 1px solid var(--border);
   }
@@ -263,13 +263,13 @@
   .copy-btn {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     background: none;
     border: none;
     font-size: var(--fs-sm);
     color: var(--accent-text-3);
     cursor: pointer;
-    padding: 0.15rem 0.4rem;
+    padding: var(--sp-0-5) var(--sp-1-5);
     border-radius: var(--radius-sm);
     transition: all var(--dur-fast);
   }
@@ -282,7 +282,7 @@
     border: none;
     color: var(--text);
     font-size: var(--fs-xs);
-    padding: 0.6rem var(--sp-3);
+    padding: var(--sp-2-5) var(--sp-3);
     resize: none;
     box-sizing: border-box;
     display: block;
@@ -296,7 +296,7 @@
     background: var(--success-bg);
     border: 1px solid var(--success-border);
     border-radius: var(--radius-sm);
-    padding: 0.4rem 0.6rem;
+    padding: var(--sp-1-5) var(--sp-2-5);
     word-break: break-all;
   }
 
@@ -307,6 +307,6 @@
   .footer-right {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
   }
 </style>

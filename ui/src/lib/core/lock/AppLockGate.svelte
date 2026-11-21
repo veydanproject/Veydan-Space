@@ -159,9 +159,8 @@
   .lock-card h3 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text); text-align: center; }
   .lock-card input {
     width: 100%;
-    min-height: 40px;
-    padding: 0 10px;
-    font: inherit;
+    min-height: var(--field-h);
+    padding: 0 var(--sp-2-5);
     text-align: center;
     border: 1px solid var(--control-border);
     border-radius: var(--radius);

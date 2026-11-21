@@ -26,6 +26,7 @@
   import type { ChannelDetail } from '../api';
   import SectionBadge from './SectionBadge.svelte';
   import TermHint from '$lib/core/ui/TermHint.svelte';
+  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
   import { EVERYONE, levelsOf } from './sections';
   import { SCOPE_TITLE_MAX, checkScope, type ScopeProblem } from './editor';
   import { SECTION_COLORS, SECTION_ICONS, moved, ordered, sectionColor, sectionInk } from './look';
@@ -221,8 +222,8 @@
                 <span class="o-name">{label(s)}</span>
                 {#if s.hidden}<span class="o-tag">{$t('chan_scope_hidden_mark')}</span>{/if}
               </button>
-              <button type="button" class="icon" disabled={busy || i === 0} onclick={() => move(i, -1)} aria-label={`${$t('chan_scope_up')}: ${label(s)}`} title={$t('chan_scope_up')}><Icon name="arrow-up" size={16} /></button>
-              <button type="button" class="icon" disabled={busy || i === scopes.length - 1} onclick={() => move(i, 1)} aria-label={`${$t('chan_scope_down')}: ${label(s)}`} title={$t('chan_scope_down')}><Icon name="arrow-down" size={16} /></button>
+              <button type="button" class="icon-btn" disabled={busy || i === 0} onclick={() => move(i, -1)} aria-label={`${$t('chan_scope_up')}: ${label(s)}`} title={$t('chan_scope_up')}><Icon name="arrow-up" size={16} /></button>
+              <button type="button" class="icon-btn" disabled={busy || i === scopes.length - 1} onclick={() => move(i, 1)} aria-label={`${$t('chan_scope_down')}: ${label(s)}`} title={$t('chan_scope_down')}><Icon name="arrow-down" size={16} /></button>
             </li>
           {/each}
         </ol>
@@ -299,10 +300,11 @@
           <span class="label term">{$t('chan_scope_scheme')}<TermHint term={$t('chan_scope_scheme')}>
             {#each ['sd', 'flat'] as k (k)}<span class="pl"><b>{cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}</b> — {$t(`chan_scope_scheme_${k}_hint` as 'chan_scope_scheme_sd_hint')}</span>{/each}
           </TermHint></span>
-          <div class="chips" role="radiogroup" aria-label={$t('chan_scope_scheme')}>
+          <!-- One value of a few: ChoiceRow, as the channel's join rule. -->
+          <div class="kinds" role="radiogroup" aria-label={$t('chan_scope_scheme')}>
             {#each [['sd-v1', 'sd'], ['flat-v1', 'flat']] as [v, k] (v)}
-              <button type="button" class="chip" class:active={scheme === v} role="radio" aria-checked={scheme === v} disabled={busy}
-                onclick={() => (scheme = v as ScopeScheme)}>{cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}</button>
+              <ChoiceRow icon={k === 'sd' ? 'key' : 'list'} title={cap($t(`chan_scope_scheme_${k}` as 'chan_scope_scheme_sd'))}
+                checked={scheme === v} disabled={busy} onclick={() => (scheme = v as ScopeScheme)} />
             {/each}
           </div>
         </div>
@@ -310,19 +312,20 @@
           <span class="label term">{$t('chan_rule_history')}<TermHint term={$t('chan_rule_history')}>
             {#each ['open', 'from_join'] as v (v)}<span class="pl"><b>{$t(`chan_history_${v}` as 'chan_history_open')}</b> — {$t(`chan_history_${v}_hint` as 'chan_history_open_hint')}</span>{/each}
           </TermHint></span>
-          <div class="chips" role="radiogroup" aria-label={$t('chan_rule_history')}>
+          <div class="kinds" role="radiogroup" aria-label={$t('chan_rule_history')}>
             {#each ['open', 'from_join'] as v (v)}
-              <button type="button" class="chip" class:active={history === v} role="radio" aria-checked={history === v} disabled={busy}
-                onclick={() => (history = v as ScopeHistory)}>{$t(`chan_history_${v}` as 'chan_history_open')}</button>
+              <ChoiceRow icon={v === 'open' ? 'eye' : 'calendar'} title={$t(`chan_history_${v}` as 'chan_history_open')}
+                checked={history === v} disabled={busy} onclick={() => (history = v as ScopeHistory)} />
             {/each}
           </div>
         </div>
         <p class="hint">{$t('chan_scope_fixed')}</p>
       {/if}
-      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     </div>
   </div>
   {#snippet footer()}
+    <!-- The error over the buttons, not at the end of the long form. -->
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" disabled={busy || (tried && !!problem) || (!isNew && !dirty)} aria-busy={busy} onclick={save}>
       {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t(isNew ? 'common_add' : 'common_save')}
@@ -407,12 +410,7 @@
   .o-row.on .o-name { font-weight: var(--fw-bold); }
   .o-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .o-tag { font-size: var(--fs-xs); color: var(--text-3); flex-shrink: 0; }
-  .icon {
-    flex-shrink: 0; width: var(--control-h-sm); height: var(--control-h-sm); border: none; background: none; color: var(--text-2); cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: var(--radius-sm);
-  }
-  .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
-  .icon:disabled { opacity: 0.45; cursor: default; }
+  .icon-btn { flex-shrink: 0; }
 
   /* The fields. */
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -474,18 +472,18 @@
   .late { display: inline-flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--warn-text); }
   .late :global(svg) { flex-shrink: 0; margin-top: 2px; }
   .choice { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+  .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
   /* A phone (not a tablet's sheet): five icons a row, the background the whole width. */
   @media (max-width: 600px) {
     .cols.phone .icons { grid-template-columns: repeat(5, minmax(0, 1fr)); }
     .cols.phone .ico { border-radius: var(--radius-lg); }
     .cols.phone .swatches { gap: var(--sp-2); }
-    .cols.phone .sw { width: 30px; height: 30px; }
+    /* 30 with 8 between: each zone grows by 4 at most, two never cross. */
+    .cols.phone .sw { width: 30px; height: 30px; --hit-max: 4px; }
     .cols.phone .bg-row { flex-direction: column; align-items: stretch; }
     .cols.phone .bg-box { width: 100%; }
   }
   @media (pointer: coarse) {
     .field { height: 48px; font-size: var(--fs-md); }
-    .chip { min-height: 40px; padding-inline: var(--sp-4); }
   }
 </style>

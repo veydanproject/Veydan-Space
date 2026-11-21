@@ -23,6 +23,7 @@
   }
 
   let { tags, linkNotes = false, allowAdd = true, onchange }: Props = $props();
+  const uid = $props.id();
 
   let open = $state(false);
   let error = $state('');
@@ -91,14 +92,12 @@
     onchange(tags.filter((item) => item !== tag));
   }
 
+  // The sheet stays open after each label: several are added, «Готово» closes it.
   async function addTag(name: string, color?: string) {
     const value = name.trim().replace(/^#/, '');
     // "Работа" is the tag "работа": the new tag and the label get one name.
     const choice = isSystemTag(value) ? null : tagChoice(value, allTags, labels);
-    if (!choice) {
-      open = false;
-      return;
-    }
+    if (!choice) return;
     error = '';
     try {
       if (!choice.existing && color) {
@@ -106,25 +105,20 @@
         allTags = [...allTags, created];
       }
       onchange(mergeTags([], bindings, [...labels, choice.name]));
-      open = false;
     } catch (err) {
       error = formatError(err);
     }
   }
 
   function addBinding(binding: string) {
-    if (!isSystemTag(binding) || bindings.includes(binding)) {
-      open = false;
-      return;
-    }
+    if (!isSystemTag(binding) || bindings.includes(binding)) return;
     onchange(mergeTags([], [...bindings, binding], labels));
-    open = false;
   }
 </script>
 
-<!-- An .m-field like the fields around it: the caption is their label -->
-<div class="m-field labels">
-  <span class="caption">{$t('totp_field_tags')}</span>
+<!-- An .m-field like the fields around it: its label names the group, as no single control is labelled. -->
+<div class="m-field" role="group" aria-labelledby="{uid}-label">
+  <span class="form-label" id="{uid}-label">{$t('totp_field_tags')}</span>
   <div class="m-chips">
     {#each bindings as binding (binding)}
       <button
@@ -169,13 +163,3 @@
   onaddFolder={() => {}}
   onaddBinding={addBinding}
 />
-
-<style>
-  .labels { gap: var(--sp-2); }
-  /* The look of `.m-field label` (core/styles/mobile.css); a span, as no single control is labelled */
-  .caption {
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    color: var(--text-2);
-  }
-</style>

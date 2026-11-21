@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "거절",
     "chan_level_req_refuse_title": "거절: {name}",
     "chan_level_req_refuse_hint": "독자에게 거절과 함께 사유가 전달됩니다. 독자의 등급은 그대로입니다.",
-    "chan_level_req_reason": "사유 (선택)"
+    "chan_level_req_reason": "사유 (선택)",
+    "chan_err_not_found": "파일을 더 이상 저장소에서 사용할 수 없습니다."
   },
   "mobile": {}
 }

@@ -45,8 +45,16 @@
 <!-- Stacked (in a window), «Добавить» is the window's foot: below the note and the error, pinned at the bottom. -->
 <div class="add-wrap" class:stacked>
   <form class="add" class:stacked onsubmit={(e) => { e.preventDefault(); add(); }}>
-    <input type="text" class="key mono" bind:value={key} placeholder={$t('msg_contacts_key_placeholder')} spellcheck="false" disabled={busy || !canAct} />
-    <input type="text" class="nick" bind:value={nickname} placeholder={$t('msg_contacts_nick_placeholder')} disabled={busy || !canAct} />
+    <!-- Each field has its caption: seen when stacked, said by a screen reader in the card's row. -->
+    <label class="fld">
+      <span class="cap form-label">{$t('msg_peer_key')}</span>
+      <input type="text" class="key mono" bind:value={key} placeholder={$t('msg_contacts_key_placeholder')}
+        inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="next" disabled={busy || !canAct} />
+    </label>
+    <label class="fld">
+      <span class="cap form-label">{$t('msg_contacts_nickname')}</span>
+      <input type="text" class="nick" bind:value={nickname} placeholder={$t('msg_contacts_nick_placeholder')} autocomplete="off" disabled={busy || !canAct} />
+    </label>
     <div class="foot">
       <button class="btn btn-primary" type="submit" disabled={busy || !canAct || !key.trim()}>
         <Icon name="plus" size={18} />{$t('common_add')}
@@ -60,25 +68,26 @@
 <style>
   .add { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add input {
-    flex: 1; min-width: 180px; font: inherit; font-size: var(--fs-sm); color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 8px 10px;
+    flex: 1; min-width: 180px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-2-5);
   }
-  .add input.key { font-size: var(--fs-xs); }
   .add input.nick { flex: 0 1 140px; }
   .add input:focus { outline: none; border-color: var(--accent-border); }
   .note { color: var(--text-2); font-size: var(--fs-xs); margin: 0; }
 
-  /* In a row of the contacts card the wrappers do not exist for the layout. */
-  .add-wrap, .foot { display: contents; }
+  /* In a row of the contacts card the wrappers do not exist for the layout; the captions are for a screen reader. */
+  .add-wrap, .foot, .fld { display: contents; }
+  .cap { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* Stacked: the fields 44 one under the other, the note and the error under them, «Добавить» last the whole width. */
   .add-wrap.stacked { display: flex; flex-direction: column; gap: var(--sp-3); }
   .add.stacked { display: contents; }
   .add.stacked input, .add.stacked input.nick {
     flex: none; width: 100%; min-width: 0; height: var(--control-h-lg); padding: 0 var(--sp-3);
-    background: var(--surface-3); font-size: var(--fs-base);
+    background: var(--surface-3);
   }
-  .add.stacked input.key { font-size: var(--fs-sm); }
+  .add.stacked .fld { display: flex; flex-direction: column; gap: var(--sp-1-5); }
+  .add.stacked .cap { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
   .add.stacked input::placeholder { font-family: var(--font-ui); }
   .add.stacked .foot { display: block; order: 1; }
   .add.stacked .btn { width: 100%; height: var(--control-h-lg); gap: var(--sp-2); justify-content: center; }
@@ -88,9 +97,8 @@
     position: sticky; bottom: calc(-1 * var(--sp-5)); margin: var(--sp-2) calc(-1 * var(--sp-6)) calc(-1 * var(--sp-5));
     padding: var(--sp-3) var(--sp-6) var(--sp-5); border-top: 1px solid var(--border); background: var(--glass-bg);
   }
-  /* A finger: 48, and 16 so that a phone does not zoom into the field. */
+  /* A finger: 48. */
   @media (pointer: coarse) {
     .add.stacked input, .add.stacked input.nick, .add.stacked .btn { height: 48px; }
-    .add.stacked input, .add.stacked input.nick, .add.stacked input.key { font-size: var(--fs-md); }
   }
 </style>

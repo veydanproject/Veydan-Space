@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Từ chối",
     "chan_level_req_refuse_title": "Từ chối: {name}",
     "chan_level_req_refuse_hint": "Người đọc nhận được lời từ chối kèm lý do của bạn. Các cấp của họ không đổi.",
-    "chan_level_req_reason": "Lý do (không bắt buộc)"
+    "chan_level_req_reason": "Lý do (không bắt buộc)",
+    "chan_err_not_found": "Tệp không còn khả dụng trên nơi lưu trữ."
   },
   "mobile": {}
 }

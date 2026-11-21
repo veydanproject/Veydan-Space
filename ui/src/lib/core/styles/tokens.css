@@ -30,9 +30,11 @@
   --font-mono: 'JetBrains Mono Variable', 'Fira Code', 'Consolas', var(--font-cjk), monospace;
 
   /* ── Spacing scale — 4px grid ── */
-  --sp-0:   0;
+  --sp-0-5: 2px;   /* inside a small element only: a pill, a chip, a dot, a small button */
   --sp-1:   4px;
+  --sp-1-5: 6px;   /* inside a small element only */
   --sp-2:   8px;
+  --sp-2-5: 10px;  /* inside a small element only */
   --sp-3:   12px;
   --sp-4:   16px;
   --sp-5:   20px;
@@ -94,6 +96,9 @@
   --control-h: 40px;  /* высота контролов: кнопки, поиск, select в панелях фильтров */
   --control-h-sm: 32px; /* маленькие кнопки */
   --control-h-lg: 44px; /* поля форм в drawer'ах, сегмент-кнопки, касание */
+  --field-h: var(--control-h); /* the least height of a field: 40, a phone's 44 (mobile.css) */
+  --row-h-dense: 52px; /* a dense row (.list-row.dense, a phone's list of history) */
+  --row-h-tile: 60px;  /* a row with a tile of 36 and two lines (the settings, the modules, the generator's output) */
   --media-check:    26px; /* the circle of choice on a tile of a gallery */
   --media-check-lg: 30px; /* the same in its viewer */
 
@@ -112,15 +117,16 @@
   /* ── Z-index scale (was 20 → 9999 ad-hoc) ── */
   --z-base:      0;
   --z-sticky:    10;   /* topbar */
-  --z-dock:      20;
   --z-panel:     50;   /* slot / floating panels */
   --z-drawer:    100;  /* right-side drawers */
   --z-modal:     200;  /* centered dialogs */
   --z-popover:   500;  /* dropdowns / menus */
   --z-toast:     900;
   --z-tooltip:   950;
-  --z-inspector: 8000; /* inspector overlay family */
   --z-max:       9999;
+
+  /* The wheel of «a colour of your own» next to the palette (core/palette.ts). */
+  --hue-wheel: conic-gradient(#f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #f43f5e);
 
   /* ── Motion ── */
   --dur-press: 0.1s;
@@ -156,7 +162,6 @@
      canonical names over time (Phase 1). */
   --text-1:            var(--text);
   --text-4:            var(--text-3);
-  --text-muted:        var(--text-2);
   --border-strong:     var(--border-2);
   --warn:              var(--warn-text);
   --color-warning:     var(--warn-text);

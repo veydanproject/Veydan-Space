@@ -154,27 +154,27 @@
   .tile.speaking.pinned { border-color: var(--success); }
   .tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .face {
-    position: absolute; inset: 0; background: var(--call-surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    position: absolute; inset: 0; background: var(--call-surface-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2-5);
     z-index: 1; padding-bottom: 18px;
   }
   .unverified .face { opacity: 0.75; }
   .checking {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); font-size: var(--fs-xs); white-space: nowrap;
+    background: var(--on-media-bg); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
   }
   .checking.mine { background: color-mix(in srgb, var(--accent) 45%, rgba(0, 0, 0, 0.4)); color: #fff; }
   .label {
-    position: absolute; z-index: 2; left: 6px; bottom: 6px; right: 6px; display: flex; align-items: center; gap: 5px; min-width: 0;
+    position: absolute; z-index: 2; left: 6px; bottom: 6px; right: 6px; display: flex; align-items: center; gap: var(--sp-1); min-width: 0;
     pointer-events: none;
   }
   .label > * { flex-shrink: 0; }
   .name {
     flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    padding: 2px 8px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.55); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+    padding: 2px 8px; border-radius: var(--radius-pill); background: var(--on-media-scrim); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
   .ok, .mark, .pin {
     display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55); color: #fff;
+    background: var(--on-media-scrim); color: #fff;
   }
   .ok { color: var(--call-ok); pointer-events: auto; cursor: help; }
   .mark { color: var(--call-danger); }
@@ -184,17 +184,17 @@
   }
   .pin { position: absolute; z-index: 2; top: 6px; right: 6px; }
   .lost {
-    position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px;
-    padding: 3px 10px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9);
+    position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-2-5); border-radius: var(--radius-pill); background: var(--on-media-scrim); color: var(--on-media-text);
     font-size: var(--fs-xs); white-space: nowrap; pointer-events: none;
   }
   .info {
     position: absolute; z-index: 2; top: 6px; left: 6px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
+    background: var(--on-media-scrim); color: var(--on-media-text); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
   .big .name { font-size: var(--fs-sm); }
-  .compact .face { flex-direction: row; gap: 6px; padding-bottom: 22px; }
+  .compact .face { flex-direction: row; gap: var(--sp-1-5); padding-bottom: 22px; }
   .compact .checking { padding: 3px; }
   .compact .talk { padding: 2px 4px; }
   .compact .ok { display: none; }

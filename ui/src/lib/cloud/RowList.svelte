@@ -9,15 +9,18 @@
   let { label, id, children }: { label?: string; id?: string; children: Snippet } = $props();
 </script>
 
-<section class="group" {id}>
-  {#if label}<h2 class={isMobile ? 'm-label' : 'section-label'}>{label}</h2>{/if}
+<section class="group" class:labelled={!!label} class:m={isMobile} {id}>
+  {#if label}<h2 class="section-label">{label}</h2>{/if}
   <div class={isMobile ? 'm-list' : 'card rows'}>{@render children()}</div>
 </section>
 
 <style>
   .group { display: flex; flex-direction: column; }
   h2 { margin: 0; }
-  .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-2); }
+  /* The common .section-label: the space above it and to the card is the group's (on a phone 16 above, as between
+     the groups of a phone's page). */
+  .labelled { gap: var(--sp-2); padding-top: var(--sp-3); }
+  .labelled.m { padding-top: var(--sp-4); }
   /* Not clipped: the keyboard's ring of a row stands outside it, as a button's; the first and the last row
      take the card's corners for their hover instead. */
   .rows { padding: 0; }

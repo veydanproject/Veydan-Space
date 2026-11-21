@@ -26,6 +26,8 @@
     "common_nothing_found": "결과 없음",
     "common_nothing_found_hint": "“{q}”와(과) 일치하는 항목이 없습니다.",
     "common_clear": "지우기",
+    "tabs_scroll_back": "이전 탭",
+    "tabs_scroll_more": "다음 탭",
     "common_refresh": "새로 고침",
     "common_update": "업데이트",
     "common_restore": "복원",
@@ -520,7 +522,15 @@
     "suggest_group_ssh": "SSH 연결",
     "suggest_group_totp": "TOTP",
     "suggest_group_password": "비밀번호",
-    "suggest_group_note": "노트"
+    "suggest_group_note": "노트",
+    "kanban_color_violet": "보라",
+    "kanban_color_blue": "파랑",
+    "kanban_color_green": "초록",
+    "kanban_color_amber": "호박색",
+    "kanban_color_red": "빨강",
+    "kanban_color_pink": "분홍",
+    "kanban_color_teal": "틸",
+    "workspaces_color_custom": "사용자 지정 색상"
   },
   "mobile": {
     "app_launcher": "앱",

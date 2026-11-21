@@ -11,14 +11,14 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="m-ibtn" href="/settings" aria-label={$t('common_back')}>
+    <a class="icon-btn" href="/settings" aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('cloud_account_title')}</h1>
     <span class="spacer"></span>
     {#if cloudPage.status?.account}
-      <button class="m-ibtn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('common_refresh')}>
-        <span class:spin={cloudPage.busy}><Icon name="refresh-cw" size={20} /></span>
+      <button class="icon-btn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('common_refresh')}>
+        <span class:spin={cloudPage.busy}><Icon name="refresh-cw" size={22} /></span>
       </button>
     {/if}
   </div>
@@ -33,5 +33,5 @@
 <style>
   /* The first card keeps a line's distance from the header. */
   .lead { margin-top: var(--sp-2); padding-bottom: var(--sp-6); }
-  .m-ibtn span { display: inline-flex; }
+  .icon-btn span { display: inline-flex; }
 </style>

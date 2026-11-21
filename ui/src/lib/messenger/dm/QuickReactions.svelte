@@ -62,7 +62,7 @@
   .quick:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .more-picker { width: 300px; max-width: 100%; white-space: normal; }
   @media (pointer: coarse) {
-    .quick { max-width: 44px; font-size: 26px; }
+    .quick { max-width: 44px; font-size: var(--fs-2xl); }
     .more-picker { width: 100%; }
   }
 </style>

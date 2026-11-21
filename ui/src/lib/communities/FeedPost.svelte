@@ -167,7 +167,7 @@
 
 {#snippet more(over: boolean)}
   {#if !local}
-    <button class="more" class:over onclick={moreAt} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}>
+    <button class={comment && !over ? 'icon-btn comment-more' : 'more'} class:over onclick={moreAt} aria-label={$t('chan_post_menu')} title={$t('chan_post_menu')}>
       <Icon name="more-vertical" size={18} />
     </button>
   {/if}
@@ -360,8 +360,8 @@
   }
   .post.card, .post.comment { border-radius: var(--radius-card); background: var(--bubble-in-bg); border: 1px solid var(--bubble-in-border); }
   /* A card of the feed (the redesign of the feed): 20 round, the title row, the words, the reactions, who at its foot. */
-  .post.card { width: min(720px, 100%); padding: 14px var(--sp-4) var(--sp-3) var(--sp-5); gap: 10px; border-radius: var(--radius-card); box-sizing: border-box; }
-  .post.phone.card { width: min(680px, 100%); padding: var(--sp-3) var(--sp-3) 10px var(--sp-4); }
+  .post.card { width: min(720px, 100%); padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--sp-5); gap: var(--sp-2-5); border-radius: var(--radius-card); box-sizing: border-box; }
+  .post.phone.card { width: min(680px, 100%); padding: var(--sp-3) var(--sp-3) var(--sp-2-5) var(--sp-4); }
   .post.full { width: 100%; gap: var(--sp-3); }
   /* A comment: a card of its own (the mockup c4.js), 16 round. */
   /*
@@ -385,14 +385,14 @@
   .post.sending { opacity: 0.72; }
   .post.unsent { border-color: var(--danger-border); }
   .sending-mark { display: inline-flex; margin-left: 4px; color: var(--text-3); }
-  .unsent-mark { gap: 6px; }
+  .unsent-mark { gap: var(--sp-1-5); }
   /* The way to send it again under the mark, as in a toast (T8-06). */
   .retry { align-self: flex-start; gap: var(--sp-1); color: var(--text); }
 
   /* A comment's head: who and when on top. */
   .head { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
   .who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--sp-2); row-gap: 2px; min-height: 32px; }
-  .name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .name { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; }
   .name-text { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .when { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* A moderator's or an author's chip is drawn by its edge: a grey fill on the post's own fill is lost in the dark. */
@@ -402,14 +402,14 @@
   .sep { margin-inline: 3px; }
 
   /* The line of the section above the title: its chip, the menu at its right (the mockups c6.js, c10.js). */
-  .section-line { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px; margin-right: -6px; }
+  .section-line { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; min-height: 32px; margin-right: calc(-1 * var(--sp-1-5)); }
   .section-line .more { width: 32px; height: 32px; padding: 0; margin-left: auto; color: var(--text-3); }
   .section-line .more:hover { color: var(--text); }
   .full .section-line { min-height: 0; margin-right: 0; }
   /* A post's title row: the title the whole width, the pin beside it (and the menu, when no section line holds it). */
-  .title-row { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; margin-right: -6px; }
+  .title-row { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; margin-right: calc(-1 * var(--sp-1-5)); }
   .section-line + .title-row { margin-top: -2px; }
-  .tags { flex: none; display: flex; align-items: center; gap: 6px; min-height: 32px; min-width: 0; margin-left: auto; }
+  .tags { flex: none; display: flex; align-items: center; gap: var(--sp-1-5); min-height: 32px; min-width: 0; margin-left: auto; }
   .title {
     flex: 1; min-width: 0; margin: 0; padding-top: var(--sp-1); font-size: var(--fs-md); line-height: var(--lh-snug); font-weight: var(--fw-bold); color: var(--text);
     overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
@@ -420,7 +420,7 @@
   .full .tags { min-height: 24px; }
   .pin { display: inline-flex; flex-shrink: 0; color: var(--accent-text); }
   .scope-mark {
-    display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex-shrink: 1; height: 24px; padding: 0 var(--sp-2); box-sizing: border-box;
+    display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; flex-shrink: 1; height: 24px; padding: 0 var(--sp-2); box-sizing: border-box;
     border-radius: var(--radius-pill); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2); background: var(--accent-tint);
   }
   /* A section of its own colour (stage 4): its words in it, its fill a tint of it. */
@@ -429,16 +429,15 @@
   .scope-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .more { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 3px; border-radius: var(--radius); flex-shrink: 0; }
   .tags .more, .beside-menu .more { width: 32px; height: 32px; padding: 0; }
-  /* The menu of a comment as the actions beside a message (mockups c1.js): round 32, muted, a fill under the pointer only. */
-  .comment .more { width: 32px; height: 32px; padding: 0; margin-right: -6px; border-radius: 50%; color: var(--text-2); }
-  .comment .more:hover { color: var(--text); background: var(--surface-hover); }
-  .comment .more:focus-visible, .reply:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  /* The menu of a comment as the actions beside a message (HoverActions): the plain .icon-btn, 32, --radius-sm. */
+  .comment-more { flex-shrink: 0; margin-right: calc(-1 * var(--sp-1-5)); }
+  .reply:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .more:hover { color: var(--text); background: var(--surface-3); }
   /* The menu of a post without words, on the corner of its pictures. */
-  .more.over { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.45); color: #fff; }
-  .more.over:hover { background: rgba(0, 0, 0, 0.6); color: #fff; }
+  .more.over { position: absolute; top: 8px; right: 8px; z-index: 1; padding: 4px; border-radius: 50%; background: var(--on-media-scrim); color: #fff; }
+  .more.over:hover { background: rgba(0, 0, 0, 0.7); color: #fff; }
 
-  .mark { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; height: 24px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-2); }
+  .mark { display: inline-flex; align-items: center; gap: var(--sp-1); align-self: flex-start; height: 24px; box-sizing: border-box; font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-3); color: var(--text-2); }
   .mark.warn { background: var(--warn-bg); color: var(--warn-text); }
   .mark.danger { background: var(--danger-bg); color: var(--danger-text); }
   .text { color: var(--text); }
@@ -453,15 +452,15 @@
   /* A voice message or a circle of a post stands in the middle of the card (owner, 2026-10-23); the menu beside it keeps the middle true. */
   .media.rec :global(.rec) { justify-content: center; }
   .media.rec.beside { padding-left: 32px; }
-  .files { display: flex; flex-direction: column; gap: 6px; }
+  .files { display: flex; flex-direction: column; gap: var(--sp-1-5); }
   /* An album: rows of one to three pictures, 2px apart, in one rounded frame (the messenger's mosaic). */
-  .album { display: flex; flex-direction: column; gap: 6px; }
+  .album { display: flex; flex-direction: column; gap: var(--sp-1-5); }
   .mosaic { display: flex; flex-direction: column; gap: 2px; width: min(420px, 100%); border-radius: var(--radius-md); overflow: hidden; }
   .mosaic-row { display: flex; gap: 2px; min-height: 0; }
-  .cell { flex: 1 1 0; min-width: 0; height: 100%; display: flex; }
+  .cell { position: relative; flex: 1 1 0; min-width: 0; height: 100%; display: flex; }
   .cell :global(.picture) { width: 100%; }
   .row-tomb { flex: 1; padding-top: 4px; }
-  .tomb { margin: 0; display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
+  .tomb { margin: 0; display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
 
   /*
    * The words under the title: three lines in the feed, Markdown blocks
@@ -474,7 +473,7 @@
   .rest { font-size: var(--fs-body); line-height: var(--lh-body); }
   /* Until it is measured (and without a layout, in a test) the box holds three lines of plain words. */
   .rest.clamp { max-height: calc(var(--fs-body) * var(--lh-body) * 3); overflow: hidden; }
-  .rest-inner { display: flex; flex-direction: column; gap: 6px; }
+  .rest-inner { display: flex; flex-direction: column; gap: var(--sp-1-5); }
   .rest.clamp.fade {
     -webkit-mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
     mask: linear-gradient(black, black) top / 100% var(--cut-top) no-repeat, linear-gradient(to right, black calc(100% - 64px), transparent calc(100% - 16px)) 0 var(--cut-top) / 100% var(--cut-line) no-repeat;
@@ -486,15 +485,15 @@
   }
   .read:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-  .reactions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .reactions { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); }
   /* A reaction's pill: its own class, not the global `.chip` (another height, fill and hover). */
   .react {
-    display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: var(--sp-1-5); height: 32px; padding: 0 var(--sp-2-5); border: 1px solid var(--border); border-radius: var(--radius-pill);
     background: var(--surface-3); color: var(--text-2); font: inherit; line-height: var(--lh-icon); cursor: pointer;
   }
   .react:hover { background: var(--surface-hover); }
   .react.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
-  .emoji { font-size: 15px; }
+  .emoji { font-size: var(--fs-body); }
   .count { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
 
   /* A comment's foot: its reactions, «Ответить». */
@@ -504,7 +503,7 @@
   .spacer { flex: 1; }
   /* A post's foot: who, when, edited when; its comments on the right. */
   .byline {
-    display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 36px; box-sizing: border-box; padding-top: 10px; margin-right: -6px; border-top: 1px solid var(--divider);
+    display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; min-height: 36px; box-sizing: border-box; padding-top: var(--sp-2-5); margin-right: calc(-1 * var(--sp-1-5)); border-top: 1px solid var(--divider);
     font-size: var(--fs-sm); color: var(--text-3);
   }
   .author { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); color: var(--text-2); }
@@ -515,7 +514,7 @@
   .full .author { font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
   .edited { color: var(--text-2); text-decoration: underline dotted; text-underline-offset: 3px; cursor: default; }
   .link {
-    display: inline-flex; align-items: center; gap: 5px; border: none; background: none; cursor: pointer; padding: 4px 6px; border-radius: var(--radius-sm);
+    display: inline-flex; align-items: center; gap: var(--sp-1); border: none; background: none; cursor: pointer; padding: var(--sp-1) var(--sp-1-5); border-radius: var(--radius-sm);
     font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2);
   }
   .link:hover { background: var(--accent-tint); }
@@ -523,7 +522,7 @@
   .link.reply { gap: var(--sp-1); padding: 4px 0; font-size: var(--fs-sm); color: var(--text-3); }
   .link.reply:hover { background: none; color: var(--text); }
   /* The way to the comments: their count in the quiet text; none yet, «Комментировать» in the accent. */
-  .comments { flex-shrink: 0; gap: 5px; height: 32px; padding: 0 6px 0 var(--sp-2); font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--text-2); border-radius: var(--radius); }
+  .comments { flex-shrink: 0; gap: var(--sp-1); height: 32px; padding: 0 var(--sp-1-5) 0 var(--sp-2); font-weight: var(--fw-semibold); font-size: var(--fs-sm); color: var(--text-2); border-radius: var(--radius); }
   .comments:hover { background: var(--surface-3); }
   .comments.go { color: var(--accent-text); }
   .comments.go:hover { background: var(--accent-tint); }
@@ -531,13 +530,13 @@
   @media (max-width: 599px) { .phone.card { gap: var(--sp-2); } }
   @media (pointer: coarse) {
     .post { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
-    .comment .more { width: 40px; height: 40px; padding: 0; margin: -4px -8px -4px 0; }
-    .more { padding: 8px; margin: -5px -5px -5px 0; }
+    .comment-more { width: 40px; height: 40px; margin: -4px -8px -4px 0; }
+    .more { padding: 8px; margin: calc(-1 * var(--sp-1)) calc(-1 * var(--sp-1)) calc(-1 * var(--sp-1)) 0; }
     .tags .more, .beside-menu .more, .section-line .more { width: 40px; height: 40px; margin: -4px -4px -4px 0; }
     .section-line .more { margin-left: auto; }
     .link.reply { padding: 8px 0; }
     .more.over { padding: 8px; margin: 0; }
     .link { padding: 8px; }
-    .read { padding: 6px 0; }
+    .read { padding: var(--sp-1-5) 0; }
   }
 </style>

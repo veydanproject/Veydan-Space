@@ -14,7 +14,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import Icon from '$lib/core/Icon.svelte';
+  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import type { ScreenInfo } from '../api';
   import { callStore } from './callStore.svelte';
 
@@ -33,14 +33,34 @@
 
   let picking = $state<ScreenInfo[] | null>(null);
   let none = $state(false);
+  let wrapEl = $state<HTMLSpanElement | null>(null);
+  let at = $state({ x: 0, y: 0 });
+  /** The press on the button that closed the menu (its mousedown) does not open it again. */
+  let closedAt = 0;
+
+  const items = $derived<MenuEntry[]>(picking ? [
+    { type: 'heading', label: $t('msg_call_screen_pick') },
+    ...picking.map((s) => ({
+      label: s.title,
+      icon: s.window ? 'browser' : 'screen-share',
+      shortcut: $t(s.window ? 'msg_call_screen_kind_window' : 'msg_call_screen_kind_screen'),
+      onselect: () => void pick(s),
+    })),
+  ] : []);
 
   async function toggle() {
     if (sharing) { picking = null; await stop(); return; }
     if (picking) { picking = null; return; }
+    if (performance.now() - closedAt < 300) return;
     none = false;
     const list = await callStore.loadScreens();
     if (!list) return;
-    if (list.length > 1) picking = list;
+    if (list.length > 1) {
+      const r = wrapEl?.getBoundingClientRect();
+      // Over the button, centred; under it on a bar at the top (the menu keeps itself on the screen).
+      if (r) at = below ? { x: r.left + r.width / 2 - 110, y: r.bottom + 10 } : { x: r.left + r.width / 2, y: r.top - 2 };
+      picking = list;
+    }
     else if (list.length === 1) await share(list[0].id);
     else none = true;
   }
@@ -51,43 +71,22 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && picking) picking = null; }} />
-
-<span class="menu-wrap">
+<span class="menu-wrap" bind:this={wrapEl}>
   {@render button({ onclick: () => void toggle(), expanded: !!picking })}
-  {#if picking}
-    <div class="menu" class:below role="menu" aria-label={$t('msg_call_screen_pick')}>
-      <div class="menu-title">{$t('msg_call_screen_pick')}</div>
-      {#each picking as s (s.id)}
-        <button class="item" role="menuitem" onclick={() => pick(s)}>
-          <Icon name={s.window ? 'browser' : 'screen-share'} size={14} />
-          <span class="item-title">{s.title}</span>
-          <span class="item-kind">{$t(s.window ? 'msg_call_screen_kind_window' : 'msg_call_screen_kind_screen')}</span>
-        </button>
-      {/each}
-    </div>
-  {:else if none}
-    <div class="menu note" class:below role="status">{$t('msg_call_screen_none')}</div>
+  <ContextMenu open={!!picking} x={at.x} y={at.y} {items} place={below ? 'point' : 'above'} onclose={() => { picking = null; closedAt = performance.now(); }} />
+  {#if none}
+    <div class="menu" class:below role="status">{$t('msg_call_screen_none')}</div>
   {/if}
 </span>
 
 <style>
   .menu-wrap { position: relative; display: inline-flex; }
   .menu {
-    position: absolute; z-index: 10; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-    width: max-content; min-width: 220px; max-width: min(360px, 80vw); max-height: 260px; overflow-y: auto;
-    padding: 6px; border-radius: var(--radius-md); background: var(--glass-bg); color: var(--text);
-    border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg); cursor: default;
+    position: absolute; z-index: var(--z-popover); bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    width: max-content; max-width: min(360px, 80vw); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
+    background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
+    font-size: var(--fs-xs); color: var(--text-2); cursor: default;
   }
   .menu.below { bottom: auto; top: calc(100% + 10px); }
-  .menu.note { padding: 8px 12px; font-size: var(--fs-xs); color: var(--text-2); min-width: 0; }
-  .menu-title { padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--text-3); }
-  .item {
-    width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: none; border-radius: var(--radius-sm);
-    background: none; color: inherit; font: inherit; font-size: var(--fs-sm); cursor: pointer; text-align: left;
-  }
-  .item:hover, .item:focus-visible { background: var(--surface-2); outline: none; }
-  .item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item-kind { font-size: var(--fs-xs); color: var(--text-3); }
 </style>

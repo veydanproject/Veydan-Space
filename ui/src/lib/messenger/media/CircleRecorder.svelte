@@ -121,16 +121,16 @@
     padding: var(--sp-4) var(--sp-4) calc(var(--sp-5) + var(--sab, 0px));
   }
   .stage { position: relative; width: min(304px, 80vw); aspect-ratio: 1; }
-  video { position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); border-radius: 50%; object-fit: cover; background: #111; }
+  video { position: absolute; inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); border-radius: 50%; object-fit: cover; background: var(--on-media-ground); }
   video.mirror { transform: scaleX(-1); }
   .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring circle { fill: none; stroke-width: 4; }
-  .track { stroke: rgba(255, 255, 255, 0.14); }
+  .track { stroke: var(--on-media-border); }
   .fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
-  .time { font-family: var(--font-mono); font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.6); }
+  .time { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--on-media-text-2); }
   .time.on { color: #fff; }
   .controls { display: flex; align-items: center; gap: var(--sp-6); }
-  .side { width: 52px; height: 52px; border: none; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .side { width: 52px; height: 52px; border: none; border-radius: 50%; background: var(--on-media-bg); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .side:disabled { opacity: 0.45; }
   .main { width: 76px; height: 76px; padding: 0; border: 4px solid #fff; border-radius: 50%; background: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; }
   .main:disabled { opacity: 0.45; }

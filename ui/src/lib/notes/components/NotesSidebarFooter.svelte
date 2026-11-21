@@ -75,10 +75,9 @@
   .sidebar-footer {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--sp-1-5);
     padding: var(--sp-2) var(--sp-3) var(--sp-3);
     margin-top: auto;
     flex-shrink: 0;
   }
-  .sidebar-footer .icon-btn { width: 32px; height: 32px; }
 </style>

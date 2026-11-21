@@ -85,7 +85,7 @@
     flex-wrap: wrap;
     align-items: center;
     /* The 44px targets stand out of the row: the dots line up with the label. */
-    margin-left: -7px;
+    margin-left: calc(-1 * var(--sp-2));
   }
   .color-swatch {
     position: relative;
@@ -120,9 +120,7 @@
   .color-swatch:has(input:focus-visible) { outline: 2px solid var(--accent-text); outline-offset: -2px; }
 
   .dot-custom {
-    background: conic-gradient(
-      #f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #f43f5e
-    );
+    background: var(--hue-wheel);
   }
   .color-swatch input[type="color"] {
     position: absolute;

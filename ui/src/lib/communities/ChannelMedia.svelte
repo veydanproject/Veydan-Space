@@ -313,7 +313,9 @@
   {/if}
   <!-- The caption is the post's words (the runtime gives it as the item's text, shown above); an envelope of before that says it here. -->
   {#if m.caption && !tile && !item.text}<p class="caption">{m.caption}</p>{/if}
-  {#if error}<p class="error-msg">{error}</p>{/if}
+  <!-- A tile of an album lays its parts in a row: the words of a failure lie over the picture's foot there,
+       not beside it (the owner's iPhone, 2026-11-21: a column of words squeezed the picture). -->
+  {#if error}<p class="error-msg" class:on-tile={tile}>{error}</p>{/if}
 {/if}
 
 <style>
@@ -326,7 +328,7 @@
   .picture.still { cursor: default; }
   .still-play {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; background: var(--on-media-scrim); color: #fff;
   }
   .picture img.thumb { filter: blur(6px); transform: scale(1.05); }
   /* A phone draws a blur of every picture of a feed at a cost: the small copy stretched is soft enough. */
@@ -334,7 +336,7 @@
   .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-3); }
   .busy {
     position: absolute; right: 8px; bottom: 8px; width: 32px; height: 32px; border-radius: 50%; display: inline-flex;
-    align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); color: #fff;
+    align-items: center; justify-content: center; background: var(--on-media-scrim); color: #fff;
   }
   .busy :global(svg) { animation: spin 1.1s linear infinite; }
   /* A video: its frame with a play badge and its length, then the player in its place. */
@@ -346,7 +348,7 @@
   .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .badge-play {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 48px; height: 48px; border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; background: var(--on-media-scrim); color: #fff;
     backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   }
   .tile .badge-play { width: 36px; height: 36px; }
@@ -355,7 +357,7 @@
   .cover:hover .badge-play { background: rgba(0, 0, 0, 0.7); }
   .badge-play.spin :global(svg) { margin-left: 0; animation: spin 1.1s linear infinite; }
   .badge-len {
-    position: absolute; left: 8px; bottom: 8px; padding: 2px 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: #fff;
+    position: absolute; left: 8px; bottom: 8px; padding: var(--sp-0-5) var(--sp-1-5); border-radius: 6px; background: var(--on-media-scrim); color: #fff;
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; line-height: var(--lh-snug);
   }
   .tile .badge-len { left: 6px; bottom: 6px; }
@@ -378,6 +380,12 @@
     font: inherit; font-size: var(--fs-xs); color: var(--text-3); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .error-msg { margin: 0; }
+  .error-msg.on-tile {
+    position: absolute; left: var(--sp-1-5); right: var(--sp-1-5); bottom: var(--sp-1-5); z-index: 1;
+    padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); background: var(--on-media-scrim); color: #fff;
+    font-size: var(--fs-xs); line-height: var(--lh-tight);
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
   /* A voice message or a circle, its transfer's ring beside it while it comes. */
   .rec { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; }
   .rec :global(.voice) { min-width: 0; flex: 0 1 320px; }

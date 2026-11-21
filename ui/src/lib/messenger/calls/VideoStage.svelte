@@ -134,10 +134,10 @@
   .stage { position: absolute; inset: 0; overflow: hidden; background: var(--call-bg); color: #fff; }
   .slot.main { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; }
   .placeholder { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-4); text-align: center; }
-  .note { font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.72); }
+  .note { font-size: var(--fs-sm); color: var(--on-media-text-2); }
   .lost {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.55); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-sm); pointer-events: none;
+    display: inline-flex; align-items: center; gap: var(--sp-1-5); padding: 4px 12px; border-radius: var(--radius-pill);
+    background: var(--on-media-scrim); color: var(--on-media-text); font-size: var(--fs-sm); pointer-events: none;
   }
 
   .tile-place { position: absolute; z-index: 0; transition: inset 220ms cubic-bezier(0.2, 0.8, 0.3, 1), border-radius 220ms; overflow: hidden; }
@@ -155,36 +155,36 @@
   .pip {
     position: absolute; z-index: 4; inset: var(--pip-at); width: var(--pip-w); aspect-ratio: var(--pip-ratio);
     border-radius: var(--radius); border: 1.5px solid rgba(255, 255, 255, 0.55); padding: 0; margin: 0; cursor: pointer;
-    background: transparent; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+    background: transparent; box-shadow: var(--shadow-lg);
     display: flex; align-items: center; justify-content: center;
     transition: border-color var(--dur-fast) var(--ease);
   }
   .pip.dark { background: var(--call-surface-3); }
   @media (hover: hover) { .pip:hover { border-color: #fff; } }
   .pip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .pip-note { color: rgba(255, 255, 255, 0.7); display: inline-flex; }
+  .pip-note { color: var(--on-media-text-2); display: inline-flex; }
   .pip-tag {
     position: absolute; left: 4px; right: 4px; bottom: 4px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-    padding: 2px 6px; border-radius: var(--radius-pill); background: rgba(0, 0, 0, 0.6); color: #fff;
+    padding: var(--sp-0-5) var(--sp-1-5); border-radius: var(--radius-pill); background: var(--on-media-scrim); color: #fff;
     font-size: var(--fs-xs); white-space: nowrap;
   }
   .pip-tag-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
   .badges {
     position: absolute; z-index: 2; left: 10px; top: 10px; right: calc(var(--pip-w) + 24px);
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; pointer-events: none;
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1-5); pointer-events: none;
   }
   .badge, .info {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
-    background: rgba(0, 0, 0, 0.5); color: rgba(255, 255, 255, 0.9); font-size: var(--fs-xs); white-space: nowrap;
+    background: var(--on-media-scrim); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   }
   /* The tooltip of the way, the one thing here a pointer reads. */
   .badge[title] { pointer-events: auto; cursor: help; }
   .badge.relay { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.5)); color: #fff; }
   .badge.quiet, .rtt { font-variant-numeric: tabular-nums; }
-  .badge.quiet { color: rgba(255, 255, 255, 0.8); }
-  .rtt { margin-left: 2px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.3); opacity: 0.85; }
+  .badge.quiet { color: var(--on-media-text); }
+  .rtt { margin-left: 2px; padding-left: var(--sp-1-5); border-left: 1px solid rgba(255, 255, 255, 0.3); opacity: 0.85; }
   .info { position: absolute; z-index: 2; bottom: calc(var(--sab, 0px) + 150px); left: 50%; transform: translateX(-50%); pointer-events: none; }
   /* Above the size of the frames on a phone. */
   .info.screen-note { bottom: calc(var(--sab, 0px) + 178px); max-width: calc(100% - 32px); }

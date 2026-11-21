@@ -23,7 +23,7 @@
     <div class="pick" class:picture={!!preview} title={p.name}>
       {#if preview}<img src={preview} alt={p.name} draggable="false" onerror={() => picked.failed(p.path)} />
       {:else}<Icon name={pickedIcon(p.name)} size={20} /><span class="pick-name">{p.name}</span>{/if}
-      <button class="unpick" tabindex="-1" onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => picked.remove(p.key)}
+      <button class="unpick" onpointerdown={(e) => e.preventDefault()} onmousedown={(e) => e.preventDefault()} onclick={() => picked.remove(p.key)}
         aria-label={$t('msg_attach_remove')} title={$t('msg_attach_remove')}><Icon name="x" size={12} /></button>
     </div>
   {/each}
@@ -41,9 +41,17 @@
   .pick.picture { padding: 0; }
   .pick img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
   .pick-name { max-width: 100%; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* «Take the file out»: the round scrim is its icon's (12 in a disc of 20); on a phone the button around it is 40
+     (its zone 44), the disc of 24 where it stood. */
   .unpick {
-    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; padding: 0; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: var(--radius); padding: 0; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; background: none; color: #fff;
   }
-  @media (pointer: coarse) { .pick { width: 72px; height: 72px; } .unpick { width: 24px; height: 24px; } }
+  .unpick > :global(.icon) { width: 20px; height: 20px; padding: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
+  .unpick:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  @media (pointer: coarse) {
+    .pick { width: 72px; height: 72px; }
+    .unpick { top: -5px; right: -5px; width: 40px; height: 40px; }
+    .unpick > :global(.icon) { width: 24px; height: 24px; padding: 6px; }
+  }
 </style>

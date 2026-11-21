@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { portal } from '$lib/core/portal';
   import { layer } from './layer';
   import { backdropDismiss } from '$lib/core/backdrop';
@@ -10,6 +10,8 @@
   import { acquireScrollLock, releaseScrollLock } from '$lib/core/scrollLock';
   import Icon from '$lib/core/Icon.svelte';
   import { t } from '$lib/core/i18n';
+  import { isMobile } from '$lib/core/platform';
+  import { holdBack } from './sheetBack';
 
   interface Props {
     open: boolean;
@@ -29,6 +31,8 @@
     footer?: Snippet;
     /** A dense window on --surface-drawer without the glass's blur: what is under it does not show through. */
     solid?: boolean;
+    /** CSS padding of the scrolling body; --sp-4 by default. A list of rows takes --sp-2. */
+    bodyPadding?: string;
   }
 
   let {
@@ -44,12 +48,20 @@
     children,
     footer,
     solid = false,
+    bodyPadding,
   }: Props = $props();
 
   $effect(() => {
     if (!open) return;
     acquireScrollLock();
     return () => releaseScrollLock();
+  });
+
+  // A phone's system «Назад» closes the drawer, not the page under it. A row
+  // that leaves for another page waits for that back first (sheetBack.afterBacks).
+  $effect(() => {
+    if (!open || !isMobile) return;
+    return untrack(() => holdBack(() => close(), 'drawer'));
   });
 
   function close() {
@@ -70,6 +82,7 @@
 {#if open}
   <div
     class="drawer-backdrop"
+    class:m={isMobile}
     out:backdropOut
     use:portal
     use:layer
@@ -104,12 +117,13 @@
         <div class="drawer-subheader">{@render subheader()}</div>
       {/if}
 
-      <div class="drawer-body">
+      <div class="drawer-body" style:padding={bodyPadding}>
         {@render children()}
       </div>
 
       {#if footer}
-        <footer class="drawer-footer">{@render footer()}</footer>
+        <!-- A phone's foot is the one of its pages and sheets (mobile.css .page-foot). -->
+        <footer class={isMobile ? 'page-foot' : 'drawer-footer'}>{@render footer()}</footer>
       {/if}
     </div>
   </div>
@@ -129,6 +143,9 @@
     display: flex;
     animation: backdrop-in var(--dur-base) ease;
   }
+  /* A phone: on the layer of its sheets, so a sheet opened from the drawer (a row's menu) stands over it; under the status bar at the top. */
+  .drawer-backdrop.m { z-index: var(--z-panel); }
+  .drawer-backdrop.m .drawer { padding-top: var(--sat); }
   .drawer-backdrop:has(.left) { justify-content: flex-start; }
   .drawer-backdrop:has(.right) { justify-content: flex-end; }
 
@@ -200,4 +217,6 @@
     background: var(--surface-drawer-footer);
     flex-shrink: 0;
   }
+  /* The drawer reaches the screen's bottom edge: the gesture stripe is under its foot. */
+  .drawer > .page-foot { padding-bottom: calc(var(--sp-3) + var(--sab)); }
 </style>

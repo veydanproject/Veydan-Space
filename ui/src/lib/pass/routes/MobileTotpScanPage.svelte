@@ -68,7 +68,7 @@
 <!-- The header of every phone page (.m-header); over the camera picture it is transparent. -->
 <div class="m-page scan">
   <div class="m-header">
-    <a class="m-ibtn" href="/totp/add" aria-label={$t('common_back')}>
+    <a class="icon-btn" href="/totp/add" aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('totp_scan_title')}</h1>
@@ -76,14 +76,14 @@
 
   <div class="body">
   {#if denied}
-    <div class="msg">
-      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
+    <div class="empty-state msg">
+      <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
       <p>{$t('totp_scan_denied')}</p>
       <button class="btn btn-ghost" onclick={() => openAppSettings()}>{$t('totp_scan_open_settings')}</button>
     </div>
   {:else if error}
-    <div class="msg">
-      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
+    <div class="empty-state msg">
+      <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
       <p>{error}</p>
       <button class="btn btn-ghost btn-sm" onclick={() => { error = ''; start(); }}><Icon name="arrow-forward-up" size={16} />{$t('common_try_again')}</button>
     </div>
@@ -105,12 +105,14 @@
     padding: var(--sp-4);
     background: var(--bg);
   }
-  /* White only over the camera picture (while scanning); the page colours otherwise. */
+  /* The ink over media only over the camera picture (while scanning); the page colours otherwise. The hint stands
+     on a scrim, so a light picture does not swallow it. */
   :global(html.scanning) .scan .m-header,
   :global(html.scanning) .scan .body { background: transparent; }
   :global(html.scanning) .scan .m-title,
-  :global(html.scanning) .scan .m-ibtn,
-  :global(html.scanning) .hint { color: #fff; }
+  :global(html.scanning) .scan .icon-btn,
+  :global(html.scanning) .hint { color: var(--on-media-text); }
+  :global(html.scanning) .hint { padding: var(--sp-1-5) var(--sp-3); border-radius: var(--radius-pill); background: var(--on-media-scrim); }
 
   .frame {
     width: min(70vw, 300px);
@@ -124,14 +126,6 @@
     text-align: center;
   }
 
-  .msg {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--sp-3);
-    margin-top: 20vh;
-    color: var(--text-2);
-    text-align: center;
-  }
-  .msg p { margin: 0; }
+  /* The message stands where the frame would: lower than the top. */
+  .msg { margin-top: 20vh; }
 </style>

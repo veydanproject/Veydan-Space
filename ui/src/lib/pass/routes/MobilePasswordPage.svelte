@@ -10,7 +10,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
-  import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
+  import PasswordForm, { fieldError } from '$lib/pass/mobile/PasswordForm.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
@@ -334,23 +334,23 @@
 <div class="m-page">
   <div class="m-header">
     {#if editing}
-      <button type="button" class="m-ibtn" onclick={closeEdit} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+      <button type="button" class="icon-btn" onclick={closeEdit} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
     {:else}
-      <a class="m-ibtn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="icon-btn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{editing ? $t('pw_edit_title') : (entry?.title ?? $t('pw_title'))}</h1>
     {#if entry && !editing}
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('edit') : (editing = true))} aria-label={$t('common_edit')}>
+      <button type="button" class="icon-btn" onclick={() => (appLock.locked ? askUnlock('edit') : (editing = true))} aria-label={$t('common_edit')}>
         <Icon name="pencil" size={22} />
       </button>
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('common_delete')}>
+      <button type="button" class="icon-btn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('common_delete')}>
         <Icon name="trash-2" size={22} />
       </button>
     {/if}
   </div>
   <div class="m-body">
     {#if missing}
-      <div class="m-empty"><p>{$t('pw_empty')}</p></div>
+      <div class="empty-state"><span class="empty-icon" aria-hidden="true"><Icon name="search" size={22} /></span><p>{$t('totp_not_found')}</p></div>
     {:else if entry && editing}
       <PasswordForm
         editing
@@ -368,52 +368,50 @@
         bind:tags
         bind:error
         {totp}
-        {saving}
-        onsave={save}
       />
     {:else if entry}
       {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
       <!-- The fields as one grouped card, like every list of the phone; an empty field is left out. -->
       <div class="m-list fields">
         {#if entry.username}
-          <div class="m-row field">
+          <div class="list-row dense still field">
             <span class="field-text">
-              <span class="m-label">{$t('pw_field_username')}</span>
+              <span class="form-label">{$t('pw_field_username')}</span>
               <span class="val">{entry.username}</span>
             </span>
-            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.username ?? '')} aria-label={$t('common_copy')}>
-              <Icon name="id" size={20} />
+            <button type="button" class="icon-btn" onclick={() => copyField(entry?.username ?? '')} aria-label={$t('common_copy')}>
+              <Icon name="id" size={22} />
             </button>
           </div>
         {/if}
         {#if entry.url}
-          <div class="m-row field">
+          <div class="list-row dense still field">
             <span class="field-text">
-              <span class="m-label">{$t('pw_field_url')}</span>
+              <span class="form-label">{$t('pw_field_url')}</span>
               <span class="val">{entry.url}</span>
             </span>
-            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.url ?? '')} aria-label={$t('common_copy')}>
-              <Icon name="copy" size={20} />
+            <button type="button" class="icon-btn" onclick={() => copyField(entry?.url ?? '')} aria-label={$t('common_copy')}>
+              <Icon name="copy" size={22} />
             </button>
           </div>
         {/if}
-        <div class="m-row field">
+        <div class="list-row dense still field">
           <span class="field-text">
-            <span class="m-label">{$t('pw_field_password')}</span>
+            <span class="form-label">{$t('pw_field_password')}</span>
             <span class="val mono">{unlocked && revealed ? revealed : '••••••••'}</span>
             {#if unlocked && revealed && hide.left}<span class="autohide">{$t('pw_autohide_in', { n: String(hide.left) })}</span>{/if}
           </span>
-          <button type="button" class="m-ibtn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
-            <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
+          <button type="button" class="icon-btn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
+            <Icon name={revealed ? 'eye-off' : 'eye'} size={22} />
           </button>
-          <button type="button" class="m-ibtn" onclick={copyPassword} aria-label={$t('common_copy')}>
-            <Icon name="lock-password" size={20} />
+          <button type="button" class="icon-btn" onclick={copyPassword} aria-label={$t('common_copy')}>
+            <Icon name="lock-password" size={22} />
           </button>
         </div>
         {#if shownNote}
-          <div class="m-row field note">
+          <div class="list-row dense still field note">
             <span class="field-text">
-              <span class="m-label">{$t('pw_field_note')}</span>
+              <span class="form-label">{$t('pw_field_note')}</span>
               <span class="note-text">{shownNote}</span>
             </span>
           </div>
@@ -431,8 +429,8 @@
             {#if i === 0}
               <span class="primary" aria-label={$t('pw_totp_primary')}><Icon name="pin" size={16} /></span>
             {:else}
-              <button type="button" class="m-ibtn" onclick={() => makePrimary(item.id)} aria-label={$t('pw_totp_make_primary')}>
-                <Icon name="arrow-up" size={18} />
+              <button type="button" class="icon-btn" onclick={() => makePrimary(item.id)} aria-label={$t('pw_totp_make_primary')}>
+                <Icon name="arrow-up" size={22} />
               </button>
             {/if}
           {/if}
@@ -444,6 +442,16 @@
       {/if}
     {/if}
   </div>
+  {#if entry && editing}
+    <!-- Save in the page's foot, the error that is not a field's over it. -->
+    <div class="page-foot">
+      {#if error && !fieldError(error, $t)}<Notice tone="danger">{error}</Notice>{/if}
+      <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+        <Icon name="check" size={18} />
+        {$t('common_save')}
+      </button>
+    </div>
+  {/if}
 </div>
 <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
 
@@ -452,10 +460,8 @@
   .fields { margin-bottom: var(--sp-3); }
   .field { gap: var(--sp-1); padding-right: var(--sp-2); }
   .field-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) 0; }
-  .field-text .m-label { padding: 0; }
   .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-semibold); user-select: text; -webkit-user-select: text; }
   .note-text { white-space: pre-wrap; user-select: text; -webkit-user-select: text; }
-  .field .m-ibtn, .totp-card .m-ibtn { flex-shrink: 0; width: var(--touch); height: var(--touch); color: var(--text-2); }
   .totp-card {
     display: flex;
     align-items: center;

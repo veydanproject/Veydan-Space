@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "拒绝",
     "chan_level_req_refuse_title": "拒绝：{name}",
     "chan_level_req_refuse_hint": "读者会收到拒绝通知和你的理由，其等级保持不变。",
-    "chan_level_req_reason": "理由（选填）"
+    "chan_level_req_reason": "理由（选填）",
+    "chan_err_not_found": "该文件在存储中已不可用。"
   },
   "mobile": {}
 }

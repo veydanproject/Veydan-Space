@@ -28,6 +28,7 @@
   import { dialable, dialer, targetOf, type DialTarget } from './dial.svelte';
   import { foldLog, isLogMissed, lineOf, logSections, type LogRow } from './log';
   import { callLineWords, duration, groupLineWords } from './words';
+  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   interface Props {
     /** The row whose details are open (its `key`). */
@@ -189,25 +190,25 @@
   </div>
 {:else}
 <div class="filter">
-  <div class="tab-bar" role="tablist">
+  <TabBar selected={filter}>
     <button role="tab" class="tab" class:active={filter === 'all'} aria-selected={filter === 'all'} onclick={() => (filter = 'all')}>{$t('msg_calls_all')}</button>
     <button role="tab" class="tab" class:active={filter === 'missed'} aria-selected={filter === 'missed'} onclick={() => (filter = 'missed')}>{$t('msg_calls_missed')}</button>
-  </div>
+  </TabBar>
 </div>
 
 <div class="list-wrap" onscroll={nearEnd}>
   {#if !callLog.loaded}
     <Skeleton height={64} size={48} trailing />
   {:else if callLog.failed && !callLog.entries.length}
-    <div class="empty">
-      <span class="empty-icon"><Icon name="alert-triangle" size={26} /></span>
+    <div class="empty-state">
+      <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
       <p>{$t('msg_calls_load_failed')}</p>
       {#if callLog.reason}<span class="reason">{callLog.reason}</span>{/if}
       <button class="btn btn-ghost btn-sm" onclick={() => callLog.load()}><Icon name="arrow-forward-up" size={13} />{$t('common_try_again')}</button>
     </div>
   {:else if sections.length === 0}
-    <div class="empty">
-      <span class="empty-icon"><Icon name={filter === 'missed' ? 'phone-x' : 'phone'} size={26} /></span>
+    <div class="empty-state">
+      <span class="empty-icon"><Icon name={filter === 'missed' ? 'phone-x' : 'phone'} size={22} /></span>
       <p>{filter === 'missed' ? $t('msg_calls_empty_missed') : $t('msg_calls_empty')}</p>
       {#if filter === 'all'}
         <span>{$t('msg_calls_empty_hint')}</span>
@@ -222,7 +223,7 @@
       </ul>
     {/each}
     {#if callLog.complete && filter === 'all'}
-      <button class="clear" onclick={clearAll}><Icon name="trash-2" size={16} />{$t('msg_calls_clear')}</button>
+      <button class="btn btn-sm btn-danger-soft clear" onclick={clearAll}><Icon name="trash-2" size={16} />{$t('msg_calls_clear')}</button>
     {/if}
   {/if}
 </div>
@@ -232,21 +233,14 @@
 
 <style>
   .filter { padding: 0 var(--sp-3) var(--sp-2); flex-shrink: 0; }
-  .filter .tab-bar { display: flex; }
-  .filter .tab { flex: 1; justify-content: center; }
-  /* On a phone the two sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
   :global(.msg-m) .filter { padding-inline: var(--sp-4); }
-  :global(.msg-m) .filter .tab-bar { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; align-self: stretch; }
-  :global(.msg-m) .filter .tab { position: relative; flex: 0 0 auto; min-height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
-  :global(.msg-m) .filter .tab.active { color: var(--text); font-weight: var(--fw-bold); background: none; }
-  :global(.msg-m) .filter .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
   :global(.msg-m) .list-wrap { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   .day { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); }
   .day:first-child { margin-top: var(--sp-1); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows;
      the row's main part a .list-row-main button, the handset at its end. */
-  .dial:focus-visible, .clear:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .dial:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .missed .list-row-name, .missed .count { color: var(--danger-text); }
   .count { font-size: var(--fs-sm); color: var(--text-2); flex-shrink: 0; }
   .glyph { display: inline-flex; color: var(--text-3); flex-shrink: 0; }
@@ -258,17 +252,8 @@
   }
   @media (hover: hover) { .dial:hover:not(:disabled) { background: var(--success-bg); } }
   .dial:disabled { color: var(--text-3); opacity: 0.45; cursor: default; }
-  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-8) var(--sp-4); color: var(--text-3); }
-  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-  .empty > span:not(.empty-icon) { font-size: var(--fs-xs); line-height: var(--lh-base); max-width: 260px; }
   .reason { font-family: var(--font-mono); font-size: var(--fs-xs) !important; color: var(--text-3); overflow-wrap: anywhere; }
-  .empty-icon { width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent-text-2); margin-bottom: var(--sp-1); }
-  .empty .btn { margin-top: var(--sp-2); }
-  .clear {
-    display: flex; align-items: center; justify-content: center; gap: var(--sp-1); width: fit-content; height: 36px; margin: var(--sp-2) auto 0;
-    padding: 0 var(--sp-3); border: none; border-radius: var(--radius); background: none; cursor: pointer; color: var(--text-3); font: inherit; font-size: var(--fs-sm);
-  }
-  .clear:hover { color: var(--danger-text); }
+  .clear { display: flex; width: fit-content; margin: var(--sp-2) auto 0; }
   /* The column of covers: the open one lit, the count on the corner. */
   .covers { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; padding: var(--sp-1) 0 var(--sp-3); }
   .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }

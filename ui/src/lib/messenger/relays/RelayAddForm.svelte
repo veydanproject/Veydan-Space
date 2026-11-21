@@ -27,8 +27,10 @@
 </script>
 
 <form class="add" onsubmit={(e) => { e.preventDefault(); add(); }}>
-  <input type="text" bind:value={newUrl} placeholder="wss://relay.example.com" spellcheck="false" disabled={busy} />
-  <input type="password" class="key" bind:value={newKey} placeholder={$t('msg_relay_key_placeholder')} autocomplete="off" disabled={busy} />
+  <input type="text" bind:value={newUrl} placeholder="wss://relay.example.com" aria-label={$t('msg_relays_title')}
+    inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" enterkeyhint="next" disabled={busy} />
+  <input type="password" class="key" bind:value={newKey} placeholder={$t('msg_relay_key_placeholder')} aria-label={$t('msg_relay_key_placeholder')}
+    autocapitalize="off" autocomplete="off" spellcheck="false" disabled={busy} />
   <button class="btn btn-ghost" type="submit" disabled={busy || !newUrl.trim()}>
     <Icon name="plus" size={18} />{$t('common_add')}
   </button>
@@ -42,7 +44,7 @@
     .add input.key { flex: 1 1 140px; }
   }
   .add input {
-    flex: 1; min-width: 0; min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
+    flex: 1; min-width: 0; min-height: 44px; font-family: var(--font-mono); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add input:focus { outline: none; border-color: var(--accent-border); }

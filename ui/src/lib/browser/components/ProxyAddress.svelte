@@ -36,7 +36,7 @@
 <style>
   code {
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body);
-    background: var(--surface-2); padding: 5px 10px; border-radius: var(--radius-sm);
+    background: var(--surface-2); padding: var(--sp-1) var(--sp-2-5); border-radius: var(--radius-sm);
   }
   .tor-line { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-dim); white-space: normal; }
   .tor-line--error { color: var(--danger-text); }

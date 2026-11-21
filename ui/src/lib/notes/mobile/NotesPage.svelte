@@ -6,8 +6,10 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
+  import Tabs from '$lib/core/ui/Tabs.svelte';
   import NotesNav from '$lib/notes/mobile/NotesNav.svelte';
   import NoteRow from '$lib/notes/mobile/NoteRow.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
@@ -29,6 +31,9 @@
   import { noteScope, scopeColor, type ScopeSources } from '$lib/notes/list-scope';
 
   let notes = $state<NoteListItem[]>([]);
+  // Until the first answer the list is unknown, not empty: «No notes yet» flashed for a frame
+  // each time the list was opened again (the owner's iPhone, 2026-11-21).
+  let loaded = $state(false);
   // The one row whose swipe buttons are shown.
   let revealedId = $state<string | null>(null);
 
@@ -57,6 +62,16 @@
   function setViewMode(m: 'list' | 'table') {
     viewMode = m;
     try { localStorage.setItem(VIEW_KEY, m); } catch {}
+  }
+  // «List / Table» is a radiogroup: one stop of Tab (the chosen); of two, any arrow chooses the other
+  // (next / previous wrap round), Home / End the first / last; the focus goes to the chosen.
+  function viewKey(e: KeyboardEvent) {
+    const other = viewMode === 'list' ? 'table' : 'list';
+    const m = ({ ArrowLeft: other, ArrowUp: other, ArrowRight: other, ArrowDown: other, Home: 'list', End: 'table' } as Record<string, 'list' | 'table'>)[e.key];
+    if (!m) return;
+    e.preventDefault();
+    setViewMode(m);
+    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-view="${m}"]`)?.focus();
   }
   let nav = $state<NoteNav | null>(null);
 
@@ -96,6 +111,12 @@
   });
   const rowMode = $derived<RowMode>(filter.kind === 'trash' ? 'trash' : filter.kind === 'archived' ? 'archived' : 'normal');
   const isMain = $derived(['all', 'pinned', 'archived'].includes(filter.kind));
+  type MainKind = 'all' | 'pinned' | 'archived';
+  const mainTabs = $derived<{ id: MainKind; label: string }[]>([
+    { id: 'all', label: $t('notes_all') },
+    { id: 'pinned', label: $t('notes_filter_pinned') },
+    { id: 'archived', label: $t('notes_filter_archived') },
+  ]);
   const folder = $derived<NavChild | undefined>(filter.kind === 'folder' ? nav?.folders.find((f) => f.id === filter.id) : undefined);
   // Sheets
   let sheet = $state<'none' | 'more' | 'quick' | 'move'>('none');
@@ -155,6 +176,8 @@
       [notes, nav] = await Promise.all([api.notes.list(search, filter), api.notes.nav()]);
     } catch (e) {
       error = formatError(e);
+    } finally {
+      loaded = true;
     }
   }
 
@@ -330,41 +353,41 @@
 
   {#if selecting}
     <div class="m-header">
-      <button class="m-ibtn" onclick={exitSelect} aria-label={$t('common_cancel')}><Icon name="x" size={22} /></button>
+      <button class="icon-btn" onclick={exitSelect} aria-label={$t('common_cancel')}><Icon name="x" size={22} /></button>
       <h1 class="m-title">{$t('notes_selected', { n: String(selected.size) })}</h1>
     </div>
   {:else}
     <div class="m-header">
       {#if isMain}
         <HubButton />
-        <button class="m-ibtn" onclick={() => (menuOpen = true)} aria-label={$t('notes_nav_open')}><Icon name="menu" size={22} /></button>
+        <button class="icon-btn" onclick={() => (menuOpen = true)} aria-label={$t('notes_nav_open')}><Icon name="menu" size={22} /></button>
       {:else}
-        <a class="m-ibtn" href="/notes" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+        <a class="icon-btn" href="/notes" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
       {/if}
       {#if folder}
         <span class="m-doc" style:--c={folder.color}><Icon name="folder" size={16} /></span>
       {/if}
       <h1 class="m-title">{title()}</h1>
-      <button class="m-ibtn" class:on={searchOpen} onclick={() => (searchOpen = !searchOpen)} aria-label={$t('nav_search')}><Icon name="search" size={22} /></button>
-      <button class="m-ibtn" onclick={() => (sheet = 'more')} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+      <button class="icon-btn" class:on={searchOpen} onclick={() => (searchOpen = !searchOpen)} aria-label={$t('nav_search')}><Icon name="search" size={22} /></button>
+      <button class="icon-btn" onclick={() => (sheet = 'more')} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
     </div>
     {#if searchOpen}
-      <div class="m-search">
-        <div class="field">
+      <div class="m-find-row">
+        <div class="search-field fill">
           <Icon name="search" size={16} />
           <input type="search" bind:value={search} oninput={onSearch} placeholder={$t('notes_search_placeholder')} {@attach (el: HTMLInputElement) => el.focus()} />
-          {#if search}<button type="button" class="clear" onclick={() => { search = ''; load(); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>{/if}
+          {#if search}
+            <button type="button" class="search-clear" onclick={(e) => { search = ''; load(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+          {/if}
         </div>
-        <button type="button" class="cancel" onclick={closeSearch}>{$t('common_cancel')}</button>
+        <button type="button" class="btn btn-ghost" onclick={closeSearch}>{$t('common_cancel')}</button>
       </div>
     {/if}
   {/if}
 
   {#if isMain && !selecting}
-    <div class="m-seg">
-      <button type="button" class="m-seg-btn" class:active={filter.kind === 'all'} onclick={() => go({ kind: 'all' })}>{$t('notes_all')}</button>
-      <button type="button" class="m-seg-btn" class:active={filter.kind === 'pinned'} onclick={() => go({ kind: 'pinned' })}>{$t('notes_filter_pinned')}</button>
-      <button type="button" class="m-seg-btn" class:active={filter.kind === 'archived'} onclick={() => go({ kind: 'archived' })}>{$t('notes_filter_archived')}</button>
+    <div class="m-tabs">
+      <Tabs tabs={mainTabs} selected={filter.kind as MainKind} onpick={(kind) => go({ kind })} label={title()} phone />
     </div>
   {/if}
 
@@ -379,7 +402,9 @@
     <div class="err"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
-  {#if notes.length === 0}
+  {#if notes.length === 0 && !loaded}
+    <!-- Not answered yet: nothing rather than «no notes». -->
+  {:else if notes.length === 0}
     <!-- A search that found nothing: the one look of it (NotesList, ChatList), with the query. -->
     <div class="empty-state">
       {#if search.trim()}
@@ -459,45 +484,49 @@
 
 <BottomSheet open={sheet === 'more'} title={title()} onclose={() => (sheet = 'none')}>
   <div class="m-list">
-    <button type="button" class="m-row" disabled={!notes.length} onclick={() => { sheet = 'none'; startSelect(); }}>
-      <Icon name="check-square" size={20} /><span class="m-row-label">{$t('notes_select')}</span>
+    <button type="button" class="list-row dense" disabled={!notes.length} onclick={() => { sheet = 'none'; startSelect(); }}>
+      <Icon name="check-square" size={20} /><span class="list-row-label">{$t('notes_select')}</span>
     </button>
   </div>
-  <div class="group">{$t('notes_view')}</div>
-  <div class="m-seg">
-    <button type="button" class="m-seg-btn" class:active={viewMode === 'list'} onclick={() => setViewMode('list')}>{$t('notes_view_list')}</button>
-    <button type="button" class="m-seg-btn" class:active={viewMode === 'table'} onclick={() => setViewMode('table')}>{$t('notes_view_table')}</button>
-  </div>
-  <div class="group">{$t('notes_sort')}</div>
-  <div class="m-list">
-    {#each SORT_KEYS as key (key)}
-      <button type="button" class="m-row" onclick={() => setSort({ ...sort, key })}>
-        <Icon name={key === 'title' ? 'type' : 'sort-descending'} size={20} />
-        <span class="m-row-label">{$t(SORT_LABEL[key])}</span>
-        {#if sort.key === key}<Icon name="check" size={18} />{/if}
+  <section class="section">
+    <div class="section-label">{$t('notes_view')}</div>
+    <div class="seg seg-fill" role="radiogroup" aria-label={$t('notes_view')} tabindex="-1" onkeydown={viewKey}>
+      <button type="button" class="seg-btn" class:active={viewMode === 'list'} role="radio" aria-checked={viewMode === 'list'} tabindex={viewMode === 'list' ? 0 : -1} data-view="list" onclick={() => setViewMode('list')}>{$t('notes_view_list')}</button>
+      <button type="button" class="seg-btn" class:active={viewMode === 'table'} role="radio" aria-checked={viewMode === 'table'} tabindex={viewMode === 'table' ? 0 : -1} data-view="table" onclick={() => setViewMode('table')}>{$t('notes_view_table')}</button>
+    </div>
+  </section>
+  <section class="section">
+    <div class="section-label">{$t('notes_sort')}</div>
+    <div class="m-list">
+      {#each SORT_KEYS as key (key)}
+        <button type="button" class="list-row dense" onclick={() => setSort({ ...sort, key })}>
+          <Icon name={key === 'title' ? 'type' : 'sort-descending'} size={20} />
+          <span class="list-row-label">{$t(SORT_LABEL[key])}</span>
+          {#if sort.key === key}<Icon name="check" size={18} />{/if}
+        </button>
+      {/each}
+      <button type="button" class="list-row dense" onclick={() => setSort({ ...sort, asc: !sort.asc })}>
+        <Icon name={sort.asc ? 'arrow-up' : 'arrow-down'} size={20} />
+        <span class="list-row-label">{sort.asc ? $t('notes_sort_asc') : $t('notes_sort_desc')}</span>
       </button>
-    {/each}
-    <button type="button" class="m-row" onclick={() => setSort({ ...sort, asc: !sort.asc })}>
-      <Icon name={sort.asc ? 'arrow-up' : 'arrow-down'} size={20} />
-      <span class="m-row-label">{sort.asc ? $t('notes_sort_asc') : $t('notes_sort_desc')}</span>
-    </button>
-  </div>
+    </div>
+  </section>
 </BottomSheet>
 
 <BottomSheet open={sheet === 'quick' && !!quickNote} title={quickNote?.title || $t('notes_untitled')} onclose={() => (sheet = 'none')}>
   <div class="m-list">
     {#if rowMode === 'trash'}
-      <button type="button" class="m-row" onclick={() => quickAct('restore')}><Icon name="rotate-ccw" size={20} /><span class="m-row-label">{$t('common_restore')}</span></button>
-      <button type="button" class="m-row" onclick={() => quickAct('purge')}><Icon name="trash-2" size={20} /><span class="m-row-label danger-text">{$t('notes_purge')}</span></button>
+      <button type="button" class="list-row dense" onclick={() => quickAct('restore')}><Icon name="rotate-ccw" size={20} /><span class="list-row-label">{$t('common_restore')}</span></button>
+      <button type="button" class="list-row dense" onclick={() => quickAct('purge')}><Icon name="trash-2" size={20} /><span class="list-row-label danger-text">{$t('notes_purge')}</span></button>
     {:else}
-      <button type="button" class="m-row" onclick={() => quickAct('pin')}><Icon name="pin" size={20} /><span class="m-row-label">{quickNote?.pinned ? $t('notes_unpin') : $t('notes_pin')}</span></button>
-      <button type="button" class="m-row" onclick={() => { const id = quickNote!.id; sheet = 'none'; openMove([id]); }}><Icon name="folder" size={20} /><span class="m-row-label">{$t('notes_move')}</span></button>
+      <button type="button" class="list-row dense" onclick={() => quickAct('pin')}><Icon name="pin" size={20} /><span class="list-row-label">{quickNote?.pinned ? $t('notes_unpin') : $t('notes_pin')}</span></button>
+      <button type="button" class="list-row dense" onclick={() => { const id = quickNote!.id; sheet = 'none'; openMove([id]); }}><Icon name="folder" size={20} /><span class="list-row-label">{$t('notes_move')}</span></button>
       {#if rowMode === 'archived'}
-        <button type="button" class="m-row" onclick={() => quickAct('unarchive')}><Icon name="archive-restore" size={20} /><span class="m-row-label">{$t('notes_unarchive')}</span></button>
+        <button type="button" class="list-row dense" onclick={() => quickAct('unarchive')}><Icon name="archive-restore" size={20} /><span class="list-row-label">{$t('notes_unarchive')}</span></button>
       {:else}
-        <button type="button" class="m-row" onclick={() => quickAct('archive')}><Icon name="archive" size={20} /><span class="m-row-label">{$t('notes_archive')}</span></button>
+        <button type="button" class="list-row dense" onclick={() => quickAct('archive')}><Icon name="archive" size={20} /><span class="list-row-label">{$t('notes_archive')}</span></button>
       {/if}
-      <button type="button" class="m-row" onclick={() => quickAct('delete')}><Icon name="trash-2" size={20} /><span class="m-row-label danger-text">{$t('notes_delete')}</span></button>
+      <button type="button" class="list-row dense" onclick={() => quickAct('delete')}><Icon name="trash-2" size={20} /><span class="list-row-label danger-text">{$t('notes_delete')}</span></button>
     {/if}
   </div>
 </BottomSheet>
@@ -525,12 +554,6 @@
   .pull .spin { animation: spin 1s linear infinite; }
   .pull span { display: inline-flex; }
   .count { margin: 0 var(--sp-1) var(--sp-3); font-size: var(--fs-sm); }
-  .group {
-    padding: var(--sp-3) var(--sp-2) var(--sp-1);
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    color: var(--text-2);
-  }
   .table-wrap {
     margin: 0 calc(-1 * var(--sp-3));
     padding: 0 var(--sp-3);
@@ -555,7 +578,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 30;
+    z-index: calc(var(--z-base) + 30);
     display: flex;
     background: var(--glass-bg);
     border-top: 1px solid var(--glass-border);

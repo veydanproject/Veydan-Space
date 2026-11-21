@@ -3,11 +3,11 @@
 
 <!--
   Generic right-click menu. Positioned at a viewport coordinate and clamped to
-  stay on screen; closes on outside-click, Escape, Tab, or after an item fires.
+  stay on screen; closes on outside-click, Escape, or after an item fires.
   Modelled on CustomSelect's fixed-positioned popover. On a phone the same
   items are a bottom sheet (the long press that asked for it places nothing).
   Design kit, menu: grows from the point in 150 ms and fades in 100 ms (M05);
-  ↓/↑ (round), Home/End and the first letters move between the items, Enter
+  ↓/↑ and Tab/Shift+Tab (round), Home/End and the first letters move between the items, Enter
   fires one, Escape gives the focus back to where it was.
 -->
 <script lang="ts">
@@ -100,6 +100,12 @@
 
   $effect(() => {
     if (open) {
+      // A sheet opened over the keyboard lost half of itself under it (iOS keeps
+      // the field focused through a long press): the field lets go, the keyboard goes.
+      if (isMobile) {
+        const field = document.activeElement;
+        if (field instanceof HTMLElement && field.matches('input, textarea, [contenteditable]:not([contenteditable="false"])')) field.blur();
+      }
       // measure after render, then clamp
       style = `left:${x}px;top:${y}px;visibility:hidden`;
       requestAnimationFrame(() => {
@@ -119,10 +125,12 @@
     const list = enabled();
     if (!list.length) return false;
     const i = list.indexOf(document.activeElement as HTMLButtonElement);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End' || e.key === 'Tab') {
+      // Tab keeps the focus in the menu, as ↓ (Shift+Tab as ↑): it is not a way out, Escape is.
+      const down = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey);
       const n = e.key === 'Home' ? 0
         : e.key === 'End' ? list.length - 1
-        : e.key === 'ArrowDown' ? (i + 1) % list.length
+        : down ? (i + 1) % list.length
         : i < 0 ? list.length - 1 : (i - 1 + list.length) % list.length;
       list[n].focus();
       return true;
@@ -171,7 +179,6 @@
       return;
     }
     if (isMobile) return;
-    if (e.key === 'Tab') { close(); return; }
     if (navigate(e)) { e.preventDefault(); e.stopPropagation(); }
   }
   function onOutside(e: MouseEvent) {
@@ -269,7 +276,10 @@
     z-index: var(--z-popover);
     min-width: 200px;
     max-width: 320px;
-    padding: 4px;
+    /* Many items (the screens of a call) scroll inside it: the menu stays on the screen. */
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
+    padding: var(--sp-1);
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
@@ -316,7 +326,7 @@
   }
   .menu-item:hover:not(:disabled),
   .menu-item:focus:not(:disabled) { background: var(--surface-hover); outline: none; }
-  .menu-item:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
+  .menu-item:focus-visible:not(:disabled) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .menu-item:disabled { color: var(--text-3); cursor: default; }
   .menu-item.danger { color: var(--danger-text); }
   .menu-item.danger:hover:not(:disabled),
@@ -343,7 +353,7 @@
   /* The roomier menu: 288 wide by its caller, rows 40, the groups apart. */
   /* Its inset is the difference of the radii (4, as in the plain menu), so a row's corner follows the menu's. */
   .context-menu.roomy { max-width: calc(100vw - 8px); padding: calc(var(--radius-md) - var(--radius-sm)); border-radius: var(--radius-md); }
-  .roomy .menu-item { min-height: 40px; gap: var(--sp-3); padding: 0 10px; border-radius: var(--radius-sm); }
+  .roomy .menu-item { min-height: 40px; gap: var(--sp-3); padding: 0 var(--sp-2-5); border-radius: var(--radius-sm); }
   .roomy .menu-item :global(svg) { color: var(--text-3); }
   .roomy .menu-item.danger :global(svg) { color: var(--danger-text); }
   .roomy .icon-gap { width: 18px; }
@@ -357,7 +367,7 @@
 
   /* The title of a group: a quiet line over its items, not one of them. */
   .menu-heading {
-    display: flex; align-items: center; gap: 6px;
+    display: flex; align-items: center; gap: var(--sp-1-5);
     padding: var(--sp-1) var(--sp-3) var(--sp-2);
     color: var(--text-3); font-size: var(--fs-xs); font-weight: var(--fw-bold);
   }
@@ -365,7 +375,7 @@
   /* Two items side by side, as buttons 36: the first the primary one, the second a quiet one. */
   .menu-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); padding: 0 var(--sp-1) var(--sp-2); }
   .menu-item.pair-btn {
-    justify-content: center; gap: 6px; min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--radius);
+    justify-content: center; gap: var(--sp-1-5); min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--radius);
     border: 1px solid var(--border-2); background: var(--surface-3); font-weight: var(--fw-semibold);
   }
   .menu-item.pair-btn .menu-label { flex: 0 1 auto; }
@@ -373,9 +383,8 @@
   .menu-item.pair-btn.primary :global(svg) { color: #fff; }
   .menu-item.pair-btn:hover:not(:disabled), .menu-item.pair-btn:focus:not(:disabled) { background: var(--surface-hover); }
   .menu-item.pair-btn.primary:hover:not(:disabled), .menu-item.pair-btn.primary:focus:not(:disabled) { background: var(--accent-grad); filter: brightness(1.1); }
-  .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
-  /* The phone's sheet: rows of the shell's lists (mobile.css .m-row), 52px high. */
+  /* The phone's sheet: rows of a menu, 52px high. */
   .sheet-menu-header {
     padding: 0 var(--sp-1) var(--sp-2);
     color: var(--text-2);
@@ -408,7 +417,7 @@
   .sheet-icon-gap { width: 20px; flex-shrink: 0; }
   .sheet-sep { height: 1px; margin: var(--sp-1) var(--sp-2); background: var(--border); flex-shrink: 0; }
   .sheet-heading {
-    display: flex; align-items: center; gap: 6px; padding: var(--sp-2) var(--sp-2) var(--sp-1);
+    display: flex; align-items: center; gap: var(--sp-1-5); padding: var(--sp-2) var(--sp-2) var(--sp-1);
     color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-bold);
   }
   .sheet-heading :global(svg) { flex-shrink: 0; }

@@ -13,6 +13,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
+  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
   import type { ChannelDetail } from '../api';
@@ -68,24 +69,22 @@
 <Dialog bind:open title={$t('chan_level_request_title')} width="min(460px, calc(100vw - 24px))">
   <div class="body">
     <p class="lead">{$t('chan_levels_explain')}</p>
-    <ul class="options" role="radiogroup" aria-label={$t('chan_level')}>
+    <!-- One value of a few: ChoiceRow, as the channel's join rule; a level asked for already is out of the choice. -->
+    <div class="options" role="radiogroup" aria-label={$t('chan_level')}>
       {#each options as l (l.id)}
         {@const a = adds(l, lv.levels, lv.my_levels, lv.scopes)}
         {@const sent = asked.includes(l.id)}
-        <li>
-          <label class="option" class:active={picked === l.id} class:sent>
-            <input type="radio" name="level" value={l.id} checked={picked === l.id} disabled={busy || sent} onchange={() => (picked = l.id)} />
-            <span class="text">
-              <span class="name"><Icon name="layers" size={14} />{l.name}{#if sent}<span class="tag">{$t('chan_level_request_sent')}</span>{/if}</span>
-              {#if a.scopes.length}<span class="sub">{$t('chan_level_request_adds', { list: a.scopes.map((s) => `«${s.title}»`).join(', ') })}</span>{/if}
-              {#if a.rights.length}<span class="sub">{$t('chan_level_request_rights', { list: a.rights.map((r) => $t(`chan_right_${r}_short` as 'chan_right_comment_short')).join(', ') })}</span>{/if}
-            </span>
-          </label>
-        </li>
+        <ChoiceRow icon="layers" title={l.name} checked={picked === l.id} disabled={busy || sent} onclick={() => (picked = l.id)}>
+          {#snippet more()}
+            {#if sent}<span class="tag">{$t('chan_level_request_sent')}</span>{/if}
+            {#if a.scopes.length}<span class="sub">{$t('chan_level_request_adds', { list: a.scopes.map((s) => `«${s.title}»`).join(', ') })}</span>{/if}
+            {#if a.rights.length}<span class="sub">{$t('chan_level_request_rights', { list: a.rights.map((r) => $t(`chan_right_${r}_short` as 'chan_right_comment_short')).join(', ') })}</span>{/if}
+          {/snippet}
+        </ChoiceRow>
       {/each}
-    </ul>
+    </div>
     <label class="field-wrap">
-      <span class="label">{$t('chan_level_request_note')}</span>
+      <span class="form-label">{$t('chan_level_request_note')}</span>
       <textarea class="field" rows="3" bind:value={note} maxlength={NOTE_MAX} disabled={busy}></textarea>
     </label>
     <p class="hint">{$t('chan_level_request_hint')}</p>
@@ -101,24 +100,10 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-4); }
   .lead { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-base); }
   .hint { margin: calc(-1 * var(--sp-2)) 0 0; line-height: var(--lh-snug); }
-  /* The levels: rows of a choice, the chosen one in the accent. */
-  .options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .option {
-    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); cursor: pointer; user-select: none;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
-    transition: background var(--dur-fast), border-color var(--dur-fast);
-  }
-  @media (hover: hover) { .option:hover:not(.active):not(.sent) { background: var(--surface-hover); } }
-  .option:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-  .option.active { border-color: var(--accent-border); background: var(--accent-bg); }
-  .option.sent { cursor: default; opacity: 0.75; }
-  .option input { margin-top: 2px; flex-shrink: 0; }
-  .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); overflow-wrap: anywhere; }
+  .options { display: flex; flex-direction: column; gap: var(--sp-2); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
-  .tag { font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
+  .tag { align-self: flex-start; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .field {
     width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
     border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-3); resize: vertical;

@@ -270,8 +270,6 @@
     "notes_tag_hint": "Alt gruplar için “/” kullanın:",
     "notes_tag_hint_example": "Grup/etiket",
     "notes_tag_name_ph": "etiket adı",
-    "notes_color": "Renk {c}",
-    "notes_color_custom": "Özel renk",
     "notes_section_fold": "Daralt",
     "notes_section_unfold": "Genişlet",
     "notes_section_fold_all": "Tümünü daralt",

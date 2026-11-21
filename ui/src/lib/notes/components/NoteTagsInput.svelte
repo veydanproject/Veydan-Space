@@ -3,11 +3,14 @@
 
 <script lang="ts">
   import type { NoteTag, NoteTagInfo, NoteFolder } from '$lib/notes/types';
+  import { PALETTE } from '$lib/core/palette';
   import { api } from '$lib/notes/api';
   import Icon from '$lib/core/Icon.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
   import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
+  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
+  import Dialog from '$lib/core/ui/Dialog.svelte';
   import { binding, type EntityKind } from '$lib/core/bindings';
   import { entityKind, entityKinds, ensureEntitiesLoaded, searchEntities, type EntitySummary } from '$lib/notes/context';
   import { labelPickerText } from '$lib/notes/label-kinds';
@@ -35,16 +38,15 @@
 
   let { selectedTags, allTags, onchange, contextChips = [], folders = [], activeFolderIds = [], onaddFolder, activeBindings = [], onaddBinding }: Props = $props();
 
-  const TAG_COLORS = [
-    // The kit's presets (N.colors); the colour is the user's, never the kind.
-    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
-  ];
-
   let open = $state(false);
   let inputValue = $state('');
-  let selectedColor = $state(TAG_COLORS[0]);
+  let selectedColor = $state(PALETTE[0]);
   let inputEl: HTMLInputElement | null = $state(null);
-  let wrapEl: HTMLDivElement | null = $state(null);
+  /**
+   * The list comes with the field's focus, after the dialog: one mounted with it would reach the body
+   * before the dialog freezes the body (layer.ts) and be frozen too, its rows dead to the mouse.
+   */
+  let listed = $state(false);
 
   /** Lowercase, as stored; a tag named in an old file may still have capitals. */
   const selectedNames = $derived(new Set(selectedTags.map((t) => normalizeTagName(t.name))));
@@ -101,17 +103,11 @@
     else { onaddBinding?.(item.key); close(); }
   }
 
-  /** The popup opens leftwards when the + is too close to the right edge of the editor (which clips it). */
-  let alignRight = $state(false);
-  const POPUP_W = 260;
-
-  function openPopup(e: MouseEvent) {
-    const btn = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const edge = (wrapEl?.closest('.editor') ?? document.body).getBoundingClientRect().right;
-    alignRight = btn.left + POPUP_W > edge;
+  function openPopup() {
     open = true;
+    listed = false;
     inputValue = '';
-    selectedColor = TAG_COLORS[0];
+    selectedColor = PALETTE[0];
     void ensureEntitiesLoaded();
     setTimeout(() => inputEl?.focus(), 50);
   }
@@ -147,15 +143,9 @@
     }
     if (e.key === 'Escape') close();
   }
-
-  function onOutsideClick(e: MouseEvent) {
-    if (wrapEl && !wrapEl.contains(e.target as Node)) close();
-  }
 </script>
 
-<svelte:window onclick={onOutsideClick} />
-
-<div class="tags-outer" bind:this={wrapEl}>
+<div class="tags-outer">
   <div class="tags-wrap">
     {#each contextChips as chip}
       <span class="chip tinted" style:--chip={chip.color}>
@@ -176,56 +166,34 @@
     {/each}
   </div>
 
-  <div class="add-wrap">
-    <button class="add-btn" onclick={openPopup} title={$t('notes_label_title')}>
-      <Icon name="plus" size={12} />
-    </button>
+  <button class="icon-btn" onclick={openPopup} title={$t('notes_label_title')}>
+    <Icon name="plus" size={18} />
+  </button>
+</div>
 
-    {#if open}
-      <div class="popup" class:align-right={alignRight}>
-        <input
-          bind:this={inputEl}
-          bind:value={inputValue}
-          type="text"
-          class="popup-input"
-          placeholder={pickerText.placeholder}
-          onkeydown={onKeydown}
-        />
-        {#if !inputValue.trim() && entitySuggestions.length === 0}
-          <div class="hint">{pickerText.hint}</div>
-        {/if}
+<Dialog bind:open title={$t('notes_label_title')} onclose={close}>
+  <div class="popup">
+    <input
+      bind:this={inputEl}
+      bind:value={inputValue}
+      type="text"
+      placeholder={pickerText.placeholder}
+      onkeydown={onKeydown}
+      onfocus={() => (listed = true)}
+    />
+    {#if !inputValue.trim() && entitySuggestions.length === 0}
+      <div class="hint">{pickerText.hint}</div>
+    {/if}
 
-        {#if items.length > 0}
-          <Suggest bind:this={list} {items} anchor={inputEl} label={$t('notes_label_title')} onpick={pick} onclose={close}>
-            {#snippet extra()}
-              <div class="color-row">
-                {#each TAG_COLORS as c}
-                  <button
-                    class="color-swatch"
-                    class:active={selectedColor === c}
-                    style="background:{c}"
-                    aria-label={$t('notes_color', { c })}
-                    onclick={() => (selectedColor = c)}
-                  ></button>
-                {/each}
-                <label
-                  class="color-swatch color-swatch-custom"
-                  class:active={!TAG_COLORS.includes(selectedColor)}
-                  title={$t('notes_color_custom')}
-                >
-                  <input type="color" bind:value={selectedColor} />
-                  {#if !TAG_COLORS.includes(selectedColor)}
-                    <span class="custom-dot" style="background:{selectedColor}"></span>
-                  {/if}
-                </label>
-              </div>
-            {/snippet}
-          </Suggest>
-        {/if}
-      </div>
+    {#if listed && items.length > 0}
+      <Suggest bind:this={list} {items} anchor={inputEl} label={$t('notes_label_title')} onpick={pick} onclose={close}>
+        {#snippet extra()}
+          <div class="color-row"><ColorSwatches bind:value={selectedColor} label={$t('notes_label_title')} /></div>
+        {/snippet}
+      </Suggest>
     {/if}
   </div>
-</div>
+</Dialog>
 
 <style>
   /* The chips have a row of their own under the title (NoteEditor): they wrap, nothing is cut */
@@ -233,7 +201,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--sp-1);
     flex: 1;
     min-width: 0;
   }
@@ -244,10 +212,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.2rem;
+    gap: var(--sp-1);
     font-size: var(--fs-xs);
     line-height: var(--lh-icon);
-    padding: 0.2rem 0.45rem;
+    padding: var(--sp-1) var(--sp-2);
     border-radius: var(--radius-pill);
     border-width: 1px;
     border-style: solid;
@@ -269,101 +237,14 @@
   }
   .chip-x:hover { opacity: 1; }
 
-  .add-wrap {
-    position: relative;
-  }
-  .popup.align-right { left: auto; right: 0; }
-
-  .add-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: none;
-    border: 1px solid var(--border-2);
-    color: var(--text-2);
-    cursor: pointer;
-    padding: 0;
-    transition: all 0.15s;
-  }
-  .add-btn:hover { border-color: var(--accent); color: var(--accent-text); }
-
   .popup {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 240px;
-    background: var(--bg-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-    z-index: 500;
-    padding: var(--sp-2);
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--sp-1-5);
   }
 
-  .popup-input {
-    width: 100%;
-    padding: 0.3rem var(--sp-2);
-    font-size: var(--fs-sm);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-field);
-    color: var(--text);
-    outline: none;
-  }
-  .popup-input:focus { border-color: var(--accent-border); }
-  .hint { padding: 0 0.1rem; }
+  .hint { padding: 0 var(--sp-0-5); }
 
-  .color-row {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-    padding: var(--sp-1) var(--sp-2);
-  }
+  .color-row { padding: var(--sp-1) var(--sp-2); }
 
-  .color-swatch {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    cursor: pointer;
-    padding: 0;
-    transition: transform 0.1s;
-  }
-  .color-swatch.active { border-color: var(--text); transform: scale(1.2); }
-  .color-swatch:hover { transform: scale(1.15); }
-
-  .color-swatch-custom {
-    position: relative;
-    background: conic-gradient(#f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #f43f5e);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .color-swatch-custom input[type="color"] {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    cursor: pointer;
-    border: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .custom-dot {
-    position: absolute;
-    inset: 3px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255,255,255,0.7);
-    pointer-events: none;
-  }
 </style>

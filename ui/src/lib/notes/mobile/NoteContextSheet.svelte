@@ -155,11 +155,6 @@
       def?.open?.(row.id);
       return;
     }
-    // The owner of an entity that refers to the note removes the reference on both sides.
-    if (def?.link && action === 'unbind') {
-      void def.link.remove(row.id, `note:${noteId}`);
-      return;
-    }
     if (action === 'bind') onbind(row.binding);
     else onunbind(row.binding);
   }
@@ -168,7 +163,7 @@
 <BottomSheet {open} title={$t('notes_context')} {onclose}>
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
   {#if rows.length === 0}
-    <p class="empty">{$t('notes_context_empty')}</p>
+    <p class="empty-state sm">{$t('notes_context_empty')}</p>
   {:else}
     <p class="hint">{$t('notes_context_hint')}</p>
     <div class="m-list">
@@ -179,11 +174,11 @@
         {@const foreign = row.summary ? undefined : directory.foreign(row.kind, row.id)}
         <div class="entity" class:focus={focus === row.binding} class:mention={!row.bound}>
           <!-- Row is a div so the live TOTP chip (a button itself) can sit inline -->
-          <div class="m-row entity-row" data-binding={row.binding} {@attach pressMenu}>
+          <div class="list-row dense still entity-row" data-binding={row.binding} {@attach pressMenu}>
             <button type="button" class="main" onclick={() => toggle(row)}>
-              <Icon name={ICON[row.kind]} size={18} />
+              <span class="mark" style:color={directory.color(row.kind, row.id)}><Icon name={ICON[row.kind]} size={18} /></span>
               <div class="text">
-                <span class="m-row-label">{row.summary?.name ?? (foreign ? `${$t(KIND_LABEL[row.kind])} ${foreign.shortId}` : $t('notes_context_missing'))}</span>
+                <span class="list-row-label">{row.summary?.name ?? (foreign ? `${$t(KIND_LABEL[row.kind])} ${foreign.shortId}` : $t('notes_context_missing'))}</span>
                 <span class="sub">
                   {$t(KIND_LABEL[row.kind])}{#if row.summary?.subtitle} · {row.summary.subtitle}{/if}{#if !row.bound} · {$t('notes_context_mentioned')}{/if}
                 </span>
@@ -214,9 +209,9 @@
                 <span class="sub pad">{$t('notes_context_related_empty')}</span>
               {:else}
                 {#each related as n (n.id)}
-                  <button type="button" class="m-row nested" onclick={() => onopen(n.id)}>
+                  <button type="button" class="list-row dense nested" onclick={() => onopen(n.id)}>
                     <Icon name="notes" size={16} />
-                    <span class="m-row-label">{n.title || $t('notes_untitled')}</span>
+                    <span class="list-row-label">{n.title || $t('notes_untitled')}</span>
                   </button>
                 {/each}
               {/if}
@@ -233,18 +228,18 @@
 <BottomSheet open={menuRow !== null} title={menuRow?.summary?.name ?? $t('notes_context')} onclose={() => (menuRow = null)}>
   <div class="m-list">
     {#if menuRow && directory.get(menuRow.kind)?.open}
-      <button type="button" class="m-row" onclick={() => menuAction('open')}>
-        <Icon name="external-link" size={20} /><span class="m-row-label">{$t('common_open')}</span>
+      <button type="button" class="list-row dense" onclick={() => menuAction('open')}>
+        <Icon name="external-link" size={20} /><span class="list-row-label">{$t('common_open')}</span>
       </button>
     {/if}
     {#if menuRow && (menuRow.bound || (menuRow.fromTag && directory.get(menuRow.kind)?.link))}
-      <button type="button" class="m-row" disabled={busy} onclick={() => menuAction('unbind')}>
-        <Icon name="x" size={20} /><span class="m-row-label danger-text">{$t('notes_context_unbind')}</span>
+      <button type="button" class="list-row dense" disabled={busy} onclick={() => menuAction('unbind')}>
+        <Icon name="x" size={20} /><span class="list-row-label danger-text">{$t('notes_context_unbind')}</span>
       </button>
       <p class="hint">{$t('notes_context_unbind_hint')}</p>
     {:else}
-      <button type="button" class="m-row" disabled={busy} onclick={() => menuAction('bind')}>
-        <Icon name="plus" size={20} /><span class="m-row-label">{$t('notes_context_bind')}</span>
+      <button type="button" class="list-row dense" disabled={busy} onclick={() => menuAction('bind')}>
+        <Icon name="plus" size={20} /><span class="list-row-label">{$t('notes_context_bind')}</span>
       </button>
       <p class="hint">{$t('notes_context_bind_hint')}</p>
     {/if}
@@ -253,15 +248,17 @@
 </div>
 
 <style>
-  .empty { margin: var(--sp-4); color: var(--text-3); text-align: center; }
   .hint { margin: 0 var(--sp-2) var(--sp-3); }
   .entity { display: flex; flex-direction: column; }
   .entity + .entity { border-top: 1px solid var(--divider); }
   .entity.focus { background: var(--accent-bg); border-radius: var(--radius-md); }
-  .entity.mention .m-row-label { color: var(--text-2); }
+  .entity.mention .list-row-label { color: var(--text-2); }
   .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .entity-row { padding-right: 0; gap: var(--sp-2); }
+  /* The row as on the computer: the icon in the entity's color, the name semibold over a small grey line. */
+  .entity-row { padding-left: var(--sp-3); padding-right: 0; gap: var(--sp-2); }
+  .entity-row .list-row-label { font-weight: var(--fw-semibold); }
+  .mark { display: inline-flex; flex-shrink: 0; color: var(--text-2); }
   .main {
     flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3);
     min-height: 52px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
@@ -273,5 +270,5 @@
   .related { display: flex; flex-direction: column; padding: 0 0 var(--sp-2) var(--sp-5); }
   .related-title { padding: 0 var(--sp-2) var(--sp-1); }
   .pad { padding: 0 var(--sp-2); }
-  .m-row.nested { min-height: 44px; }
+  .list-row.nested { min-height: 44px; }
 </style>

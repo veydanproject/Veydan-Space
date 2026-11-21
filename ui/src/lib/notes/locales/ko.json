@@ -270,8 +270,6 @@
     "notes_tag_hint": "하위 그룹에는 “/”를 사용하세요:",
     "notes_tag_hint_example": "그룹/태그",
     "notes_tag_name_ph": "태그 이름",
-    "notes_color": "색상 {c}",
-    "notes_color_custom": "사용자 지정 색상",
     "notes_section_fold": "접기",
     "notes_section_unfold": "펼치기",
     "notes_section_fold_all": "모두 접기",

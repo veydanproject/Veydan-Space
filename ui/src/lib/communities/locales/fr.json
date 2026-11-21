@@ -648,7 +648,8 @@
     "chan_level_req_refuse": "Refuser",
     "chan_level_req_refuse_title": "Refuser : {name}",
     "chan_level_req_refuse_hint": "Le lecteur recevra le refus avec votre raison. Ses niveaux ne changent pas.",
-    "chan_level_req_reason": "Raison (facultatif)"
+    "chan_level_req_reason": "Raison (facultatif)",
+    "chan_err_not_found": "Le fichier n'est plus disponible sur le stockage."
   },
   "mobile": {}
 }

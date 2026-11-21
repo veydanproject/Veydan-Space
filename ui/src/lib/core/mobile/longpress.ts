@@ -5,6 +5,7 @@
 // swallows the click that follows.
 
 import type { Attachment } from 'svelte/attachments';
+import { swallowNextClick } from '$lib/core/ui/ghost-click';
 
 export function longpress(cb: () => void): Attachment<HTMLElement> {
   return (el) => {
@@ -23,6 +24,7 @@ export function longpress(cb: () => void): Attachment<HTMLElement> {
       y = e.touches[0].clientY;
       timer = setTimeout(() => {
         fired = true;
+        swallowNextClick(); // iOS clicks what the press opened under the finger
         cb();
       }, 500);
     };

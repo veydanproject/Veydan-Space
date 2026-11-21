@@ -439,7 +439,7 @@
   {/if}
   {#if !host && foundBlock}
     <section class="found" aria-label={$t('msg_search_block')}>
-      <h3 class="found-head">{$t('msg_search_block')}</h3>
+      <h3 class="section-label found-head">{$t('msg_search_block')}</h3>
       {#if found?.partial}<p class="found-note" role="status">{$t('msg_search_indexing')}</p>{/if}
       {#if hits.length}
         <ul class="list-rows">
@@ -478,11 +478,13 @@
   .list-empty p { margin: 0; font-size: var(--fs-base); }
   .list-empty.loading .spinner { width: 20px; height: 20px; }
   .archived-toggle {
-    display: flex; align-items: center; gap: 6px; width: 100%; margin-top: var(--sp-2);
+    display: flex; align-items: center; gap: var(--sp-1-5); width: 100%; margin-top: var(--sp-2);
     padding: var(--sp-2) var(--sp-3); border: none; background: none; cursor: pointer;
     color: var(--text-3); font: inherit; font-size: var(--fs-xs);
   }
   .archived-toggle:hover { color: var(--text-2); }
+  /* A phone's «Archive: N» is a row of 44, a finger's target, in the size of a row's line. */
+  @media (pointer: coarse) { .archived-toggle { min-height: 44px; font-size: var(--fs-sm); } }
 
   /* The column of covers: the open one lit, its count on the corner, the archive at the foot. */
   .covers { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding-bottom: var(--sp-3); }
@@ -491,7 +493,8 @@
   .covers-list.folded { padding-top: var(--sp-1); border-top: 1px solid var(--divider); }
   .list-cover.on { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); color: var(--accent-text); }
   /* «Сообщения»: a head over the block, the words found marked as in the filtered chat. */
-  .found-head { margin: var(--sp-3) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: 0.04em; }
+  /* The common .section-label, in the words' own case; only its place is the list's. */
+  .found-head { margin: var(--sp-3) var(--sp-3) var(--sp-1); }
   .found-note { margin: 0 var(--sp-3) var(--sp-2); font-size: var(--fs-xs); color: var(--text-3); }
   .found mark { background: color-mix(in srgb, var(--warn) 40%, transparent); color: inherit; border-radius: 3px; }
   /* How many match: a quiet pill with a magnifier, so it is not taken for the unread. */

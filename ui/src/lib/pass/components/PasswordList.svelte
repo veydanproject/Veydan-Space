@@ -102,14 +102,14 @@
 </script>
 
 {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
-<div class="list divided">
+<ul class="list-rows list">
   {#each entries as entry (entry.id)}
     {@const profiles = profilesOf(entry.tags)}
     {@const labels = [...userLabels(entry.tags), ...notesOf(entry.tags)]}
     {@const firstTotp = entry.totp_ids[0]}
     {@const totp = firstTotp ? totpStore.list.find((item) => item.id === firstTotp) : undefined}
-    <div class="entry">
-      <button type="button" class="entry-info" onclick={() => onopen(entry.id)}>
+    <li><div class="list-row entry">
+      <button type="button" class="list-row-main entry-info" onclick={() => onopen(entry.id)}>
         <div class="entry-name">{entry.title}</div>
         {#if entry.username || entry.url}
           <div class="entry-sub">{entry.username || entry.url}</div>
@@ -162,38 +162,18 @@
           </button>
         {/if}
       </div>
-    </div>
+    </div></li>
   {/each}
-</div>
+</ul>
 
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (pending) void copyPassword(pending); }} />
 
 <style>
-  .list { display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
-  .entry {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: var(--sp-2);
-    min-height: 64px;
-    padding: var(--sp-2) var(--sp-3);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-lg);
-    transition: background var(--dur-fast);
-  }
-  .entry:hover { background: var(--surface-hover); }
-  .entry-info {
-    flex: 1;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
+  /* The rows of base.css (64, no avatar: the hairline from the text); the main part opens the entry, the
+     code and the buttons stand at the end. */
+  .list { --list-line: var(--sp-3); }
+  .entry { gap: var(--sp-2); cursor: default; }
+  .entry-info { flex-direction: column; align-items: stretch; justify-content: center; gap: 0; }
   .entry-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -202,7 +182,7 @@
     font-weight: var(--fw-semibold);
   }
   .entry-sub {
-    margin-top: 0.1rem;
+    margin-top: var(--sp-0-5);
     font-size: var(--fs-xs);
     color: var(--text-2);
     overflow: hidden;
@@ -212,8 +192,8 @@
   .entry-labels {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem;
-    margin-top: 0.25rem;
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
     min-width: 0;
   }
   .label-badge {
@@ -225,7 +205,7 @@
     border-style: solid;
     border-radius: var(--radius-pill);
     font-size: var(--fs-xs);
-    padding: 0.05rem 0.35rem;
+    padding: var(--sp-0-5) var(--sp-1-5);
     white-space: nowrap;
   }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

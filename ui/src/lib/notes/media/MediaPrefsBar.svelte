@@ -22,7 +22,7 @@
     <span class="label">{t('quality')}</span>
     <div class="presets">
       {#each AUDIO_KBPS as k (k)}
-        <button type="button" class="preset" class:active={prefs.audioKbps === k} onclick={() => onprefs({ ...prefs, audioKbps: k })}>{k} kbps</button>
+        <button type="button" class="chip" class:active={prefs.audioKbps === k} onclick={() => onprefs({ ...prefs, audioKbps: k })}>{k} kbps</button>
       {/each}
     </div>
   </div>
@@ -31,34 +31,21 @@
     <span class="label">{t('resolution')}</span>
     <div class="presets">
       {#each VIDEO_HEIGHTS as h (h)}
-        <button type="button" class="preset" class:active={prefs.videoHeight === h} onclick={() => onprefs({ ...prefs, videoHeight: h })}>{h}p</button>
+        <button type="button" class="chip" class:active={prefs.videoHeight === h} onclick={() => onprefs({ ...prefs, videoHeight: h })}>{h}p</button>
       {/each}
     </div>
   </div>
   <div class="pref">
     <span class="label">{t('camera')}</span>
     <div class="presets">
-      <button type="button" class="preset" class:active={prefs.facing === 'environment'} onclick={() => onprefs({ ...prefs, facing: 'environment' })}>{t('camera_back')}</button>
-      <button type="button" class="preset" class:active={prefs.facing === 'user'} onclick={() => onprefs({ ...prefs, facing: 'user' })}>{t('camera_front')}</button>
+      <button type="button" class="chip" class:active={prefs.facing === 'environment'} onclick={() => onprefs({ ...prefs, facing: 'environment' })}>{t('camera_back')}</button>
+      <button type="button" class="chip" class:active={prefs.facing === 'user'} onclick={() => onprefs({ ...prefs, facing: 'user' })}>{t('camera_front')}</button>
     </div>
   </div>
 {/if}
 
 <style>
-  .pref { display: flex; flex-direction: column; gap: 6px; }
+  .pref { display: flex; flex-direction: column; gap: var(--sp-1-5); }
   .label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .presets { display: flex; gap: 8px; flex-wrap: wrap; }
-  .preset {
-    min-height: 34px;
-    padding: 0 14px;
-    border: 0;
-    border-radius: var(--radius-pill);
-    background: var(--m-seg, var(--surface-2));
-    color: var(--text);
-    font: inherit;
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semibold);
-    cursor: pointer;
-  }
-  .preset.active { background: var(--accent); color: #fff; }
 </style>

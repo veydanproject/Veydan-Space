@@ -37,7 +37,11 @@
 //! The listener outlives a phone that put the app aside: iOS may take the
 //! socket of a suspended app back, and its `accept` fails from then on.
 //! The server then listens anew on the same port, so the addresses the
-//! page holds stay good (`accept_loop`); only when that port is taken does
+//! page holds stay good (`accept_loop`). iOS may also take it back with no
+//! `accept` ever failing: the first address asked for after `PROBE_EVERY`
+//! knocks on the port, and when nobody takes the knock the old listener goes
+//! and the server listens anew, the same port first (`port`). Only when that
+//! port is taken does
 //! the next address asked for come on another one. The addresses handed
 //! out before answer nothing then: a picture or a video of a chat whose
 //! file fails to load asks once more (`previewBroken` of
@@ -68,6 +72,12 @@ const REBINDS: u32 = 3;
 /// The pause before the listener is made anew: a failure that does not
 /// pass (no descriptors left) is not tried in a busy loop.
 const REBIND_PAUSE: std::time::Duration = std::time::Duration::from_millis(200);
+/// How often an address asked for first knocks on the listener: iOS may take the
+/// socket of a suspended app back with no `accept` ever failing (the owner's
+/// iPhone, 2026-11-21: every thumbnail and picture dead after the app came back).
+const PROBE_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long the knock waits for the listener to take it.
+const PROBE_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
 
 #[derive(Clone)]
 struct Served {
@@ -200,6 +210,10 @@ pub struct MediaServer {
 struct Port {
     now: Option<u16>,
     last: Option<u16>,
+    /// The task that takes the connections of `now`: aborted when the knock finds nobody.
+    task: Option<tauri::async_runtime::JoinHandle<()>>,
+    /// When the listener of `now` was last found answering.
+    checked: Option<std::time::Instant>,
 }
 
 fn token() -> Option<String> {
@@ -271,6 +285,22 @@ impl MediaServer {
     /// cannot.
     async fn port(&self) -> Option<u16> {
         let mut port = self.port.lock().await;
+        if let Some(now) = port.now {
+            if port.checked.is_none_or(|t| t.elapsed() >= PROBE_EVERY) {
+                if answers(now).await {
+                    port.checked = Some(std::time::Instant::now());
+                } else {
+                    // Nobody takes the knock: the old task goes, its socket with it, and the
+                    // port is listened on anew (the same one first, as `last`).
+                    if let Some(task) = port.task.take() {
+                        task.abort();
+                        // Its end drops the old socket, so the same port is free to listen on.
+                        let _ = task.await;
+                    }
+                    port.now = None;
+                }
+            }
+        }
         if port.now.is_none() {
             let again = match port.last {
                 Some(last) => TcpListener::bind(("127.0.0.1", last)).await.ok(),
@@ -281,11 +311,16 @@ impl MediaServer {
                 None => TcpListener::bind(("127.0.0.1", 0)).await.ok()?,
             };
             let now = listener.local_addr().ok()?.port();
-            *port = Port { now: Some(now), last: Some(now) };
-            tauri::async_runtime::spawn(accept_loop(listener, now, self.names.clone(), self.port.clone()));
+            let task = tauri::async_runtime::spawn(accept_loop(listener, now, self.names.clone(), self.port.clone()));
+            *port = Port { now: Some(now), last: Some(now), task: Some(task), checked: Some(std::time::Instant::now()) };
         }
         port.now
     }
+}
+
+/// Whether something takes a connection on `port` of the loopback within `PROBE_WAIT`.
+async fn answers(port: u16) -> bool {
+    matches!(tokio::time::timeout(PROBE_WAIT, TcpStream::connect(("127.0.0.1", port))).await, Ok(Ok(_)))
 }
 
 /// Takes the connections of `listener` on `port`. A failed `accept` (iOS
@@ -527,6 +562,33 @@ mod tests {
         let other = format!("{}/{}", url.rsplit_once('/').unwrap().0, "0".repeat(64));
         let (head, got) = get(&other, "").await;
         assert!(head.starts_with("HTTP/1.1 404") && got.is_empty(), "{head}");
+    }
+
+    /// iOS may take the listening socket of a suspended app back with no
+    /// `accept` failing (the owner's iPhone, 2026-11-21): the next address
+    /// asked for finds nobody at the port and the server listens anew, on the
+    /// same port, so the names handed out answer again.
+    #[tokio::test]
+    async fn listens_anew_when_nobody_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p.jpg");
+        std::fs::write(&path, b"jpeg").unwrap();
+        let server = MediaServer::default();
+        let url = server.url(&path, "image/jpeg").await.unwrap();
+        assert!(get(&url, "").await.0.starts_with("HTTP/1.1 200"));
+        {
+            // The socket taken back: nothing takes the connections any more.
+            let mut port = server.port.lock().await;
+            let task = port.task.take().unwrap();
+            task.abort();
+            let _ = task.await;
+            port.checked = None;
+        }
+        let port = url.trim_start_matches("http://127.0.0.1:").split('/').next().unwrap().parse::<u16>().unwrap();
+        assert!(!answers(port).await, "nobody listens now");
+        let again = server.url(&path, "image/jpeg").await.unwrap();
+        assert_eq!(again, url, "the same port and the same name");
+        assert!(get(&again, "").await.0.starts_with("HTTP/1.1 200"));
     }
 
     /// A WebM whose video says it has alpha and has none goes with that

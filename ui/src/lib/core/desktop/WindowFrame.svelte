@@ -189,7 +189,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: var(--sp-1-5);
     align-self: stretch;
     min-width: 42px;
     padding: 0 12px;

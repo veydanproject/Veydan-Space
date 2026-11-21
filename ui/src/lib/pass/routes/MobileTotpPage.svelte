@@ -6,6 +6,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
@@ -17,11 +18,14 @@
   import { t } from '$lib/core/mobile/i18n';
   import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
   import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import { longpress } from '$lib/core/mobile/longpress';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
 
   let entries = $state<TotpEntry[]>([]);
+  // Unknown until the first answer: no «no codes yet» flash before the list (as MobilePasswordsPage).
+  let loaded = $state(false);
   let codes = $state<Map<string, TotpCode>>(new Map());
   let profileNames = $state<Map<string, string>>(new Map());
   let workspaceNames = $state<Map<string, string>>(new Map());
@@ -40,25 +44,6 @@
   });
   let tick: ReturnType<typeof setInterval>;
 
-  const RADIUS = 12;
-  const CIRC = 2 * Math.PI * RADIUS;
-
-  function offset(code: TotpCode | undefined, period: number): number {
-    if (!code) return CIRC;
-    return CIRC * (1 - Math.min(1, code.seconds_left / period));
-  }
-
-  function ringColor(code: TotpCode | undefined): string {
-    if (!code || code.seconds_left <= 5) return 'var(--danger-text)';
-    if (code.seconds_left <= 10) return 'var(--warn-text)';
-    return 'var(--accent)';
-  }
-
-  function formatCode(code: string): string {
-    const half = Math.ceil(code.length / 2);
-    return `${code.slice(0, half)} ${code.slice(half)}`;
-  }
-
   /** Stable colour per issuer from a string hash. */
   function avatarColor(s: string): string {
     let h = 0;
@@ -76,6 +61,8 @@
       await refreshCodes();
     } catch (e) {
       error = formatError(e);
+    } finally {
+      loaded = true;
     }
     try {
       // Names and colours come through the catalog of entities; without their owner the names are the labels'.
@@ -156,16 +143,19 @@
 <div class="m-page totp">
   <div class="m-header">
     {#if hasHome()}
-      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{$t('app_totp')}</h1>
   </div>
 
   {#if entries.length > 0}
-    <div class="m-search">
-      <div class="field">
+    <div class="m-find-row">
+      <div class="search-field fill">
         <Icon name="search" size={16} />
-        <input type="search" bind:value={search} placeholder={$t('totp_search_placeholder')} />
+        <input type="search" bind:value={search} placeholder={$t('totp_search_placeholder')} aria-label={$t('totp_search_placeholder')} />
+        {#if search}
+          <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -175,16 +165,18 @@
     <div class="err"><Notice tone="danger">{error}</Notice></div>
   {/if}
 
-  {#if entries.length === 0}
-    <div class="m-empty">
-      <Icon name="shield-lock" size={40} />
+  {#if entries.length === 0 && !loaded}
+    <!-- Not answered yet: nothing rather than «no codes». -->
+  {:else if entries.length === 0}
+    <div class="empty-state">
+      <span class="empty-icon"><Icon name="shield-lock" size={22} /></span>
       <p>{$t('totp_empty')}</p>
       <span>{$t('totp_empty_hint')}</span>
       <a class="m-btn-grad cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
     </div>
   {:else if filtered.length === 0}
-    <div class="m-empty">
-      <Icon name="search" size={40} />
+    <div class="empty-state">
+      <span class="empty-icon"><Icon name="search" size={22} /></span>
       <p>{$t('common_nothing_found')}</p>
       <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
     </div>
@@ -192,7 +184,7 @@
     <div class="m-cards divided">
       {#each filtered as entry (entry.id)}
         {@const code = codes.get(entry.id)}
-        <button class="m-card item" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
+        <button type="button" class="list-row" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
           <span class="m-avatar" style:--c={avatarColor(label(entry))}>{label(entry).charAt(0).toUpperCase()}</span>
           <span class="meta">
             <span class="name">{label(entry)}</span>
@@ -205,36 +197,29 @@
               </span>
             {/if}
           </span>
-          <span class="code">{code ? formatCode(code.code) : '••• •••'}</span>
-          <svg class="ring" viewBox="0 0 28 28" width="24" height="24">
-            <circle cx="14" cy="14" r={RADIUS} class="track" />
-            <circle
-              cx="14"
-              cy="14"
-              r={RADIUS}
-              class="progress"
-              style="stroke: {ringColor(code)}; stroke-dasharray: {CIRC}; stroke-dashoffset: {offset(code, entry.period)}"
-            />
-          </svg>
+          <TotpLiveCode entryId={entry.id} period={entry.period} given={code ?? null} size="lg" />
         </button>
       {/each}
     </div>
   {/if}
 
   </div>
-  <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
+  <!-- The empty list has its own add, in the middle: the + would be a second one. -->
+  {#if entries.length}
+    <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
+  {/if}
 </div>
 
 <BottomSheet open={!!menu} title={menu ? label(menu) : ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={() => { if (menu) copy(menu); menu = null; }}>
-      <Icon name="copy" size={20} /><span class="m-row-label">{$t('common_copy')}</span>
+    <button type="button" class="list-row dense" onclick={() => { if (menu) copy(menu); menu = null; }}>
+      <Icon name="copy" size={20} /><span class="list-row-label">{$t('common_copy')}</span>
     </button>
-    <button type="button" class="m-row" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
-      <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
+    <button type="button" class="list-row dense" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
+      <Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span>
     </button>
-    <button type="button" class="m-row" onclick={remove}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
+    <button type="button" class="list-row dense" onclick={remove}>
+      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
 </BottomSheet>
@@ -242,36 +227,13 @@
 <style>
   .err { margin-bottom: var(--sp-3); }
   .totp { display: flex; flex-direction: column; min-height: 100%; }
-  .item {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    min-height: 64px;
-    padding: var(--sp-3) var(--sp-4);
-    color: var(--text);
-    font: inherit;
-    text-align: left;
-    width: 100%;
-  }
-  .item { background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--radius-lg); }
-  .item:active { background: var(--surface-hover); }
-  .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  /* The common row of a record (base.css .list-row, 64): the avatar of 48, the code at the end. */
+  .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: var(--sp-0-5); }
   .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-  .code {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-bold);
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .ring { transform: rotate(-90deg); flex-shrink: 0; }
-  .ring circle { fill: none; stroke-width: 3; }
-  .track { stroke: var(--border); }
-  .progress { transition: stroke-dashoffset 0.9s linear; }
+  .tagline { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
   /* Room under the last row for the floating «+» (.m-fab). */
-  .m-cards { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
+  .m-cards { gap: var(--sp-0-5); --rows-gap: var(--sp-0-5); padding-bottom: calc(var(--fab-size) + var(--fab-lift) + var(--sp-2)); }
   .danger { color: var(--danger-text); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
 </style>

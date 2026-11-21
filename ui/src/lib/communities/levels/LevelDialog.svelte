@@ -24,6 +24,7 @@
   import { LEVEL_NAME_MAX, RIGHTS, blankLevel, checkLevel, formOf, normalizeLevel, type LevelProblem } from './editor';
   import LevelPeople from './LevelPeople.svelte';
   import TermHint from '$lib/core/ui/TermHint.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import type { LevelInput, LevelView } from './types';
 
   interface Props {
@@ -104,7 +105,7 @@
   <div class="body">
     {#if base}<p class="hint base"><Icon name="users" size={13} />{$t('chan_level_base_hint')}</p>{/if}
     <label class="field-wrap">
-      <span class="label">{$t('chan_level_name')}</span>
+      <span class="form-label">{$t('chan_level_name')}</span>
       <input class="field" type="text" bind:value={form.name} maxlength={LEVEL_NAME_MAX + 10} placeholder={$t('chan_level_name_ph')}
         aria-invalid={tried && !!problem} disabled={busy} />
       <span class="count" class:over={[...form.name.trim()].length > LEVEL_NAME_MAX}>{[...form.name.trim()].length}/{LEVEL_NAME_MAX}</span>
@@ -115,14 +116,15 @@
     <div class="cols">
     <!-- Named by its words alone: the «?» right after them is not in a legend, or the group would be read «Открывает разделы Открывает разделы». -->
     <fieldset class="group" aria-labelledby="{uid}-scopes">
-      <div class="term"><span class="label" id="{uid}-scopes">{$t('chan_level_scopes')}</span>{#if !level}<TermHint term={$t('chan_level_scopes')}>{$t('chan_levels_explain')}</TermHint>{/if}</div>
+      <div class="term"><span class="form-label" id="{uid}-scopes">{$t('chan_level_scopes')}</span>{#if !level}<TermHint term={$t('chan_level_scopes')}>{$t('chan_levels_explain')}</TermHint>{/if}</div>
       {#if base || choices.length}
         <div class="box">
+          <!-- Several of a few: ToggleRow lines of the card. -->
           {#if base}
-            <label class="check"><input type="checkbox" checked disabled /><span>{lv.scopes.find((s) => s.scope_id === EVERYONE)?.title || $t('chan_scope_everyone')}</span></label>
+            <ToggleRow surface="row" title={lv.scopes.find((s) => s.scope_id === EVERYONE)?.title || $t('chan_scope_everyone')} on disabled />
           {/if}
           {#each choices as s (s.scope_id)}
-            <label class="check"><input type="checkbox" checked={form.scopes.includes(s.scope_id)} disabled={busy} onchange={() => toggleScope(s.scope_id)} /><span>{s.title}</span></label>
+            <ToggleRow surface="row" title={s.title} on={form.scopes.includes(s.scope_id)} disabled={busy} onclick={() => toggleScope(s.scope_id)} />
           {/each}
         </div>
       {:else}
@@ -131,11 +133,11 @@
     </fieldset>
 
     <fieldset class="group">
-      <legend class="label">{$t('chan_level_rights')}</legend>
+      <legend class="form-label">{$t('chan_level_rights')}</legend>
       <div class="box">
         {#each RIGHTS as r (r)}
-          <label class="check"><input type="checkbox" bind:checked={form.can[r]} disabled={busy} />
-            <span class="right"><span>{$t(`chan_right_${r}` as 'chan_right_comment')}</span><span class="hint">{$t(`chan_right_${r}_hint` as 'chan_right_comment_hint')}</span></span></label>
+          <ToggleRow surface="row" title={$t(`chan_right_${r}` as 'chan_right_comment')} hint={$t(`chan_right_${r}_hint` as 'chan_right_comment_hint')}
+            bind:on={form.can[r]} disabled={busy} />
         {/each}
       </div>
     </fieldset>
@@ -143,9 +145,10 @@
 
     {#if level && !base && isModerator(detail)}<LevelPeople {detail} {level} />{/if}
 
-    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
+    <!-- The error over the buttons, not at the end of the long form. -->
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <!-- The dangerous one at the left of the foot, apart from «Отмена | Сохранить». -->
     {#if level && !base}
       <button type="button" class="btn btn-danger-soft lead" disabled={busy} onclick={remove}><Icon name="trash-2" size={18} />{$t('chan_level_delete')}</button>
@@ -165,7 +168,7 @@
   .cols { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: var(--sp-3); align-items: start; }
   @container (max-width: 480px) { .cols { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); position: relative; }
-  .label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); padding: 0; }
+  legend.form-label { padding: 0; }
   /* The field 44 (48 under a finger), its count inside on the right. */
   .field {
     width: 100%; height: var(--control-h-lg); box-sizing: border-box; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);
@@ -184,11 +187,7 @@
   /* Its note keeps the width of the whole body, also from the narrow column of the sections. */
   .group .term :global(.note) { right: auto; width: min(440px, 100cqi); }
   /* The sections and the rights: a card of marks with their explanations. */
-  .box { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
-  .check { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text); cursor: pointer; user-select: none; }
-  .check input { margin-top: 2px; flex-shrink: 0; }
-  .right { display: flex; flex-direction: column; gap: 2px; }
-  .right .hint { font-weight: var(--fw-normal); }
+  .box { display: flex; flex-direction: column; padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .hint.base { display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md); background: var(--surface-2); }
   .hint.base :global(svg) { flex-shrink: 0; margin-top: 2px; }
@@ -197,8 +196,7 @@
   @media (pointer: coarse) {
     .field { font-size: var(--fs-md); height: 48px; }
     .count { bottom: 16px; }
-    .check { padding: var(--sp-1) 0; }
     .term { min-height: 32px; }
-    .group legend { padding: 7px 0; }
+    .group legend { padding: var(--sp-2) 0; }
   }
 </style>

@@ -68,9 +68,9 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
   .top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); text-align: center; }
   .name { margin-top: var(--sp-1); font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow-wrap: anywhere; }
-  .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
+  .sub { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .nip05.ok { color: var(--success-text, var(--success)); }
-  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); min-width: 0; }
   .label { color: var(--text-3); font-size: var(--fs-xs); }
   .about { margin: 0; font-size: var(--fs-sm); color: var(--text-body); white-space: pre-wrap; overflow-wrap: anywhere; }
   .note {

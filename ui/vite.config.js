@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { svelteCssGuard } from "./vite-svelte-css.js";
-import { productFromEnv, veydanModules } from "./vite-veydan-modules.js";
+import { productFromEnv, testExcludes, veydanModules } from "./vite-veydan-modules.js";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -26,6 +26,7 @@ const cacheDir = product.cacheDir;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  ...(process.env.VITEST ? await testProjects() : {}),
   plugins: [veydanModules(product), svelteCssGuard(), sveltekit()],
   cacheDir,
   // Dependencies reached only through lazy modules (terminal, inspector, QR
@@ -35,9 +36,6 @@ export default defineConfig(async () => ({
   optimizeDeps: {
     include: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links", "html2canvas", "jsqr"],
   },
-  // vitest keeps its defaults: its root is the UI project, so the build and
-  // work folders of the repository (data/, tmp/ with publish.sh's
-  // snapshots and clones) are outside what it searches for tests.
   define: {
     __TAURI_PLATFORM__: JSON.stringify(platform),
     // The product of this build (src/lib/core/product.ts) is defined by the
@@ -69,3 +67,33 @@ export default defineConfig(async () => ({
     //    caches (data/) and the toolchains are outside it.
   },
 }));
+
+// vitest keeps its defaults: its root is the UI project, so the build and
+// work folders of the repository (data/, tmp/ with publish.sh's snapshots
+// and clones) are outside what it searches for tests; the modules a product
+// has not are left out. A `*.client.test.ts` runs on Svelte's client build
+// (vitest-env-client.js), Svelte itself read through Vite by the browser's
+// conditions: its `$effect`s run and `$state` keeps its proxies, as in the
+// app. Every other test keeps the server build.
+async function testProjects() {
+  const { configDefaults } = await import("vitest/config");
+  const exclude = testExcludes(product, configDefaults.exclude);
+  return {
+    test: {
+      projects: [
+        { extends: true, test: { name: "node", exclude: [...exclude, "**/*.client.test.ts"] } },
+        {
+          extends: true,
+          resolve: { conditions: ["browser"] },
+          test: {
+            name: "client",
+            include: ["**/*.client.test.ts"],
+            exclude,
+            environment: "./vitest-env-client.js",
+            server: { deps: { inline: ["svelte"] } },
+          },
+        },
+      ],
+    },
+  };
+}

@@ -74,7 +74,7 @@
 <style>
   .md {
     font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; user-select: text; min-width: 0; max-width: 100%;
-    display: flex; flex-direction: column; gap: 6px;
+    display: flex; flex-direction: column; gap: var(--sp-1-5);
   }
   .md :global(:is(p, blockquote, ul, ol, pre, table, hr)) { margin: 0; }
   blockquote { display: flex; flex-direction: column; gap: 4px; }
@@ -91,24 +91,24 @@
   a, .link, .host, .inside { unicode-bidi: isolate; }
   /* Where a link leads, whatever its words say. */
   .host {
-    display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: var(--radius-xs); vertical-align: baseline;
-    font-size: 0.8em; line-height: var(--lh-base); color: var(--text-3); background: color-mix(in srgb, currentColor 8%, transparent); white-space: nowrap;
+    display: inline-block; margin-left: 4px; padding: 0 var(--sp-1); border-radius: var(--radius-xs); vertical-align: baseline;
+    font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-3); background: color-mix(in srgb, currentColor 8%, transparent); white-space: nowrap;
   }
   .inside { color: var(--accent-text-2); font-weight: var(--fw-semibold); }
   .ic, pre {
-    font-family: var(--font-mono); font-size: 0.88em;
+    font-family: var(--font-mono); font-size: var(--fs-sm);
     background: color-mix(in srgb, currentColor 9%, transparent); border-radius: var(--radius-xs);
   }
-  .ic { padding: 1px 5px; overflow-wrap: anywhere; }
+  .ic { padding: 1px var(--sp-1); overflow-wrap: anywhere; }
   .pre { position: relative; display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
   .lang { align-self: flex-start; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); padding: 0 2px 2px; }
   pre {
-    padding: 8px 10px; overflow-x: auto; white-space: pre; overflow-wrap: normal; line-height: var(--lh-snug);
+    padding: var(--sp-2) var(--sp-2-5); overflow-x: auto; white-space: pre; overflow-wrap: normal; line-height: var(--lh-snug);
     max-width: 100%; touch-action: pan-x pan-y;
     border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   }
   pre code { font: inherit; background: none; padding: 0; }
-  blockquote { padding: 2px 0 2px 10px; border-left: 3px solid color-mix(in srgb, var(--accent) 70%, transparent); color: inherit; opacity: 0.9; }
+  blockquote { padding: var(--sp-0-5) 0 var(--sp-0-5) var(--sp-2-5); border-left: 3px solid color-mix(in srgb, var(--accent) 70%, transparent); color: inherit; opacity: 0.9; }
   ul, ol { padding-left: 1.4em; display: flex; flex-direction: column; gap: 2px; }
   ul { list-style: disc; }
   ol { list-style: decimal; }
@@ -120,7 +120,7 @@
   }
   .box.done { background: var(--accent); border-color: var(--accent); color: #fff; }
   .table { max-width: 100%; overflow-x: auto; touch-action: pan-x pan-y; }
-  table { border-collapse: collapse; font-size: 0.94em; }
+  table { border-collapse: collapse; font-size: var(--fs-sm); }
   th, td { padding: 4px 8px; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); text-align: left; vertical-align: top; }
   th { font-weight: var(--fw-semibold); background: color-mix(in srgb, currentColor 6%, transparent); }
   hr { border: none; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); width: 100%; }

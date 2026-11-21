@@ -169,7 +169,7 @@
     </div>
     <button
       type="button"
-      class="m-note row"
+      class="list-row row"
       class:dragging
       style:transform="translateX({dx}px)"
       ontouchstart={onTouchStart}
@@ -180,11 +180,11 @@
       oncontextmenu={(e) => e.preventDefault()}
     >
       {#if selecting}
-        <span class="check" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
+        <span class="m-tick" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
       {/if}
-      <span class="body">
-        <span class="top">
-          <span class="title">
+      <span class="list-row-body">
+        <span class="list-row-top">
+          <span class="list-row-name title">
             {#if note.pinned && mode === 'normal'}<Icon name="pin" size={14} />{/if}
             <span class="title-text">{note.title || $t('notes_untitled')}</span>
           </span>
@@ -212,9 +212,9 @@
 </div>
 
 <style>
-  /* A row of the list, the design kit's (notes-list, touch): flat on the
-     page, a hairline between rows (`.divided` of the list), the accent
-     tint when chosen. A swipe needs the row opaque over its buttons. */
+  /* A row of the list: the common row of a record (base.css .list-row, 64, padding --sp-2 --sp-3; with a
+     preview it grows), a hairline between rows (`.divided` of the list), the accent tint when chosen.
+     A swipe needs the row opaque over its buttons. */
   /* The swipe is clipped inside, so the hairline over the row (`.divided`) stays seen. */
   .clip {
     position: relative;
@@ -246,19 +246,12 @@
     font-weight: var(--fw-semibold);
   }
   .rbtn.danger { background: var(--danger); }
-  .row {
-    padding: var(--sp-3) var(--sp-4);
-    border: 1px solid transparent;
-    border-radius: var(--radius-lg);
-    background: transparent;
-    transition: transform var(--dur-base) var(--ease), background var(--dur-fast) var(--ease);
-  }
-  .row:active { background: var(--surface-hover); }
+  .row { transition: transform var(--dur-base) var(--ease), background var(--dur-fast) var(--ease); }
   .moved .row { background: var(--m-card); }
-  .selected .row { background: var(--accent-bg); border-color: var(--accent-border); outline: none; }
+  .selected .row { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
   .row.dragging { transition: none; }
-  .row .body { gap: 4px; }
-  .row .title { display: flex; align-items: center; gap: var(--sp-1); font-weight: var(--fw-semibold); }
+  .row .list-row-body { gap: 4px; }
+  .row .title { flex: 1; display: flex; align-items: center; gap: var(--sp-1); }
   .row .title :global(svg) { flex: none; color: var(--text-2); }
   .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); }
@@ -271,6 +264,10 @@
     font-size: var(--fs-xs);
     line-height: var(--lh-snug);
     color: var(--text-2);
+  }
+  .preview {
+    font-size: var(--fs-sm); color: var(--text-2);
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   .mid { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .scope {

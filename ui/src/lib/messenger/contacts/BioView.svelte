@@ -59,7 +59,7 @@
   .i { font-style: italic; }
   .s { text-decoration: line-through; }
   .code {
-    font-family: var(--font-mono); font-size: 0.92em; padding: 0 3px; border-radius: var(--radius-xs);
+    font-family: var(--font-mono); font-size: var(--fs-sm); padding: 0 3px; border-radius: var(--radius-xs);
     background: var(--surface-3); border: 1px solid var(--border);
   }
   a { color: var(--accent-text-2); text-decoration: underline; text-underline-offset: 2px; }

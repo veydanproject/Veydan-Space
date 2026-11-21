@@ -71,10 +71,10 @@
   }
 </script>
 
-<button type="button" class="trigger" {disabled} {@attach longpress(() => record('audio', true))} onclick={() => (sheet = 'audio')} aria-label={t('audio')}>
+<button type="button" class="icon-btn" {disabled} {@attach longpress(() => record('audio', true))} onclick={() => (sheet = 'audio')} aria-label={t('audio')}>
   <Icon name="mic" size={22} />
 </button>
-<button type="button" class="trigger" {disabled} {@attach longpress(() => record('video', true))} onclick={() => (sheet = 'video')} aria-label={t('video')}>
+<button type="button" class="icon-btn" {disabled} {@attach longpress(() => record('video', true))} onclick={() => (sheet = 'video')} aria-label={t('video')}>
   <Icon name="video" size={22} />
 </button>
 
@@ -97,16 +97,16 @@
 
 <BottomSheet open={menu !== null} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={() => act((i) => { sheet = null; oninsert(i); })}>
-      <Icon name="link" size={20} /><span class="m-row-label">{t('insert')}</span>
+    <button type="button" class="list-row dense" onclick={() => act((i) => { sheet = null; oninsert(i); })}>
+      <Icon name="link" size={20} /><span class="list-row-label">{t('insert')}</span>
     </button>
-    <button type="button" class="m-row" onclick={() => act(onsave)}>
-      <Icon name="save" size={20} /><span class="m-row-label">{t('save')}</span>
+    <button type="button" class="list-row dense" onclick={() => act(onsave)}>
+      <Icon name="save" size={20} /><span class="list-row-label">{t('save')}</span>
     </button>
   </div>
   <div class="m-list">
-    <button type="button" class="m-row" onclick={() => act(onremove)}>
-      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{t('delete')}</span>
+    <button type="button" class="list-row dense" onclick={() => act(onremove)}>
+      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{t('delete')}</span>
     </button>
   </div>
 </BottomSheet>
@@ -124,19 +124,5 @@
 {/if}
 
 <style>
-  .trigger {
-    width: 48px;
-    height: 48px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--text-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .trigger:active { background: var(--m-seg); }
-  .trigger:disabled { opacity: 0.45; }
   .danger { color: var(--danger-text); }
 </style>

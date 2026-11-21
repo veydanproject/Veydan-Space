@@ -728,13 +728,11 @@
 
   // ── Tags, folders, workspaces ──
 
+  // The label sheet stays open after a tag, a folder or a binding: several are added, «Готово» closes it.
   async function addTag(name: string, color?: string) {
     // "Работа" is the tag "работа": the new tag and the note get one name.
     const choice = tagChoice(name.trim().replace(/^#/, ''), allTags, tags);
-    if (!choice) {
-      sheet = 'none';
-      return;
-    }
+    if (!choice) return;
     try {
       if (!choice.existing && color) {
         const created = await api.notes.tagCreate(choice.name, color);
@@ -742,7 +740,6 @@
       }
       tags = [...tags, choice.name];
       onEdit();
-      sheet = 'none';
     } catch (e) {
       error = formatError(e);
     }
@@ -754,23 +751,18 @@
   }
 
   async function addFolder(folderId: string) {
-    if (folderIds.includes(folderId)) {
-      sheet = 'none';
-      return;
-    }
+    if (folderIds.includes(folderId)) return;
     if (id === 'new') {
       droppedFolders = droppedFolders.filter((x) => x !== folderId);
       if (folderId !== inheritedFolderId && !extraFolders.includes(folderId)) {
         extraFolders = [...extraFolders, folderId];
       }
-      sheet = 'none';
       return;
     }
     busy = true;
     try {
       await api.notes.addFolder(id, folderId);
       await refreshMeta();
-      sheet = 'none';
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -805,10 +797,19 @@
     return api.notes.addBinding(id, binding);
   }
 
-  async function addBinding(binding: string) {
+  /** The owner of an entity that refers to the note removes the reference on both sides. */
+  function unbindEntity(binding: string): Promise<void> {
+    const parsed = parseBinding(binding);
+    const def = parsed?.value ? directory.get(parsed.kind) : undefined;
+    if (parsed && def?.link) return def.link.remove(parsed.value, `note:${id}`);
+    return api.notes.removeBinding(id, binding);
+  }
+
+  /** `close` is the context sheet's: its «Bind» closes it; the label sheet stays open. */
+  async function addBinding(binding: string, close = true) {
     if (binding.startsWith('workspace:')) {
       await setWorkspace(binding.slice('workspace:'.length), true);
-      sheet = 'none';
+      if (close) sheet = 'none';
       return;
     }
     if (id === 'new') {
@@ -816,14 +817,14 @@
       if (!extraBindings.includes(binding) && !inheritedBindings.includes(binding)) {
         extraBindings = [...extraBindings, binding];
       }
-      sheet = 'none';
+      if (close) sheet = 'none';
       return;
     }
     busy = true;
     try {
       await bindEntity(binding);
       await refreshMeta();
-      sheet = 'none';
+      if (close) sheet = 'none';
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -1003,7 +1004,7 @@
     busy = true;
     try {
       if (on) await bindEntity(binding);
-      else await api.notes.removeBinding(id, binding);
+      else await unbindEntity(binding);
       await refreshMeta();
     } catch (e) {
       error = formatError(e);
@@ -1063,9 +1064,9 @@
   </span>
 {/snippet}
 
-<div class="editor" style:padding-bottom={kb > 0 ? `max(${kb}px, calc(72px + var(--sab)))` : undefined}>
+<div class="editor" style:padding-bottom={kb > 0 ? `max(${kb}px, calc(var(--bar-plate-h) + var(--sab)))` : undefined}>
   <div class="m-header">
-    <button class="m-ibtn" onclick={back} aria-label={$t('common_back')}>
+    <button class="icon-btn" onclick={back} aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </button>
     {#if editingTitle}
@@ -1097,10 +1098,10 @@
         <Icon name={status === 'saved' ? 'check' : status === 'failed' ? 'alert-triangle' : status === 'saving' ? 'loader' : 'circle'} size={16} />
       </span>
     {/if}
-    <button type="button" class="m-ibtn" class:on={pinned} disabled={isNew} onclick={() => setFlags({ pinned: !pinned })} aria-label={pinned ? $t('notes_unpin') : $t('notes_pin')}>
-      <Icon name="pin" size={20} />
+    <button type="button" class="icon-btn" class:on={pinned} disabled={isNew} onclick={() => setFlags({ pinned: !pinned })} aria-label={pinned ? $t('notes_unpin') : $t('notes_pin')}>
+      <Icon name="pin" size={22} />
     </button>
-    <button type="button" class="m-ibtn" onclick={() => (sheet = 'actions')} aria-label={$t('notes_actions')}>
+    <button type="button" class="icon-btn" onclick={() => (sheet = 'actions')} aria-label={$t('notes_actions')}>
       <Icon name="more-vertical" size={22} />
     </button>
   </div>
@@ -1214,7 +1215,7 @@
 </div>
 
 <div class="toolbar" class:hide={wikiOpen || tplOpen}>
-  <button type="button" onclick={() => (sheet = 'attach')} aria-label={$t('notes_attach')}>
+  <button type="button" class="icon-btn" onclick={() => (sheet = 'attach')} aria-label={$t('notes_attach')}>
     <Icon name="paperclip" size={22} />
   </button>
   <MediaCapture
@@ -1227,11 +1228,11 @@
     onsave={(i) => { const a = attachmentOf(i); if (a) saveAttachment(a); }}
     resolveSrc={(i) => urls.get(i.name)}
   />
-  <button type="button" disabled={isNew} onclick={() => (sheet = 'links')} aria-label={$t('notes_links')}>
+  <button type="button" class="icon-btn" disabled={isNew} onclick={() => (sheet = 'links')} aria-label={$t('notes_links')}>
     <Icon name="link" size={22} />
   </button>
   {#if showContext}
-    <button type="button" class="ctx-btn" onclick={() => openContext()} aria-label={$t('notes_context')}>
+    <button type="button" class="icon-btn ctx-btn" onclick={() => openContext()} aria-label={$t('notes_context')}>
       <Icon name="layers" size={22} />
       {#if contextCount > 0}<span class="ctx-count">{contextCount}</span>{/if}
     </button>
@@ -1306,7 +1307,7 @@
   onclose={() => (sheet = 'none')}
   onaddTag={addTag}
   onaddFolder={addFolder}
-  onaddBinding={addBinding}
+  onaddBinding={(b) => addBinding(b, false)}
 />
 <NoteAttachSheet
   open={sheet === 'attach'}
@@ -1355,9 +1356,9 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 0 0 calc(72px + var(--sab));
+    padding: 0 0 calc(var(--bar-plate-h) + var(--sab));
     background: transparent;
-    animation: vfade var(--dur-base) ease-out;
+    /* No vfade: a note faded in from nothing, a blink at every open (the owner's iPhone, 2026-11-21). */
   }
   .m-header {
     flex-shrink: 0;
@@ -1400,7 +1401,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-1-5);
     padding: 0;
     border: 0;
     background: none;
@@ -1408,7 +1409,8 @@
     font: inherit;
     text-align: left;
   }
-  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-bold); }
+  /* The note's name is the head's title (.m-header .m-title): 20 bold, in the field that renames it too. */
+  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); }
   .crumb :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .crumb-edit {
     flex: 1;
@@ -1418,12 +1420,11 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: var(--m-field);
-    font-size: var(--fs-md);
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
+    letter-spacing: var(--ls-tight);
   }
   .crumb-edit:focus { box-shadow: none; }
-  .m-header .m-ibtn { flex-shrink: 0; }
-  .m-header .m-ibtn:disabled { opacity: 0.45; }
   .save { display: inline-flex; align-items: center; flex-shrink: 0; padding: 0 var(--sp-1); color: var(--text-3); }
   .save.ok { color: var(--success-text); }
   .save.busy { color: var(--warn-text); }
@@ -1444,8 +1445,8 @@
   }
   .chip-x { justify-content: center; width: 30px; opacity: var(--chip-fade); }
   .link-form { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
-  .link-form input { flex: 1; min-width: 0; min-height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--m-field); }
-  .link-form .btn { min-height: 36px; padding: 0 var(--sp-3); flex-shrink: 0; }
+  .link-form input { flex: 1; min-width: 0; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--m-field); }
+  .link-form .btn { min-height: var(--touch); padding: 0 var(--sp-3); flex-shrink: 0; }
   .body {
     border: 0;
     background: transparent;
@@ -1454,12 +1455,11 @@
     min-height: 200px;
     field-sizing: content;
     font-family: var(--font-mono);
-    font-size: var(--fs-body);
     line-height: var(--lh-base);
   }
   .body:focus { box-shadow: none; }
   .editor :global(.rich) { flex: none; }
-  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; font-size: var(--fs-md); line-height: var(--lh-base); }
+  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; line-height: var(--lh-base); }
 
   .tags { margin-bottom: var(--sp-2); }
 
@@ -1468,35 +1468,21 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 20;
+    z-index: calc(var(--z-base) + 20);
     display: flex;
     justify-content: space-around;
     align-items: center;
-    height: calc(56px + var(--sab));
+    height: calc(var(--bar-plate-h) + var(--sab));
     padding-bottom: var(--sab);
     background: var(--m-nav);
     border-top: 1px solid var(--border);
   }
-  .toolbar button {
-    width: 48px;
-    height: 48px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--text-2);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .toolbar button.on { color: var(--accent-text); }
-  .toolbar button:active { background: var(--m-seg); }
-  .toolbar button:disabled { opacity: 0.45; }
+  /* Its buttons are the common .icon-btn (40, its zone 44, mobile.css), MediaCapture's too. */
   .toolbar.hide { display: none; }
   .ctx-btn { position: relative; }
   .ctx-count {
-    position: absolute; top: 6px; right: 6px;
-    min-width: 16px; height: 16px; padding: 0 4px;
+    position: absolute; top: 2px; right: 2px;
+    min-width: 16px; height: 16px; padding: 0 var(--sp-1);
     border-radius: var(--radius-pill); background: var(--accent); color: #fff;
     display: inline-flex; align-items: center; justify-content: center;
     font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon);

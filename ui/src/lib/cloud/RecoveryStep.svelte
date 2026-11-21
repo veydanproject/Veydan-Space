@@ -15,7 +15,7 @@
   account (none made, or the person's own servers): the wizard goes on.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { joinErrorKey } from '$lib/core/join-error';
@@ -45,6 +45,8 @@
   let preparing = $state(false);
   let error = $state('');
   let words = $state<string | null>(null);
+  /** The key card's buttons, kept at the step's foot. */
+  let keyFoot = $state<Snippet>();
 
   const lockOn = $derived(appLock.status.enabled);
   const issued = $derived(status?.issued === true);
@@ -102,8 +104,10 @@
   </div>
 {:else if words}
   <div class="ob-main">
-    <RecoveryKeyCard code={words} ondone={next} />
+    <RecoveryKeyCard code={words} ondone={next} pinned bind:foot={keyFoot} />
   </div>
+  <!-- «Копировать», «Продолжить» and the check's buttons stay at the step's foot while the words scroll. -->
+  {#if keyFoot}<div class="ob-foot">{@render keyFoot()}</div>{/if}
 {:else if issued}
   <div class="ob-main">
     <span class="ob-tile"><Icon name="check" size={28} /></span>
@@ -145,14 +149,13 @@
 {/if}
 
 <style>
-  .field { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-4); font-size: var(--fs-sm); }
-  .field span { color: var(--text-3); font-size: var(--fs-xs); }
+  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); margin-top: var(--sp-4); font-size: var(--fs-sm); }
+  .field span { color: var(--text-2); font-size: var(--fs-sm); }
   .field input {
-    font: inherit; color: var(--text); min-height: 44px;
+    color: var(--text); min-height: 44px;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: 8px 10px;
+    padding: var(--sp-2) var(--sp-2-5);
   }
-  .field input:focus { outline: none; border-color: var(--accent-border); }
   .wait { margin: var(--sp-4) 0 0; }
   .activating { margin: var(--sp-4) 0 0; }
 </style>

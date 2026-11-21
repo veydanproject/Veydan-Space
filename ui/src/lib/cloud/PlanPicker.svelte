@@ -173,7 +173,7 @@
 
 <section class="picker" class:m={isMobile} id="plans" aria-labelledby="cloud-plans-title">
   <div class="head">
-    <h2 id="cloud-plans-title" class={isMobile ? 'm-label' : 'section-label'}>{$t('cloud_plans_title')}</h2>
+    <h2 id="cloud-plans-title" class="section-label">{$t('cloud_plans_title')}</h2>
     {#if !viewOnly && currencies.length > 1}
       <div class="currency">
         <CustomSelect options={currencies.map((code) => ({ value: code, label: code }))} value={currency} onchange={(v) => (pickedCurrency = v ?? null)} ariaLabel={$t('cloud_plan_currency')} />
@@ -215,10 +215,12 @@
   .picker { display: flex; flex-direction: column; gap: var(--sp-3); container-type: inline-size; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   h2 { margin: 0; }
-  .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-1); }
+  /* The common .section-label: the space above it is the picker's (on a phone 16, as above a group of rows). */
+  .picker { padding-top: var(--sp-3); }
+  .picker.m { padding-top: var(--sp-4); }
   .currency { flex-shrink: 0; }
   .save {
-    margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-pill);
+    margin-left: var(--sp-1-5); padding: 1px var(--sp-1-5); border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border);
     font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
@@ -260,7 +262,7 @@
 
   .name-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 26px; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
-  .price-row { display: flex; align-items: baseline; gap: 6px; }
+  .price-row { display: flex; align-items: baseline; gap: var(--sp-1-5); }
   .price { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); color: var(--text); line-height: var(--lh-tight); font-variant-numeric: tabular-nums; }
   .price.none { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text-2); }
   .per { font-size: var(--fs-sm); color: var(--text-2); }

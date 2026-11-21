@@ -14,6 +14,11 @@
 
 import { platform } from '$lib/core/platform';
 
+/** The fields a tap types into (not the boxes, buttons and pickers an input can be). */
+const TYPED = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]):not([type=range]):not([type=color])';
+/** What still counts as a tap rather than a drag. */
+const TAP_PX = 10;
+
 /** Starts on iOS; returns the stop function (a no-op elsewhere). */
 export function startIosKeyboard(): () => void {
   const vv = window.visualViewport;
@@ -36,14 +41,36 @@ export function startIosKeyboard(): () => void {
     full = 0;
     tick();
   };
+  // A tap on a field: WebKit focuses it and scrolls the whole document to
+  // show it, `tick` scrolls it back, and the screen played a scroll up and
+  // down each time the keyboard came. The tap focuses the field itself,
+  // without the scroll; the keyboard still comes, the tap being the user's.
+  let x0 = 0;
+  let y0 = 0;
+  const down = (e: TouchEvent) => {
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+  };
+  const up = (e: TouchEvent) => {
+    const field = e.target instanceof Element ? e.target.closest<HTMLElement>(TYPED) : null;
+    if (!field || document.activeElement === field) return;
+    const t = e.changedTouches[0];
+    if (!t || Math.abs(t.clientX - x0) > TAP_PX || Math.abs(t.clientY - y0) > TAP_PX) return;
+    e.preventDefault();
+    field.focus({ preventScroll: true });
+  };
   vv.addEventListener('resize', tick);
   vv.addEventListener('scroll', tick);
   window.addEventListener('orientationchange', turned);
+  window.addEventListener('touchstart', down, { capture: true, passive: true });
+  window.addEventListener('touchend', up, { capture: true, passive: false });
   tick();
   return () => {
     vv.removeEventListener('resize', tick);
     vv.removeEventListener('scroll', tick);
     window.removeEventListener('orientationchange', turned);
+    window.removeEventListener('touchstart', down, true);
+    window.removeEventListener('touchend', up, true);
     root.style.removeProperty('--kb');
   };
 }

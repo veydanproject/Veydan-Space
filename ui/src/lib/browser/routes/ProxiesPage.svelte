@@ -7,6 +7,7 @@
   import { t } from '$lib/core/i18n';
   import type { Proxy, ProxyCheckResult } from '$lib/browser/types';
   import Icon from '$lib/core/Icon.svelte';
+  import { refocusSearch } from '$lib/core/ui/searchField';
   import { pinnedHead } from '$lib/core/pinnedHead';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
@@ -172,10 +173,10 @@
   <!-- Toolbar -->
   <div class="filter-bar">
     <div class="search-field">
-      <Icon name="search" size={18} />
+      <Icon name="search" size={16} />
       <input type="text" bind:value={search} placeholder={$t('proxies_search_placeholder')} />
       {#if search}
-        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={18} /></button>
+        <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
       {/if}
     </div>
 
@@ -295,17 +296,17 @@
 
     {#if totalPages > 1}
       <div class="pagination">
-        <button class="page-btn" disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}>
+        <button class="btn btn-sm btn-ghost" disabled={currentPage === 0} onclick={() => (page = currentPage - 1)}>
           <Icon name="chevron-left" size={18} />
         </button>
         {#each Array.from({ length: totalPages }, (_, i) => i) as p_}
           <button
-            class="page-btn"
+            class="btn btn-sm btn-ghost"
             class:active={p_ === currentPage}
             onclick={() => (page = p_)}
           >{p_ + 1}</button>
         {/each}
-        <button class="page-btn" disabled={currentPage === totalPages - 1} onclick={() => (page = currentPage + 1)}>
+        <button class="btn btn-sm btn-ghost" disabled={currentPage === totalPages - 1} onclick={() => (page = currentPage + 1)}>
           <Icon name="chevron-right" size={18} />
         </button>
       </div>
@@ -328,7 +329,7 @@
   /* The placeholder names four fields: the field takes all the room the filters leave, 300 at least, so it is read whole (T8-08). */
   .filter-bar .search-field { flex: 1 1 300px; width: auto; min-width: 300px; }
 
-  .page-title-group { display: flex; flex-direction: column; gap: 6px; }
+  .page-title-group { display: flex; flex-direction: column; gap: var(--sp-1-5); }
 
   /* Table: the common glass .data-table, as high as its rows, scrolled inside when the page is short. */
   .table-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
@@ -390,16 +391,8 @@
     padding-top: var(--sp-1); flex-shrink: 0;
   }
 
-  .page-btn {
-    min-width: 30px; height: 30px; padding: 0 0.4rem;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); color: var(--text-2);
-    font-size: var(--fs-sm); cursor: pointer; transition: all 0.15s;
-  }
-  .page-btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border-2); color: var(--text); }
-  .page-btn.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-  .page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  /* A page number is a small quiet button, the current one .active (base.css). */
+  .pagination > .btn { min-width: var(--control-h-sm); padding: 0 var(--sp-2); }
 
 
   .plate { margin-bottom: var(--sp-4); }
