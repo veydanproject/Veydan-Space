@@ -134,9 +134,9 @@
         </span>
       </span>
       {#if path}
-        <span class="chip" class:moving title={$t(cascade ? 'msg_gcall_via_cascade_hint' : 'msg_gcall_via_node_hint')}><Icon name="server" size={11} />{path}</span>
+        <span class="call-chip" class:moving title={$t(cascade ? 'msg_gcall_via_cascade_hint' : 'msg_gcall_via_node_hint')}><Icon name="server" size={11} />{path}</span>
       {/if}
-      <span class="chip quiet" title={$t('msg_gcall_e2e_hint')}><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
+      <span class="call-chip quiet" title={$t('msg_gcall_e2e_hint')}><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
       {#if call}
         <button class="hbtn" onclick={() => onchat(call.chat_id)} title={$t('msg_call_open_chat')} aria-label={$t('msg_call_open_chat')}><Icon name="message-circle" size={15} /></button>
         <button class="hbtn" onclick={() => (groupCallStore.shown = false)} title={$t('msg_gcall_fold')} aria-label={$t('msg_gcall_fold')}><Icon name="arrows-minimize" size={15} /></button>
@@ -218,12 +218,12 @@
   .sub { display: flex; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--on-media-text-2); white-space: nowrap; overflow: hidden; }
   .phase.clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
   .dotsep { opacity: 0.6; }
-  .chip {
+  .call-chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); flex-shrink: 0;
     background: var(--on-media-bg); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap; cursor: help;
   }
-  .chip.quiet { color: var(--on-media-text-2); }
-  .chip.moving { opacity: 0.55; }
+  .call-chip.quiet { color: var(--on-media-text-2); }
+  .call-chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 50%; top: 10px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px);
     display: flex; align-items: center; gap: var(--sp-2-5); padding: 8px 12px; border-radius: var(--radius); font-size: var(--fs-xs); line-height: var(--lh-snug);
@@ -232,7 +232,7 @@
   .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
   .spin { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .win:not(.big) .chip.quiet { display: none; }
+  .win:not(.big) .call-chip.quiet { display: none; }
   .hbtn {
     width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer; flex-shrink: 0;
     display: inline-flex; align-items: center; justify-content: center; background: var(--on-media-bg); color: #fff;

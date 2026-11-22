@@ -97,8 +97,8 @@
 
   {#if selected}
     <div class="meta">
-      <span class="m-chip small">{typeLabel(selected.version_type)}</span>
-      {#if selected.device}<span class="m-chip small">{selected.device}</span>{/if}
+      <span class="badge">{typeLabel(selected.version_type)}</span>
+      {#if selected.device}<span class="badge">{selected.device}</span>{/if}
       <span class="when">{fmtDateTime(selected.created_at, $locale)}</span>
     </div>
     {#if selected.title}<h3 class="vtitle">{selected.title}</h3>{/if}

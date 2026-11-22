@@ -10,6 +10,7 @@
   import { loadDefaultApp, registry } from '$lib/core/registry';
   import { product } from '$lib/core/product';
   import SetupCard from '$lib/core/onboarding/SetupCard.svelte';
+  import { updateOffered } from '$lib/core/store/update-check.svelte';
 
   type Greeting = 'home_morning' | 'home_day' | 'home_evening' | 'home_night';
 
@@ -84,6 +85,7 @@
       {/each}
       <!-- Home has no bar: Settings is the last tile. -->
       <a href="/settings" class="m-tile">
+        {#if updateOffered()}<span class="status-dot tile-dot" aria-hidden="true"></span>{/if}
         <Icon name="settings" size={24} />
         <span class="label">{$t('app_settings')}</span>
       </a>
@@ -104,4 +106,7 @@
   h1 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
   p { margin: 0; color: var(--text-2); font-size: var(--fs-body); }
   .search-field { margin-bottom: var(--sp-5); }
+  /* A new version (design 18): the dot of design 06 at the tile's corner, as on the tab of Settings in a bar. */
+  .m-tile { position: relative; }
+  .tile-dot { position: absolute; top: var(--sp-2); right: var(--sp-2); background: var(--accent); }
 </style>

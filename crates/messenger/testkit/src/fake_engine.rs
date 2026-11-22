@@ -103,6 +103,9 @@ pub struct FakeEngine {
     quiet_relink: Arc<AtomicBool>,
     /// On: a camera or a screen fails to open (`set_video` errs).
     camera_fails: Arc<AtomicBool>,
+    /// Off: the end of gathering is never told, as by the engine of the
+    /// apps, which gathers for as long as a call lasts.
+    gathering_ends: Arc<AtomicBool>,
     /// The frames of every session, by its id: this side's own and the far
     /// end's, for the tests to push into and the core to read.
     frames: Arc<Mutex<HashMap<u32, Frames>>>,
@@ -135,6 +138,7 @@ impl FakeEngine {
             connects: Arc::new(AtomicBool::new(true)),
             quiet_relink: Arc::new(AtomicBool::new(false)),
             camera_fails: Arc::new(AtomicBool::new(false)),
+            gathering_ends: Arc::new(AtomicBool::new(true)),
             frames: Arc::default(),
         }
     }
@@ -150,6 +154,13 @@ impl FakeEngine {
     /// as after a loss).
     pub fn set_quiet_relink(&self, on: bool) {
         self.quiet_relink.store(on, Ordering::SeqCst);
+    }
+
+    /// Whether a session says when it has gathered its candidates (it
+    /// does by default, at once). Off, it says nothing, as the engine of
+    /// the apps: it gathers continually, and its gathering has no end.
+    pub fn set_gathering_ends(&self, on: bool) {
+        self.gathering_ends.store(on, Ordering::SeqCst);
     }
 
     /// Whether a camera or a screen fails to open from now on (`set_video`
@@ -345,7 +356,9 @@ impl FakeSession {
                 index: Some(0),
             }));
         }
-        self.tell(SessionEvent::GatheringComplete);
+        if self.engine.gathering_ends.load(Ordering::SeqCst) {
+            self.tell(SessionEvent::GatheringComplete);
+        }
     }
 
     fn record_has_turn(&self) -> bool {

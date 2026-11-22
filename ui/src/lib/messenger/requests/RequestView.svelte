@@ -92,7 +92,7 @@
     <CopyField label={$t('msg_peer_key')} value={key} mono />
 
     <section class="message">
-      <div class="bubble"><MessageContent text={request.text} plain /></div>
+      {#if request.text}<div class="bubble"><MessageContent text={request.text} plain /></div>{/if}
       <span class="time">{stamp(request.at)}</span>
     </section>
 

@@ -20,7 +20,6 @@ target/
 /build/
 ui/build/
 
-# Editors and local tools
 # The skill and the agent of the publishing (skills/, agents/) are the repository's; the rest is local
 .vscode/
 .idea/

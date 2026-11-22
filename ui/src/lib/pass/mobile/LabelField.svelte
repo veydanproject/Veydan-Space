@@ -6,6 +6,7 @@
   the module that keeps the labels (the notes, through the registry). A
   product without one (Pass) edits the free labels here: chips with a remove
   button and a field to type a new one; a reference shows as 10.3 says.
+  `readonly` (a record's card) only shows them, as badges.
 -->
 <script lang="ts">
   import type { LabelFieldProps } from '$lib/core/module';
@@ -17,7 +18,7 @@
   import { parseBinding } from '$lib/core/bindings';
   import { isSystemTag, mergeTags, systemTags, userLabels } from '$lib/core/entity-tags';
 
-  let { tags, linkNotes = false, allowAdd = true, onchange }: LabelFieldProps = $props();
+  let { tags, linkNotes = false, readonly = false, onchange }: LabelFieldProps = $props();
 
   const Field = registry.labelField();
 
@@ -55,31 +56,31 @@
 </script>
 
 {#if Field}
-  <Field {tags} {linkNotes} {allowAdd} {onchange} />
-{:else if tags.length || allowAdd}
+  <Field {tags} {linkNotes} {readonly} {onchange} />
+{:else if tags.length || !readonly}
   <div class="m-field">
-    <label for="labels-new">{$t('pw_field_tags')}</label>
+    {#if readonly}<span class="form-label">{$t('pw_field_tags')}</span>{:else}<label for="labels-new">{$t('pw_field_tags')}</label>{/if}
     {#if tags.length}
-      <div class="m-chips">
+      <div class="chip-row">
         {#each bindings as tag (tag)}
           {@const color = bindingColor(tag)}
-          <span class="m-chip small tinted" class:neutral={!color} style:--chip={color}>
+          <span class={readonly ? 'badge tinted' : 'chip tinted'} style:--chip={color}>
             <ChipMark kind={parseBinding(tag)?.kind ?? 'tag'} caption={bindingCaption(tag)} />
             {bindingName(tag)}
-            <button type="button" class="x" onclick={() => remove(tag)} aria-label={$t('pass_remove')}><Icon name="x" size={14} /></button>
+            {#if !readonly}<button type="button" class="x" onclick={() => remove(tag)} aria-label={$t('pass_remove')}><Icon name="x" size={14} /></button>{/if}
           </span>
         {/each}
         {#each labels as label (label)}
           {@const color = directory.summary('note_tag', label)?.color}
-          <span class="m-chip small tinted" style:--chip={color}>
+          <span class={readonly ? 'badge tinted' : 'chip tinted'} style:--chip={color}>
             <ChipMark kind="tag" />
             {label}
-            <button type="button" class="x" onclick={() => remove(label)} aria-label={$t('pass_remove')}><Icon name="x" size={14} /></button>
+            {#if !readonly}<button type="button" class="x" onclick={() => remove(label)} aria-label={$t('pass_remove')}><Icon name="x" size={14} /></button>{/if}
           </span>
         {/each}
       </div>
     {/if}
-    {#if allowAdd}
+    {#if !readonly}
       <div class="add">
         <input
           id="labels-new"
@@ -97,14 +98,14 @@
 {/if}
 
 <style>
-  .m-chips { margin-bottom: var(--sp-1); }
-  .m-chip.small { position: relative; min-height: 32px; padding-right: 0; font-size: var(--fs-xs); }
+  .chip-row { margin-bottom: var(--sp-1); }
+  .chip { padding-right: 0; }
   .x {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     padding: 0;
     border: 0;
     background: transparent;

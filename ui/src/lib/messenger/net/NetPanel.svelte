@@ -53,7 +53,7 @@
     <p class="hint">{$t(`msg_bridge_mode_${s.mode}_hint` as 'msg_bridge_mode_off_hint')}</p>
 
     <div class="state">
-      <span class="dot" class:via={s.active}></span>
+      <span class="status-dot {s.active ? 'ok' : 'off'}"></span>
       <span class="way">{way}</span>
       <span class="known">{$t('msg_bridge_known', { count: String(s.bridges) })}</span>
       <button class="btn btn-ghost" disabled={netStore.busy} onclick={() => netStore.runCheck()}>
@@ -97,8 +97,6 @@
   .muted, .hint { margin: 0; line-height: var(--lh-snug); }
   .muted { font-size: var(--fs-sm); color: var(--text-2); }
   .state { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-sm); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
-  .dot.via { background: var(--success-text); }
   .way { color: var(--text); }
   .known { color: var(--text-3); font-size: var(--fs-xs); margin-right: auto; }
   .meta { font-size: var(--fs-xs); color: var(--text-3); }

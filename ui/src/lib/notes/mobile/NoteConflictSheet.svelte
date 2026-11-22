@@ -150,9 +150,9 @@
     <p class="empty-state sm">{$t('common_nothing_found')}</p>
   {:else}
     <div class="bulk">
-      <button type="button" class="m-chip" class:active={allChosen('ours')} disabled={busy} onclick={() => chooseAll('ours')}>{$t('note_sync_conflict_accept_local')}</button>
-      <button type="button" class="m-chip" class:active={allChosen('both')} disabled={busy} onclick={() => chooseAll('both')}>{$t('note_sync_conflict_accept_both')}</button>
-      <button type="button" class="m-chip" class:active={allChosen('theirs')} disabled={busy} onclick={() => chooseAll('theirs')}>{$t('note_sync_conflict_accept_remote')}</button>
+      <button type="button" class="chip" class:active={allChosen('ours')} disabled={busy} onclick={() => chooseAll('ours')}>{$t('note_sync_conflict_accept_local')}</button>
+      <button type="button" class="chip" class:active={allChosen('both')} disabled={busy} onclick={() => chooseAll('both')}>{$t('note_sync_conflict_accept_both')}</button>
+      <button type="button" class="chip" class:active={allChosen('theirs')} disabled={busy} onclick={() => chooseAll('theirs')}>{$t('note_sync_conflict_accept_remote')}</button>
       {#if left > 0}
         <span class="left">{$t('note_sync_conflict_unresolved', { n: String(left) })}</span>
       {/if}

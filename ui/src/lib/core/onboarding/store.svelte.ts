@@ -113,15 +113,16 @@ class Onboarding {
 
   /**
    * Opens the wizard again at a step, to set up what was passed by: the
-   * steps after it follow as at the first start. False where the product
-   * has no such step now (its module is off).
+   * steps after it follow as at the first start; `intent` is what the step
+   * is asked to open with (the account: `create`, `key`). False where the
+   * product has no such step now (its module is off).
    */
-  resume(id: string): boolean {
+  resume(id: string, intent: string | null = null): boolean {
     if (!this.has(id)) return false;
     this.active = true;
     this.floor = id;
     this.aside = null;
-    this.show(id);
+    this.show(id, intent);
     return true;
   }
 

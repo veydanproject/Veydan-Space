@@ -23,6 +23,7 @@
   import { leave } from '$lib/core/ui/back';
   import NoteRichEditor from '$lib/notes/mobile/NoteRichEditor.svelte';
   import NoteFormatBar from '$lib/notes/mobile/NoteFormatBar.svelte';
+  import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { applyAction, type EditAction } from '$lib/notes/markdown-edit';
   import WikiLinkSheet from '$lib/notes/mobile/WikiLinkSheet.svelte';
   import NoteActionsSheet from '$lib/notes/mobile/NoteActionsSheet.svelte';
@@ -145,6 +146,8 @@
     },
   });
   const CARET_GAP = 16;
+  /** The format strip over the keyboard: one row of 48. */
+  const FORMAT_STRIP_H = 48;
 
   /** Keep the caret line inside the area above the keyboard. */
   function revealCaret() {
@@ -628,8 +631,7 @@
     tick().then(() => linkInput?.focus());
   }
 
-  function applyLink(e: SubmitEvent) {
-    e.preventDefault();
+  function applyLink() {
     rich?.setLink(linkHref.trim());
     linkOpen = false;
   }
@@ -1058,13 +1060,14 @@
 
 <!-- A tag or folder chip: a tap opens the labels sheet; only its × removes it. -->
 {#snippet removable(kind: string, label: string, color: string | undefined, onremove: () => void)}
-  <span class="m-chip removable tinted" style:--chip={color}>
+  <span class="chip removable tinted" style:--chip={color}>
     <button type="button" class="chip-body" onclick={() => (sheet = 'labels')}><ChipMark {kind} />{label}</button>
     <button type="button" class="chip-x" onclick={onremove} aria-label={$t('notes_label_remove', { name: label })}><Icon name="x" size={14} /></button>
   </span>
 {/snippet}
 
-<div class="editor" style:padding-bottom={kb > 0 ? `max(${kb}px, calc(var(--bar-plate-h) + var(--sab)))` : undefined}>
+<!-- The keyboard up: the format strip stands on it (48), the actions' bar is hidden under it. -->
+<div class="editor" style:padding-bottom={kb > 0 ? `${kb + FORMAT_STRIP_H}px` : undefined}>
   <div class="m-header">
     <button class="icon-btn" onclick={back} aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
@@ -1105,84 +1108,67 @@
       <Icon name="more-vertical" size={22} />
     </button>
   </div>
-  <div class="meta">
-    <!-- Held empty until the first save, so the line coming in does not move the text being typed -->
-    <p class="when" aria-hidden={!updatedAt}>
-      {#if updatedAt}{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}{:else}&nbsp;{/if}
-    </p>
-    {#if error}
-      <div class="m-error">{error}</div>
-    {/if}
-    <div class="m-chips tags">
-      {#each shownChips as c (c.kind + c.id)}
-        {#if c.kind === 'folder'}
-          {@render removable('folder', c.label, c.color, () => removeFolder(c.id))}
-        {:else if c.kind === 'proxy' || c.kind === 'ssh' || c.kind === 'totp' || c.kind === 'password'}
-          <!-- An entity: neutral, its kind told by the mark. -->
-          <button type="button" class="m-chip tinted" onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
-        {:else}
-          <span class="m-chip tinted" style:--chip={c.color || undefined}><ChipMark kind={c.kind} />{c.label}</span>
-        {/if}
-      {/each}
-      {#each tags as name (name)}
-        {@render removable('tag', name, findTag(allTags, name)?.color, () => removeTag(name))}
-      {/each}
-      <button class="m-chip add" onclick={() => (sheet = 'labels')} aria-label={$t('notes_tags_add')}>
-        <Icon name="plus" size={14} />
-      </button>
-    </div>
-    <NoteFormatBar {mode} disabled={!ready} onaction={runAction} onmode={setMode} />
-    {#if linkOpen}
-      <form class="link-form" onsubmit={applyLink}>
-        <input
-          bind:this={linkInput}
-          bind:value={linkHref}
-          type="text"
-          inputmode="url"
-          autocapitalize="off"
-          autocomplete="off"
-          placeholder="https://"
-          aria-label={$t('note_tb_link')}
-        />
-        <button type="submit" class="btn btn-primary">{$t('common_done')}</button>
-        <button type="button" class="btn btn-ghost" onclick={closeLink}>{$t('common_cancel')}</button>
-      </form>
-    {/if}
-    <!-- The plates of the page, as on a computer (NoteEditor): the same tone, the main button last. -->
-    {#if externalChange}
-      <div class="plate">
-        <Notice tone="info">
-          {$t('note_external_change')}
-          {#snippet action()}
-            <button type="button" class="btn btn-ghost btn-sm" onclick={keepMine}>{$t('note_external_keep')}</button>
-            <button type="button" class="btn btn-ghost btn-sm" onclick={acceptExternal}>{$t('note_external_accept')}</button>
-          {/snippet}
-        </Notice>
-      </div>
-    {/if}
-    {#if hasConflict}
-      <div class="plate">
-        <Notice tone="warn">
-          {$t('note_sync_conflict')}
-          {#snippet action()}
-            <button type="button" class="btn btn-ghost btn-sm" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
-          {/snippet}
-        </Notice>
-      </div>
-    {/if}
-    {#if fetchOffer.length}
-      <div class="fetch-card">
-        <span class="m-doc"><Icon name="download" size={16} /></span>
-        <span class="fetch-text">{$t('note_att_fetch_prompt', { n: String(fetchOffer.length), size: fmtSize(fetchOfferBytes) })}</span>
-        <div class="fetch-actions">
-          <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('common_later')}</button>
-          <button type="button" class="btn btn-primary" onclick={fetchOffered}>{$t('note_att_fetch_yes')}</button>
-        </div>
-      </div>
-    {/if}
-  </div>
-
   <div class="scroll" bind:this={scrollEl}>
+    <!-- Over the text and scrolling with it: the head keeps only its buttons and the name. -->
+    <div class="meta">
+      <!-- Held empty until the first save, so the line coming in does not move the text being typed -->
+      <p class="when" aria-hidden={!updatedAt}>
+        {#if updatedAt}{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}{:else}&nbsp;{/if}
+      </p>
+      {#if error}
+        <div class="m-error">{error}</div>
+      {/if}
+      <div class="chip-row tags">
+        {#each shownChips as c (c.kind + c.id)}
+          {#if c.kind === 'folder'}
+            {@render removable('folder', c.label, c.color, () => removeFolder(c.id))}
+          {:else if c.kind === 'proxy' || c.kind === 'ssh' || c.kind === 'totp' || c.kind === 'password'}
+            <!-- An entity: neutral, its kind told by the mark. -->
+            <button type="button" class="chip tinted" onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
+          {:else}
+            <span class="chip tinted" style:--chip={c.color || undefined}><ChipMark kind={c.kind} />{c.label}</span>
+          {/if}
+        {/each}
+        {#each tags as name (name)}
+          {@render removable('tag', name, findTag(allTags, name)?.color, () => removeTag(name))}
+        {/each}
+        <button type="button" class="icon-btn" onclick={() => (sheet = 'labels')} aria-label={$t('notes_tags_add')}>
+          <Icon name="plus" size={18} />
+        </button>
+      </div>
+      <!-- The plates of the page, as on a computer (NoteEditor): the same tone, the main button last. -->
+      {#if externalChange}
+        <div class="plate">
+          <Notice tone="info">
+            {$t('note_external_change')}
+            {#snippet action()}
+              <button type="button" class="btn btn-ghost btn-sm" onclick={keepMine}>{$t('note_external_keep')}</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick={acceptExternal}>{$t('note_external_accept')}</button>
+            {/snippet}
+          </Notice>
+        </div>
+      {/if}
+      {#if hasConflict}
+        <div class="plate">
+          <Notice tone="warn">
+            {$t('note_sync_conflict')}
+            {#snippet action()}
+              <button type="button" class="btn btn-ghost btn-sm" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
+            {/snippet}
+          </Notice>
+        </div>
+      {/if}
+      {#if fetchOffer.length}
+        <div class="fetch-card">
+          <span class="m-doc"><Icon name="download" size={16} /></span>
+          <span class="fetch-text">{$t('note_att_fetch_prompt', { n: String(fetchOffer.length), size: fmtSize(fetchOfferBytes) })}</span>
+          <div class="fetch-actions">
+            <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('common_later')}</button>
+            <button type="button" class="btn btn-primary" onclick={fetchOffered}>{$t('note_att_fetch_yes')}</button>
+          </div>
+        </div>
+      {/if}
+    </div>
   {#if !ready}
     <div class="body"></div>
   {:else if mode === 'rich'}
@@ -1214,7 +1200,13 @@
 
 </div>
 
-<div class="toolbar" class:hide={wikiOpen || tplOpen}>
+{#if kb > 0 && !wikiOpen && !tplOpen}
+  <div class="format-strip" style:bottom="{kb}px">
+    <NoteFormatBar {mode} disabled={!ready} onaction={runAction} onmode={setMode} />
+  </div>
+{/if}
+
+<div class="toolbar" class:hide={kb > 0 || wikiOpen || tplOpen}>
   <button type="button" class="icon-btn" onclick={() => (sheet = 'attach')} aria-label={$t('notes_attach')}>
     <Icon name="paperclip" size={22} />
   </button>
@@ -1234,11 +1226,29 @@
   {#if showContext}
     <button type="button" class="icon-btn ctx-btn" onclick={() => openContext()} aria-label={$t('notes_context')}>
       <Icon name="layers" size={22} />
-      {#if contextCount > 0}<span class="ctx-count">{contextCount}</span>{/if}
+      {#if contextCount > 0}<span class="count-pill sm">{contextCount}</span>{/if}
     </button>
   {/if}
 </div>
 
+<BottomSheet open={linkOpen} title={$t('note_tb_link')} onclose={closeLink}>
+  <input
+    class="link-field"
+    bind:this={linkInput}
+    bind:value={linkHref}
+    type="text"
+    inputmode="url"
+    autocapitalize="off"
+    autocomplete="off"
+    placeholder="https://"
+    aria-label={$t('note_tb_link')}
+    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } }}
+  />
+  {#snippet footer()}
+    <button type="button" class="btn btn-ghost" onclick={closeLink}>{$t('common_cancel')}</button>
+    <button type="button" class="btn btn-primary" onclick={applyLink}>{$t('common_done')}</button>
+  {/snippet}
+</BottomSheet>
 <NoteActionsSheet
   open={sheet === 'actions'}
   noteId={id}
@@ -1317,6 +1327,7 @@
   {updatedAt}
   folderLabel={folderChip?.label ?? ''}
   {tags}
+  tagColor={(name) => findTag(allTags, name)?.color}
   onclose={() => (sheet = 'none')}
   onfile={() => attach(false)}
   onimage={() => attach(true)}
@@ -1366,18 +1377,18 @@
     top: auto;
     margin: 0;
   }
+  /* The first of the scrolling part: the date, the error, the chips and the plates, 8 apart, 12 to the text. */
   .meta {
-    flex-shrink: 0;
-    padding: var(--sp-2) var(--sp-4) var(--sp-2);
-    background: transparent;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding-bottom: var(--sp-3);
   }
-  .plate { margin-top: var(--sp-2); }
   .fetch-card {
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: center;
     gap: var(--sp-2) var(--sp-3);
-    margin-top: var(--sp-2);
     padding: var(--sp-3);
     border: 1px solid var(--accent-border, var(--m-card-border));
     border-radius: var(--radius-lg);
@@ -1388,13 +1399,14 @@
   .fetch-card .m-doc { color: var(--accent-text); }
   .fetch-text { min-width: 0; line-height: var(--lh-snug); }
   .fetch-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: var(--sp-2); }
-  .fetch-actions .btn { min-height: 36px; padding: 0 var(--sp-3); }
+  /* The card's buttons are the common .btn of 40, not the page's 44 and 48 (mobile.css); the zone stays 44. */
+  .fetch-actions .btn { min-height: var(--control-h); }
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: var(--sp-3) var(--sp-4);
+    padding: var(--sp-2) var(--sp-4) var(--sp-3);
   }
   .crumb {
     flex: 1;
@@ -1430,23 +1442,31 @@
   .save.busy { color: var(--warn-text); }
   .save.bad { color: var(--danger-text); }
   .save.spin :global(svg) { animation: spin 1s linear infinite; }
-  .when { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-3); }
-  .removable { gap: 0; padding: 0 0 0 12px; }
+  .when { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
+  /* A chip of 32; its × is a square button of 32 at its end, 8 after the text. Its zone of 44 (the hit area
+     rule) stands out of the square by 6: with 12 between chips and rows two zones never overlap. */
+  .removable { gap: 0; padding: 0 0 0 var(--sp-3); }
   .chip-body, .chip-x {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-height: 28px;
+    min-height: 30px;
     padding: 0;
     border: 0;
     background: none;
     color: inherit;
     font: inherit;
   }
-  .chip-x { justify-content: center; width: 30px; opacity: var(--chip-fade); }
-  .link-form { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
-  .link-form input { flex: 1; min-width: 0; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--m-field); }
-  .link-form .btn { min-height: var(--touch); padding: 0 var(--sp-3); flex-shrink: 0; }
+  .chip-body { padding-right: var(--sp-2); }
+  .chip-x { justify-content: center; width: 32px; opacity: var(--chip-fade); }
+  /* The sheet «Ссылка»: one field of 44, 16 high letters (mobile.css), as every field of a sheet. */
+  .link-field {
+    height: var(--touch);
+    padding: 0 var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-3);
+  }
   .body {
     border: 0;
     background: transparent;
@@ -1461,7 +1481,7 @@
   .editor :global(.rich) { flex: none; }
   .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; line-height: var(--lh-base); }
 
-  .tags { margin-bottom: var(--sp-2); }
+  .tags { gap: var(--sp-3); }
 
   .toolbar {
     position: fixed;
@@ -1479,12 +1499,21 @@
   }
   /* Its buttons are the common .icon-btn (40, its zone 44, mobile.css), MediaCapture's too. */
   .toolbar.hide { display: none; }
-  .ctx-btn { position: relative; }
-  .ctx-count {
-    position: absolute; top: 2px; right: 2px;
-    min-width: 16px; height: 16px; padding: 0 var(--sp-1);
-    border-radius: var(--radius-pill); background: var(--accent); color: #fff;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon);
+  /* The keyboard up: one row of formatting on its top edge, 48 high; the row scrolls under the finger. */
+  .format-strip {
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: calc(var(--z-base) + 20);
+    display: flex;
+    align-items: center;
+    height: 48px;
+    padding: 0 var(--sp-4);
+    background: var(--surface-drawer);
+    border-top: 1px solid var(--border);
   }
+  .format-strip > :global(.bar) { flex: 1; min-width: 0; height: 100%; }
+  .ctx-btn { position: relative; }
+  /* The count of the context: the .count-pill of 18 on the button's corner (40), as on the computer. */
+  .ctx-btn .count-pill { position: absolute; top: 0; right: 0; pointer-events: none; }
 </style>

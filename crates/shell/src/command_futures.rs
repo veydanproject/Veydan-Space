@@ -10,6 +10,9 @@
 //! (`Box::pin`), so that only the box crosses the bridge. The size is read
 //! from the type of the command, without calling it.
 
+fn r0<R>(_: fn() -> R) -> usize {
+    std::mem::size_of::<R>()
+}
 fn r1<A, R>(_: fn(A) -> R) -> usize {
     std::mem::size_of::<R>()
 }
@@ -43,6 +46,8 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("chrome_clipboard_image", r1(crate::commands::chrome::chrome_clipboard_image)));
     v.push(("files_stage", r2(crate::commands::files::files_stage)));
     v.push(("files_save", r3(crate::commands::files::files_save)));
+    #[cfg(desktop)]
+    v.push(("clipboard_read_text", r0(crate::commands::host::clipboard_read_text)));
     #[cfg(desktop)]
     v.push(("clipboard_write_text", r1(crate::commands::host::clipboard_write_text)));
     v.push(("updater_check", r1(crate::updater::updater_check)));

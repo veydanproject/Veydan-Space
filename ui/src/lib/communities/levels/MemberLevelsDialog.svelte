@@ -74,7 +74,7 @@
       {#each levels as l (l.id)}
         <ToggleRow surface="row" title={l.name} on={l.id === BASE_LEVEL || picked.includes(l.id)} disabled={busy || l.id === BASE_LEVEL} onclick={() => toggle(l.id)}>
           {#snippet hintContent()}
-            {#if l.id === BASE_LEVEL}<span class="tag">{$t('chan_level_base')}</span>{/if}
+            {#if l.id === BASE_LEVEL}<span class="badge badge-accent">{$t('chan_level_base')}</span>{/if}
             {l.scopes.map(titleOf).filter(Boolean).join(', ') || $t('chan_level_no_scopes')}
           {/snippet}
         </ToggleRow>
@@ -92,5 +92,5 @@
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .levels { display: flex; flex-direction: column; }
-  .tag { margin-right: var(--sp-1-5); font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
+  .badge { margin-right: var(--sp-1-5); }
 </style>

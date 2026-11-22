@@ -8,6 +8,7 @@
   back; a phone screen brings its own bar.
 -->
 <script lang="ts">
+  import { onPhone as isMobile } from '../phone';
   import { onMount } from 'svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
@@ -77,7 +78,7 @@
         {/each}
       </ul>
       {#if requestStore.nextBefore !== null}
-        <button class="btn btn-ghost btn-sm more" disabled={requestStore.loadingMore} onclick={more}>{$t('msg_req_more')}</button>
+        <button class="btn btn-ghost more" class:btn-sm={!isMobile} disabled={requestStore.loadingMore} onclick={more}>{$t('msg_req_more')}</button>
       {/if}
     {/if}
 

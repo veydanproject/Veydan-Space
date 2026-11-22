@@ -504,26 +504,36 @@
         {#each team as s (s.pubkey)}
           {@const nm = nameStore.label(s.pubkey)}
           <li>
-            <button class="list-row dense" class:still={!entriesFor(s).length} oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
-              use:longpress={{ onpress: (p) => openMenu(p, s) }}>
-              <Avatar url={nameStore.picture(s.pubkey)} label={nm} seed={s.pubkey} size={36} />
-              <span class="list-row-body">
-                <span class="list-row-name">{nm}{#if s.pubkey === me} <span class="me">({$t('chan_you')})</span>{/if}</span>
-                <code class="list-row-line">{shortKey(s.pubkey)}</code>
-                {#if levelChips(s.pubkey).length}
-                  <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="star" size={14} />{n}</span>{/each}</span>
-                {/if}
-              </span>
-              {#if s.trusted && checksMessages(detail)}<span class="dim" title={$t('chan_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
-              {#if mutedNow(s)}
-                <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>
-              {/if}
-              {#if staffOf(detail, s.pubkey).role !== 'member'}<span class="role {s.role}">{$t(`chan_role_${s.role}` as 'chan_role_admin')}</span>{/if}
-            </button>
+            <!-- A phone's row with acts has «⋮» at its end (design 13), beside its main button; a computer's stays one button. -->
+            {#if phone && entriesFor(s).length}
+              <div class="list-row dense">
+                <button class="list-row-main" oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
+                  use:longpress={{ onpress: (p) => openMenu(p, s) }}>{@render staffBody(s, nm)}</button>
+                <button type="button" class="icon-btn row-more" onclick={(e) => openMenu(e, s)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+              </div>
+            {:else}
+              <button class="list-row dense" class:still={!entriesFor(s).length} oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
+                use:longpress={{ onpress: (p) => openMenu(p, s) }}>{@render staffBody(s, nm)}</button>
+            {/if}
           </li>
         {/each}
       </ul>
     {/if}
+    {#snippet staffBody(s: StaffView, nm: string)}
+      <Avatar url={nameStore.picture(s.pubkey)} label={nm} seed={s.pubkey} size={36} />
+      <span class="list-row-body">
+        <span class="list-row-name">{nm}{#if s.pubkey === me} <span class="me">({$t('chan_you')})</span>{/if}</span>
+        <code class="list-row-line">{shortKey(s.pubkey)}</code>
+        {#if levelChips(s.pubkey).length}
+          <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="star" size={14} />{n}</span>{/each}</span>
+        {/if}
+      </span>
+      {#if s.trusted && checksMessages(detail)}<span class="dim" title={$t('chan_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
+      {#if mutedNow(s)}
+        <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>
+      {/if}
+      {#if staffOf(detail, s.pubkey).role !== 'member'}<span class="role {s.role}">{$t(`chan_role_${s.role}` as 'chan_role_admin')}</span>{/if}
+    {/snippet}
     {#if !isModerator(detail)}<p class="hint">{$t('chan_readers_hint')}</p>{/if}
   </section>
 
@@ -690,6 +700,12 @@
         {#if banned.length}{@render bannedBody(true)}{/if}
       {/if}
 
+      <!-- A phone's «Пожаловаться» is a plain row over the zone: the red ones of the zone stand apart (design 03). -->
+      {#if phone}
+        <ul class="card list-rows people">
+          <li><button type="button" class="list-row dense" onclick={reportChannel}><Icon name="alert-triangle" size={18} /><span class="list-row-label">{$t('chan_report_channel')}</span></button></li>
+        </ul>
+      {/if}
       <section class="zone">
         {#if isOwner(detail)}<p class="hint">{$t('chan_owner_hint')}</p>{/if}
         <!-- A failed leave, disband or forget is told over its buttons, not at the top of a long panel. -->
@@ -707,7 +723,7 @@
             <button class="btn btn-danger-soft" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('chan_forget')}</button>
           {/if}
           <!-- Anyone reports a channel, its owner and team too (Play, 2026-10-22; channelMenu.ts). -->
-          <button class="btn btn-danger-soft" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>
+          {#if !phone}<button class="btn btn-danger-soft" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>{/if}
         </div>
         <span class="since">{$t('chan_created', { date: stamp(view.created_at) })}</span>
       </section>

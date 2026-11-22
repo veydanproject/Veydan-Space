@@ -116,14 +116,14 @@
 
   {#if via || (info && !phone) || (peerScreen && !phone)}
     <div class="badges">
-      {#if peerScreen && !phone}<span class="badge screen"><Icon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
+      {#if peerScreen && !phone}<span class="stage-badge screen"><Icon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
       {#if via}
-        <span class="badge" class:relay={via === 'relay'} title={$t(via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
+        <span class="stage-badge" class:relay={via === 'relay'} title={$t(via === 'relay' ? 'msg_call_via_relay_hint' : 'msg_call_via_direct_hint')}>
           <Icon name={via === 'relay' ? 'route' : 'arrows-exchange'} size={11} />{$t(via === 'relay' ? 'msg_call_via_relay' : 'msg_call_via_direct')}
           {#if rtt != null}<span class="rtt">{$t('msg_call_rtt', { ms: String(rtt) })}</span>{/if}
         </span>
       {/if}
-      {#if info && !phone}<span class="badge quiet">{info}</span>{/if}
+      {#if info && !phone}<span class="stage-badge quiet">{info}</span>{/if}
     </div>
   {/if}
   {#if peerScreen && phone}<span class="info screen-note"><Icon name="screen-share" size={11} />{$t('msg_call_peer_sharing', { name: peer.name })}</span>{/if}
@@ -174,20 +174,20 @@
     position: absolute; z-index: 2; left: 10px; top: 10px; right: calc(var(--pip-w) + 24px);
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1-5); pointer-events: none;
   }
-  .badge, .info {
+  .stage-badge, .info {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill);
     background: var(--on-media-scrim); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
     backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   }
   /* The tooltip of the way, the one thing here a pointer reads. */
-  .badge[title] { pointer-events: auto; cursor: help; }
-  .badge.relay { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.5)); color: #fff; }
-  .badge.quiet, .rtt { font-variant-numeric: tabular-nums; }
-  .badge.quiet { color: var(--on-media-text); }
+  .stage-badge[title] { pointer-events: auto; cursor: help; }
+  .stage-badge.relay { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.5)); color: #fff; }
+  .stage-badge.quiet, .rtt { font-variant-numeric: tabular-nums; }
+  .stage-badge.quiet { color: var(--on-media-text); }
   .rtt { margin-left: 2px; padding-left: var(--sp-1-5); border-left: 1px solid rgba(255, 255, 255, 0.3); opacity: 0.85; }
   .info { position: absolute; z-index: 2; bottom: calc(var(--sab, 0px) + 150px); left: 50%; transform: translateX(-50%); pointer-events: none; }
   /* Above the size of the frames on a phone. */
   .info.screen-note { bottom: calc(var(--sab, 0px) + 178px); max-width: calc(100% - 32px); }
-  .badge.screen { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .stage-badge.screen { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   @media (prefers-reduced-motion: reduce) { .tile-place { transition: none; } }
 </style>

@@ -32,3 +32,37 @@ export function onKeyboard(fn: (bottom: number) => void): () => void {
     window.removeEventListener('veydan-keyboard', tick);
   };
 }
+
+/** The fields a tap types into. */
+const TYPED = 'textarea, input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=file]):not([type=range]):not([type=color]), [contenteditable=true]';
+/** Air kept between the field in focus and the bottom of what shows it. */
+const FIELD_GAP = 8;
+
+/**
+ * The keyboard came up over a page's field: the WebView does not know it is there (the host lays it over the
+ * page), so nothing scrolled the field into sight. Its scrolling body in the page (.m-page, a first start's
+ * step: lifted by --kb)
+ * brings it up to its bottom edge, above the page's foot, and above a foot that sticks to that edge inside the
+ * body (a form's own .page-foot, the Cloud's «Удалить аккаунт»), with the field's label in sight. A field outside
+ * a scrolling body stays as it is.
+ */
+export function revealFocused(): void {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || !el.matches(TYPED)) return;
+  const pageEl = el.closest('.m-page, .ob.m');
+  let box = el.parentElement;
+  while (box && box !== pageEl && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+  if (!box || box === pageEl || !pageEl) return;
+  const field = el.getBoundingClientRect();
+  const view = box.getBoundingClientRect();
+  const top = (el.closest('.form-group') ?? el).getBoundingClientRect().top;
+  let bottom = view.bottom;
+  for (const foot of box.querySelectorAll<HTMLElement>('.page-foot')) {
+    const after = el.compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING;
+    // Where the foot stands now, stuck over the field, not what its height says: its margins and the body's
+    // padding move the edge it sticks to.
+    if (after && getComputedStyle(foot).position === 'sticky') bottom = Math.min(bottom, foot.getBoundingClientRect().top);
+  }
+  if (field.bottom > bottom - FIELD_GAP) box.scrollTop += field.bottom - (bottom - FIELD_GAP);
+  else if (top < view.top) box.scrollTop -= view.top - top;
+}

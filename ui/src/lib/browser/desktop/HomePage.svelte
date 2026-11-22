@@ -306,7 +306,7 @@
               </div>
               {#if s.active_count > 0}
                 <div class="stat active">
-                  <span class="active-dot"></span>
+                  <span class="status-dot ok"></span>
                   <span>{$t(countKey('workspaces_active_n', s.active_count, $locale), { n: String(s.active_count) })}</span>
                 </div>
               {/if}
@@ -548,7 +548,6 @@
   .stat :global(svg) { color: var(--text-dim); }
   .stat.active { color: var(--success-text); font-weight: var(--fw-medium); }
   .stat.active :global(svg) { color: var(--success); }
-  .active-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 
   .card-footer {
     border-top: 1px solid var(--border);

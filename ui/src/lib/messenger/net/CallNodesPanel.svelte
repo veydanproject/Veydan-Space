@@ -123,7 +123,7 @@
         <ul class="list">
           {#each v.nodes as n (n.id)}
             <li class="row" class:unused={!n.used} title={n.used ? n.reference : `${$t('msg_call_nodes_unused')} · ${n.reference}`}>
-              <span class="dot {n.health}" aria-hidden="true"></span>
+              <span class="status-dot {n.health === 'active' ? 'ok' : n.health === 'degraded' ? 'warn' : n.health === 'refused' || n.health === 'unreachable' ? 'bad' : 'off'}" aria-hidden="true"></span>
               <div class="node">
                 <div class="top">
                   <code>{n.addr}</code>
@@ -196,10 +196,6 @@
   .row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-1) 0; }
   .row + .row { border-top: 1px solid var(--border); }
   .row.unused .node { opacity: 0.55; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
-  .dot.active { background: var(--success-text); }
-  .dot.degraded { background: var(--warn-text); }
-  .dot.refused, .dot.unreachable { background: var(--danger-text); }
   .node { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .top { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
   .top code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text); white-space: nowrap; }

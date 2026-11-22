@@ -14,6 +14,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t, locale } from '$lib/core/i18n';
+  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import { api } from '$lib/core/api';
   import { asCloudError, webApi } from '$lib/cloud/api';
   import { deleteReady, emptyDeleteForm, errorKeyOf, type DeleteForm } from '$lib/cloud/account';
@@ -112,10 +113,7 @@
     </div>
     <form class="form" onsubmit={(e) => { e.preventDefault(); void confirm(); }}>
       {#if form.lockOn}
-        <div class="form-group">
-          <label for="cloud-web-lock">{$t('cloud_delete_lock')}</label>
-          <input id="cloud-web-lock" type="password" bind:value={form.secret} autocomplete="current-password" />
-        </div>
+        <LockSecretInput id="cloud-web-lock" label={$t('cloud_delete_lock')} bind:value={form.secret} />
       {/if}
       <div class="form-group">
         <label for="cloud-web-word">{$t('cloud_delete_word')}</label>

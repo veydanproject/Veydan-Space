@@ -19,13 +19,15 @@ export function lockSecretIssue(kind: LockKind, password: string, confirm: strin
 export interface LockInputAttrs {
   inputmode: 'numeric' | 'text';
   pattern: string | undefined;
+  /** A PIN is offered by no password manager; a password may be. */
+  autocomplete: 'off' | 'current-password';
 }
 
 /** Input attributes that open the right keyboard for the secret kind. */
 export function lockInputAttrs(kind: LockKind): LockInputAttrs {
   return kind === 'pin'
-    ? { inputmode: 'numeric', pattern: '[0-9]*' }
-    : { inputmode: 'text', pattern: undefined };
+    ? { inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off' }
+    : { inputmode: 'text', pattern: undefined, autocomplete: 'current-password' };
 }
 
 /** The text of `veydan_lock::ERR_WRONG`: the secret of a dangerous action is not the lock's. */

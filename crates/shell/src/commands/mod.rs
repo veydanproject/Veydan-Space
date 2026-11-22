@@ -83,6 +83,8 @@ fn commands() -> Module {
             files::files_stage,
             files::files_save,
             #[cfg(desktop)]
+            host::clipboard_read_text,
+            #[cfg(desktop)]
             host::clipboard_write_text,
             #[cfg(desktop)]
             host::update_supported,

@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "이름, 사진, ‘자기소개’, 웹사이트, 링크는 공개됩니다. 내 키를 아는 사람은 누구나 볼 수 있습니다.",
     "msg_profile_saved": "프로필이 게시되었습니다",
     "msg_profile_unsaved": "저장하지 않은 변경 사항",
-    "msg_profile_discard_confirm": "변경 사항을 버릴까요?",
-    "msg_profile_discard": "버리기",
     "msg_profile_send_card": "내 카드 보내기",
     "msg_profile_send_card_hint": "이름, 사진, ‘자기소개’, 링크를 메시지 하나로 보내 상대가 한 번의 탭으로 나를 추가할 수 있게 합니다.",
     "msg_profile_send_card_to": "받는 사람",

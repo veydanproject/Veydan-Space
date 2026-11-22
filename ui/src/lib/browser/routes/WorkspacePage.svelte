@@ -3,7 +3,7 @@
 
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import Pill from '$lib/core/ui/Pill.svelte';
+  import Pill, { type PillTone } from '$lib/core/ui/Pill.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { api } from '$lib/browser/api';
@@ -37,6 +37,9 @@
   import ProxyAddress from '$lib/browser/components/ProxyAddress.svelte';
   import { registry } from '$lib/core/registry';
   import TabBar from '$lib/core/ui/TabBar.svelte';
+
+  /** A proxy's state as a badge: working, failed, not checked yet. */
+  const STATUS_TONE: Record<string, PillTone> = { active: 'ok', failed: 'bad', unknown: 'neutral' };
 
   let workspaceId = $derived($page.params.id ?? '');
 
@@ -286,7 +289,7 @@
         </Pill>
         {#if runningCount > 0}
           <Pill tone="ok">
-            <span class="dot"></span>
+            <span class="status-dot ok"></span>
             {$t(countKey('workspaces_active_n', runningCount, $locale), { n: String(runningCount) })}
           </Pill>
         {/if}
@@ -424,7 +427,7 @@
                   <button type="button" class="search-clear" onclick={(e) => { proxySearch = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
                 {/if}
               </div>
-              <span class="count-badge">{filteredProxies.length} / {proxies.length}</span>
+              <span class="count-pill sm quiet filter-count">{filteredProxies.length} / {proxies.length}</span>
             </div>
 
             {#if filteredProxies.length === 0}
@@ -453,11 +456,11 @@
                           <span class="proxy-name">{proxy.name}</span>
                         </td>
                         <td class="col-type">
-                          <span class="type-badge type-{proxy.proxy_type}">{proxy.proxy_type}</span>
+                          <Pill text={proxy.proxy_type} />
                         </td>
                         <td><ProxyAddress {proxy} {result} /></td>
                         <td class="col-status">
-                          <span class="status-badge status-{proxy.status}">{proxy.status}</span>
+                          <Pill text={proxy.status} tone={STATUS_TONE[proxy.status] ?? 'neutral'} />
                         </td>
                         <td class="col-actions">
                           <div class="row-acts">
@@ -611,8 +614,6 @@
 
   .ws-meta { display: flex; align-items: center; gap: var(--sp-1-5); flex: 1; }
 
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-
   .ws-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-left: auto; }
 
   /* Tabs row: segment control + view switcher (both .seg primitives) */
@@ -633,7 +634,8 @@
   /* Proxies Tab */
   .proxies-tab { display: flex; flex-direction: column; gap: var(--sp-2-5); flex: 1; min-height: 0; }
 
-  /* панель фильтров — единые примитивы .filter-bar/.search-field/.count-badge из base.css */
+  /* панель фильтров — единые примитивы .filter-bar/.search-field из base.css; счёт «x / y» — .count-pill справа */
+  .filter-count { margin-left: auto; }
   /* The proxies search names four fields: the width of the SSH keys search, so it is read whole. */
   .search-field.wide { width: 300px; }
 
@@ -652,27 +654,6 @@
 
   .row-num { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
   .proxy-name { font-weight: var(--fw-semibold); display: block; }
-
-  /* Proxy type badges: http → blue tint, socks5 → purple tint (design) */
-  .type-badge {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: 4px 12px; border-radius: var(--radius-pill);
-    border: none; background: var(--surface-2); color: var(--text-2);
-  }
-  .type-http, .type-https { background: color-mix(in srgb, var(--cat-blue) 14%, transparent); color: var(--cat-blue); }
-  .type-socks5 { background: var(--accent-tint); color: var(--accent-text-2); }
-  .type-tor { background: var(--accent-tint); color: var(--accent-text-2); }
-
-  .status-badge {
-    display: inline-flex; align-items: center; gap: var(--sp-2);
-    font-size: var(--fs-xs); font-weight: var(--fw-bold);
-    padding: 4px 11px; border-radius: var(--radius-pill);
-  }
-  .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .status-active { background: var(--success-bg); color: var(--success-text); }
-  .status-failed { background: var(--danger-bg); color: var(--danger-text); }
-  .status-unknown { background: var(--surface-2); color: var(--text-2); }
 
   .row-acts { display: flex; gap: var(--sp-1); justify-content: flex-end; }
   .row-acts .icon-btn:first-child:hover:not(:disabled) { color: var(--accent-text); } /* check/refresh → accent */

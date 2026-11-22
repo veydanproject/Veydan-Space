@@ -172,6 +172,43 @@ async fn a_message_shown_is_left_for_the_app_and_a_quiet_one_is_not() {
     assert_eq!(left[0].json, event);
 }
 
+/// The owner, 2026-11-22: a call answered on a phone whose app did not
+/// run took long to connect; the app waited for a relay to bring the
+/// invitation the push had already opened. The invitation that rings is
+/// left for the app as a message shown is, under any settings of the
+/// content; one that does not ring is not.
+#[tokio::test]
+async fn an_invitation_that_rings_is_left_for_the_app() {
+    let phone = Phone::new().await;
+    let alice = Keys::generate();
+    befriend(&phone, &alice, "Al").await;
+    phone.app_received(&dm_from(&alice, &phone, &Envelope::control("dm_accept"), 999_999)).await;
+    let inbox = MessengerConfig::new(phone.dir.path().join("messenger")).push_inbox_dir();
+    let invite = |id: &str| dm_from(&alice, &phone, &Envelope::call_invite(id, "audio", "v=0", vec![], false), now());
+
+    let first = invite("0123456789abcdef0123456789abcdef");
+    assert!(matches!(phone.describe(dm_push(&first)).await, Outcome::Call(_)));
+    let left = messenger_ingress::push_inbox::take(&inbox);
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].json, first);
+
+    // Nothing of the content is shown: the call rings all the same, and
+    // is left all the same.
+    Settings { content: Content::None, lockscreen_hidden: false }.save(&phone.store).await.unwrap();
+    let second = invite("1123456789abcdef0123456789abcdef");
+    let marked = push_with(&[("type", "dm"), ("event", &second.to_string()), ("call", "1")]);
+    assert!(matches!(phone.describe(marked).await, Outcome::Call(_)));
+    let left = messenger_ingress::push_inbox::take(&inbox);
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].json, second);
+
+    // A caller I blocked rings nothing, and nothing of it waits.
+    phone.dm.act(&phone.keys, &pk(&alice), Action::Block).await.unwrap();
+    let third = invite("2123456789abcdef0123456789abcdef");
+    quiet(phone.describe(push_with(&[("type", "dm"), ("event", &third.to_string()), ("call", "1")])).await);
+    assert!(messenger_ingress::push_inbox::take(&inbox).is_empty());
+}
+
 /// A stranger's first word goes into the queue of requests, which the
 /// app tells by its count: the phone shows nothing for it, nor for a copy
 /// of it, nor for anything the stranger says before an answer.

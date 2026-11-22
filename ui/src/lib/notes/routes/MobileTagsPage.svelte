@@ -112,16 +112,19 @@
   {#if shown.length}
     <div class="m-list">
       {#each shown as tag (tag.id)}
-        <button
-          type="button"
-          class="list-row dense"
-          onclick={() => goto(`/notes?kind=tag&id=${encodeURIComponent(tag.name)}`)}
-          {@attach longpress(() => (menu = tag))}
-        >
-          <span class="m-dot" style:background={tag.color}></span>
-          <span class="list-row-label">{tag.name}</span>
-          <span class="count">{tag.count}</span>
-        </button>
+        <div class="list-row dense">
+          <button
+            type="button"
+            class="list-row-main"
+            onclick={() => goto(`/notes?kind=tag&id=${encodeURIComponent(tag.name)}`)}
+            {@attach longpress(() => (menu = tag))}
+          >
+            <span class="m-folder tinted-text" style:--chip={tag.color || undefined}><Icon name="tag" size={16} /></span>
+            <span class="list-row-label">{tag.name}</span>
+            <span class="count-pill lg quiet">{tag.count}</span>
+          </button>
+          <button type="button" class="icon-btn row-more" onclick={() => (menu = tag)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+        </div>
       {/each}
     </div>
   {:else}

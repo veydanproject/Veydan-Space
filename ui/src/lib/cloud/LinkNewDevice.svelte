@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
+  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import { VAULT_UNREACHABLE } from '$lib/cloud/api';
   import { holdArchiveGate } from '$lib/core/ui/archiveGate';
   import { qrPicture } from '$lib/core/ui/qrPicture';
@@ -96,10 +97,7 @@
       <p class="text">{$t('cloud_link_password_hint')}</p>
     </div>
     <form class="form" onsubmit={(e) => { e.preventDefault(); if (password) void signIn(); }}>
-      <div class="form-group">
-        <label for="cloud-link-lock">{$t('cloud_link_password')}</label>
-        <input id="cloud-link-lock" type="password" bind:value={password} autocomplete="current-password" disabled={link.phase === 'signing_in'} />
-      </div>
+      <LockSecretInput id="cloud-link-lock" label={$t('cloud_link_password')} bind:value={password} disabled={link.phase === 'signing_in'} />
       {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
       <Actions>
         <button class="btn btn-ghost" type="button" onclick={leave}>{$t('common_cancel')}</button>

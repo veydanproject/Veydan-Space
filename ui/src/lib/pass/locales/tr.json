@@ -133,6 +133,7 @@
     "totp_scan_unavailable": "Kamera kullanılamıyor. Sistem ayarlarından kamera erişimine izin verin veya kodu bağlantısıyla ekleyin.",
     "pwgen_history_off_hint": "Yeni parolalar kaydedilmez.",
     "pwgen_history_off_kept": "Daha önce kaydedilen parolalar bu cihazda kalır: {n}.",
-    "pwgen_history_empty_hint": "Oluşturduğunuz parolalar burada görünür. Kopyalamak için birine dokunun."
+    "pwgen_history_empty_hint": "Oluşturduğunuz parolalar burada görünür. Kopyalamak için birine dokunun.",
+    "pw_locked_notice": "Parolalar kilitli. Değişiklik yapmak için kilidi açın."
   }
 }

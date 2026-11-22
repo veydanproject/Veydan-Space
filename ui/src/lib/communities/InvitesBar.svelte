@@ -5,9 +5,11 @@
 <!-- Invitations to channels that wait for my answer, above the list of channels. -->
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { t } from '$lib/core/i18n';
+  import { countKey, locale, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
   import { Avatar, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { nameStore } from './names.svelte';
@@ -23,10 +25,13 @@
   let busy = $state<string | null>(null);
   let error = $state('');
 
+  /** «Войти» at once; «Отклонить» cannot be taken back, so it is asked first, and told when done (design 17). */
   async function answer(i: InviteView, accept: boolean) {
+    if (!accept && !(await ask({ title: confirmTitle($t('chan_invite_decline')), message: i.name, confirmLabel: $t('chan_invite_decline'), icon: 'x' }))) return;
     error = ''; busy = i.invite_id;
     try {
       await channelStore.answerInvite(i.invite_id, accept);
+      if (!accept) toast.success($t(countKey('chan_req_done_reject', 1, $locale), { n: '1' }));
     } catch (e) {
       error = channelError(e, tr);
       channelStore.refreshInvites().catch(() => {});

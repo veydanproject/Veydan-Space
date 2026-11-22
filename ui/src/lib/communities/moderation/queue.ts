@@ -33,15 +33,16 @@ export function actionsFor(rows: QueueItem[], kind: Decision): ModAction[] {
 }
 
 /**
- * Asked before any decision: the buttons stand side by side, and a tap
- * that missed must not approve a flood or ban a member. `n` is how many
+ * Asked before a decision that cannot be taken back: the buttons stand side
+ * by side, and a tap that missed must not hide a message or ban a member.
+ * An approval is not asked (design 17): it harms nobody, and a queue worked
+ * through card by card must not be a row of questions. `n` is how many
  * messages the decision takes.
  */
 export function confirmDecision(kind: Decision, names: string[], n: number): Promise<boolean> {
+  if (kind === 'approve') return Promise.resolve(true);
   const tr = get(t) as (key: string, params?: Record<string, string>) => string;
   const who = names.join(', ');
   if (kind === 'spam') return confirmStore.ask(tr('chan_mod_spam_confirm', { names: who }), tr('chan_mod_spam'), true, 'ban');
-  const text = tr(kind === 'approve' ? 'chan_mod_approve_confirm' : 'chan_mod_reject_confirm', { names: who, n: String(n) });
-  return confirmStore.ask(text, tr(kind === 'approve' ? 'chan_mod_approve' : 'chan_mod_reject'), kind === 'reject', 'x');
+  return confirmStore.ask(tr('chan_mod_reject_confirm', { names: who, n: String(n) }), tr('chan_mod_reject'), true, 'x');
 }
-

@@ -101,7 +101,7 @@
         <button type="button" class="search-clear" onclick={(e) => { query = ''; onInput(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
       {/if}
     </div>
-    <button type="button" class="btn btn-ghost" onclick={cancel}>{$t('common_cancel')}</button>
+    <button type="button" class="m-link" onclick={cancel}>{$t('common_cancel')}</button>
   </div>
 
   <div class="m-tabs">
@@ -143,9 +143,9 @@
       <div class="m-list">
         {#each tagHits as tag (tag.id)}
           <a class="list-row dense" href="/notes?kind=tag&id={encodeURIComponent(tag.name)}">
-            <span class="m-dot" style:background={tag.color}></span>
+            <span class="m-folder tinted-text" style:--chip={tag.color || undefined}><Icon name="tag" size={16} /></span>
             <span class="list-row-label">{@render hl(tag.name)}</span>
-            <span class="count">{tag.count}</span>
+            <span class="count-pill lg quiet">{tag.count}</span>
           </a>
         {/each}
       </div>

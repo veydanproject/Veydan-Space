@@ -9,6 +9,7 @@
 // offered, by the rules of permissions.ts.
 
 import type { MenuEntry, MenuItem } from '$lib/core/ui/ContextMenu.svelte';
+import type { MessengerMessage } from '$lib/messenger/seams/shared';
 import type { ChannelDetail, FeedItemView } from './api';
 import { canComment, canDelete, canEdit, canModerate, canPin, isModerator, mutedNow, staffOf } from './permissions';
 
@@ -19,6 +20,8 @@ export interface ItemActions {
   comment?: () => void;
   reply?: () => void;
   copy: () => void;
+  /** «Выбрать текст»: its words in a window of their own, to be selected by a finger (a phone's; design 17). */
+  select?: () => void;
   pin?: (pinned: boolean) => void;
   edit?: () => void;
   remove: () => void;
@@ -56,6 +59,7 @@ export function itemEntries(item: FeedItemView, d: ChannelDetail, me: string | n
   }
   if (!isPost && a.reply && canComment(d, me)) list.push({ label: tr('chan_reply'), icon: 'reply', onselect: a.reply });
   if (item.text) list.push({ label: tr('chan_menu_copy'), icon: 'copy', onselect: a.copy });
+  if (item.text && a.select) list.push({ label: tr('msg_select_text'), icon: 'cursor-text', onselect: a.select });
   if (isPost && a.pin && canPin(d) && item.review !== 'pending') {
     list.push({ label: tr(item.pinned ? 'chan_menu_unpin' : 'chan_menu_pin'), icon: 'pin', onselect: () => a.pin?.(!item.pinned) });
   }
@@ -91,4 +95,14 @@ export function itemEntries(item: FeedItemView, d: ChannelDetail, me: string | n
     out.push(...group);
   }
   return out;
+}
+
+/** A post or a comment as the message «Выбрать текст» shows (SelectTextDialog): its words, whose, when. */
+export function asMessage(item: FeedItemView, me: string | null): MessengerMessage {
+  return {
+    id: item.id, chat_id: item.community_id, direction: item.author === me ? 'out' : 'in', status: 'sent', content_type: 'text',
+    text: item.text ?? null, fmt: item.fmt === 'md' ? 'md' : null, rich: item.rich ?? null, sender_pubkey: item.author, reply_to: null,
+    created_at: item.created_at, edited_at: item.edited_at ?? null, deleted: false, failure_reason: null, media: null,
+    delivered_at: null, read_at: null, seen_by: [], reactions: [],
+  };
 }

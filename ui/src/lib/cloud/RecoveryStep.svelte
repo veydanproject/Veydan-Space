@@ -20,6 +20,7 @@
   import { t, locale } from '$lib/core/i18n';
   import { joinErrorKey } from '$lib/core/join-error';
   import { appLock } from '$lib/core/lock/store.svelte';
+  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import RecoveryKeyCard from '$lib/core/lock/RecoveryKeyCard.svelte';
   import type { OnboardingStepProps } from '$lib/core/module';
   import { SYNC_HREF } from '$lib/core/onboarding/setup';
@@ -130,10 +131,9 @@
       <Notice tone="warn">{$t('cloud_recovery_no_vault')}</Notice>
     {/if}
     {#if lockOn && vault !== 'own'}
-      <label class="field">
-        <span>{$t('cloud_recovery_lock_secret')}</span>
-        <input type="password" bind:value={secret} autocomplete="current-password" disabled={busy} />
-      </label>
+      <div class="field">
+        <LockSecretInput id="cloud-ob-recovery-secret" label={$t('cloud_recovery_lock_secret')} bind:value={secret} disabled={busy} />
+      </div>
     {/if}
     {#if preparing}<p class="ob-wait wait" role="status"><span class="spinner" aria-hidden="true"></span>{$t('ob_sync_preparing')}</p>{/if}
     {#if error}<p class="ob-error" role="alert">{error}</p>{/if}
@@ -149,13 +149,7 @@
 {/if}
 
 <style>
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); margin-top: var(--sp-4); font-size: var(--fs-sm); }
-  .field span { color: var(--text-2); font-size: var(--fs-sm); }
-  .field input {
-    color: var(--text); min-height: 44px;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: var(--sp-2) var(--sp-2-5);
-  }
+  .field { margin-top: var(--sp-4); }
   .wait { margin: var(--sp-4) 0 0; }
   .activating { margin: var(--sp-4) 0 0; }
 </style>

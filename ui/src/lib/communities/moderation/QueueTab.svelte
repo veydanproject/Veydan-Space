@@ -140,7 +140,7 @@
       {@const n = count(row)}
       <li class="queue-card" class:busy={busy === row.author || busy === '*'}>
         <div class="top" class:list-row={phone} class:still={phone}>
-          <input class="tick" type="checkbox" checked={selected.includes(row.author)} onchange={() => tick(row.author)} aria-label={name} />
+          <label class="tick-zone"><input class="tick" type="checkbox" checked={selected.includes(row.author)} onchange={() => tick(row.author)} aria-label={name} /></label>
           <button class="open" onclick={() => (author = row.author)} aria-label={$t('chan_mod_author_open', { name })} title={$t('chan_mod_author_open', { name })}>
             <Avatar url={nameStore.picture(row.author)} label={name} seed={row.author} size={phone ? 48 : 36} />
             <span class="who">
@@ -156,7 +156,10 @@
         </div>
         <div class="acts">
           {#if canBan(detail, row.author, me)}
-            <button class="btn btn-ghost spam" disabled={!!busy} title={$t('chan_mod_spam')} aria-label={$t('chan_mod_spam')} onclick={() => decide([row], 'spam')}><Icon name="ban" size={16} /></button>
+            <!-- A phone has no tooltip: there the mark says its word (design 17). -->
+            <button class="btn btn-ghost spam" disabled={!!busy} title={phone ? undefined : $t('chan_mod_spam')} aria-label={phone ? undefined : $t('chan_mod_spam')} onclick={() => decide([row], 'spam')}>
+              <Icon name="ban" size={16} />{#if phone}{$t('chan_mod_spam')}{/if}
+            </button>
           {/if}
           <button class="btn btn-ghost" disabled={!!busy} onclick={() => decide([row], 'reject')}>
             <Icon name="x" size={16} />{n > 1 ? $t('chan_mod_reject_all') : $t('chan_mod_reject')}

@@ -55,7 +55,7 @@ pub struct RequestView {
     pub name: String,
     /// The one visible text of the request (plain; empty when none shows).
     pub text: String,
-    /// Rumor time of that text (the peer's clock).
+    /// Rumor time of that text, or chat activity time for a signal-only request.
     #[ts(type = "number")]
     pub at: i64,
     /// Held rows waiting behind it.
@@ -128,7 +128,7 @@ impl DmService {
             let (text, at) = match repo::first_visible_incoming_since(&self.store, &chat_id, floor).await? {
                 Some(m) if m.deleted_at.is_none() => (m.text.unwrap_or_default(), m.created_at),
                 Some(m) => (String::new(), m.created_at),
-                None => (String::new(), 0),
+                None => (String::new(), cursor),
             };
             out.push(RequestView {
                 chat_id: chat_id.clone(),
@@ -226,8 +226,48 @@ impl DmService {
 mod tests {
     use super::*;
     use crate::relationship::{MyContact as M, PeerSignal as P, Relationship};
+    use messenger_contacts::{ContactService, ProfileService};
+    use messenger_core::traits::SystemClock;
     use messenger_store::dm_relations::RelationRow;
     use messenger_store::{chats, Store};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn signal_only_request_has_chat_activity_time() {
+        let store = Store::open_in_memory().await.unwrap();
+        let peer = format!("{:064x}", 1);
+        let chat = chats::ensure_dm(&store, &peer, None).await.unwrap();
+        dm_relations::put(
+            &store,
+            &RelationRow {
+                peer_pubkey: peer,
+                server_id: String::new(),
+                my_contact: M::None.as_str().into(),
+                blocked: false,
+                peer_signal: P::Approved.as_str().into(),
+                was_ever_mutual: true,
+                last_signal_at: chat.created_at,
+                last_my_signal_at: 0,
+                request_floor: i64::MAX,
+                decided_at: 0,
+                created_at: chat.created_at,
+                updated_at: chat.updated_at,
+            },
+        )
+        .await
+        .unwrap();
+        let profiles = ProfileService::new(store.clone());
+        let contacts = ContactService::new(store.clone(), profiles.clone());
+        let dm = DmService::new(store, contacts, profiles, Arc::new(SystemClock));
+
+        let rows = dm.requests(None, 10).await.unwrap();
+        assert_eq!(dm.requests_count().await.unwrap(), 1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].chat_id, chat.id);
+        assert!(rows[0].text.is_empty());
+        assert_eq!(rows[0].at, rows[0].cursor);
+        assert!(rows[0].at > 0);
+    }
 
     /// The one predicate of "request" in SQL says what `screen_mode` says,
     /// over every combination of the stored facts.

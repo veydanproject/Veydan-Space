@@ -31,6 +31,7 @@
 {#snippet count(it: NavItem)}
   {@const n = it.badge?.() ?? 0}
   {#if n > 0}<span class="count-pill sm nav-count" class:danger={it.danger}>{n > 99 ? "99+" : n}</span>{/if}
+  {#if n === 0 && it.dot?.()}<span class="status-dot nav-dot" aria-hidden="true"></span>{/if}
 {/snippet}
 
 {#snippet item(it: NavItem)}
@@ -77,4 +78,7 @@
   .bar :global(.m-bar-item) { --hit-b: calc(var(--sp-1) + 1px + var(--nav-gap)); }
   .bar > :global(.m-bar-item:first-child) { --hit-l: calc(var(--sp-2) + 1px + var(--sp-1)); }
   .bar > :global(.m-bar-item:last-child) { --hit-r: calc(var(--sp-2) + 1px + var(--sp-1)); }
+  /* The dot of design 06 at the icon's top right corner, in a ring of the bar. */
+  .m-bar-ico:has(.nav-dot) { position: relative; }
+  .nav-dot { position: absolute; top: -2px; right: -4px; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-3); }
 </style>

@@ -111,8 +111,8 @@
         <span class="label">{$t('notes_filter_workspaces')}</span>
         <div class="chips">
           {#each directory.list('workspace') as ws (ws.id)}
-            <button class="chip" class:on={bindings.includes(`workspace:${ws.id}`)} onclick={() => (bindings = toggle(bindings, `workspace:${ws.id}`))}>
-              <span class="dot" style="background:{ws.color}"></span>{ws.name}
+            <button class="chip" class:active={bindings.includes(`workspace:${ws.id}`)} onclick={() => (bindings = toggle(bindings, `workspace:${ws.id}`))}>
+              <span class="status-dot" style="background:{ws.color}"></span>{ws.name}
             </button>
           {/each}
         </div>
@@ -129,7 +129,7 @@
         </div>
         <div class="chips chips-scroll">
           {#each profiles as p (p.id)}
-            <button class="chip" class:on={bindings.includes(`profile:${p.id}`)} onclick={() => (bindings = toggle(bindings, `profile:${p.id}`))}>
+            <button class="chip" class:active={bindings.includes(`profile:${p.id}`)} onclick={() => (bindings = toggle(bindings, `profile:${p.id}`))}>
               {p.name}
             </button>
           {/each}
@@ -158,8 +158,8 @@
         </div>
         <div class="chips">
           {#each notesStore.allTags as tag (tag.id)}
-            <button class="chip" class:on={tags.includes(tag.name)} onclick={() => (tags = toggle(tags, tag.name))}>
-              <span class="dot" style="background:{tag.color}"></span>{tag.name}
+            <button class="chip" class:active={tags.includes(tag.name)} onclick={() => (tags = toggle(tags, tag.name))}>
+              <span class="status-dot" style="background:{tag.color}"></span>{tag.name}
             </button>
           {/each}
         </div>
@@ -211,18 +211,6 @@
   /* A long list of profiles scrolls inside its group: the dialog keeps the window's height. */
   .chips-scroll { max-height: 120px; overflow-y: auto; align-content: flex-start; }
   .profile-search { width: 180px; padding-top: var(--sp-1); padding-bottom: var(--sp-1); font-size: var(--fs-xs); }
-  .chip {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2);
-    font-size: var(--fs-xs);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: transparent;
-    color: var(--text-2);
-    cursor: pointer;
-  }
-  .chip.on { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 15%, transparent); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .checks { display: flex; flex-direction: column; gap: var(--sp-1); }
   .check { display: flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--text-2); }
   /* base.css gives every input width:100% + padding; keep the box inline */

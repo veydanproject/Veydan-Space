@@ -11,6 +11,7 @@
   import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import TabBar from '$lib/core/ui/TabBar.svelte';
   import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
@@ -171,9 +172,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 <Drawer open title={profile.name} {onclose}>
   {#snippet actions()}
-    <span class="status-badge" class:running={isRunning}>
-      {isRunning ? $t('status_running') : $t('status_stopped')}
-    </span>
+    <Pill tone={isRunning ? 'ok' : 'neutral'} text={isRunning ? $t('status_running') : $t('status_stopped')} />
   {/snippet}
   {#snippet subheader()}
     <div class="psp-tabs">
@@ -217,8 +216,9 @@
             {#if proxy}
               <Icon name="network" size={12} />
               {proxy.name}
-              {#if proxyChip(proxy)}
-                <span class="country-badge">{proxyChip(proxy)}</span>
+              {@const chip = proxyChip(proxy)}
+              {#if chip}
+                <Pill text={chip} />
               {/if}
             {:else}
               <Icon name="wifi-off" size={12} />
@@ -257,7 +257,7 @@
           {#each columns as col}
             {@const active = currentColumnTag === col.tag_name}
             <button
-              class="col-chip tinted"
+              class="chip tinted"
               class:active
               style:--chip={col.color}
               aria-pressed={active}
@@ -374,17 +374,6 @@
 </Dialog>
 
 <style>
-  .status-badge {
-    display: inline-flex; align-items: center; gap: var(--sp-1-5);
-    font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 4px 11px;
-    border-radius: var(--radius-pill);
-    background: var(--surface-2); color: var(--text-2);
-    border: 1px solid var(--border-2);
-    width: fit-content;
-  }
-  .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .status-badge.running { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
-
   .psp-body {
     display: flex;
     flex-direction: column;
@@ -417,14 +406,6 @@
   .info-value.proxy-gone { color: var(--danger-text); }
   .info-value.muted { color: var(--text-2); }
 
-  .country-badge {
-    font-size: var(--fs-xs);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    padding: 0 var(--sp-1-5);
-    border-radius: var(--radius-pill);
-    color: var(--text-2);
-  }
 
   .notes-row {
     display: flex;
@@ -501,16 +482,8 @@
   .tags-label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); }
   .no-tags { font-size: var(--fs-sm); color: var(--text-2); }
   .column-select-row { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); }
-  /* Colours: the tinted rule of base.css (`.active`: the pressed tint, a
-     border and ring in the ink). The picked column also has a check, so it
-     does not hang on colour alone. An unpicked column stays readable: no
-     opacity. */
-  .col-chip {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
-    border-width: 1px; border-style: solid;
-    border-radius: var(--radius); padding: var(--sp-1) var(--sp-3);
-    font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-    cursor: pointer; transition: all 0.15s;
-  }
-  .col-chip:disabled { cursor: not-allowed; }
+  /* A column is picked with the common .chip in the tinted rule of base.css (`.active`: the pressed
+     tint, a border and ring in the ink). The picked column also has a check, so it does not hang on
+     colour alone. An unpicked column stays readable: no opacity. */
+  .column-select-row .chip:disabled { cursor: not-allowed; }
 </style>

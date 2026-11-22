@@ -196,7 +196,7 @@
 
   {#if canCreate}
     <div class="colors"><ColorSwatches bind:value={color} label={$t('notes_tags_add')} /></div>
-    <button type="button" class="m-btn-grad" disabled={busy} onclick={submitTag}>{$t('notes_tags_add')}</button>
+    <button type="button" class="btn btn-primary wide" disabled={busy} onclick={submitTag}>{$t('notes_tags_add')}</button>
   {/if}
   <!-- The sheet stays open after each label (several are added); «Готово» closes it. -->
   {#snippet footer()}

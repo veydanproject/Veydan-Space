@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { CANCEL_PX, IDLE, LOCK_PX, step, type Gesture, type GestureAction, type GestureEvent } from './record-gesture';
+import { CANCEL_PX, IDLE, LOCK_PX, SLOP_PX, step, type Gesture, type GestureAction, type GestureEvent } from './record-gesture';
 
 function run(events: GestureEvent[]): { g: Gesture; actions: GestureAction[] } {
   let g = IDLE;
@@ -22,7 +22,7 @@ const up: GestureEvent = { type: 'up' };
 describe('record gesture', () => {
   it('a tap switches the kind', () => {
     const r = run([down, up]);
-    expect(r.actions).toEqual(['toggle']);
+    expect(r.actions).toEqual(['tap']);
     expect(r.g.phase).toBe('idle');
   });
 
@@ -66,7 +66,14 @@ describe('record gesture', () => {
     expect(run([down, { type: 'cancel' }]).actions).toEqual([]);
   });
 
-  it('a move before the hold starts nothing', () => {
-    expect(run([down, { type: 'move', x: 20, y: 600 }, up]).actions).toEqual(['toggle']);
+  it('a quick swipe before the hold is no tap: its lift and a late hold start nothing', () => {
+    const r = run([down, { type: 'move', x: 20, y: 600 }, hold, up]);
+    expect(r.actions).toEqual([]);
+    expect(r.g.phase).toBe('idle');
+    expect(run([down, { type: 'move', x: 300, y: 600 - LOCK_PX }, up]).actions).toEqual([]);
+  });
+
+  it('a finger that trembles within the slop still taps', () => {
+    expect(run([down, { type: 'move', x: 300 - SLOP_PX, y: 600 }, up]).actions).toEqual(['tap']);
   });
 });

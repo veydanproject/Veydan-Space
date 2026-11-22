@@ -828,7 +828,7 @@
           title={$t('note_att_title')}
         >
           <Icon name="paperclip" size={13} />
-          {#if attachments.length > 0}<span class="att-count">{attachments.length}</span>{/if}
+          {#if attachments.length > 0}<span class="count-pill sm quiet">{attachments.length}</span>{/if}
         </button>
         <button
           class="icon-btn"
@@ -1339,14 +1339,9 @@
   }
 
   /* The paperclip with its count: as wide as it needs, not under 32. */
-  .icon-btn.with-count { width: auto; min-width: 32px; padding-inline: var(--sp-1-5); }
-  .att-count {
-    font-size: var(--fs-xs);
-    font-family: var(--font-mono);
-    margin-left: 2px;
-  }
+  .icon-btn.with-count { width: auto; min-width: 32px; padding-inline: var(--sp-1-5); gap: var(--sp-1); }
   .icon-btn.active { color: var(--accent-text); }
-  /* The count on the button's corner, as .ctx-count on the phone. */
+  /* The count on the button's corner, as the context's count on the phone (MobileNotePage). */
   .ctx-btn { position: relative; }
   .ctx-btn .count-pill { position: absolute; top: 0; right: 0; pointer-events: none; }
 </style>

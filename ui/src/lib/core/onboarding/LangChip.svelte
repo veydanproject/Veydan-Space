@@ -29,7 +29,7 @@
 </script>
 
 {#if isMobile}
-  <button type="button" class="chip" onclick={() => (open = true)} aria-label={$t('settings_section_language')}>
+  <button type="button" class="lang-pill" onclick={() => (open = true)} aria-label={$t('settings_section_language')}>
     <Icon name="language" size={15} />
     <span>{current}</span>
     <Icon name="chevron-down" size={13} />
@@ -50,7 +50,7 @@
 {/if}
 
 <style>
-  .chip {
+  .lang-pill {
     /* A control of the first start's head (.m-header): 40, as its way back. */
     display: inline-flex; align-items: center; gap: var(--sp-1); height: 40px; padding: 0 var(--sp-3); border-radius: var(--radius-pill);
     border: 1px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text);

@@ -163,7 +163,7 @@
   <!-- The unsaved form's bar (STYLEGUIDE): at the foot of the pane, the card scrolls above it. -->
   {#if changed}
     <div class="savebar">
-      <p class="unsaved" role="status"><span class="dot" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>
+      <p class="unsaved" role="status"><span class="status-dot warn" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>
       <button class="btn btn-primary" disabled={busy} onclick={save}>{$t('common_save')}</button>
     </div>
   {/if}
@@ -224,7 +224,6 @@
     flex: 1 1 180px; min-width: 0; margin: 0; display: flex; align-items: center; gap: var(--sp-2);
     font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2);
   }
-  .dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--warn-text); }
   .savebar .btn { flex-shrink: 0; }
   @media (pointer: coarse) { .savebar .btn { flex: 1; } }
   @media (max-width: 420px) { .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

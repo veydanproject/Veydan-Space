@@ -58,7 +58,7 @@
   {#if selected.length}
     <div class="chips">
       {#each selected as id (id)}
-        <span class="chip">
+        <span class="link-chip">
           <ChipMark kind="note" />
           <span class="chip-text">{titleOf(id)}</span>
           <button type="button" class="x" onclick={() => remove(id)} aria-label={$t('pass_remove')}>×</button>
@@ -85,7 +85,7 @@
 
 <style>
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-  .chip {
+  .link-chip {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);

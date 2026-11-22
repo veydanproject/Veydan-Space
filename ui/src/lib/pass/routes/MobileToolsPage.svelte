@@ -121,7 +121,7 @@
     {/each}
   </div>
 
-  <button class="m-btn-grad generate" onclick={generate}>
+  <button class="btn btn-primary wide generate" onclick={generate}>
     <Icon name="refresh-cw" size={18} />
     {$t('pwgen_btn_generate')}
   </button>

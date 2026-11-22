@@ -24,6 +24,14 @@ export const module: ModuleDef = {
     { id: 'tools', title: 'app_tools', icon: 'dices', href: '/tools' },
   ],
   settings: [],
-  // The scanner takes the whole screen; the other screens use the root bar.
-  bar: (url) => (url.pathname.startsWith('/totp/scan') ? null : undefined),
+  // The scanner and the forms take the whole screen, as the note editor (design 16): no bar beside
+  // their «Отмена | Сохранить»; the lists and the card use the root bar.
+  bar: (url) => (isForm(url) ? null : undefined),
 };
+
+/** A form of a password or a 2FA code (a password's card in `?edit`), or the scanner. */
+function isForm(url: URL): boolean {
+  const path = url.pathname.replace(/\/$/, '');
+  if (path === '/passwords/add' || /^\/totp\/[^/]+$/.test(path)) return true;
+  return /^\/passwords\/[^/]+$/.test(path) && url.searchParams.has('edit');
+}

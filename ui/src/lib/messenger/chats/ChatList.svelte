@@ -199,60 +199,87 @@
   });
 </script>
 
+<!-- A phone's row has «⋮» at its end (design 13): the menu of its long press, in sight; the row is then a box of
+     its main button and «⋮» (base.css .list-row-main). A computer's row stays one button (its right click). -->
+{#snippet more(open: (e: MouseEvent) => void)}
+  <button type="button" class="icon-btn row-more" onclick={open} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+{/snippet}
+
 {#snippet extRow(r: SectionRow)}
+  {@const openRow = (e: MouseEvent) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
   <li>
-    <button class="chat list-row" class:active={selected === r.chatId} class:unread={r.unread > 0 && !r.muted} onclick={() => onopenrow?.(r.chatId)} oncontextmenu={(e) => { e.preventDefault(); rowMenu = { open: true, x: e.clientX, y: e.clientY, row: r }; }}
-      use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>
-      <!-- A picture the module already has (a `data:` URL) is shown as it is; an address is fetched by the runtime. -->
-      <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={48} />
-      <span class="list-row-body">
-        <span class="list-row-top">
-          <span class="list-row-name">{r.title}</span>
-          {#if host}<span class="list-row-mark"><Icon name={host.icon} size={14} /></span>{/if}
-          {#if r.muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
-          {#if r.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
-          <span class="list-row-time">{listStamp(r.at)}</span>
-        </span>
-        <span class="list-row-bottom">
-          <span class="list-row-line">{r.preview}</span>
-          {#if r.asks}<span class="count-pill lg asks"><Icon name="user-plus" size={11} />{r.asks > 99 ? '99+' : r.asks}</span>{/if}
-          {#if r.unread > 0}<span class="count-pill lg" class:quiet={r.muted}>{r.unread > 99 ? '99+' : r.unread}</span>{/if}
-        </span>
-      </span>
-    </button>
+    {#if phone}
+      <div class="chat list-row" class:active={selected === r.chatId} class:unread={r.unread > 0 && !r.muted}>
+        <button class="list-row-main" onclick={() => onopenrow?.(r.chatId)} oncontextmenu={openRow}
+          use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>{@render extBody(r)}</button>
+        {@render more(openRow)}
+      </div>
+    {:else}
+      <button class="chat list-row" class:active={selected === r.chatId} class:unread={r.unread > 0 && !r.muted} onclick={() => onopenrow?.(r.chatId)} oncontextmenu={openRow}
+        use:longpress={{ onpress: (p) => (rowMenu = { open: true, x: p.x, y: p.y, row: r }) }}>{@render extBody(r)}</button>
+    {/if}
   </li>
+{/snippet}
+
+{#snippet extBody(r: SectionRow)}
+  <!-- A picture the module already has (a `data:` URL) is shown as it is; an address is fetched by the runtime. -->
+  <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={48} />
+  <span class="list-row-body">
+    <span class="list-row-top">
+      <span class="list-row-name">{r.title}</span>
+      {#if host}<span class="list-row-mark"><Icon name={host.icon} size={14} /></span>{/if}
+      {#if r.muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
+      {#if r.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
+      <span class="list-row-time">{listStamp(r.at)}</span>
+    </span>
+    <span class="list-row-bottom">
+      <span class="list-row-line">{r.preview}</span>
+      {#if r.asks}<span class="count-pill lg asks"><Icon name="user-plus" size={11} />{r.asks > 99 ? '99+' : r.asks}</span>{/if}
+      {#if r.unread > 0}<span class="count-pill lg" class:quiet={r.muted}>{r.unread > 99 ? '99+' : r.unread}</span>{/if}
+    </span>
+  </span>
 {/snippet}
 
 {#snippet row(c: MessengerChat)}
   <li>
-    <button class="chat list-row" class:active={chatStore.activeId === c.id} class:unread={c.unread > 0 && !c.is_muted} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
-      use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>
-      <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={48} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
-      <span class="list-row-body">
-        <span class="list-row-top">
-          <span class="list-row-name">{c.title}</span>
-          {#if c.kind === "group"}<span class="list-row-mark"><Icon name="users" size={14} /></span>{/if}
-          {#if c.is_muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
-          {#if c.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
-          {#if c.server_id}<ServerLabel server={c.server_id} size="icon" />{/if}
-          <span class="list-row-time">{listStamp(c.last_message_at)}</span>
-        </span>
-        <span class="list-row-bottom">
-          {#if drafts.get(c.id)?.trim() && chatStore.activeId !== c.id}
-            <span class="list-row-line"><span class="draft">{$t('msg_chat_draft')}</span> {drafts.get(c.id)}</span>
-          {:else}
-            <span class="list-row-line">{preview(c)}</span>
-          {/if}
-          {#if asking(c)}
-            <span class="count-pill lg asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
-              <Icon name="user-plus" size={11} />{asking(c) > 99 ? '99+' : asking(c)}
-            </span>
-          {/if}
-          {#if c.unread > 0}<span class="count-pill lg" class:quiet={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
-        </span>
-      </span>
-    </button>
+    {#if phone}
+      <div class="chat list-row" class:active={chatStore.activeId === c.id} class:unread={c.unread > 0 && !c.is_muted}>
+        <button class="list-row-main" onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
+          use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>{@render chatBody(c)}</button>
+        {@render more((e) => openMenu(e, c))}
+      </div>
+    {:else}
+      <button class="chat list-row" class:active={chatStore.activeId === c.id} class:unread={c.unread > 0 && !c.is_muted} onclick={() => onopen(c)} oncontextmenu={(e) => openMenu(e, c)}
+        use:longpress={{ onpress: (p) => (menu = { open: true, x: p.x, y: p.y, chat: c }) }}>{@render chatBody(c)}</button>
+    {/if}
   </li>
+{/snippet}
+
+{#snippet chatBody(c: MessengerChat)}
+  <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={48} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
+  <span class="list-row-body">
+    <span class="list-row-top">
+      <span class="list-row-name">{c.title}</span>
+      {#if c.kind === "group"}<span class="list-row-mark"><Icon name="users" size={14} /></span>{/if}
+      {#if c.is_muted}<span class="list-row-mark"><Icon name="bell-off" size={14} /></span>{/if}
+      {#if c.pinned}<span class="list-row-mark"><Icon name="pin" size={14} /></span>{/if}
+      {#if c.server_id}<ServerLabel server={c.server_id} size="icon" />{/if}
+      <span class="list-row-time">{listStamp(c.last_message_at)}</span>
+    </span>
+    <span class="list-row-bottom">
+      {#if drafts.get(c.id)?.trim() && chatStore.activeId !== c.id}
+        <span class="list-row-line"><span class="draft">{$t('msg_chat_draft')}</span> {drafts.get(c.id)}</span>
+      {:else}
+        <span class="list-row-line">{preview(c)}</span>
+      {/if}
+      {#if asking(c)}
+        <span class="count-pill lg asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
+          <Icon name="user-plus" size={11} />{asking(c) > 99 ? '99+' : asking(c)}
+        </span>
+      {/if}
+      {#if c.unread > 0}<span class="count-pill lg" class:quiet={c.is_muted}>{c.unread > 99 ? '99+' : c.unread}</span>{/if}
+    </span>
+  </span>
 {/snippet}
 
 <!-- A chat of «Сообщения»: its newest match, the words marked, and how many match, a magnifier on the count

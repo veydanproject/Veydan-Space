@@ -26,8 +26,6 @@
   import { countKey } from '$lib/core/i18n';
   import type { RowAction, RowMode } from '$lib/notes/mobile/notes-editor';
   import { loadSort, saveSort, sortNotes, SORT_KEYS, type NoteSort } from '$lib/notes/sort';
-  import { entitySummaryFor } from '$lib/notes/mobile/api';
-  import NotesTable from '$lib/notes/components/NotesTable.svelte';
   import { noteScope, scopeColor, type ScopeSources } from '$lib/notes/list-scope';
 
   let notes = $state<NoteListItem[]>([]);
@@ -50,29 +48,6 @@
     title: 'notes_sort_title',
   };
 
-  // List or table; a tablet starts in table mode
-  const VIEW_KEY = 'notes-view-mode';
-  const TABLET_MIN_PX = 768;
-  function loadView(): 'list' | 'table' {
-    const v = localStorage.getItem(VIEW_KEY);
-    if (v === 'table' || v === 'list') return v;
-    return window.innerWidth >= TABLET_MIN_PX ? 'table' : 'list';
-  }
-  let viewMode = $state<'list' | 'table'>(loadView());
-  function setViewMode(m: 'list' | 'table') {
-    viewMode = m;
-    try { localStorage.setItem(VIEW_KEY, m); } catch {}
-  }
-  // «List / Table» is a radiogroup: one stop of Tab (the chosen); of two, any arrow chooses the other
-  // (next / previous wrap round), Home / End the first / last; the focus goes to the chosen.
-  function viewKey(e: KeyboardEvent) {
-    const other = viewMode === 'list' ? 'table' : 'list';
-    const m = ({ ArrowLeft: other, ArrowUp: other, ArrowRight: other, ArrowDown: other, Home: 'list', End: 'table' } as Record<string, 'list' | 'table'>)[e.key];
-    if (!m) return;
-    e.preventDefault();
-    setViewMode(m);
-    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-view="${m}"]`)?.focus();
-  }
   let nav = $state<NoteNav | null>(null);
 
   // The scope line of a row names what the list of a computer names (list-scope.ts).
@@ -380,7 +355,7 @@
             <button type="button" class="search-clear" onclick={(e) => { search = ''; load(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
           {/if}
         </div>
-        <button type="button" class="btn btn-ghost" onclick={closeSearch}>{$t('common_cancel')}</button>
+        <button type="button" class="m-link" onclick={closeSearch}>{$t('common_cancel')}</button>
       </div>
     {/if}
   {/if}
@@ -394,7 +369,8 @@
   <div class="m-body">
   {#if filter.kind === 'trash'}
     <p class="m-hint">{$t('notes_trash_hint')}</p>
-  {:else if !selecting && !isMain}
+  {/if}
+  {#if !selecting}
     <p class="m-sub count">{countLabel(notes.length)}</p>
   {/if}
 
@@ -416,22 +392,8 @@
         <p>{emptyText()}</p>
       {/if}
     </div>
-  {:else if notes.length && viewMode === 'table' && !selecting}
-    <div class="table-wrap">
-      <NotesTable
-        notes={shown.map((n) => n.raw)}
-        allNotes={notes.map((n) => n.raw)}
-        folders={nav?.folders ?? []}
-        {sort}
-        onsort={setSort}
-        contextOf={entitySummaryFor}
-        activeId={null}
-        onselect={(id) => goto(`/notes/${id}`)}
-        touch
-      />
-    </div>
   {:else if notes.length}
-    <div class="rows divided">
+    <div class="rows divided" class:selecting>
       {#each shown as n (n.id)}
         {@const where = rowScope(n)}
         <NoteRow
@@ -455,7 +417,7 @@
   {/if}
 
   {#if filter.kind === 'trash' && notes.length}
-    <button type="button" class="empty-trash" disabled={busy} onclick={emptyTrash}>
+    <button type="button" class="btn btn-danger-soft wide empty-trash" disabled={busy} onclick={emptyTrash}>
       {$t('notes_trash_empty_btn')}
     </button>
   {/if}
@@ -488,13 +450,6 @@
       <Icon name="check-square" size={20} /><span class="list-row-label">{$t('notes_select')}</span>
     </button>
   </div>
-  <section class="section">
-    <div class="section-label">{$t('notes_view')}</div>
-    <div class="seg seg-fill" role="radiogroup" aria-label={$t('notes_view')} tabindex="-1" onkeydown={viewKey}>
-      <button type="button" class="seg-btn" class:active={viewMode === 'list'} role="radio" aria-checked={viewMode === 'list'} tabindex={viewMode === 'list' ? 0 : -1} data-view="list" onclick={() => setViewMode('list')}>{$t('notes_view_list')}</button>
-      <button type="button" class="seg-btn" class:active={viewMode === 'table'} role="radio" aria-checked={viewMode === 'table'} tabindex={viewMode === 'table' ? 0 : -1} data-view="table" onclick={() => setViewMode('table')}>{$t('notes_view_table')}</button>
-    </div>
-  </section>
   <section class="section">
     <div class="section-label">{$t('notes_sort')}</div>
     <div class="m-list">
@@ -553,25 +508,12 @@
   }
   .pull .spin { animation: spin 1s linear infinite; }
   .pull span { display: inline-flex; }
+  /* «N notes» over every list, as on the computer: --fs-sm, --text-2 (.m-sub). */
   .count { margin: 0 var(--sp-1) var(--sp-3); font-size: var(--fs-sm); }
-  .table-wrap {
-    margin: 0 calc(-1 * var(--sp-3));
-    padding: 0 var(--sp-3);
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .empty-trash {
-    margin-top: auto;
-    min-height: 48px;
-    background: var(--m-card);
-    border: 1px solid var(--m-card-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--m-card-shadow);
-    color: var(--danger-text);
-    font-size: var(--fs-body);
-    font-weight: var(--fw-semibold);
-  }
+  .empty-trash { margin-top: auto; }
   .rows { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); padding-bottom: var(--sp-6); }
+  /* While choosing, the last row rises over the bar of the choice (.bulk). */
+  .rows.selecting { padding-bottom: calc(var(--bar-plate-h) + var(--sab) + var(--sp-4)); }
   .danger-text { color: var(--danger-text); }
   .bulk {
     position: fixed;

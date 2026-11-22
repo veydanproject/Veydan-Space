@@ -50,12 +50,12 @@
 
 {#if diverged}
   {#if compact}
-    <span class="sync-badge diverged" title={$t('profile_sync_diverged_hint')}>
+    <span class="badge badge-danger" title={$t('profile_sync_diverged_hint')}>
       <Icon name="alert-triangle" size={11} /> {$t('profile_sync_diverged')}
     </span>
   {:else}
     <div class="sync-block">
-      <span class="sync-badge diverged"><Icon name="alert-triangle" size={11} /> {$t('profile_sync_diverged')}</span>
+      <span class="badge badge-danger"><Icon name="alert-triangle" size={11} /> {$t('profile_sync_diverged')}</span>
       <span class="hint">{$t('profile_sync_diverged_hint')}</span>
       <div class="sync-actions">
         <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => resolve('remote')}>{$t('profile_sync_take_remote')}</button>
@@ -65,31 +65,22 @@
     </div>
   {/if}
 {:else if lease && files?.state === 'elsewhere'}
-  <span class="sync-badge lease" class:block={!compact} title={$t('profile_sync_files_elsewhere_hint')}>
+  <span class="badge badge-warn" class:block={!compact} title={$t('profile_sync_files_elsewhere_hint')}>
     <Icon name="monitor" size={11} /> {$t('profile_sync_files_elsewhere', { device: lease.device_name || lease.device_id })}
   </span>
 {:else if lease}
-  <span class="sync-badge lease" class:block={!compact} title={$t('profile_sync_in_use_hint')}>
+  <span class="badge badge-warn" class:block={!compact} title={$t('profile_sync_in_use_hint')}>
     <Icon name="monitor" size={11} /> {$t('profile_sync_in_use', { device: lease.device_name || lease.device_id })}
   </span>
 {:else if unsentLabel}
-  <span class="sync-badge unsent" class:failed={files?.state === 'failed'} class:block={!compact} title={unsentHint}>
+  <span class="badge" class:badge-warn={files?.state !== 'failed'} class:badge-danger={files?.state === 'failed'} class:block={!compact} title={unsentHint}>
     <Icon name={files?.state === 'sending' ? 'upload' : 'alert-triangle'} size={11} /> {unsentLabel}
   </span>
 {/if}
 
 <style>
-  .sync-badge {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
-    padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-pill);
-    font-size: var(--fs-xs); border: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  .sync-badge.block { margin-bottom: var(--sp-2); }
-  .sync-badge.lease { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
-  .sync-badge.unsent { background: var(--warn-bg); color: var(--warn-text); border-color: var(--warn-border); }
-  .sync-badge.unsent.failed { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
-  .sync-badge.diverged { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
+  /* The state is the common .badge: warn — the files are elsewhere or not sent, danger — diverged or failed. */
+  .badge.block { margin-bottom: var(--sp-2); }
   .sync-block { display: flex; flex-direction: column; gap: var(--sp-1-5); align-items: flex-start; margin-bottom: var(--sp-2-5); }
   .sync-actions { display: flex; gap: var(--sp-1-5); }
 </style>

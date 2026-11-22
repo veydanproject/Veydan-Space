@@ -17,7 +17,8 @@
   import PrivacyPanel from '../privacy/PrivacyPanel.svelte';
   import CallsPanel from '../calls/CallsPanel.svelte';
   import DebugFeed from '../debug/DebugFeed.svelte';
-  import { SETTINGS_TABS, settingsRequest, settingsUi, type SettingsTab } from './settingsTab.svelte';
+  import Icon from '$lib/core/Icon.svelte';
+  import { PHONE_SETTINGS_TABS, SETTINGS_TABS, settingsRequest, settingsUi, type SettingsTab } from './settingsTab.svelte';
 
   interface Props {
     /** The host screen already shows the title (phone). */
@@ -27,10 +28,11 @@
   }
   let { compact = false, hideTabs = false }: Props = $props();
 
-  // The shown section is shared with the desk's nav (MessengerPage).
-  let tab = $derived<SettingsTab>(settingsUi.tab);
+  // The shown section is shared with the desk's nav (MessengerPage). A phone has no tab of the diagnostics: asked
+  // for, it is the end of «Calls», where they are folded.
+  let tab = $derived<SettingsTab>(compact && settingsUi.tab === 'diagnostics' ? 'calls' : settingsUi.tab);
   const pick = (id: SettingsTab) => (settingsUi.tab = id);
-  const tabs = $derived(SETTINGS_TABS.map((id) => ({ id, label: $t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile') })));
+  const tabs = $derived((compact ? PHONE_SETTINGS_TABS : SETTINGS_TABS).map((id) => ({ id, label: $t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile') })));
 
   // Asked for from elsewhere (a long press on a call button): that tab, kept in view by the row.
   $effect(() => {
@@ -55,6 +57,31 @@
     void tick().then(() => media?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   });
 </script>
+
+{#snippet diagnostics()}
+  {#if s?.runtime}
+    <div class="card status-card">
+      <div class="card-title">{$t('msg_status_title')}</div>
+      <dl class="status-grid">
+        <dt>{$t('msg_status_version')}</dt><dd><code>{s.runtime.version}</code></dd>
+        <dt>{$t('msg_status_schema')}</dt><dd><code>{s.runtime.schema_version}</code></dd>
+        <dt>{$t('msg_status_data_dir')}</dt><dd><code>{s.runtime.data_dir}</code></dd>
+        <dt>{$t('msg_status_secrets')}</dt>
+        <dd>{s.runtime.secrets_unlocked ? $t('msg_status_secrets_unlocked') : $t('msg_status_secrets_locked')}</dd>
+        <dt>{$t('msg_status_relays')}</dt>
+        <dd>{$t('msg_status_relays_value', { connected: String(s.runtime.relays_connected), total: String(s.runtime.relays_total) })}{s.runtime.silent_mode ? ` · ${$t('msg_relays_silent')}` : ''}</dd>
+        <dt>{$t('msg_status_session')}</dt>
+        <dd>{s.runtime.session_active ? $t('msg_status_session_yes') : $t('msg_status_session_no')}</dd>
+        <dt>{$t('msg_status_ingress')}</dt>
+        <dd>{$t('msg_status_ingress_value', { received: String(s.runtime.ingress.received), dm: String(s.runtime.ingress.dm), dup: String(s.runtime.ingress.duplicates), ignored: String(s.runtime.ingress.ignored) })}</dd>
+        <dt>{$t('msg_status_outbox')}</dt>
+        <dd>{String(s.runtime.outbox_pending)}</dd>
+      </dl>
+      <button class="btn btn-ghost" onclick={() => messengerStore.refresh()}>{$t('msg_status_refresh')}</button>
+    </div>
+    <DebugFeed />
+  {/if}
+{/snippet}
 
 <div class="settings" class:compact>
   {#if hideTabs}
@@ -90,27 +117,15 @@
     <PrivacyPanel />
   {:else if tab === 'calls'}
     <CallsPanel />
+    {#if compact && s?.runtime}
+      <!-- A phone (design 15): the diagnostics folded at the end of the last tab, a row of 56 that opens them. -->
+      <details class="diag">
+        <summary class="card diag-head">{$t('msg_settings_tab_diagnostics')}<Icon name="chevron-down" size={20} /></summary>
+        <div class="diag-body">{@render diagnostics()}</div>
+      </details>
+    {/if}
   {:else if s?.runtime}
-    <div class="card status-card">
-      <div class="card-title">{$t('msg_status_title')}</div>
-      <dl class="status-grid">
-        <dt>{$t('msg_status_version')}</dt><dd><code>{s.runtime.version}</code></dd>
-        <dt>{$t('msg_status_schema')}</dt><dd><code>{s.runtime.schema_version}</code></dd>
-        <dt>{$t('msg_status_data_dir')}</dt><dd><code>{s.runtime.data_dir}</code></dd>
-        <dt>{$t('msg_status_secrets')}</dt>
-        <dd>{s.runtime.secrets_unlocked ? $t('msg_status_secrets_unlocked') : $t('msg_status_secrets_locked')}</dd>
-        <dt>{$t('msg_status_relays')}</dt>
-        <dd>{$t('msg_status_relays_value', { connected: String(s.runtime.relays_connected), total: String(s.runtime.relays_total) })}{s.runtime.silent_mode ? ` · ${$t('msg_relays_silent')}` : ''}</dd>
-        <dt>{$t('msg_status_session')}</dt>
-        <dd>{s.runtime.session_active ? $t('msg_status_session_yes') : $t('msg_status_session_no')}</dd>
-        <dt>{$t('msg_status_ingress')}</dt>
-        <dd>{$t('msg_status_ingress_value', { received: String(s.runtime.ingress.received), dm: String(s.runtime.ingress.dm), dup: String(s.runtime.ingress.duplicates), ignored: String(s.runtime.ingress.ignored) })}</dd>
-        <dt>{$t('msg_status_outbox')}</dt>
-        <dd>{String(s.runtime.outbox_pending)}</dd>
-      </dl>
-      <button class="btn btn-ghost" onclick={() => messengerStore.refresh()}>{$t('msg_status_refresh')}</button>
-    </div>
-    <DebugFeed />
+    {@render diagnostics()}
   {/if}
   </div>
 </div>
@@ -143,5 +158,14 @@
     background: var(--pane-strong); border-color: var(--m-card-border, var(--border));
     box-shadow: var(--m-card-shadow, none);
   }
+  .diag { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .settings .diag-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 56px; padding-block: 0;
+    font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); cursor: pointer; list-style: none;
+  }
+  .diag-head::-webkit-details-marker { display: none; }
+  .diag-head :global(svg) { flex: none; color: var(--text-3); transition: transform var(--dur-fast) var(--ease); }
+  .diag[open] .diag-head :global(svg) { transform: rotate(180deg); }
+  .diag-body { display: flex; flex-direction: column; gap: var(--sp-3); }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--surface-3); padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-badge); }
 </style>

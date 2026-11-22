@@ -113,7 +113,7 @@
 >
   {#snippet actions()}
     {#if !inPlace}
-      <span class="count-badge">{filteredEntries.length}</span>
+      <span class="count-pill quiet">{filteredEntries.length}</span>
       <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
         <Icon name="plus" size={18} />
       </button>
@@ -161,7 +161,7 @@
               onclick={() => toggleWorkspace(ws.id)}
               style="--ws-color: {ws.color}"
             >
-              <span class="ws-dot" style="background:{ws.color}"></span>
+              <span class="status-dot" style="background:{ws.color}"></span>
               {ws.name}
             </button>
           {/each}
@@ -196,17 +196,6 @@
 {/snippet}
 
 <style>
-  .count-badge {
-    background: var(--accent-tint);
-    color: var(--accent-text-2);
-    border: 1px solid var(--accent-tint-border);
-    border-radius: var(--radius-pill);
-    font-size: var(--fs-xs);
-    font-family: var(--font-mono);
-    padding: var(--sp-0-5) var(--sp-1-5);
-    font-weight: var(--fw-semibold);
-  }
-
   .panel-back { padding: var(--sp-3) var(--sp-4) 0; }
 
   .panel-search {
@@ -243,13 +232,6 @@
     background: var(--accent-tint);
     border-color: var(--accent-tint-border);
     color: var(--accent-text);
-  }
-
-  .ws-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
 
   .loading-msg {

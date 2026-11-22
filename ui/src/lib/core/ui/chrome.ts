@@ -21,6 +21,8 @@ export interface ChromeBridge {
    * the path of a copy in the app's cache on iOS; null without one.
    */
   clipboardImage?: () => string | null | Promise<string | null>;
+  /** The text on the clipboard, read on the user's tap only (Android: its WebView refuses `navigator.clipboard.readText`); null without text. */
+  clipboardText?: () => string | null;
   /** Whether pictures a keyboard inserts come to the page as `veydan-received-content` (Android). */
   setTakesPictures?: (takes: boolean) => void;
   /** Where the page handles a drag from the edge of the screen itself (CSS pixels); an empty rectangle gives it back. */

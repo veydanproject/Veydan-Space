@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "Nama, foto, “Tentang saya”, situs web, dan tautan bersifat publik: siapa saja yang mengetahui kunci Anda dapat melihatnya.",
     "msg_profile_saved": "Profil dipublikasikan",
     "msg_profile_unsaved": "Ada perubahan yang belum disimpan",
-    "msg_profile_discard_confirm": "Buang perubahan?",
-    "msg_profile_discard": "Buang",
     "msg_profile_send_card": "Kirim kartu saya",
     "msg_profile_send_card_hint": "Nama, foto, “Tentang saya”, dan tautan Anda dalam satu pesan, agar orang bisa menambahkan Anda dengan sekali ketuk.",
     "msg_profile_send_card_to": "Kirim ke",

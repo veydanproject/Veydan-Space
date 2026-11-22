@@ -25,7 +25,7 @@
   import { locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { copied } from '$lib/core/ui/toast.svelte';
-  import { TransferStatus, VoicePlayer, bytes, playableUrl, viewer, type TransferAction } from '$lib/messenger/seams/shared';
+  import { TransferStatus, VoicePlayer, bytes, onPhone, playableUrl, viewer, type TransferAction } from '$lib/messenger/seams/shared';
   import { channelsApi, errorText, mediaOf, type FeedItemView } from './api';
   import CircleNote from './CircleNote.svelte';
   import { channelStore } from './channelStore.svelte';
@@ -43,6 +43,7 @@
   let { item, tile = false, picked = null }: Props = $props();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
+  const phone = onPhone();
 
   const m = $derived(mediaOf(item));
   const picture = $derived(m?.kind === 'image');
@@ -316,6 +317,12 @@
   <!-- A tile of an album lays its parts in a row: the words of a failure lie over the picture's foot there,
        not beside it (the owner's iPhone, 2026-11-21: a column of words squeezed the picture). -->
   {#if error}<p class="error-msg" class:on-tile={tile}>{error}</p>{/if}
+  <!-- A phone: a fetch that failed is tried again from here, not only by a tap on what it failed to bring (design 17); a file kept on the device has nothing to retry. -->
+  {#if phone && error && !path && !tile}
+    <button class="btn btn-ghost btn-sm retry" disabled={busy} onclick={() => { if (playable === 'video') void playVideo(); else void fetchIt(); }}>
+      <Icon name={busy ? 'loader' : 'arrow-forward-up'} size={16} />{$t('common_retry')}
+    </button>
+  {/if}
 {/if}
 
 <style>
@@ -380,6 +387,7 @@
     font: inherit; font-size: var(--fs-xs); color: var(--text-3); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .error-msg { margin: 0; }
+  .retry { align-self: flex-start; gap: var(--sp-1-5); }
   .error-msg.on-tile {
     position: absolute; left: var(--sp-1-5); right: var(--sp-1-5); bottom: var(--sp-1-5); z-index: 1;
     padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); background: var(--on-media-scrim); color: #fff;

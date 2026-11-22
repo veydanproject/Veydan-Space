@@ -13,6 +13,7 @@
   import type { EditAction } from '$lib/notes/markdown-edit';
   import { portal } from '$lib/core/portal';
   import { t } from '$lib/core/mobile/i18n';
+  import Icon from '$lib/core/Icon.svelte';
 
   interface Props {
     content: string;
@@ -354,9 +355,13 @@
   {/if}
 </div>
 {#if lightboxSrc}
-  <button type="button" class="lightbox" use:portal onclick={() => (lightboxSrc = '')} aria-label={$t('common_close')}>
+  <!-- A tap anywhere closes it, as before; the × in the corner says so. -->
+  <div class="lightbox" use:portal onclick={() => (lightboxSrc = '')} role="presentation">
     <img src={lightboxSrc} alt="" />
-  </button>
+    <button type="button" class="icon-btn close" onclick={() => (lightboxSrc = '')} aria-label={$t('common_close')}>
+      <Icon name="x" size={22} />
+    </button>
+  </div>
 {/if}
 
 <style>
@@ -435,7 +440,9 @@
   .host :global(li > p) { margin: 0; }
   .host :global(ul[data-type="taskList"]) { list-style: none; padding-left: 0; }
   .host :global(ul[data-type="taskList"] > li) { display: flex; align-items: flex-start; gap: 0.5em; }
-  .host :global(ul[data-type="taskList"] > li > label) { flex-shrink: 0; margin-top: 0.2em; display: flex; }
+  .host :global(ul[data-type="taskList"] > li > label) { position: relative; flex-shrink: 0; margin-top: 0.2em; display: flex; }
+  /* The box stays 20, a finger's zone of 44 around it: the label toggles it. */
+  .host :global(ul[data-type="taskList"] > li > label)::before { content: ''; position: absolute; inset: -12px; }
   .host :global(ul[data-type="taskList"] > li > div) { flex: 1; min-width: 0; }
   .host :global(ul[data-type="taskList"] input[type="checkbox"]) {
     width: 20px;
@@ -481,6 +488,8 @@
     display: none;
     touch-action: none;
   }
+  /* The handle stays 22, its zone 44. */
+  .host :global([data-resize-handle])::before { content: ''; position: absolute; inset: -11px; }
   .host :global([data-resize-handle="bottom-right"]) { transform: translate(35%, 35%); }
   .host :global([data-resize-handle="bottom-left"]) { transform: translate(-35%, 35%); }
   .host :global([data-resize-handle="top-right"]) { transform: translate(35%, -35%); }
@@ -510,6 +519,12 @@
     background: rgba(0, 0, 0, 0.92);
     touch-action: none;
     transition: none;
+  }
+  .lightbox .close {
+    position: absolute;
+    top: calc(var(--sat) + var(--sp-3));
+    right: calc(var(--sar) + var(--sp-3));
+    color: #fff;
   }
   .lightbox img {
     max-width: 100%;

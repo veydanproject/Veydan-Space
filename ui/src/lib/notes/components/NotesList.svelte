@@ -128,7 +128,7 @@
           </span>
           <span class="note-meta">
             {#if note.has_draft}
-              <span class="draft-dot" title={$t('notes_unsaved_draft')}></span>
+              <span class="status-dot warn" title={$t('notes_unsaved_draft')}></span>
             {/if}
             <span class="note-format">{note.format}</span>
           </span>
@@ -216,14 +216,6 @@
     background: var(--border);
     padding: var(--sp-0-5) var(--sp-1-5);
     border-radius: var(--radius-badge);
-  }
-
-  .draft-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--warn-text);
-    flex-shrink: 0;
   }
 
   .card-mid {

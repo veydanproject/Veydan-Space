@@ -203,5 +203,7 @@
   .more { align-self: center; }
   @media (pointer: coarse) {
     .acts .btn { min-height: 44px; }
+    /* ✓ and ✕ of 40: --sp-2 between them, their zones of 44 apart (as the channels' queue). */
+    .row-acts { gap: var(--sp-2); }
   }
 </style>

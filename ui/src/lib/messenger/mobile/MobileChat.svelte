@@ -125,7 +125,7 @@
 </script>
 
 {#if chatStore.active && shown}
-  <MobileFrame bare scroll={false}>
+  <MobileFrame bare scroll={false} callRow={false}>
     {#if chatStore.active.kind === "group"}
       <GroupChat chat={chatStore.active} onback={back} />
     {:else}
@@ -137,7 +137,7 @@
     {#if missingId === id || stuck}
       <div class="note">{$t('msg_mobile_chat_missing')}</div>
       <div class="out">
-        <button type="button" class="m-btn-grad" onclick={toList}>{$t('common_back')}</button>
+        <button type="button" class="btn btn-primary wide" onclick={toList}>{$t('common_back')}</button>
       </div>
     {:else}
       <div class="note">{$t('loading')}</div>

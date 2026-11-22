@@ -480,11 +480,7 @@
           style="padding-left: {depth > 0 ? 'var(--sp-6)' : 'var(--sp-2)'}"
           onclick={() => onfilter({ type: 'folder', id: f.id })}
         >
-          {#if depth === 0}
-            <span class="dot-slot"><span class="dot" style="background:{f.color}"></span></span>
-          {:else}
-            <span class="icon-slot"><span class="dot" style="background:{f.color}"></span></span>
-          {/if}
+          <span class="mark-slot tinted-text" style:--chip={f.color || undefined}><Icon name="folder" size={16} /></span>
           <span class="item-name" title={f.name}>{f.name}</span>
         </button>
 
@@ -501,7 +497,7 @@
           onclick={(e) => e.stopPropagation()}
         >
           {#if node.noteCount > 0}
-            <span class="count count-num">{node.noteCount}</span>
+            <span class="count count-pill sm quiet count-num">{node.noteCount}</span>
           {/if}
           <button
             class="dots-btn"
@@ -537,11 +533,7 @@
           class="{filterClass(filterType, node.fullPath)} tree-item"
           onclick={() => onfilter({ type: filterType, id: node.fullPath })}
         >
-          {#if depth === 0}
-            <span class="dot-slot"><span class="dot" style="background:{node.tag?.color ?? 'var(--text-3)'}; opacity:{node.tag ? 1 : 0.4}"></span></span>
-          {:else}
-            <span class="icon-slot"><span class="dot" style="background:{node.tag?.color ?? 'var(--text-3)'}; opacity:{node.tag ? 1 : 0.4}"></span></span>
-          {/if}
+          <span class="mark-slot tinted-text" style:--chip={node.tag?.color || undefined} style:opacity={node.tag ? 1 : 0.4}><Icon name="tag" size={16} /></span>
           <span class="item-name" title={node.label}>{node.label}</span>
         </button>
 
@@ -558,7 +550,7 @@
           onclick={(e) => e.stopPropagation()}
         >
           {#if count > 0}
-            <span class="count count-num">{count}</span>
+            <span class="count count-pill sm quiet count-num">{count}</span>
           {/if}
           {#if node.tag}
             <button
@@ -592,30 +584,30 @@
     <button class={filterClass('all')} onclick={() => onfilter({ type: 'all' })}>
       <span class="global-icon-slot"><Icon name="notes" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_all')}>{$t('notes_filter_all')}</span>
-      <span class="count">{countAll}</span>
+      <span class="count count-pill sm quiet">{countAll}</span>
     </button>
     <!-- Global (bound to no workspace or profile) says nothing in a product without workspaces where every note is global -->
     {#if directory.owned('workspace') || workspaceTree.length > 0 || countGlobal !== countAll || activeFilter.type === 'global'}
       <button class={filterClass('global')} onclick={() => onfilter({ type: 'global' })}>
         <span class="global-icon-slot"><Icon name="world" size={13} /></span>
         <span class="item-name" title={$t('notes_filter_global')}>{$t('notes_filter_global')}</span>
-        <span class="count">{countGlobal}</span>
+        <span class="count count-pill sm quiet">{countGlobal}</span>
       </button>
     {/if}
     <button class={filterClass('pinned')} onclick={() => onfilter({ type: 'pinned' })}>
       <span class="global-icon-slot"><Icon name="pin" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_pinned')}>{$t('notes_filter_pinned')}</span>
-      <span class="count">{countPinned}</span>
+      <span class="count count-pill sm quiet">{countPinned}</span>
     </button>
     <button class={filterClass('archived')} onclick={() => onfilter({ type: 'archived' })}>
       <span class="global-icon-slot"><Icon name="archive" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_archived')}>{$t('notes_filter_archived')}</span>
-      <span class="count">{countArchived}</span>
+      <span class="count count-pill sm quiet">{countArchived}</span>
     </button>
     <button class={filterClass('trash')} onclick={() => onfilter({ type: 'trash' })}>
       <span class="global-icon-slot"><Icon name="trash-2" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_trash')}>{$t('notes_filter_trash')}</span>
-      <span class="count">{trashCount}</span>
+      <span class="count count-pill sm quiet">{trashCount}</span>
     </button>
   </div>
 
@@ -628,7 +620,7 @@
         <div class="tree-node">
           <div class="tree-row">
             <button class="{filterClass('workspace', ws.id)} tree-item" onclick={() => onfilter({ type: 'workspace', id: ws.id })}>
-              <span class="dot-slot"><span class="dot" style="background:{ws.color}"></span></span>
+              <span class="dot-slot"><span class="status-dot" style="background:{ws.color}"></span></span>
               <span class="item-name" title={ws.name}>{ws.name}</span>
             </button>
             {#if ws.profiles.length > 0}
@@ -636,14 +628,14 @@
                 <Icon name={collapsed.has('ws:' + ws.id) ? 'chevron-right' : 'chevron-down'} size={10} />
               </button>
             {/if}
-            {#if ws.noteCount > 0}<span class="count">{ws.noteCount}</span>{/if}
+            {#if ws.noteCount > 0}<span class="count count-pill sm quiet">{ws.noteCount}</span>{/if}
           </div>
           {#if !collapsed.has('ws:' + ws.id)}
             {#each ws.profiles as p (p.id)}
               <button class="{filterClass('profile', p.id)} nav-item profile-item" onclick={() => onfilter({ type: 'profile', id: p.id })}>
                 <span class="icon-slot"><Icon name="browser" size={11} /></span>
                 <span class="item-name" title={p.name}>{p.name}</span>
-                <span class="count">{p.noteCount}</span>
+                <span class="count count-pill sm quiet">{p.noteCount}</span>
               </button>
             {/each}
           {/if}
@@ -697,7 +689,7 @@
           onmouseleave={() => hoveredSmartId = null}
         >
           <button class="{filterClass('smart', view.id)} tree-item" onclick={() => onfilter({ type: 'smart', id: view.id })}>
-            <span class="dot-slot"><span class="dot" style="background:{view.color}"></span></span>
+            <span class="dot-slot"><span class="status-dot" style="background:{view.color}"></span></span>
             <span class="item-name" title={view.name}>{view.name}</span>
           </button>
           <div class="count-wrap"
@@ -728,7 +720,7 @@
           <button class={filterClass('domain', site.domain)} onclick={() => onfilter({ type: 'domain', id: site.domain })}>
             <span class="global-icon-slot"><Icon name="world" size={12} /></span>
             <span class="item-name" title={site.domain}>{site.domain}</span>
-            <span class="count">{site.noteCount}</span>
+            <span class="count count-pill sm quiet">{site.noteCount}</span>
           </button>
         {/each}
       {/if}
@@ -985,22 +977,8 @@
   .nav-item:hover  { background: var(--surface-2); color: var(--text); }
   .nav-item.active { background: var(--accent-bg); color: var(--accent-text); }
 
-  /* The count: a column of 28 at the right, its number at its right edge — «1068» whole in a column of 200. */
-  .count {
-    margin-left: auto;
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    font-variant-numeric: tabular-nums;
-    color: var(--text-faint);
-    flex-shrink: 0;
-    width: 28px;
-    height: 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    white-space: nowrap;
-  }
-  .nav-item.active .count { color: var(--accent-text); }
+  /* The count: a .count-pill.sm.quiet at the right edge, grey on the chosen row too (design 06). */
+  .count { margin-left: auto; }
 
   /* count in a tree-row: makes up for the button padding it lacks, so it ends where the buttons' counts do */
   .tree-row > .count { margin-right: var(--sp-3); }
@@ -1017,6 +995,10 @@
 
   /* Fixed-width slots keep the text on one vertical line */
   .dot-slot  { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-0-5)); margin-right: var(--sp-0-5); }
+  /* A folder's and a tag's mark: the icon of 16 in its colour, where a workspace has its dot (design 06). */
+  .mark-slot { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-1)); margin-right: calc(-1 * var(--sp-0-5)); }
+  /* The mark of a tag or a folder takes the ink of its colour (.tinted-text); with none, --text-3. */
+  .mark-slot:not([style*='--chip']) { color: var(--text-3); }
   .icon-slot { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-1)); margin-right: var(--sp-1); }
 
   /* Icons of the global rows: as wide as dot-slot + dot + gap, so their text lines up with the workspaces */
@@ -1028,13 +1010,6 @@
     justify-content: center;
     margin-left: calc(-1 * var(--sp-1));
     margin-right: calc(-1 * var(--sp-0-5));
-  }
-
-  /* Colour dot */
-  .dot {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
   }
 
   /* Item name */
@@ -1092,7 +1067,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    width: 28px;
+    min-width: 28px;
     height: 1.25rem;
   }
 

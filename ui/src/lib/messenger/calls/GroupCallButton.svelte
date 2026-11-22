@@ -11,8 +11,8 @@
   As in a conversation of two, a press asks first unless that was turned
   off (CallConfirm, kept on this device), and a hold (or a right click)
   opens the settings of calls. A refusal is an error toast (pressing
-  again is the retry). On a phone (`menuStarts`) the two buttons that start a call are
-  entries of the chat's menu instead (start, canStart, startBlocked); joining
+  again is the retry). On a phone (`menuStarts`) the header keeps «Call» alone (design 15):
+  both kinds are entries of the chat's menu too (start, canStart, startBlocked); joining
   a call on, or going back to it, stays a button of the header.
 -->
 <script lang="ts">
@@ -105,8 +105,8 @@
         title={reason || $t('msg_gcall_join_title')} aria-label={$t('msg_gcall_join_title')}>
         <Icon name={live.media === 'video' ? 'video' : 'phone'} size={14} />{#if !phone}<span class="label">{$t('msg_gcall_join')}</span>{/if}
       </button>
-    {:else if !menuStarts}
-      {#if kinds.includes('video')}
+    {:else}
+      {#if !menuStarts && kinds.includes('video')}
         <button class="icon-btn lg" disabled={!!reason || groupCallStore.busy} onclick={() => press('video')} use:hold={toSettings}
           title={reason || $t('msg_gcall_video_start')} aria-label={$t('msg_gcall_video_start')}>
           <Icon name="video" size={18} />

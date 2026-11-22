@@ -12,9 +12,10 @@
   --hit-max: 22px; /* the most a zone may grow on a side, see the hit area rule below */
   /* The slot of the tab bar: its 56 plate and 12 of air above it, where the counts stand out of the plate (10 and their 2 ring). */
   --nav-h: 68px;
-  /* The floating «+» (.m-fab) stands this high on every screen, over the tab bar or where a screen has none: the bar's slot (68 + its 10 of air) and 16. */
-  --fab-lift: calc(68px + 10px + var(--sp-4));
-  --fab-size: 52px; /* .m-fab; a list under it keeps this much room */
+  --fab-size: 52px; /* .m-fab */
+  /* The room a list keeps at its end under the «+» (.m-fab): the button and its --sp-4 from the frame's edge,
+     so its last row scrolls out over the button and no empty band stays under it (design 14). */
+  --fab-room: calc(var(--fab-size) + var(--sp-4));
   --bar-plate-h: 64px; /* a plain bar (the attach strip, a bulk bar) */
   --meta-label-w: 88px; /* the labels' column of a meta table (.m-meta) */
   /* No growth to the screen edge unless a control or its header says so (the hit area rule below). */
@@ -46,7 +47,6 @@
   --m-tile: var(--surface);
   /* A bar over content: denser glass. */
   --m-nav: var(--glass-bar);
-  --m-tag: var(--accent-tint);
   --m-highlight: var(--accent-bg);
   --m-sheet: var(--surface);
   --m-icon-mix: 18%;
@@ -62,7 +62,6 @@
   --m-seg: var(--surface-2);
   --m-tile: var(--surface-2);
   --m-nav: var(--glass-bar);
-  --m-tag: var(--accent-tint);
   --m-highlight: var(--accent-bg);
   --m-sheet: var(--surface);
   --m-icon-mix: 24%;
@@ -97,15 +96,23 @@ html.scanning, html.scanning body, html.scanning .shell, html.scanning .screen {
    the shell goes while it scans, and only the camera and the scanner's own
    frame are left. */
 html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons with `transition: all` carry the visibility through their 0.15 s */
+/* So do a sheet or a window it was opened from (a channel's «Войти», design 17): they lie in the body, out of the shell. */
+html.scan-cover :is(.m-sheet, .m-dim, .dialog-overlay) { visibility: hidden; opacity: 0; }
 
 /* ── Page frame ── */
 .m-page {
+  position: relative; /* the frame of its «+» (.m-fab) */
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  /* The keyboard covers the bottom of the screen: the page ends on its top edge, so the body scrolls above it
+     and the foot (.page-foot, «Сохранить») stands right on it, as a messenger's page (MobileFrame). */
+  padding-bottom: var(--kb);
   animation: vfade var(--dur-base) ease-out;
 }
+/* With the keyboard up the gesture stripe is under it: no page or foot keeps room for it (MobileShell marks it). */
+.shell.kb-open { --sab: 0px; --page-sab: 0px; }
 /* The screens of the bar come at once: a tab faded in from nothing, so every tap on the bar
    blinked the whole screen (the owner, 2026-11-21, on an iPhone; the same CSS in every product).
    A screen without the bar (a chat, a note, a setting) still comes in with vfade. */
@@ -225,6 +232,10 @@ html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons w
 .icon-btn:active:not(:disabled) { background: var(--surface-hover); color: var(--text); }
 .icon-btn.on, .icon-btn.on:hover:not(:disabled) { color: var(--accent-text); background: var(--accent-tint); }
 .icon-btn.accent { color: var(--accent-text); }
+/* «⋮» at the end of a row (design 13): the sheet of the row's long press or swipe, in sight for a finger and for
+   TalkBack — the plain .icon-btn, `more-vertical`, «Ещё» (nav_more). It stands beside the row's main button
+   (.list-row-main), never in it, the last of the row, 4 from its right edge; the row's text gives way to it. */
+.list-row > .row-more { margin-right: calc(var(--sp-1) - var(--sp-3)); }
 
 /* Coloured icon tile: `--c` is the item colour */
 .m-doc {
@@ -243,7 +254,8 @@ html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons w
 }
 .m-doc.lg { width: 36px; height: 36px; border-radius: var(--radius); }
 /* The mark of a folder, the one of the drawer, the move sheet and the labels: `folder` 18 in the folder's colour
-   (`.tinted-text` with style:--chip, base.css), a folder without one (or «no folder») in --text-3. */
+   (`.tinted-text` with style:--chip, base.css), a folder without one (or «no folder») in --text-3.
+   A tag's row (the tags, the search) has the same mark with `tag` 16 in the tag's colour. */
 .m-folder { display: inline-flex; flex-shrink: 0; color: var(--text-3); }
 /* The round tick of a row chosen in a multi-select (the notes' list). */
 .m-tick {
@@ -286,9 +298,12 @@ input, select, textarea {
 textarea { resize: none; }
 /* A mark big enough for a finger; its label, tapped, toggles it too. */
 input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-height: 0; }
+/* A checkbox alone in a row (a queue of moderation): its label is its zone, 44 high, over the row's padding and
+   the gap beside it, so the row does not move. */
+.tick-zone { margin: -12px calc(-1 * var(--sp-2)); padding: 12px var(--sp-2); cursor: pointer; }
 
 /* ── Search row ── the search field is base.css's .search-field.fill; a button beside it («Отмена»)
-   stands to its right, not inside. */
+   stands to its right, not inside: the accent's text, .m-link (phone kit, «Поиск»). */
 .m-find-row {
   display: flex;
   align-items: center;
@@ -357,41 +372,53 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
    The hairline is drawn by the row's text (its first part, or the part after a lead: an icon, a tile, an avatar, a
    dot, a chip): placed on the row with no left of its own, it starts where the text begins, whatever the lead, and
    runs to the card's edge, where the card clips it (with a right of its own its width would shrink to its content's: none).
+   A row with buttons at its end (a box: its .list-row-main and «⋮») has the line drawn the same way inside its main part.
    The settings' tiles (.set-row) draw none. */
 .m-list .list-row { border-radius: 0; }
 .m-list .list-row:not(.set-row) + .list-row:not(.set-row) > :is(
-  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child), .list-row-main),
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before,
+.m-list .list-row:not(.set-row) + .list-row:not(.set-row) > .list-row-main > :is(
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
-  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
 )::before {
   content: ''; position: absolute; top: -0.5px; width: 100%; height: 1px;
   background: var(--divider); pointer-events: none;
 }
 .m-list .list-row:not(.set-row):is(:hover, :active, .active) > :is(
-  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
-  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
 )::before,
 .m-list .list-row:not(.set-row):is(:hover, :active, .active) + .list-row:not(.set-row) > :is(
-  :first-child:not(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
-  :is(svg, img, .m-avatar, .m-dot, .m-folder, .m-tick, .code,
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before,
+.m-list .list-row:not(.set-row):is(:hover, :active, .active) > .list-row-main > :is(
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
+)::before,
+.m-list .list-row:not(.set-row):is(:hover, :active, .active) + .list-row:not(.set-row) > .list-row-main > :is(
+  :first-child:not(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
+    span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)),
+  :is(svg, img, .m-avatar, .status-dot, .m-folder, .m-tick, .code,
     span:not(.list-row-label, .list-row-body):has(> :is(svg, img):only-child)):first-child + *
 )::before { opacity: 0; }
 .list-row:active:not(.still, :disabled) { background: var(--surface-hover); }
 .list-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-row-value { color: var(--text-2); font-size: var(--fs-base); white-space: nowrap; }
-.list-row.dense .count { color: var(--text-3); font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
 .list-row.dense .chev { color: var(--text-3); display: inline-flex; }
 .list-row.dense.danger { color: var(--danger-text); justify-content: center; font-weight: var(--fw-semibold); }
-.m-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
 
 /* Accent text button: "+ Создать папку" */
 .m-link {
@@ -516,29 +543,11 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   .m-bar--pick .m-bar-item:active { transform: none; }
 }
 
-/* ── Gradient button ── */
-.m-btn-grad {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  width: 100%;
-  min-height: 48px;
-  border: 0;
-  border-radius: var(--radius);
-  background: var(--accent-grad);
-  color: #fff;
-  font-size: var(--fs-body);
-  font-weight: var(--fw-bold);
-  box-shadow: var(--shadow-accent);
-  text-decoration: none;
-}
-.m-btn-grad { transition: transform var(--dur-fast) var(--ease); }
-.m-btn-grad:active { filter: brightness(1.08); transform: scale(0.97); transition-duration: var(--dur-press); }
-@media (prefers-reduced-motion: reduce) {
-  .m-btn-grad:active { transform: none; }
-}
-.m-btn-grad:disabled { opacity: 0.45; box-shadow: none; }
+/* ── The main button (design 03) ── on a phone the common .btn.btn-primary: 48, the accent's flat fill (no
+   gradient, no shadow), --fs-body; a press sinks it as any .btn (base.css). A foot sets its width (.page-foot);
+   elsewhere `.wide` gives it the whole width of its container. */
+.btn-primary { min-height: 48px; background: var(--accent); box-shadow: none; font-size: var(--fs-body); }
+.btn.wide { width: 100%; }
 
 /* ── Field with label (forms) ── */
 .m-field {
@@ -549,11 +558,14 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-field input, .m-field select { width: 100%; }
 
-/* ── FAB ── */
+/* ── FAB ── the «+» of a list: in the corner of the page's frame (.m-page, a messenger's .content), over the bottom
+   bar, --sp-4 from its right and bottom (and over the gesture stripe of a screen without the bar); its zone grows
+   to the right edge. Every list under it ends with --fab-room. */
 .m-fab {
-  position: fixed;
+  position: absolute;
   right: var(--sp-4);
-  bottom: calc(var(--fab-lift) + var(--sab));
+  bottom: calc(var(--sp-4) + var(--page-sab));
+  --hit-r: var(--sp-4);
   width: var(--fab-size);
   height: var(--fab-size);
   border-radius: 50%;
@@ -569,62 +581,15 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-fab > .icon { width: 22px; height: 22px; }
 .m-fab:active { filter: brightness(1.08); }
 
-/* ── Chips / tags ── */
-.m-chips {
+/* ── Chips (design 03) ── a choice is the common .chip (base.css; .active, .tinted with style:--chip), 32 on a
+   phone, its zone 44 (the hit area rule); a label in a row is a .badge (core/ui/Pill), a «+» beside them an
+   .icon-btn. `.chip-row` lays them out: wrapped, 8 apart. */
+.chip { min-height: 32px; }
+.chip-row {
   display: flex;
   gap: var(--sp-2);
   flex-wrap: wrap;
   align-items: center;
-}
-.m-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-1);
-  min-height: 28px;
-  padding: 0 var(--sp-3);
-  border-radius: var(--radius-pill);
-  border: 0;
-  background: var(--m-tag);
-  color: var(--accent-text);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.m-chips.scroll {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0 calc(-1 * var(--sp-4));
-  padding-left: var(--sp-4);
-  padding-right: var(--sp-4);
-}
-.m-chips.scroll::-webkit-scrollbar { display: none; }
-.m-chip.active { background: var(--accent); color: #fff; }
-.m-chip.small { min-height: 20px; padding: 0 var(--sp-2); font-size: var(--fs-xs); }
-.m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
-/* A chip in the user's colour is `.m-chip.tinted` with `style:--chip`: its
-   colours are the one rule of base.css (`.tinted`), as on the desktop. One
-   with no `--chip` (an entity: a profile, a proxy, a domain…, or a tag with
-   no colour) is the neutral chip, its kind told by its mark. An `.m-chip`
-   has no border, so its tint is mixed over the neutral chip (--m-seg)
-   instead of the page: a colour close to the surface still reads as a
-   chip, as `.m-chip.neutral` does (chip-contrast.test.ts covers --m-seg). */
-.m-chip.tinted:not([style*='--chip']) { background: var(--m-seg); color: var(--text-2); }
-@supports (color: color-mix(in srgb, red 50%, blue)) {
-  .m-chip.tinted[style*='--chip'] {
-    background: color-mix(in srgb, var(--chip) var(--chip-tint), var(--m-seg));
-  }
-  .m-chip.tinted.active[style*='--chip'] {
-    background: color-mix(in srgb, var(--chip) var(--chip-tint-strong), var(--m-seg));
-  }
-}
-.m-chip.add {
-  background: var(--m-seg);
-  color: var(--text-2);
-  width: 28px;
-  padding: 0;
-  justify-content: center;
 }
 
 /* ── Avatar (2FA) ── */
@@ -708,10 +673,8 @@ mark.m-highlight {
 /* A row that scrolls sideways (`overflow-x: auto`) clips its controls' zones above and below,
    because the other axis clips with it. `.hit-row` leaves them room: padding of --hit-row on both
    sides, taken back by an equal margin, so the row keeps its place; --hit-row is the growth the
-   shortest control needs ((44 - its height) / 2). `.m-chips.scroll` is such a row. */
-.hit-row.hit-row,
-.m-chips.scroll.scroll {
+   shortest control needs ((44 - its height) / 2). */
+.hit-row.hit-row {
   padding-block: var(--hit-row);
   margin-block: calc(-1 * var(--hit-row));
 }
-.m-chips.scroll.scroll { --hit-row: 8px; }

@@ -1422,6 +1422,17 @@ impl MessengerRuntime {
             .map(Into::into)
     }
 
+    /// The chat of the id `chat` was opened: when it is a chat of two
+    /// (`dm:<key>`, `dm:<key>@<server>`) whose peer can be called, the
+    /// call nodes are asked ahead of a call (`CallService::warm`). Any
+    /// other chat: nothing.
+    pub async fn call_warm(&self, chat: &str) {
+        let Some(addr) = chat.strip_prefix("dm:") else { return };
+        if let Ok(peer) = self.peer_addr(addr).await {
+            self.calls.service.warm(&peer).await;
+        }
+    }
+
     /// Take the ringing call. Refused while I am in the room of a group
     /// call: one call at a time, and the ringing one keeps ringing for my
     /// other devices.

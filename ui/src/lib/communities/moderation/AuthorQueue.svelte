@@ -115,7 +115,10 @@
   <div class="acts-box"><div class="acts">
     <!-- The order of every tab: the danger first, the yes last, on the right. -->
     {#if spamOk}
-      <button class="btn btn-ghost spam" disabled={busy} title={$t('chan_mod_spam')} aria-label={$t('chan_mod_spam')} onclick={() => decide(items, 'spam')}><Icon name="ban" size={16} /></button>
+      <!-- A phone has no tooltip: there the mark says its word (design 17). -->
+      <button class="btn btn-ghost spam" disabled={busy} title={phone ? undefined : $t('chan_mod_spam')} aria-label={phone ? undefined : $t('chan_mod_spam')} onclick={() => decide(items, 'spam')}>
+        <Icon name="ban" size={16} />{#if phone}{$t('chan_mod_spam')}{/if}
+      </button>
     {/if}
     {#if ticked.length}
       <button class="btn btn-ghost" disabled={busy} onclick={() => decide(ticked, 'reject')}><Icon name="x" size={16} />{$t('chan_mod_reject')}</button>
@@ -129,7 +132,7 @@
   <ul class="list divided">
     {#each items.slice(0, shown) as row (row.message_id)}
       <li class="msg">
-        <input class="tick" type="checkbox" checked={selected.includes(row.message_id)} onchange={() => tick(row.message_id)} aria-label={stamp(row.at)} />
+        <label class="tick-zone"><input class="tick" type="checkbox" checked={selected.includes(row.message_id)} onchange={() => tick(row.message_id)} aria-label={stamp(row.at)} /></label>
         <div class="body">
           <span class="when" title={stamp(row.at)}>{listStamp(row.at)}</span>
           <div class="text">{#if row.text}<MessageContent text={row.text} cards={false} />{:else}{$t('chan_post_file')}{/if}</div>
@@ -166,13 +169,12 @@
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .when { font-size: var(--fs-xs); color: var(--text-3); }
   .text { font-size: var(--fs-sm); color: var(--text-body); overflow-wrap: anywhere; }
-  .row-acts { display: flex; gap: 2px; flex-shrink: 0; }
+  /* ✓ and ✕ apart by --sp-2: a tap meant for one does not land on the other (design 17). */
+  .row-acts { display: flex; gap: var(--sp-2); flex-shrink: 0; }
   .icon-btn.ok { color: var(--success-text, var(--success)); }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) {
     .acts .btn { min-height: 44px; }
-    /* ✓ and ✕ of 40: --sp-2 between them, their zones of 44 apart. */
-    .row-acts { gap: var(--sp-2); }
   }
 </style>

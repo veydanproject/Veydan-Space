@@ -76,7 +76,7 @@
         {@const sent = asked.includes(l.id)}
         <ChoiceRow icon="layers" title={l.name} checked={picked === l.id} disabled={busy || sent} onclick={() => (picked = l.id)}>
           {#snippet more()}
-            {#if sent}<span class="tag">{$t('chan_level_request_sent')}</span>{/if}
+            {#if sent}<span class="badge badge-ok">{$t('chan_level_request_sent')}</span>{/if}
             {#if a.scopes.length}<span class="sub">{$t('chan_level_request_adds', { list: a.scopes.map((s) => `«${s.title}»`).join(', ') })}</span>{/if}
             {#if a.rights.length}<span class="sub">{$t('chan_level_request_rights', { list: a.rights.map((r) => $t(`chan_right_${r}_short` as 'chan_right_comment_short')).join(', ') })}</span>{/if}
           {/snippet}
@@ -102,7 +102,7 @@
   .hint { margin: calc(-1 * var(--sp-2)) 0 0; line-height: var(--lh-snug); }
   .options { display: flex; flex-direction: column; gap: var(--sp-2); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
-  .tag { align-self: flex-start; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--success-bg); color: var(--success-text, var(--success)); }
+  .badge { align-self: flex-start; }
   .field-wrap { display: flex; flex-direction: column; gap: var(--sp-2); }
   .field {
     width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-base); color: var(--text); background: var(--surface-3);

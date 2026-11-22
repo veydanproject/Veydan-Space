@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "名前、写真、「自己紹介」、ウェブサイト、リンクは公開されます。あなたの鍵を知っている人なら誰でも見られます。",
     "msg_profile_saved": "プロフィールを公開しました",
     "msg_profile_unsaved": "未保存の変更があります",
-    "msg_profile_discard_confirm": "変更を破棄しますか？",
-    "msg_profile_discard": "破棄",
     "msg_profile_send_card": "自分のカードを送る",
     "msg_profile_send_card_hint": "名前、写真、「自己紹介」、リンクを 1 通のメッセージで送り、相手がワンタップであなたを追加できるようにします。",
     "msg_profile_send_card_to": "送信先",

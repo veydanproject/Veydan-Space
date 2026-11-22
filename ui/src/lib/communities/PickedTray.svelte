@@ -50,7 +50,11 @@
   .unpick > :global(.icon) { width: 20px; height: 20px; padding: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
   .unpick:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   @media (pointer: coarse) {
-    .pick { width: 72px; height: 72px; }
+    /* The button's zone of 44 stands out of the tile (7 over its top and right edge): the tile does not clip it, its
+       picture keeps the corners itself; the tray leaves that much room above and at its end, its row where it was. */
+    .tray { padding: 9px 7px 2px 0; margin-top: -7px; }
+    .pick { width: 72px; height: 72px; overflow: visible; }
+    .pick img { border-radius: calc(var(--radius-md) - 1px); }
     .unpick { top: -5px; right: -5px; width: 40px; height: 40px; }
     .unpick > :global(.icon) { width: 24px; height: 24px; padding: 6px; }
   }

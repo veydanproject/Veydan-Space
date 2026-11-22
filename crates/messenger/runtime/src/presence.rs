@@ -578,8 +578,13 @@ impl MessengerRuntime {
     /// (`PresenceDriver::set_focus`).
     pub async fn focus(&self, chat: Option<String>, asked: u64) -> Result<()> {
         let now = SystemClock.now().secs();
+        let opened = chat.clone();
         if !self.presence.set_focus(chat, now, asked) {
             return Ok(());
+        }
+        // A call may follow: its nodes are asked while the chat is read.
+        if let Some(chat) = opened {
+            self.call_warm(&chat).await;
         }
         let Ok(keys) = self.session_keys().await else { return Ok(()) };
         let pool = self.relays.pool().await;

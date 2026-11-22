@@ -18,7 +18,7 @@ use messenger_core::traits::UiEvent;
 use messenger_core::{Clock, Context, Effect, Envelope, Handler, Outbound, PubKey, Timestamp};
 use messenger_dm::{Action, DmHandler, DmService};
 use messenger_store::{calls as repo, chats, Store};
-use messenger_testkit::{open_dm, wrap_recipients, FakeEngine};
+use messenger_testkit::{open_dm, wrap_recipients, FakeEngine, FakeNode};
 use nostr::key::Keys;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -53,15 +53,20 @@ struct Party {
 }
 
 impl Party {
-    async fn new(name: &'static str, keys: Keys, clock: Arc<TestClock>, gate: bool, engine: FakeEngine) -> Self {
+    /// `node`: the call node this party's calls go through (its fake);
+    /// without one a call has no node to ask.
+    async fn new(name: &'static str, keys: Keys, clock: Arc<TestClock>, gate: bool, engine: FakeEngine, node: Option<&FakeNode>) -> Self {
         let store = Store::open_in_memory().await.unwrap();
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
         let dm = DmService::new(store.clone(), contacts, profiles, clock.clone());
         dm.set_gate(gate);
         dm.set_signer(Some(keys.clone()));
-        let (calls, rx) =
-            CallService::new(store.clone(), dm.clone(), Arc::new(engine), Arc::new(StaticServerSets(vec![])), NodeClient::new("test"), clock);
+        let (sets, nodes) = match node {
+            Some(node) => (StaticServerSets(vec![node.as_call_node()]), node.client()),
+            None => (StaticServerSets(vec![]), NodeClient::new("test")),
+        };
+        let (calls, rx) = CallService::new(store.clone(), dm.clone(), Arc::new(engine), Arc::new(sets), nodes, clock);
         calls.set_signer(Some(keys.clone()));
         let handler: Arc<dyn Handler<messenger_core::DmInbound>> =
             Arc::new(CallDmHandler::new(calls.clone(), Arc::new(DmHandler::new(dm.clone()))));
@@ -160,6 +165,15 @@ struct World {
 
 impl World {
     async fn new(names: &[(&'static str, Option<usize>)], gate: bool) -> Self {
+        Self::made(names, gate, None).await
+    }
+
+    /// A world whose parties all have one call node to go through.
+    async fn with_node(names: &[(&'static str, Option<usize>)], gate: bool) -> Self {
+        Self::made(names, gate, Some(FakeNode::new(FakeEngine::new()))).await
+    }
+
+    async fn made(names: &[(&'static str, Option<usize>)], gate: bool, node: Option<FakeNode>) -> Self {
         let clock = Arc::new(TestClock(AtomicI64::new(START)));
         let engine = FakeEngine::new();
         let mut parties: Vec<Arc<Party>> = vec![];
@@ -168,7 +182,7 @@ impl World {
                 Some(i) => parties[*i].keys.clone(),
                 None => Keys::generate(),
             };
-            parties.push(Arc::new(Party::new(name, keys, clock.clone(), gate, engine.clone()).await));
+            parties.push(Arc::new(Party::new(name, keys, clock.clone(), gate, engine.clone(), node.as_ref()).await));
         }
         Self { clock, parties, engine }
     }
@@ -2290,7 +2304,7 @@ async fn an_older_client_drops_the_notes_of_the_journal_unread() {
 
     // A client of before them has no door for them: its DM module alone.
     let older = World::new(&[("alice-old", None)], false).await;
-    let old = Party::new("alice-old", alice1.keys.clone(), older.clock.clone(), false, FakeEngine::new()).await;
+    let old = Party::new("alice-old", alice1.keys.clone(), older.clock.clone(), false, FakeEngine::new(), None).await;
     let dm_only = DmHandler::new(old.dm.clone());
     for e in &notes {
         let msg = open_dm(&old.keys, e, true).unwrap();
@@ -2428,4 +2442,109 @@ async fn the_end_of_a_call_is_the_same_on_every_device_whatever_order_the_notes_
     for p in [a1, a2, a3] {
         assert_eq!(repo::hide_ended_before(&p.store, end, now).await.unwrap(), 1, "{}", p.name);
     }
+}
+
+fn ice_of(signal: &serde_json::Value) -> Vec<String> {
+    signal["ice"].as_array().unwrap().iter().map(|c| c["candidate"].as_str().unwrap().to_string()).collect()
+}
+
+/// The owner, 2026-11-22: a call took long to connect. The engine of the
+/// apps gathers for as long as a call lasts and never says it is done, so
+/// the invitation and the answer each waited the whole of `GATHER_WAIT`:
+/// three seconds of every call. With a node they leave on the first
+/// address it relays through, which is the last kind found.
+#[tokio::test]
+async fn the_invitation_and_the_answer_leave_on_the_first_address_of_a_relay() {
+    let w = World::with_node(&[("alice", None), ("bob", None)], false).await;
+    w.engine.set_gathering_ends(false);
+    let (alice, bob) = (w.p(0), w.p(1));
+    let call = alice.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    // The clock is not moved: no timer of the cores sends it (a settle
+    // takes a few dozen milliseconds of the real one).
+    w.settle().await;
+    let invites = signals_of(alice, bob, "call.invite");
+    assert_eq!(invites.len(), 1, "left on the candidate, not on the timer");
+    let ice = ice_of(&invites[0]);
+    assert!(ice.len() == 2 && ice[0].contains("typ host") && ice[1].contains("typ relay"), "{ice:?}");
+    bob.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    let answers = signals_of(bob, alice, "call.answer");
+    assert_eq!(answers.len(), 1);
+    assert!(ice_of(&answers[0]).iter().any(|c| c.contains("typ relay")), "{answers:?}");
+    assert_eq!(phase(alice), Some(Phase::Active));
+    assert_eq!(phase(bob), Some(Phase::Active));
+}
+
+/// Without a node there is nothing to wait for but the addresses of the
+/// device itself: the pieces leave after `GATHER_ALONE`, well before
+/// `GATHER_WAIT`.
+#[tokio::test]
+async fn a_call_with_no_node_does_not_wait_for_one() {
+    let w = World::new(&[("alice", None), ("bob", None)], false).await;
+    w.engine.set_gathering_ends(false);
+    let (alice, bob) = (w.p(0), w.p(1));
+    alice.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    // The timer of the wait is set by a task of its own: it is let run
+    // before the clocks move.
+    w.settle().await;
+    // One second of the cores' clocks: more than the short wait, less
+    // than the long one.
+    w.advance(1).await;
+    let invites = signals_of(alice, bob, "call.invite");
+    assert_eq!(invites.len(), 1);
+    assert!(ice_of(&invites[0]).iter().all(|c| c.contains("typ host")), "{invites:?}");
+    assert_eq!(bob.incoming().len(), 1);
+}
+
+/// The first offer leaves with the first candidates and the rest follow
+/// at once in `call.ice`, which a relay may hand over before the
+/// invitation: they are kept for it and given to the engine with it.
+#[tokio::test]
+async fn candidates_that_overtake_the_invitation_wait_for_it() {
+    let w = World::new(&[("alice", None), ("bob", None)], false).await;
+    let (alice, bob) = (w.p(0), w.p(1));
+    *bob.deaf.lock().unwrap() = true;
+    let call = alice.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    let late = messenger_calls::IceCandidate { candidate: "candidate:late 1 udp 1 203.0.113.9 49152 typ relay".into(), mid: Some("0".into()), index: Some(0) };
+    w.session(0).inject(SessionEvent::LocalCandidate(late.clone()));
+    w.settle().await;
+    w.advance(1).await;
+    let of = |t: &str| {
+        alice.wraps_to(bob).into_iter().find(|e| open_dm(&bob.keys, e, false).is_some_and(|m| Envelope::parse(&m.content).unwrap().t == t)).unwrap()
+    };
+    let (invite, ice) = (of("call.invite"), of("call.ice"));
+    *bob.deaf.lock().unwrap() = false;
+    w.deliver(bob, &ice, false).await;
+    w.settle().await;
+    assert!(bob.incoming().is_empty(), "candidates alone ring nobody");
+    w.deliver(bob, &invite, false).await;
+    w.settle().await;
+    assert_eq!(bob.incoming().len(), 1);
+    bob.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    assert!(w.session(1).record().remote_candidates.contains(&late), "given to the engine with the invitation's own");
+    assert_eq!(phase(alice), Some(Phase::Active));
+    assert_eq!(phase(bob), Some(Phase::Active));
+}
+
+/// The invitation a push brought is taken by the app as history, before
+/// any relay brings it (`push_inbox`): it rings and is answered as one
+/// heard live.
+#[tokio::test]
+async fn an_invitation_a_push_brought_rings_and_is_answered() {
+    let w = World::new(&[("alice", None), ("bob", None)], false).await;
+    let (alice, bob) = (w.p(0), w.p(1));
+    *bob.deaf.lock().unwrap() = true;
+    let call = alice.calls.start(&bob.pk(), Media::Audio).await.unwrap();
+    w.settle().await;
+    let invite = alice.wraps_to(bob).into_iter().next().unwrap();
+    *bob.deaf.lock().unwrap() = false;
+    w.deliver(bob, &invite, true).await;
+    w.settle().await;
+    assert_eq!(bob.incoming().len(), 1);
+    bob.calls.accept(&call.call_id).await.unwrap();
+    w.settle().await;
+    assert_eq!(phase(alice), Some(Phase::Active));
+    assert_eq!(phase(bob), Some(Phase::Active));
 }

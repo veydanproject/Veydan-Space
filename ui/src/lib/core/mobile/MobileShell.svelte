@@ -17,6 +17,7 @@
   import { hub } from '$lib/core/mobile/hub.svelte';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import { startIosKeyboard } from '$lib/core/mobile/ios-keyboard';
+  import { onKeyboard, revealFocused } from '$lib/core/mobile/keyboard';
   import { installScrolling } from '$lib/core/scrolling';
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import Icon from '$lib/core/Icon.svelte';
@@ -32,6 +33,8 @@
   import { derived } from 'svelte/store';
 
   let { children }: { children: Snippet } = $props();
+  /** The keyboard's height (0 closed): the shell marks it, a page lifts itself by --kb (mobile.css .m-page). */
+  let kb = $state(0);
 
   // A screen that failed to show: the way out is the start screen of the
   // product, in its place, so back does not lead to it again.
@@ -80,6 +83,12 @@
     void appLock.listen();
     void registry.startAll();
     const stopIosKeyboard = startIosKeyboard();
+    const stopKeyboard = onKeyboard((n) => {
+      const opened = n > kb;
+      kb = n;
+      // The page has ended on the keyboard (a frame later): its field in focus comes up into sight.
+      if (opened) requestAnimationFrame(() => requestAnimationFrame(revealFocused));
+    });
     const uninstallScrolling = installScrolling();
     // A phone has no updater: the product's latest.json, once a day (14.3).
     // An app installed by a store is updated by the store and never checks.
@@ -91,6 +100,7 @@
     return () => {
       gone = true;
       stopIosKeyboard();
+      stopKeyboard();
       uninstallScrolling();
       stopUpdateCheck();
       registry.stopAll();
@@ -98,7 +108,7 @@
   });
 </script>
 
-<div class="shell" class:home={page.url.pathname === '/'} class:no-bar={!items}>
+<div class="shell" class:home={page.url.pathname === '/'} class:no-bar={!items} class:kb-open={kb > 0}>
   <AppLockGate>
     <div class="screen">
       <svelte:boundary onerror={(e) => console.error('screen failed', e)}>
@@ -109,8 +119,8 @@
               <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
               <p>{$t('screen_failed')}</p>
               <div class="actions">
-                <button type="button" class="btn btn-ghost btn-sm" onclick={reset}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>
-                <button type="button" class="btn btn-ghost btn-sm" onclick={() => goHome(reset)}>{$t('nav_home')}</button>
+                <button type="button" class="btn btn-primary" onclick={reset}><Icon name="arrow-forward-up" size={18} />{$t('common_retry')}</button>
+                <button type="button" class="btn btn-ghost" onclick={() => goHome(reset)}>{$t('nav_home')}</button>
               </div>
             </div>
           </div>

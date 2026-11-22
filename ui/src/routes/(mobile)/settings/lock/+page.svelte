@@ -15,10 +15,10 @@
     <h1 class="m-title">{$t('settings_lock_section')}</h1>
   </div>
 
-  <div class="m-body">
-    <p class="m-hint lead">{$t('settings_lock_hint')}</p>
-    <LockSetupForm />
-  </div>
+  <!-- The form brings the body and the foot: «Включить» stands over the keyboard. -->
+  <LockSetupForm page>
+    {#snippet lead()}<p class="m-hint lead">{$t('settings_lock_hint')}</p>{/snippet}
+  </LockSetupForm>
 </div>
 
 <style>

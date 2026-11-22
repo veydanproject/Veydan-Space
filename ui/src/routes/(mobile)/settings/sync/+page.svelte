@@ -452,10 +452,6 @@
             {$t('settings_sync_now')}
           {/if}
         </button>
-        <button class="btn btn-ghost danger" onclick={doLeave} disabled={busy || syncVisual === 'syncing'}>
-          <Icon name="shield-off" size={16} />
-          {$t('settings_sync_leave')}
-        </button>
       </div>
     {/if}
 
@@ -588,6 +584,14 @@
       <block.component bind:this={blockRefs[block.id]} />
     {/each}
 
+    <!-- The dangerous way out stands on its own row at the bottom, away from «Синхронизировать» (design 03). -->
+    {#if status.joined}
+      <button class="btn btn-ghost danger wide leave" onclick={doLeave} disabled={busy || syncVisual === 'syncing'}>
+        <Icon name="shield-off" size={16} />
+        {$t('settings_sync_leave')}
+      </button>
+    {/if}
+
     {#if !status.joined}
       <button class="btn btn-ghost wide action-btn" class:busy-anim={working === 'probe'} onclick={doProbe} disabled={busy}>
         <span class="action-icon" class:spin={working === 'probe'}><Icon name={working === 'probe' ? 'loader' : 'search'} size={16} /></span>
@@ -670,6 +674,7 @@
   .actions { display: flex; gap: var(--sp-2); }
   .actions .btn { flex: 1; }
   .wide { width: 100%; margin-top: var(--sp-2); }
+  .leave { margin-top: var(--sp-6); }
   .msg { font-size: var(--fs-sm); word-break: break-word; }
   .danger { color: var(--danger-text); }
   .warn { color: var(--warn-text); }

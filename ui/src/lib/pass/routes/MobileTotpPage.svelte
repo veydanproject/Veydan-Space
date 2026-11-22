@@ -16,11 +16,10 @@
   import { directory } from '$lib/core/directory';
   import { userLabels } from '$lib/pass/totp-tags';
   import { t } from '$lib/core/mobile/i18n';
-  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
-  import ChipMark from '$lib/core/ui/ChipMark.svelte';
-  import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
-  import { longpress } from '$lib/core/mobile/longpress';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import TotpRow from '$lib/pass/mobile/TotpRow.svelte';
+  import TotpKeyRows from '$lib/pass/mobile/TotpKeyRows.svelte';
+  import WorkspaceFilter, { inWorkspace } from '$lib/pass/mobile/WorkspaceFilter.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
 
   let entries = $state<TotpEntry[]>([]);
@@ -33,23 +32,22 @@
   let error = $state('');
   let menu = $state<TotpEntry | null>(null);
   let search = $state('');
+  /** «⋮» of the head: the filter by workspace (design 16); null shows every one. */
+  let filterOpen = $state(false);
+  let activeWorkspace = $state<string | null>(null);
 
-  /** The same search as the Passwords tab: name, issuer and the labels of the chips. */
+  /** The same search as the Passwords tab: name, issuer and the labels of the chips; within the chosen workspace. */
   const filtered = $derived.by(() => {
+    void workspaceNames;
+    const ws = activeWorkspace;
+    const shown = ws ? entries.filter((e) => inWorkspace(e.tags, ws)) : entries;
     const q = search.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) =>
+    if (!q) return shown;
+    return shown.filter((e) =>
       [e.name, e.issuer ?? '', ...entryChips(e).map((c) => c.label)].some((s) => s.toLowerCase().includes(q)),
     );
   });
   let tick: ReturnType<typeof setInterval>;
-
-  /** Stable colour per issuer from a string hash. */
-  function avatarColor(s: string): string {
-    let h = 0;
-    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-    return AVATAR_COLORS[h % AVATAR_COLORS.length];
-  }
 
   function label(entry: TotpEntry): string {
     return entry.issuer || entry.name;
@@ -146,6 +144,9 @@
       <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{$t('app_totp')}</h1>
+    {#if workspaceNames.size}
+      <button type="button" class="icon-btn" class:on={!!activeWorkspace} onclick={() => (filterOpen = true)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+    {/if}
   </div>
 
   {#if entries.length > 0}
@@ -172,33 +173,25 @@
       <span class="empty-icon"><Icon name="shield-lock" size={22} /></span>
       <p>{$t('totp_empty')}</p>
       <span>{$t('totp_empty_hint')}</span>
-      <a class="m-btn-grad cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
+      <a class="btn btn-primary cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
     </div>
   {:else if filtered.length === 0}
     <div class="empty-state">
       <span class="empty-icon"><Icon name="search" size={22} /></span>
       <p>{$t('common_nothing_found')}</p>
-      <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
+      {#if search.trim()}<span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>{/if}
     </div>
   {:else}
     <div class="m-cards divided">
       {#each filtered as entry (entry.id)}
-        {@const code = codes.get(entry.id)}
-        <button type="button" class="list-row" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
-          <span class="m-avatar" style:--c={avatarColor(label(entry))}>{label(entry).charAt(0).toUpperCase()}</span>
-          <span class="meta">
-            <span class="name">{label(entry)}</span>
-            {#if entry.issuer}<span class="account">{entry.name}</span>{/if}
-            {#if entryChips(entry).length}
-              <span class="tagline">
-                {#each entryChips(entry) as chip (chip.key)}
-                  <span class="m-chip small tinted" style:--chip={chip.color || undefined}><ChipMark kind={chip.kind} />{chip.label}</span>
-                {/each}
-              </span>
-            {/if}
-          </span>
-          <TotpLiveCode entryId={entry.id} period={entry.period} given={code ?? null} size="lg" />
-        </button>
+        <TotpRow
+          {entry}
+          code={codes.get(entry.id) ?? null}
+          chips={entryChips(entry)}
+          onopen={() => goto(`/totp/${entry.id}`)}
+          oncopy={() => copy(entry)}
+          onmenu={() => (menu = entry)}
+        />
       {/each}
     </div>
   {/if}
@@ -222,18 +215,26 @@
       <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
+  <!-- The key, the computer's TotpSecretField as rows; «Сменить ключ» opens the entry at its new key. -->
+  <!-- The id is taken before menu is emptied: {@const} of the block would read the null. -->
+  {#if menu}
+    <TotpKeyRows entryId={menu.id} onchange={() => { const id = menu?.id; menu = null; if (id) void goto(`/totp/${id}?key`); }} />
+  {/if}
 </BottomSheet>
+
+<WorkspaceFilter
+  open={filterOpen}
+  title={$t('app_totp')}
+  active={activeWorkspace}
+  onpick={(ws) => { activeWorkspace = ws; filterOpen = false; }}
+  onclose={() => (filterOpen = false)}
+/>
 
 <style>
   .err { margin-bottom: var(--sp-3); }
   .totp { display: flex; flex-direction: column; min-height: 100%; }
-  /* The common row of a record (base.css .list-row, 64): the avatar of 48, the code at the end. */
-  .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: var(--sp-0-5); }
-  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tagline { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
   /* Room under the last row for the floating «+» (.m-fab). */
-  .m-cards { gap: var(--sp-0-5); --rows-gap: var(--sp-0-5); padding-bottom: calc(var(--fab-size) + var(--fab-lift) + var(--sp-2)); }
+  .m-cards { gap: var(--sp-0-5); --rows-gap: var(--sp-0-5); padding-bottom: var(--fab-room); }
   .danger { color: var(--danger-text); }
-  .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
+  .cta { margin-top: var(--sp-2); }
 </style>

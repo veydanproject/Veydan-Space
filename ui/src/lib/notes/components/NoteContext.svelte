@@ -119,7 +119,7 @@
           <div class="head">
             <span class="name" title={name}>{entity?.name ?? $t('ctx_missing')}</span>
             {#if entity?.status}
-              <span class="dot {entity.status}" title={$t(STATUS_LABEL[entity.status])}></span>
+              <span class="status-dot {entity.status === 'unknown' ? 'off' : entity.status}" title={$t(STATUS_LABEL[entity.status])}></span>
             {/if}
           </div>
           <span class="sub">{$t(def.label)}{#if entity?.subtitle} · {entity.subtitle}{/if}{#if !card.bound && !card.fromTag} · {$mt('notes_context_mentioned')}{/if}</span>
@@ -222,10 +222,6 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .row.mention .name { color: var(--text-2); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .dot.ok { background: var(--success); }
-  .dot.bad { background: var(--danger-text); }
-  .dot.unknown { background: var(--text-3); }
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acts, .owned > :global(.foot) { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 2px; }
   .owned > :global(.foot .pw-actions) { gap: 2px; }

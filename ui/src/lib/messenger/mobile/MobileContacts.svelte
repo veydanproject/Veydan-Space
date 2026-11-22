@@ -59,10 +59,8 @@
   .scroller {
     flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
-    padding: var(--sp-3) var(--sp-3) calc(var(--fab-size) + var(--sp-4) + var(--sp-2)); display: flex; flex-direction: column; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-3) var(--fab-room); display: flex; flex-direction: column; gap: var(--sp-3);
   }
   /* An open contact's foot stands in place of the «+»: the list ends with the usual padding. */
   .scroller:has(+ .page-foot) { padding-bottom: var(--sp-4); }
-  /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
-  .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
 </style>

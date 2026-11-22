@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "名字、照片、“关于我”、网站和链接都是公开的：任何知道你密钥的人都能看到。",
     "msg_profile_saved": "个人资料已发布",
     "msg_profile_unsaved": "有未保存的更改",
-    "msg_profile_discard_confirm": "要放弃更改吗？",
-    "msg_profile_discard": "放弃",
     "msg_profile_send_card": "发送我的名片",
     "msg_profile_send_card_hint": "把你的名字、照片、“关于我”和链接放进一条消息，别人轻点一下就能添加你。",
     "msg_profile_send_card_to": "发送给",

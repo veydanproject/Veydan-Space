@@ -16,7 +16,7 @@
   import type { HostInfo } from '$lib/core/types';
   import { api, onSyncStatus, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale, type Locale } from '$lib/core/mobile/i18n';
-  import { LANGUAGES } from '$lib/core/i18n';
+  import { LANGUAGES, taglineOf, type TranslationKey } from '$lib/core/i18n';
   import { loadDefaultApp, registry, saveDefaultApp } from '$lib/core/registry';
   import PickerSheet from '$lib/core/mobile/PickerSheet.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -28,7 +28,8 @@
   import DataConfirmFields from '$lib/core/DataConfirmFields.svelte';
   import { product } from '$lib/core/product';
   import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
-  import { updateCheck } from '$lib/core/store/update-check.svelte';
+  import { LICENSE_NAME, LICENSE_URL, licenseSummaryUrl, thirdPartyUrl } from '$lib/core/about';
+  import { updateCheck, updateOffered } from '$lib/core/store/update-check.svelte';
 
   const locales: { id: Locale; label: string; code: string; lang: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native, code: l.code, lang: l.tag }));
 
@@ -64,6 +65,11 @@
   let dataScope = $state<'device' | 'all'>('device');
   let dataWrong = $state(false);
   let bugOpen = $state(false);
+  // About as on a computer (design 18): the project's links and those of the product's modules.
+  const aboutLinks = $derived(registry.active.flatMap((m) => m.about ?? []));
+  // The deletion itself is the Cloud's page; the site's page stays for the store, its address under it.
+  const cloudDelete = registry.enabled('cloud');
+  const deleteSite = LEGAL.deleteAccount.replace(/^https:\/\//, '');
 
   const themeOptions = $derived([
     { id: 'dark', label: $t('settings_theme_dark'), icon: 'moon' },
@@ -106,8 +112,8 @@
   );
   const updateLabel = $derived(
     updateCheck.status === 'checking' ? $t('update_checking')
-    // The card over the list says it already: one phrase on the screen.
-    : updateCheck.status === 'available' && distribution.fromStore ? $t('update_available', { version: updateCheck.latest })
+    // The row over the list says it already: one phrase on the screen.
+    : updateCheck.status === 'available' && !updateOffered() ? $t('update_available', { version: updateCheck.latest })
     : updateCheck.status === 'upToDate' ? $t('update_up_to_date')
     : '',
   );
@@ -219,14 +225,19 @@
   {#if shown}
     <shown.component {...shown.props} />
   {:else}
-  {#if updateCheck.status === 'available' && !distribution.fromStore}
-    <div class="m-card update-card">
-      <span class="update-title">{$t('update_available', { version: updateCheck.latest })}</span>
-      <span class="m-sub">{$t('update_available_hint')}</span>
-      <button type="button" class="btn btn-primary update-open" onclick={() => updateCheck.open()}>
-        <Icon name="download" size={18} />
-        {$t('update_open')}
-      </button>
+  <!-- A new version: the row of the computer's banner (design 18). A phone installs nothing itself: its button opens the release page. -->
+  {#if updateOffered()}
+    <div class="m-list update-list">
+      <div class="list-row dense still set-row update-row" role="status">
+        <span class="set-tile update-tile"><Icon name="circle-arrow-up" size={20} /></span>
+        <span class="set-text">
+          <span class="list-row-label">{$t('update_banner_available', { version: updateCheck.latest })}</span>
+        </span>
+        <span class="update-actions">
+          <button type="button" class="btn btn-sm btn-ghost" onclick={() => updateCheck.postpone()}>{$t('common_later')}</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick={() => updateCheck.open()}>{$t('settings_update_open_releases')}</button>
+        </span>
+      </div>
     </div>
   {/if}
 
@@ -293,7 +304,7 @@
     <a class="list-row dense set-row" href="/settings/lock">
         <span class="set-tile"><Icon name="lock" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_lock_section')} <Pill tone="warn" text={$t('settings_sync_beta')} /></span>
+          <span class="list-row-label">{$t('settings_lock_section')} <Pill tone="warn" text={$t('settings_lock_beta')} /></span>
           <span class="list-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
@@ -322,7 +333,20 @@
       <div class="about-text">
         <span class="list-row-label">{product.name}</span>
         <span class="list-row-value mono">{info ? `${info.version} · ${info.os}/${info.arch}` : ''}</span>
+        <span class="list-row-value about-tagline">{taglineOf($locale)}</span>
       </div>
+    </div>
+    <!-- The facts of the program and the licence's note, as the card of a computer. -->
+    <div class="about-facts">
+      <div class="about-fact">
+        <span class="about-key">{$t('settings_about_version')}</span>
+        <span class="about-value mono">{info ? `v${info.version}` : '—'}</span>
+      </div>
+      <div class="about-fact">
+        <span class="about-key">{$t('settings_about_license')}</span>
+        <span class="about-value mono">{LICENSE_NAME}</span>
+      </div>
+      <p class="about-note">{$t('settings_about_license_note')}</p>
     </div>
     {#if !distribution.fromStore}
     <button
@@ -366,10 +390,20 @@
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
+    {#if cloudDelete}
+      <a class="list-row dense set-row" href="/cloud?delete=1">
+        <span class="set-tile"><Icon name="trash-2" size={20} /></span>
+        <span class="set-text">
+          <span class="list-row-label">{$t('settings_about_delete_account')}</span>
+        </span>
+        <span class="chev"><Icon name="chevron-right" size={16} /></span>
+      </a>
+    {/if}
     <button type="button" class="list-row dense set-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
         <span class="set-tile"><Icon name="trash-2" size={20} /></span>
         <span class="set-text">
           <span class="list-row-label">{$t('settings_about_delete_account')}</span>
+          <span class="list-row-value">{deleteSite}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
@@ -384,6 +418,34 @@
   {#if updateCheck.status === 'error' && !distribution.fromStore}
     <div class="update-err"><Notice tone="danger">{$t('settings_update_failed')}</Notice></div>
   {/if}
+  <!-- The licence, its summary, the licences of the dependencies, the repository and the modules' links (a computer's second card). -->
+  <div class="m-list about-links">
+    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LICENSE_URL)}>
+      <span class="set-text"><span class="list-row-label">{$t('settings_about_link_license')}</span></span>
+      <span class="chev"><Icon name="external-link" size={16} /></span>
+    </button>
+    {#if product.repo}
+      <button type="button" class="list-row dense set-row" onclick={() => openLegal(licenseSummaryUrl(product.repo))}>
+        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_summary')}</span></span>
+        <span class="chev"><Icon name="external-link" size={16} /></span>
+      </button>
+      <button type="button" class="list-row dense set-row" onclick={() => openLegal(thirdPartyUrl(product.repo))}>
+        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_thirdparty')}</span></span>
+        <span class="chev"><Icon name="external-link" size={16} /></span>
+      </button>
+      <button type="button" class="list-row dense set-row" onclick={() => openLegal(product.repo)}>
+        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_repo')}</span></span>
+        <span class="chev"><Icon name="external-link" size={16} /></span>
+      </button>
+    {/if}
+    {#each aboutLinks as link (link.id)}
+      <button type="button" class="list-row dense set-row" onclick={() => openLegal(link.url)}>
+        <span class="set-text"><span class="list-row-label">{$t(link.title as TranslationKey)}</span></span>
+        <span class="chev"><Icon name="external-link" size={16} /></span>
+      </button>
+    {/each}
+  </div>
+  <p class="about-copyright">{$t('settings_about_copyright')}</p>
 
   <BugReportDialog bind:open={bugOpen} />
 
@@ -481,18 +543,26 @@
   .ok, .list-row-value.ok { color: var(--success-text); font-weight: var(--fw-semibold); }
   .account { margin-top: var(--sp-3); }
   .new, .list-row-value.new { color: var(--accent-text); font-weight: var(--fw-semibold); }
-  .update-card {
-    display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);
-    margin-top: var(--sp-3); padding: var(--sp-4);
-    border-color: var(--accent-border);
-  }
-  .update-title { font-size: var(--fs-body); font-weight: var(--fw-bold); color: var(--text); }
-  /* The download the whole width of the card, a full touch target. */
-  .update-open { margin-top: var(--sp-1); align-self: stretch; min-height: var(--sp-12); justify-content: center; }
+  /* The row of a new version, framed in the accent; its buttons go under the words when a phone has no room beside them. */
+  .update-list { margin-top: var(--sp-3); border-color: var(--accent-border); }
+  .update-row { flex-wrap: wrap; row-gap: var(--sp-2); }
+  .update-tile { background: var(--accent-tint); color: var(--accent-text); }
+  .update-row .set-text { flex: 1 1 8rem; }
+  .update-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
   .update-err { margin-top: var(--sp-2); }
   .about-head { gap: var(--sp-3); }
+  /* The facts under the head, a line over them; the licence's note under them, a line under it. */
+  .about-facts { display: flex; flex-direction: column; padding: var(--sp-1) var(--sp-3) var(--sp-3); border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
+  .about-fact { display: flex; align-items: baseline; gap: var(--sp-4); min-height: var(--control-h); padding: var(--sp-2) 0; }
+  .about-key { flex: 0 0 6rem; font-size: var(--fs-sm); color: var(--text-dim); }
+  .about-value { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-body); }
+  .about-note { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); }
+  .about-links { margin-top: var(--sp-3); }
+  .about-copyright { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
   .about-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
-  .about-text { display: flex; flex-direction: column; gap: var(--sp-0-5); min-width: 0; }
+  .about-text { flex: 1; display: flex; flex-direction: column; gap: var(--sp-0-5); min-width: 0; }
+  /* The tagline is a sentence, not a value: it wraps inside the card on a narrow phone. */
+  .about-tagline { white-space: normal; overflow-wrap: break-word; }
   .mono { font-size: var(--fs-xs); }
   .under-list { margin-top: var(--sp-2); padding: 0 var(--sp-1); }
   .list-row:disabled { opacity: 0.45; }

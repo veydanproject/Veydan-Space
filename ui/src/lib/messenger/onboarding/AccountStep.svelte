@@ -29,8 +29,10 @@
 
   /** `key`: the form of an existing key (nsec, ncryptsec, the seed phrase). */
   type Phase = 'intro' | 'have' | 'create' | 'key';
+  // Asked for from outside: the ways in (`have`), the password of a new key (`create`) or the form of a key (`key`;
+  // the card «Create your identity» of a phone's chats, design 15).
   // svelte-ignore state_referenced_locally
-  let phase = $state<Phase>(intent === 'have' ? 'have' : 'intro');
+  let phase = $state<Phase>(intent === 'have' || intent === 'create' || intent === 'key' ? intent : 'intro');
   let loaded = $state(false);
   let busy = $state(false);
   let error = $state('');

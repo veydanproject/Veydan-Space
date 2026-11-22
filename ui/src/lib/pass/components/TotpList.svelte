@@ -4,6 +4,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$lib/core/i18n';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
   import { totpStore } from '$lib/pass/store/totp.svelte';
@@ -139,9 +140,9 @@
           {/if}
           {#if pname || labels.length > 0}
             <div class="entry-labels">
-              {#if pname}<span class="profile-badge">{pname}</span>{/if}
+              {#if pname}<Pill tone="accent" text={pname} />{/if}
               {#each labels as label (label)}
-                <span class="label-badge">{label}</span>
+                <Pill text={label} />
               {/each}
             </div>
           {/if}
@@ -237,24 +238,6 @@
     flex-wrap: wrap;
     gap: var(--sp-1);
     margin-top: var(--sp-1);
-  }
-
-  .label-badge {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    color: var(--text-2);
-    font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1-5);
-  }
-
-  .profile-badge {
-    background: var(--accent-tint);
-    border: 1px solid var(--accent-tint-border);
-    color: var(--accent-text-2);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1-5);
-    font-weight: var(--fw-medium);
   }
 
   .entry-code {

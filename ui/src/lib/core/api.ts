@@ -117,6 +117,8 @@ export const api = {
     openUrl: (url: string) => call<void>('open_url', { url }),
     /** OS clipboard via the backend; works outside a user-gesture context */
     clipboardWriteText: (text: string) => call<void>('clipboard_write_text', { text }),
+    /** OS clipboard's text via the backend (computer only): WebKitGTK refuses `navigator.clipboard.readText` */
+    clipboardReadText: () => call<string>('clipboard_read_text'),
     updateSupported: () => call<boolean>('update_supported'),
     hostInfo: () => call<HostInfo>('host_info'),
   },

@@ -338,7 +338,7 @@
       <div class="chips">
         {#each totpIds as id (id)}
           {@const item = totpStore.list.find((t) => t.id === id)}
-          <span class="chip">
+          <span class="tag-chip">
             <ChipMark kind="totp" />
             <span class="chip-text">{item ? (item.issuer ? `${item.issuer} · ${item.name}` : item.name) : id}</span>
             <button type="button" class="chip-x" onclick={() => (totpIds = totpIds.filter((x) => x !== id))} aria-label={$t('pass_remove')}>
@@ -390,7 +390,7 @@
         {#each tags as tag (tag)}
           {@const locked = initialTags.includes(tag) && !editing}
           <!-- A link to an entity this product has no owner for reads as 10.3 shows it: the kind and its name or short id. -->
-          <span class="chip tinted" title={bindingCaption(tag)} style:--chip={chipColor(tag)}>
+          <span class="tag-chip tinted" title={bindingCaption(tag)} style:--chip={chipColor(tag)}>
             <ChipMark kind={bindingKind(tag)} caption={bindingCaption(tag)} />
             <span class="chip-text">{bindingLabel(tag)}</span>
             {#if !locked}
@@ -447,7 +447,7 @@
   .draft { display: flex; flex-direction: column; gap: var(--sp-2); }
   .draft .btn { align-self: flex-start; }
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-  .chip {
+  .tag-chip {
     position: relative;
     cursor: default;
     display: inline-flex;
@@ -460,8 +460,8 @@
     padding: 2px 4px 2px var(--sp-2);
     font-size: var(--fs-xs);
   }
-  /* Only its remove button acts: the chip itself does not light up. */
-  .chip:hover:not([style*='--chip']) { border-color: var(--border); color: var(--text-2); }
+  /* A 2FA code's chip has no colour of its own: the neutral frame. */
+  .tag-chip:not(.tinted) { border-color: var(--border); color: var(--text-2); }
   .chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip-x {
     display: inline-flex;

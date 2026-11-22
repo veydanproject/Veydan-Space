@@ -194,7 +194,7 @@
       >
         <div class="face">
           <Avatar url={f.url} label={f.label} seed={f.seed} size={40} />
-          {#if card.group}<span class="badge"><Icon name="users" size={10} /></span>{/if}
+          {#if card.group}<span class="ava-count"><Icon name="users" size={10} /></span>{/if}
         </div>
         <div class="text">
           <div class="head">
@@ -262,7 +262,7 @@
   .card.held { transition: none; }
   .card.gone { transform: translate(calc(var(--dx) * 3), calc(var(--dy) - 120px)); opacity: 0; }
   .face { position: relative; flex-shrink: 0; }
-  .badge {
+  .ava-count {
     position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
     background: var(--accent); color: #fff; border: 2px solid var(--bg-2);

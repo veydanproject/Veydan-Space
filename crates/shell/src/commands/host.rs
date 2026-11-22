@@ -47,6 +47,19 @@ pub async fn open_url(url: String, app: tauri::AppHandle) -> Result<(), String> 
         .map_err(|e| e.to_string())
 }
 
+/// The text on the OS clipboard, empty when it holds none: WebKitGTK refuses
+/// `navigator.clipboard.readText` to a button («Вставить»), the OS does not.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn clipboard_read_text() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+        Ok(cb.get_text().unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Put text on the OS clipboard. Unlike `navigator.clipboard` it does not need a
 /// user-gesture context, so it works after awaited backend calls.
 #[cfg(desktop)]

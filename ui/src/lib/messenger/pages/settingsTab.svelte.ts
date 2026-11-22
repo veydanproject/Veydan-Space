@@ -15,6 +15,9 @@ export type SettingsTab = 'profile' | 'network' | 'notifications' | 'privacy' | 
 
 export const SETTINGS_TABS: readonly SettingsTab[] = ['profile', 'network', 'notifications', 'privacy', 'calls', 'diagnostics'];
 
+/** A phone's tabs (design 15): «Diagnostics» is no tab there but a folded block at the end of the last one, «Calls». */
+export const PHONE_SETTINGS_TABS: readonly SettingsTab[] = SETTINGS_TABS.filter((id) => id !== 'diagnostics');
+
 /** The tab the next SettingsView shows (or the one shown switches to). */
 export const settingsRequest = $state<{ tab: SettingsTab | null }>({ tab: null });
 

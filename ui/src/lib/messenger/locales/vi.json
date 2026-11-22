@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "Tên, ảnh, “Giới thiệu”, trang web và liên kết là công khai: ai biết khóa của bạn cũng có thể xem.",
     "msg_profile_saved": "Đã đăng hồ sơ",
     "msg_profile_unsaved": "Có thay đổi chưa lưu",
-    "msg_profile_discard_confirm": "Bỏ các thay đổi?",
-    "msg_profile_discard": "Bỏ",
     "msg_profile_send_card": "Gửi thẻ của tôi",
     "msg_profile_send_card_hint": "Tên, ảnh, “Giới thiệu” và liên kết của bạn trong một tin nhắn, để mọi người thêm bạn chỉ bằng một chạm.",
     "msg_profile_send_card_to": "Gửi đến",

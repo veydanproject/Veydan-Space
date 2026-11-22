@@ -15,6 +15,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { formatError } from '$lib/core/utils';
   import { t } from '$lib/core/mobile/i18n';
+  import { putScanned } from '$lib/pass/store/scanned';
 
   let error = $state('');
   let denied = $state(false);
@@ -41,7 +42,9 @@
         error = $t('totp_scan_not_otpauth');
         return;
       }
-      goto(`/totp/add?uri=${encodeURIComponent(result.content)}`, { replaceState: true });
+      // The link goes in memory, not in the address: its secret stays out of the history.
+      putScanned(result.content);
+      goto('/totp/add', { replaceState: true });
     } catch (e) {
       active = false;
       fail(e);
@@ -68,7 +71,7 @@
 <!-- The header of every phone page (.m-header); over the camera picture it is transparent. -->
 <div class="m-page scan">
   <div class="m-header">
-    <a class="icon-btn" href="/totp/add" aria-label={$t('common_back')}>
+    <a class="icon-btn" href="/totp/add" data-sveltekit-replacestate aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('totp_scan_title')}</h1>

@@ -85,7 +85,7 @@
           <span class="name">{chosen ? nameOfServer(chosen) : (none ?? '')}</span>
           {#if chosen}<span class="host">{hostOf(chosen.relay)}</span>{/if}
         </span>
-        <span class="count">{servers.length}</span>
+        <span class="count-pill sm quiet">{servers.length}</span>
         <Icon name="chevron-down" size={14} />
       </button>
     {:else}
@@ -105,7 +105,7 @@
             <button type="button" class="search-clear" onpointerdown={(e) => e.preventDefault()} onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
           {/if}
         </div>
-        <span class="count">{servers.length}</span>
+        <span class="count-pill sm quiet">{servers.length}</span>
         <Icon name="chevron-up" size={14} />
       </label>
       <Suggest bind:this={list} {items} anchor={openEl} label={label || $t('msg_srv_row_server')} empty={$t('common_nothing_found')}
@@ -137,7 +137,6 @@
   .field-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .host { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .count { font-size: var(--fs-xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
   /* Open, the field holds the search field (base.css), its count and arrow beside it. */
   .field.open { cursor: text; padding: 0 var(--sp-2-5) 0 var(--sp-1); }
   @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } }

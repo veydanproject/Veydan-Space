@@ -55,6 +55,7 @@
   import { archiveStore } from '../archive/archiveStore.svelte';
   import { scopeOfChat } from '../archive/archive';
   import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
+  import CallReturn from '../calls/CallReturn.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -325,6 +326,9 @@
     if (query) { searchText = query; asked = query.trim(); }
     tick().then(() => searchField?.focus());
   }
+
+  /** The chat's menu on a phone: «Search in chat» is its entry there (design 15), not a button of the head. */
+  export function search() { openSearch(); }
 
   /** `restore`: the view goes back where it was before the search. */
   function closeSearch(restore = true) {
@@ -1427,12 +1431,15 @@
     {/if}
     <span class="chip-slot"><TransfersChip {phone} /></span>
     {#if actions}{@render actions()}{/if}
-    <button class="icon-btn lg search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>
+    {#if !phone}<button class="icon-btn lg search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>{/if}
     <button class="icon-btn lg menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
       {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
     {/if}
   </header>
+
+  <!-- A phone: «Return to the call» under the head, the conversation under it (design 15). -->
+  {#if phone}<CallReturn />{/if}
 
   {#if searching}
     <div class="search-bar" class:phone role="search">

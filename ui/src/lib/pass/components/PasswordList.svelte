@@ -125,10 +125,10 @@
                are neutral, a label in the user's colour: the mark tells the kind, never the colour. -->
           <div class="entry-labels">
             {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
-              <span class="label-badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
+              <span class="badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
             {/each}
             {#if rest.length}
-              <span class="label-badge tinted" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
+              <span class="badge" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
             {/if}
           </div>
         {/if}
@@ -196,18 +196,7 @@
     margin-top: var(--sp-1);
     min-width: 0;
   }
-  .label-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    max-width: 100%;
-    border-width: 1px;
-    border-style: solid;
-    border-radius: var(--radius-pill);
-    font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1-5);
-    white-space: nowrap;
-  }
+  .entry-labels .badge { max-width: 100%; }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
   .totp-more { font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }

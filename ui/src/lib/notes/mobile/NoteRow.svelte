@@ -167,47 +167,53 @@
         </button>
       {/each}
     </div>
-    <button
-      type="button"
-      class="list-row row"
-      class:dragging
-      style:transform="translateX({dx}px)"
-      ontouchstart={onTouchStart}
-      ontouchmove={onTouchMove}
-      ontouchend={onTouchEnd}
-      ontouchcancel={onTouchEnd}
-      onclick={onTap}
-      oncontextmenu={(e) => e.preventDefault()}
-    >
-      {#if selecting}
-        <span class="m-tick" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
-      {/if}
-      <span class="list-row-body">
-        <span class="list-row-top">
-          <span class="list-row-name title">
-            {#if note.pinned && mode === 'normal'}<Icon name="pin" size={14} />{/if}
-            <span class="title-text">{note.title || $t('notes_untitled')}</span>
-          </span>
-          <span class="meta">
-            {#if note.raw.has_draft}<span class="draft" title={$t('notes_unsaved_draft')}></span>{/if}
-            <span class="format">{note.raw.format}</span>
-          </span>
-        </span>
-        <span class="mid">
-          <span class="scope tinted-text" style:--chip={scope?.color}>{scope?.label ?? $t('notes_scope_global')}</span>
-          <span class="time">{relativeTime(note.updated_at, $t)}</span>
-        </span>
-        {#if note.preview}<span class="preview">{note.preview}</span>{/if}
-        {#if chips.length}
-          <span class="chips">
-            {#each chips.slice(-3) as c (c.kind + c.id)}
-              <span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span>
-            {/each}
-            {#if chips.length > 3}<span class="more">+{chips.length - 3}</span>{/if}
-          </span>
+    <div class="list-row row" class:dragging style:transform="translateX({dx}px)">
+      <button
+        type="button"
+        class="list-row-main"
+        ontouchstart={onTouchStart}
+        ontouchmove={onTouchMove}
+        ontouchend={onTouchEnd}
+        ontouchcancel={onTouchEnd}
+        onclick={onTap}
+        oncontextmenu={(e) => e.preventDefault()}
+      >
+        {#if selecting}
+          <span class="m-tick" class:on={selected}>{#if selected}<Icon name="check" size={14} />{/if}</span>
         {/if}
-      </span>
-    </button>
+        <span class="list-row-body">
+          <span class="list-row-top">
+            <span class="list-row-name title">
+              {#if note.pinned && mode === 'normal'}<Icon name="pin" size={14} />{/if}
+              <span class="title-text">{note.title || $t('notes_untitled')}</span>
+            </span>
+            <span class="meta">
+              {#if note.raw.has_draft}<span class="status-dot warn" title={$t('notes_unsaved_draft')}></span>{/if}
+              <span class="badge">{note.raw.format}</span>
+            </span>
+          </span>
+          <span class="mid">
+            <span class="scope tinted-text" style:--chip={scope?.color}>{scope?.label ?? $t('notes_scope_global')}</span>
+            <span class="time">{relativeTime(note.updated_at, $t)}</span>
+          </span>
+          {#if note.preview}<span class="preview">{note.preview}</span>{/if}
+          {#if chips.length}
+            <span class="chips">
+              {#each chips.slice(-3) as c (c.kind + c.id)}
+                <span class="badge tinted" style:--chip={c.color}><ChipMark kind={c.kind} /><span class="chip-label">{c.label}</span></span>
+              {/each}
+              {#if chips.length > 3}<span class="badge more">+{chips.length - 3}</span>{/if}
+            </span>
+          {/if}
+        </span>
+      </button>
+      <!-- The row's sheet without the swipe: beside the row's button, not in it; gone while choosing or slid aside. -->
+      {#if !selecting}
+        <button type="button" class="icon-btn row-more" class:aside={dx !== 0} onclick={() => onquick(note)} aria-label={$t('nav_more')}>
+          <Icon name="more-vertical" size={22} />
+        </button>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -251,20 +257,11 @@
   .selected .row { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
   .row.dragging { transition: none; }
   .row .list-row-body { gap: 4px; }
+  .row-more.aside { visibility: hidden; }
   .row .title { flex: 1; display: flex; align-items: center; gap: var(--sp-1); }
   .row .title :global(svg) { flex: none; color: var(--text-2); }
   .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .meta { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); }
-  .draft { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
-  .format {
-    padding: 1px var(--sp-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xs);
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs);
-    line-height: var(--lh-snug);
-    color: var(--text-2);
-  }
   .preview {
     font-size: var(--fs-sm); color: var(--text-2);
     display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -280,6 +277,9 @@
     color: var(--text-2);
   }
   .time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
-  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; padding-top: 2px; }
-  .more { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
+  /* The labels and their «+N» stay on one line: a long label gives way (an ellipsis), «+N» never does. */
+  .chips { display: flex; align-items: center; gap: 4px; min-width: 0; padding-top: 2px; overflow: hidden; }
+  .chips .badge { min-width: 0; }
+  .chips .more { flex-shrink: 0; }
+  .chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 </style>

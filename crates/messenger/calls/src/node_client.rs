@@ -22,7 +22,11 @@
 //! and the time of every call. In the shared tier not every volunteer
 //! is probed ([`PROBED_PER_TIER`]): the project's nodes all, the
 //! volunteers already known to the cache for free, and a few more in
-//! the order of the registry's list. The media never passes through
+//! the order of the registry's list. A call does not wait for the slow:
+//! after the first node that let me in the others of the tier have
+//! [`PICK_GRACE`] more, a node that gave no answer is passed over for
+//! [`MISS_FOR`], and the nodes are asked ahead of a call where one is
+//! likely ([`NodeClient::warm`]). The media never passes through
 //! here: libwebrtc takes the ICE servers and speaks STUN and TURN itself.
 //!
 //! The types of the wire are spelled again here rather than taken from
@@ -76,6 +80,18 @@ const PICK_TIMEOUT: Duration = Duration::from_secs(6);
 /// How long one tier gets before the next is asked: a node that neither
 /// answers nor refuses should not keep the whole pick waiting.
 const TIER_TIMEOUT: Duration = Duration::from_secs(3);
+/// Once a node of a tier answered and let me in, how long the others of
+/// the tier are still waited for: a node as near answers within it, and
+/// a slow or a dead one no longer keeps the call waiting. What answers
+/// later still reaches the cache, for the next call.
+const PICK_GRACE: Duration = Duration::from_millis(300);
+/// A node that did not answer (an error, or nothing within
+/// [`TIER_TIMEOUT`]) is not asked again for this long while its tier has
+/// another to ask.
+const MISS_FOR: Duration = Duration::from_secs(120);
+/// The nodes are asked ahead of a call ([`NodeClient::warm`]) no more
+/// often than this.
+const WARM_EVERY: Duration = Duration::from_secs(30);
 /// Nodes of one tier probed at most, when there are volunteers to cut:
 /// every node of the project (and of the manifest) is asked, and
 /// volunteers fill the rest — those the cache already knows for free
@@ -707,6 +723,10 @@ pub type Invite = Arc<
 struct Inner {
     client_name: String,
     cache: Mutex<HashMap<BridgeId, NodeAccess>>,
+    /// The nodes that did not answer, and when ([`MISS_FOR`]).
+    missed: Mutex<HashMap<BridgeId, tokio::time::Instant>>,
+    /// When the nodes were last asked ahead of a call ([`WARM_EVERY`]).
+    warmed: Mutex<Option<tokio::time::Instant>>,
     fetch: Fetch,
     invite: Invite,
 }
@@ -735,17 +755,30 @@ impl NodeClient {
     /// A client whose way to every node is `fetch` and whose invitations
     /// are exchanged by `invite`: the fakes of the tests.
     pub fn with_fakes(client_name: &str, fetch: Fetch, invite: Invite) -> Self {
-        Self { inner: Arc::new(Inner { client_name: client_name.to_string(), cache: Mutex::new(HashMap::new()), fetch, invite }) }
+        Self {
+            inner: Arc::new(Inner {
+                client_name: client_name.to_string(),
+                cache: Mutex::new(HashMap::new()),
+                missed: Mutex::new(HashMap::new()),
+                warmed: Mutex::new(None),
+                fetch,
+                invite,
+            }),
+        }
     }
 
-    /// Forget every credential (a logout, a test).
+    /// Forget every credential (a logout, a test), and who did not answer.
     pub fn clear(&self) {
         self.inner.cache.lock().unwrap().clear();
+        self.inner.missed.lock().unwrap().clear();
+        *self.inner.warmed.lock().unwrap() = None;
     }
 
-    /// Forget what one node gave (its key changed, it was removed).
+    /// Forget what one node gave (its key changed, it was removed), and
+    /// that it did not answer.
     pub fn forget(&self, id: &BridgeId) {
         self.inner.cache.lock().unwrap().remove(id);
+        self.inner.missed.lock().unwrap().remove(id);
     }
 
     /// The nodes spoken to lately, as the screen lists them.
@@ -818,7 +851,62 @@ impl NodeClient {
         let good_until = if authorized { good_until(fetched, &credentials, now) } else { fetched };
         let access = NodeAccess { node: node.clone(), welcome, credentials, authorized, rtt, good_until };
         self.inner.cache.lock().unwrap().insert(node.node.id, access.clone());
+        self.inner.missed.lock().unwrap().remove(&node.node.id);
         Ok(access)
+    }
+
+    /// Whether `node` did not answer lately ([`MISS_FOR`]).
+    fn missed(&self, node: &CallNode) -> bool {
+        self.inner.missed.lock().unwrap().get(&node.node.id).is_some_and(|at| at.elapsed() < MISS_FOR)
+    }
+
+    /// Asks `node` on a task of its own, for no longer than
+    /// [`TIER_TIMEOUT`]: its answer goes to the cache and to `tell`, if
+    /// anyone still listens; a node that gave none is remembered as
+    /// missed. The task outlives the pick that began it, so that a node
+    /// slower than the pick's patience is known to the next call.
+    fn probe(&self, index: usize, node: CallNode, now: i64, tell: Option<tokio::sync::mpsc::UnboundedSender<(usize, NodeAccess)>>) {
+        let client = self.clone();
+        tokio::spawn(async move {
+            match tokio::time::timeout(TIER_TIMEOUT, client.access(&node, now)).await {
+                Ok(Ok(access)) => {
+                    if let Some(tell) = tell {
+                        let _ = tell.send((index, access));
+                    }
+                }
+                Ok(Err(e)) => {
+                    tracing::debug!(node = %node.node.id.short(), error = %e, "call node: no answer");
+                    client.inner.missed.lock().unwrap().insert(node.node.id, tokio::time::Instant::now());
+                }
+                Err(_) => {
+                    tracing::debug!(node = %node.node.id.short(), "call node: no answer in time");
+                    client.inner.missed.lock().unwrap().insert(node.node.id, tokio::time::Instant::now());
+                }
+            }
+        });
+    }
+
+    /// Asks, ahead of a call, the nodes a call would ask first (the
+    /// probed of the first tier of `nodes`) that the cache does not hold,
+    /// and waits for none of them: the call that follows finds their
+    /// answers there. A lower tier is not spoken to, as in a pick. No
+    /// more often than [`WARM_EVERY`]. Needs a runtime to spawn on.
+    pub fn warm(&self, nodes: &[CallNode], now: i64) {
+        let Some(tier) = Self::tiers(nodes).into_iter().next() else { return };
+        let stale: Vec<(usize, CallNode)> = self.probed(nodes, tier).into_iter().filter(|(_, n)| !self.cached_good(n)).collect();
+        if stale.is_empty() {
+            return;
+        }
+        {
+            let mut warmed = self.inner.warmed.lock().unwrap();
+            if warmed.is_some_and(|at| at.elapsed() < WARM_EVERY) {
+                return;
+            }
+            *warmed = Some(tokio::time::Instant::now());
+        }
+        for (index, node) in stale {
+            self.probe(index, node, now, None);
+        }
     }
 
     /// Whether the cache holds a good access to `node` (the same key,
@@ -833,9 +921,21 @@ impl NodeClient {
     /// node of the tier that is not a volunteer; of the volunteers,
     /// those the cache knows for free, and the first of the rest in the
     /// order of the list up to [`PROBED_PER_TIER`] in all (never fewer
-    /// than [`PROBED_VOLUNTEERS_MIN`]).
+    /// than [`PROBED_VOLUNTEERS_MIN`]). A node that did not answer
+    /// lately ([`MISS_FOR`]) is passed over, and its place goes to the
+    /// next volunteer; when that leaves nobody, the tier is asked whole,
+    /// as if nobody had missed.
     fn probed(&self, nodes: &[CallNode], tier: u8) -> Vec<(usize, CallNode)> {
-        let of_tier = || nodes.iter().enumerate().filter(move |(_, n)| n.class.tier() == tier);
+        let answering = self.probed_of(nodes, tier, true);
+        if answering.is_empty() {
+            self.probed_of(nodes, tier, false)
+        } else {
+            answering
+        }
+    }
+
+    fn probed_of(&self, nodes: &[CallNode], tier: u8, pass_missed: bool) -> Vec<(usize, CallNode)> {
+        let of_tier = || nodes.iter().enumerate().filter(move |(_, n)| n.class.tier() == tier).filter(move |(_, n)| !(pass_missed && self.missed(n)));
         let mut out: Vec<(usize, CallNode)> = of_tier().filter(|(_, n)| n.class != NodeClass::Volunteer).map(|(i, n)| (i, n.clone())).collect();
         let mut fresh = PROBED_PER_TIER.saturating_sub(out.len()).max(PROBED_VOLUNTEERS_MIN);
         for (i, n) in of_tier().filter(|(_, n)| n.class == NodeClass::Volunteer) {
@@ -857,25 +957,44 @@ impl NodeClient {
         tiers
     }
 
+    /// The tiers of `nodes` in the order a pick asks them: by priority,
+    /// but a tier whose every node missed lately ([`MISS_FOR`]) after
+    /// those that have a node to ask. It was found silent a moment ago,
+    /// so it answers nobody and shields nothing: without this a node of
+    /// my own that is down would cost every call its [`TIER_TIMEOUT`].
+    /// It is still asked when no other tier answers.
+    fn tier_order(&self, nodes: &[CallNode]) -> Vec<u8> {
+        let (mut live, silent): (Vec<u8>, Vec<u8>) =
+            Self::tiers(nodes).into_iter().partition(|tier| nodes.iter().any(|n| n.class.tier() == *tier && !self.missed(n)));
+        live.extend(silent);
+        live
+    }
+
     /// Asks the probed nodes of `tier` among `nodes` at once, within
     /// [`TIER_TIMEOUT`] and `deadline`: the ones that answered and let
     /// me in (`keep` says which answers count), in the order of the rule
-    /// ([`rank`]).
+    /// ([`rank`]). After the first answer that counts the others are
+    /// waited for [`PICK_GRACE`] more and no longer: the rule is applied
+    /// to those that came by then. Their probes go on by themselves
+    /// ([`NodeClient::probe`]).
     async fn ask_tier(&self, nodes: &[CallNode], tier: u8, deadline: tokio::time::Instant, now: i64, keep: fn(&NodeAccess) -> bool) -> Vec<NodeAccess> {
-        let mut tasks = tokio::task::JoinSet::new();
+        let (tell, mut told) = tokio::sync::mpsc::unbounded_channel();
         for (index, node) in self.probed(nodes, tier) {
-            let client = self.clone();
-            tasks.spawn(async move { (index, client.access(&node, now).await) });
+            self.probe(index, node, now, Some(tell.clone()));
         }
-        let tier_deadline = deadline.min(tokio::time::Instant::now() + TIER_TIMEOUT);
+        // The probes hold the only senders: when the last has answered or
+        // given up, the channel ends.
+        drop(tell);
+        let mut until = deadline.min(tokio::time::Instant::now() + TIER_TIMEOUT);
         let mut answered: Vec<(usize, NodeAccess)> = Vec::new();
-        while let Ok(Some(joined)) = tokio::time::timeout_at(tier_deadline, tasks.join_next()).await {
-            if let Ok((index, Ok(access))) = joined {
-                if access.authorized && keep(&access) {
-                    answered.push((index, access));
-                } else if !access.authorized {
-                    tracing::debug!(node = %access.node.node.id.short(), "call node: would not let me in; not chosen");
+        while let Ok(Some((index, access))) = tokio::time::timeout_at(until, told.recv()).await {
+            if access.authorized && keep(&access) {
+                if answered.is_empty() {
+                    until = until.min(tokio::time::Instant::now() + PICK_GRACE);
                 }
+                answered.push((index, access));
+            } else if !access.authorized {
+                tracing::debug!(node = %access.node.node.id.short(), "call node: would not let me in; not chosen");
             }
         }
         answered.sort_by_key(|(index, a)| rank(a, *index));
@@ -895,7 +1014,7 @@ impl NodeClient {
     /// that is an error.
     pub async fn pick(&self, nodes: &[CallNode], policy: RelayPolicy, now: i64) -> Result<Picked> {
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
-        for tier in Self::tiers(nodes) {
+        for tier in self.tier_order(nodes) {
             let answered = self.ask_tier(nodes, tier, deadline, now, |_| true).await;
             if answered.is_empty() {
                 continue;
@@ -921,7 +1040,7 @@ impl NodeClient {
     /// with an SFU answers.
     pub async fn pick_sfu(&self, nodes: &[CallNode], now: i64) -> Option<NodeAccess> {
         let deadline = tokio::time::Instant::now() + PICK_TIMEOUT;
-        for tier in Self::tiers(nodes) {
+        for tier in self.tier_order(nodes) {
             let answered = self.ask_tier(nodes, tier, deadline, now, |a| a.welcome.capabilities.iter().any(|c| c == CAP_SFU)).await;
             if let Some(best) = answered.into_iter().next() {
                 return Some(best);
@@ -1505,6 +1624,141 @@ mod tests {
         assert!(client.access(&node, 0).await.is_err());
         assert_eq!(client.pick(std::slice::from_ref(&node), RelayPolicy::Auto, 0).await.unwrap(), Picked::default());
         assert!(client.pick(&[node], RelayPolicy::RelayOnly, 0).await.is_err());
+    }
+
+    /// A client whose nodes take their time: a node on port `p` answers
+    /// after `p` ms and says its round trip is `p % 100` ms (a node may
+    /// be near and slow to shake hands); port 9 never answers. Counts
+    /// who was asked.
+    fn slow_client(asked: Arc<Mutex<Vec<u16>>>) -> NodeClient {
+        NodeClient::with_fetch(
+            "test",
+            Arc::new(move |node, _| {
+                let asked = asked.clone();
+                Box::pin(async move {
+                    let port = node.node.addr.port();
+                    asked.lock().unwrap().push(port);
+                    if port == 9 {
+                        std::future::pending::<()>().await;
+                    }
+                    tokio::time::sleep(Duration::from_millis(port as u64)).await;
+                    let welcome = Welcome {
+                        protocol_min: 1,
+                        protocol_max: 1,
+                        node_id: node.node.id.to_string(),
+                        version: String::new(),
+                        capabilities: vec![],
+                        codecs: vec![],
+                        private: false,
+                        limits: Limits { turn_lifetime_secs: 600, ..Limits::default() },
+                        load: None,
+                    };
+                    let c = creds(&[&format!("turn:127.0.0.1:{port}?transport=udp")]);
+                    Ok((welcome, c, Duration::from_millis((port % 100) as u64)))
+                })
+            }),
+        )
+    }
+
+    /// The owner, 2026-11-22: a call took long to connect; a pick waited
+    /// for every node of the tier, and one that was not there cost three
+    /// seconds of every call.
+    #[tokio::test(start_paused = true)]
+    async fn a_node_that_does_not_answer_does_not_keep_the_call_waiting() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = slow_client(asked.clone());
+        let (near, dead) = (node(NodeClass::Project, 150), node(NodeClass::Project, 9));
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&[dead.clone(), near.clone()], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![near.node.id.to_string()]);
+        assert_eq!(began.elapsed(), Duration::from_millis(150) + PICK_GRACE, "the first answer and the grace, not the tier's three seconds");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_nearer_node_that_answers_within_the_grace_is_the_one() {
+        let client = slow_client(Arc::new(Mutex::new(vec![])));
+        // 199 answers first and is 99 ms away; 310 answers 111 ms later
+        // and is 10 ms away; 620 is as near and comes after the grace.
+        let (first, nearer, late) = (node(NodeClass::Project, 199), node(NodeClass::Project, 310), node(NodeClass::Project, 620));
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&[first.clone(), nearer.clone(), late.clone()], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![nearer.node.id.to_string(), first.node.id.to_string()]);
+        assert_eq!(began.elapsed(), Duration::from_millis(199) + PICK_GRACE);
+        // The late one went on by itself and is in the cache: the next
+        // call has it at once, and it is as near as the nearest.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&[first, nearer.clone(), late.clone()], RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(began.elapsed(), Duration::ZERO, "every node is in the cache");
+        assert_eq!(picked.nodes, vec![nearer.node.id.to_string(), late.node.id.to_string()]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_node_that_missed_is_not_asked_again_for_a_while() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = slow_client(asked.clone());
+        let (near, dead) = (node(NodeClass::Project, 150), node(NodeClass::Project, 9));
+        let nodes = [dead.clone(), near.clone()];
+        let asked_dead = || asked.lock().unwrap().iter().filter(|p| **p == 9).count();
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(asked_dead(), 1);
+        // Its probe gives up by itself, after the pick is over.
+        tokio::time::sleep(TIER_TIMEOUT).await;
+        client.forget(&near.node.id);
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(asked_dead(), 1, "passed over while another of its tier is there");
+        // Alone in its tier it is asked all the same: there is nobody else.
+        assert_eq!(client.pick(std::slice::from_ref(&dead), RelayPolicy::Auto, 0).await.unwrap(), Picked::default());
+        assert_eq!(asked_dead(), 2);
+        tokio::time::sleep(MISS_FOR + Duration::from_millis(1)).await;
+        client.forget(&near.node.id);
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(asked_dead(), 3, "asked again when the time is up");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_tier_found_silent_does_not_stand_before_one_that_answers() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = slow_client(asked.clone());
+        // My own node is down; the project's answers.
+        let (own, project) = (node(NodeClass::Own, 9), node(NodeClass::Project, 150));
+        let nodes = [own, project.clone()];
+        let asked_own = || asked.lock().unwrap().iter().filter(|p| **p == 9).count();
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![project.node.id.to_string()]);
+        assert_eq!(began.elapsed(), TIER_TIMEOUT + Duration::from_millis(150), "the first call finds it out");
+        client.forget(&project.node.id);
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![project.node.id.to_string()]);
+        assert_eq!(began.elapsed(), Duration::from_millis(150), "the next does not wait for it");
+        assert_eq!(asked_own(), 1);
+        // When the time is up it stands first again, and is asked.
+        tokio::time::sleep(MISS_FOR + Duration::from_millis(1)).await;
+        client.forget(&project.node.id);
+        client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(asked_own(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn nodes_asked_ahead_cost_the_call_nothing() {
+        let asked = Arc::new(Mutex::new(vec![]));
+        let client = slow_client(asked.clone());
+        // A node of my own, and the project's below it: only the first
+        // tier is spoken to ahead of a call, as in a pick.
+        let (own, project) = (node(NodeClass::Own, 150), node(NodeClass::Project, 120));
+        let nodes = [own.clone(), project];
+        client.warm(&nodes, 0);
+        client.warm(&nodes, 0);
+        // The clock is paused: the answer of the node (150 ms) is in by
+        // now, and the pick that follows has nobody to wait for.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let began = tokio::time::Instant::now();
+        let picked = client.pick(&nodes, RelayPolicy::Auto, 0).await.unwrap();
+        assert_eq!(picked.nodes, vec![own.node.id.to_string()]);
+        assert_eq!(began.elapsed(), Duration::ZERO);
+        assert_eq!(*asked.lock().unwrap(), vec![150], "asked once, and the lower tier not at all");
     }
 
     /// Against a live node: `VEYDAN_CALL_NODE=address:port#id cargo test

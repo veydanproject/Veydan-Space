@@ -384,6 +384,26 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .badge-danger  { background: var(--danger-bg);   color: var(--danger-text);   border-color: var(--danger-border); }
 .badge-warn    { background: var(--warn-bg);     color: var(--warn-text);     border-color: var(--warn-border); }
 
+/* ── Status dot ── one dot of a state for the whole interface: a circle of 8, no glow.
+   .ok running / connected, .bad an error, .warn a warning or a draft, .off stopped or not known
+   (as no modifier); .pulse breathes (a session on its way). A dot of a colour the user picked
+   (a workspace, a column, a smart view) is the same dot with style="background: …". */
+.status-dot {
+  display: inline-block; flex-shrink: 0;
+  width: var(--sp-2); height: var(--sp-2); border-radius: 50%;
+  background: var(--text-3);
+}
+.status-dot.ok   { background: var(--success); }
+.status-dot.bad  { background: var(--danger-text); }
+.status-dot.warn { background: var(--warn-text); }
+.status-dot.off  { background: var(--text-3); }
+.status-dot.pulse { animation: status-dot-pulse 2s infinite; }
+@keyframes status-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .status-dot.pulse { animation: none; } }
+
+/* The label around a row's checkbox: the mark's own box here, its zone of 44 on a phone (mobile.css). */
+.tick-zone { display: inline-flex; flex-shrink: 0; }
+
 /* ── Chip (interactive / toggleable pill) ── */
 .chip {
   display: inline-flex;

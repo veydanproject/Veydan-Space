@@ -17,12 +17,12 @@
     tags: string[];
     /** Suggest notes and store `note:id` in tags. Password forms only. */
     linkNotes?: boolean;
-    /** Hide the add chip. Existing tags can still be removed. */
-    allowAdd?: boolean;
+    /** Only show them (a record's card): `.badge.tinted`, nothing to add or take off. */
+    readonly?: boolean;
     onchange: (tags: string[]) => void;
   }
 
-  let { tags, linkNotes = false, allowAdd = true, onchange }: Props = $props();
+  let { tags, linkNotes = false, readonly = false, onchange }: Props = $props();
   const uid = $props.id();
 
   let open = $state(false);
@@ -119,27 +119,34 @@
 <!-- An .m-field like the fields around it: its label names the group, as no single control is labelled. -->
 <div class="m-field" role="group" aria-labelledby="{uid}-label">
   <span class="form-label" id="{uid}-label">{$t('totp_field_tags')}</span>
-  <div class="m-chips">
-    {#each bindings as binding (binding)}
-      <button
-        type="button"
-        class="m-chip small tinted"
-        style:--chip={bindingColor(binding)}
-        onclick={() => remove(binding)}
-      >
-        <ChipMark kind={bindingKind(binding)} />
-        {bindingName(binding)}
-      </button>
-    {/each}
-    {#each labels as name (name)}
-      <button type="button" class="m-chip small tinted" style:--chip={tagColor(name)} onclick={() => remove(name)}>
-        <ChipMark kind="tag" />
-        {name}
-      </button>
-    {/each}
-    {#if allowAdd}
-      <button type="button" class="m-chip add" onclick={() => (open = true)} aria-label={$t('notes_tags_add')}>
-        <Icon name="plus" size={14} />
+  <div class="chip-row">
+    {#if readonly}
+      {#each bindings as binding (binding)}
+        <span class="badge tinted" style:--chip={bindingColor(binding)}><ChipMark kind={bindingKind(binding)} />{bindingName(binding)}</span>
+      {/each}
+      {#each labels as name (name)}
+        <span class="badge tinted" style:--chip={tagColor(name)}><ChipMark kind="tag" />{name}</span>
+      {/each}
+    {:else}
+      {#each bindings as binding (binding)}
+        <button
+          type="button"
+          class="chip tinted"
+          style:--chip={bindingColor(binding)}
+          onclick={() => remove(binding)}
+        >
+          <ChipMark kind={bindingKind(binding)} />
+          {bindingName(binding)}
+        </button>
+      {/each}
+      {#each labels as name (name)}
+        <button type="button" class="chip tinted" style:--chip={tagColor(name)} onclick={() => remove(name)}>
+          <ChipMark kind="tag" />
+          {name}
+        </button>
+      {/each}
+      <button type="button" class="icon-btn" onclick={() => (open = true)} aria-label={$t('notes_tags_add')}>
+        <Icon name="plus" size={18} />
       </button>
     {/if}
   </div>

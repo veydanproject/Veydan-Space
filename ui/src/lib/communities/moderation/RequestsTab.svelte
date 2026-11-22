@@ -18,11 +18,12 @@
   import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
+  import { ask } from '$lib/core/ui/confirm.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import RequestCard from './RequestCard.svelte';
   import RequestProfile from './RequestProfile.svelte';
   import { untrack } from 'svelte';
-  import { confirmStore, contacts, writeTo } from '$lib/messenger/seams/shared';
+  import { confirmStore, contacts, onPhone, writeTo } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { nameStore, shortKey } from '../names.svelte';
   import { channelError } from '../errors';
@@ -38,6 +39,7 @@
   let { detail }: Props = $props();
 
   const cid = $derived(detail.channel.id);
+  const phone = onPhone();
   let requests = $state<RequestView[]>([]);
 
   async function loadRequests() {
@@ -117,10 +119,20 @@
   const act = (kind: BulkKind, who: string) =>
     kind === 'ban' ? channelStore.act(cid, { op: 'ban', who }) : channelStore.answerRequest(cid, who, kind === 'approve');
 
+  /**
+   * One answer: «Впустить» at once, «Отклонить» asked first, as the answer for
+   * many (design 17); the card leaves with a toast of what was done.
+   */
   async function answer(r: RequestView, approve: boolean) {
     if (acting || running) return;
+    if (!approve && !(await ask({ title: $t(countKey(CONFIRM.reject, 1, $locale), { n: '1' }), confirmLabel: $t(CTA.reject), icon: 'x' }))) return;
+    const kind = approve ? 'approve' : 'reject';
     acting = r.requester; error = '';
-    try { await act(approve ? 'approve' : 'reject', r.requester); requests = requests.filter((x) => x.requester !== r.requester); }
+    try {
+      await act(kind, r.requester);
+      requests = requests.filter((x) => x.requester !== r.requester);
+      toast.success($t(countKey(DONE[kind], 1, $locale), { n: '1' }));
+    }
     catch (e) { error = explain(e); }
     finally { acting = null; }
   }
@@ -249,8 +261,10 @@
     <div class="bar-acts">
       <button type="button" class="btn btn-primary btn-sm" onclick={() => many('approve', [...selected])}><Icon name="check" size={14} />{$t('chan_req_approve')}</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick={() => many('reject', [...selected])}>{$t('chan_req_reject')}</button>
-      <!-- The ban is a mark with its name in the tooltip: three words do not fit a panel's width. -->
-      <button type="button" class="btn btn-danger-soft btn-sm ban" title={$t('chan_req_ban_short')} aria-label={$t('chan_req_ban_short')} onclick={() => many('ban', [...selected])}><Icon name="user-cancel" size={15} /></button>
+      <!-- The ban is a mark with its name in the tooltip: three words do not fit a panel's width. A phone has no tooltip: there the mark says its word (design 17). -->
+      <button type="button" class="btn btn-danger-soft btn-sm ban" title={phone ? undefined : $t('chan_req_ban_short')} aria-label={phone ? undefined : $t('chan_req_ban_short')} onclick={() => many('ban', [...selected])}>
+        <Icon name="user-cancel" size={15} />{#if phone}{$t('chan_req_ban_short')}{/if}
+      </button>
     </div>
   </div>
 {/if}
@@ -293,6 +307,10 @@
   .track-fill { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--dur-base) var(--ease); }
   @media (pointer: coarse) {
     .bar-acts .btn { min-height: var(--control-h); }
+    /* A phone's ban says its word: on 390 the three do not fit one row, so a button keeps its whole word and the
+       row wraps (the ban goes under the two) rather than squeeze a word past its button's edge. */
+    .bar-acts { flex-wrap: wrap; }
+    .bar-acts .btn, .bar-acts .btn.ban { flex: 1 1 auto; min-width: auto; }
   }
   @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
 </style>

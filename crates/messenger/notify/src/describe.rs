@@ -171,13 +171,22 @@ impl Describe {
         };
         // The message the notification shows waits in the chat it opens,
         // before the app reaches a relay. A message that stays quiet is
-        // the relay's to bring: nothing was promised of it.
-        if matches!(outcome, Outcome::Show(_)) {
-            if let Err(e) = push_inbox::keep(&self.inbox, &raw) {
-                eprintln!("messenger notify: the event is not left for the app: {e}");
-            }
+        // the relay's to bring: nothing was promised of it. An invitation
+        // that rings waits there too, and the end of a ringing: the app
+        // started by an answer has the call at once, and does not wait
+        // for a relay to bring what the phone already holds.
+        if matches!(outcome, Outcome::Show(_) | Outcome::Call(_) | Outcome::CallEnd(_)) {
+            self.leave(&raw);
         }
         Ok(outcome)
+    }
+
+    /// Leaves `raw` for the app (`push_inbox`); a failure is said and
+    /// costs nothing: the relay brings the event.
+    fn leave(&self, raw: &messenger_core::RawEvent) {
+        if let Err(e) = push_inbox::keep(&self.inbox, raw) {
+            eprintln!("messenger notify: the event is not left for the app: {e}");
+        }
     }
 
 
@@ -189,7 +198,17 @@ impl Describe {
         let Some(raw) = self.event_of(push).await? else {
             return Ok(Some(Outcome::Quiet { reason: Reason::Unreachable }));
         };
-        let Inbound::Dm(dm) = messenger_ingress::classify(&raw, Some(&self.keys)) else { return Ok(None) };
+        let outcome = self.call_in(settings, &raw).await?;
+        // Left for the app, as under any settings (`run`).
+        if matches!(outcome, Some(Outcome::Call(_) | Outcome::CallEnd(_))) {
+            self.leave(&raw);
+        }
+        Ok(outcome)
+    }
+
+    /// What `raw` says of a call, for [`Describe::call_only`].
+    async fn call_in(&self, settings: &Settings, raw: &messenger_core::RawEvent) -> Result<Option<Outcome>> {
+        let Inbound::Dm(dm) = messenger_ingress::classify(raw, Some(&self.keys)) else { return Ok(None) };
         if dm.rumor_kind == KIND_PEER_NOTE_RUMOR {
             return self.call_signal(&dm).await.map(Some);
         }

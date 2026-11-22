@@ -203,29 +203,29 @@
         <button class="item" class:on={active('all')} onclick={() => pick('all')}>
           <Icon name="notes" size={18} />
           <span class="name">{$t('notes_filter_all')}</span>
-          <span class="n">{nav.counts.all}</span>
+          <span class="count-pill lg quiet">{nav.counts.all}</span>
         </button>
         {#if nav.counts.global > 0 && (hasBrowser || nav.counts.global !== nav.counts.all)}
           <button class="item" class:on={active('global')} onclick={() => pick('global')}>
             <Icon name="world" size={18} />
             <span class="name">{$t('notes_filter_global')}</span>
-            <span class="n">{nav.counts.global}</span>
+            <span class="count-pill lg quiet">{nav.counts.global}</span>
           </button>
         {/if}
         <button class="item" class:on={active('pinned')} onclick={() => pick('pinned')}>
           <Icon name="pin" size={18} />
           <span class="name">{$t('notes_filter_pinned')}</span>
-          <span class="n">{nav.counts.pinned}</span>
+          <span class="count-pill lg quiet">{nav.counts.pinned}</span>
         </button>
         <button class="item" class:on={active('archived')} onclick={() => pick('archived')}>
           <Icon name="archive" size={18} />
           <span class="name">{$t('notes_filter_archived')}</span>
-          <span class="n">{nav.counts.archived}</span>
+          <span class="count-pill lg quiet">{nav.counts.archived}</span>
         </button>
         <button class="item" class:on={active('trash')} onclick={() => pick('trash')}>
           <Icon name="trash-2" size={18} />
           <span class="name">{$t('notes_filter_trash')}</span>
-          <span class="n">{nav.counts.trash}</span>
+          <span class="count-pill lg quiet">{nav.counts.trash}</span>
         </button>
       </section>
 
@@ -243,9 +243,9 @@
               {@const profiles = (ws.profiles ?? []).toSorted((a, b) => compareLabel(a.name, b.name))}
               <div class="ws-row">
                 <button class="item" class:on={active('workspace', ws.id)} onclick={() => pick('workspace', ws.id)}>
-                  <span class="m-dot" style:background={swatch(ws.color)}></span>
+                  <span class="status-dot" style:background={swatch(ws.color)}></span>
                   <span class="name">{ws.name}</span>
-                  {#if ws.count > 0}<span class="n">{ws.count}</span>{/if}
+                  {#if ws.count > 0}<span class="count-pill lg quiet">{ws.count}</span>{/if}
                 </button>
                 {#if profiles.length > 0}
                   <button type="button" class="ws-chev" onclick={() => toggle(`ws:${ws.id}`)} aria-label={$t('notes_ws_fold_profiles')}>
@@ -258,7 +258,7 @@
                   <button class="item child" class:on={active('profile', p.id)} onclick={() => pick('profile', p.id)}>
                     <Icon name="browser" size={16} />
                     <span class="name">{p.name}</span>
-                    <span class="n">{p.count}</span>
+                    <span class="count-pill lg quiet">{p.count}</span>
                   </button>
                 {/each}
               {/if}
@@ -303,15 +303,19 @@
         </div>
         {#if !collapsed.has('smart')}
         {#each nav.smart as view (view.id)}
-          <button
-            class="item"
-            class:on={active('smart', view.id)}
-            onclick={() => pick('smart', view.id)}
-            {@attach longpress(() => (menu = { kind: 'smart', id: view.id, name: view.name, color: view.color }))}
-          >
-            <span class="m-doc" style:--c={view.color}><Icon name="list" size={14} /></span>
-            <span class="name">{view.name}</span>
-          </button>
+          {@const open = () => (menu = { kind: 'smart', id: view.id, name: view.name, color: view.color })}
+          <div class="ws-row">
+            <button
+              class="item"
+              class:on={active('smart', view.id)}
+              onclick={() => pick('smart', view.id)}
+              {@attach longpress(open)}
+            >
+              <span class="m-doc" style:--c={view.color}><Icon name="list" size={14} /></span>
+              <span class="name">{view.name}</span>
+            </button>
+            {@render more(open)}
+          </div>
         {/each}
         {#if !nav.smart.length}
           <p class="empty-state sm">{$t('notes_smart_empty')}</p>
@@ -333,7 +337,7 @@
             <button class="item" class:on={active('domain', s.id)} onclick={() => pick('domain', s.id)}>
               <Icon name="world" size={18} />
               <span class="name">{s.name}</span>
-              <span class="n">{s.count}</span>
+              <span class="count-pill lg quiet">{s.count}</span>
             </button>
           {/each}
           {/if}
@@ -341,9 +345,10 @@
       {/if}
 
       <section>
-        <button type="button" class="label-row" onclick={() => void leave(() => void goto('/notes/tags'))}>
-          <span class="section-label">{$t('notes_tags')}</span>
-          <Icon name="chevron-right" size={16} />
+        <button type="button" class="list-row dense tags-row" onclick={() => void leave(() => void goto('/notes/tags'))}>
+          <Icon name="tag" size={18} />
+          <span class="list-row-label">{$t('notes_tags')}</span>
+          <span class="chev"><Icon name="chevron-right" size={16} /></span>
         </button>
       </section>
 
@@ -420,25 +425,32 @@
   </span>
 {/snippet}
 
+<!-- «⋮» of a folder's or a smart view's row: the sheet of its long press, in sight; the last of the row. -->
+{#snippet more(open: () => void)}
+  <button type="button" class="icon-btn" onclick={open} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+{/snippet}
+
 {#snippet space(node: FolderNode)}
   {@const f = node.item}
+  {@const open = () => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color })}
   <div class="space">
     <div class="ws-row">
       <button
         class="item space-row"
         class:on={active('folder', f.id)}
         onclick={() => pick('folder', f.id)}
-        {@attach longpress(() => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color }))}
+        {@attach longpress(open)}
       >
         <span class="m-folder tinted-text" style:--chip={swatch(f.color)}><Icon name="folder" size={18} /></span>
         <span class="name">{f.name}</span>
-        <span class="n">{node.total}</span>
+        <span class="count-pill lg quiet">{node.total}</span>
       </button>
       {#if node.children.length > 0}
         <button type="button" class="ws-chev" onclick={() => toggle(`folder:${f.id}`)} aria-label={collapsed.has(`folder:${f.id}`) ? $t('notes_section_unfold') : $t('notes_section_fold')}>
           <Icon name={collapsed.has(`folder:${f.id}`) ? 'chevron-right' : 'chevron-down'} size={16} />
         </button>
       {/if}
+      {@render more(open)}
     </div>
     {#if !collapsed.has(`folder:${f.id}`)}
       {#each node.children as child (child.item.id)}
@@ -450,17 +462,21 @@
 
 {#snippet folderNode(node: FolderNode, depth: number, spaceColor: string)}
   {@const f = node.item}
-  <button
-    class="item folder-row"
-    class:on={active('folder', f.id)}
-    style:padding-left="{12 + depth * 20}px"
-    onclick={() => pick('folder', f.id)}
-    {@attach longpress(() => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color }))}
-  >
-    <span class="m-folder tinted-text" style:--chip={f.color || spaceColor}><Icon name="folder" size={18} /></span>
-    <span class="name">{f.name}</span>
-    <span class="n">{node.total}</span>
-  </button>
+  {@const open = () => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color })}
+  <div class="ws-row">
+    <button
+      class="item folder-row"
+      class:on={active('folder', f.id)}
+      style:padding-left="{12 + depth * 20}px"
+      onclick={() => pick('folder', f.id)}
+      {@attach longpress(open)}
+    >
+      <span class="m-folder tinted-text" style:--chip={f.color || spaceColor}><Icon name="folder" size={18} /></span>
+      <span class="name">{f.name}</span>
+      <span class="count-pill lg quiet">{node.total}</span>
+    </button>
+    {@render more(open)}
+  </div>
   {#if !collapsed.has(`folder:${f.id}`)}
     {#each node.children as child (child.item.id)}
       {@render folderNode(child, depth + 1, spaceColor)}
@@ -502,14 +518,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .n {
-    margin-left: auto;
-    color: var(--text-3);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semibold);
-    flex-shrink: 0;
-  }
-  .item.on .n { color: inherit; }
+  /* A row's count is the quiet .count-pill of 22 (base.css), grey in a chosen row too. */
+  .item .count-pill { margin-left: auto; }
   .space { display: flex; flex-direction: column; }
   .plus-slot {
     width: 40px;
@@ -560,7 +570,10 @@
     cursor: pointer;
   }
   .label-row .section-label { flex: 1; }
-  .label-row > :global(svg) { color: var(--text-3); flex-shrink: 0; margin-right: var(--sp-2-5); }
+  /* «Tags» is a row that leads to their page (.list-row.dense of 56, the tag icon, a chevron), not a group's head;
+     its text and icon as the drawer's other rows (.item). */
+  .tags-row { font-size: var(--fs-body); font-weight: var(--fw-medium); border-radius: var(--radius-md); }
+  .tags-row > :global(svg) { color: var(--text-2); }
   .brand {
     display: flex;
     align-items: center;

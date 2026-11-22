@@ -3,6 +3,7 @@
 
 <!-- Invitations to groups that wait for my answer, above the chats. -->
 <script lang="ts">
+  import { onPhone as isMobile } from '../phone';
   import { get } from 'svelte/store';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
@@ -45,7 +46,7 @@
           <span class="title">{i.name}</span>
           <span class="sub">{$t('msg_group_invited_by', { name: nameStore.label(i.peer) })} · {$t(membersKey(i.members), { n: String(i.members) })}</span>
         </div>
-        <button class="btn btn-primary btn-sm" disabled={busy === i.invite_id} onclick={() => answer(i, true)}>{$t('msg_group_invite_accept')}</button>
+        <button class="btn btn-primary" class:btn-sm={!isMobile} disabled={busy === i.invite_id} onclick={() => answer(i, true)}>{$t('msg_group_invite_accept')}</button>
         <button class="icon-btn" disabled={busy === i.invite_id} title={$t('msg_group_invite_decline')} onclick={() => answer(i, false)}><Icon name="x" size={18} /></button>
       </div>
     {/each}

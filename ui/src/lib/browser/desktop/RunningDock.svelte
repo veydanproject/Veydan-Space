@@ -18,7 +18,7 @@
 {#if runningProfiles.length > 0}
   <div class="dock">
     <span class="dock-label">
-      <span class="dock-dot"></span>
+      <span class="status-dot ok pulse"></span>
       {runningProfiles.length} running
     </span>
     <div class="dock-sessions">
@@ -52,19 +52,6 @@
     font-size: var(--fs-xs);
     color: var(--text-2);
     white-space: nowrap;
-  }
-
-  .dock-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--success);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
   }
 
   .dock-sessions {

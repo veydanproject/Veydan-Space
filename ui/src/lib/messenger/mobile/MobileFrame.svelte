@@ -14,6 +14,7 @@
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import ReportHost from '../shared/ReportHost.svelte';
+  import CallReturn from '../calls/CallReturn.svelte';
   import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
   import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
   import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
@@ -32,9 +33,11 @@
     bare?: boolean;
     /** The product's apps button left of the title (a tab of the bar, which has no logo). */
     hubButton?: boolean;
+    /** «Return to the call» under the bar (or at the top of a bare screen); `false`: the content places it itself (a chat, under its head). */
+    callRow?: boolean;
     children: Snippet;
   }
-  let { title = '', onback, lead, actions, scroll = true, bare = false, hubButton = false, children }: Props = $props();
+  let { title = '', onback, lead, actions, scroll = true, bare = false, hubButton = false, callRow = true, children }: Props = $props();
 
   // What the content mounts is laid out for a phone (shared/phone.ts).
   markPhone();
@@ -57,6 +60,7 @@
       {#if actions}{@render actions()}{/if}
     </header>
   {/if}
+  {#if callRow}<CallReturn />{/if}
   <div class="content" class:scroll>
     {@render children()}
   </div>

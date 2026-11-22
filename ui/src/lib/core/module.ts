@@ -40,6 +40,8 @@ export interface NavItem {
   badge?: () => number;
   /** The count is of what was missed (calls), not of what is new: it shows red. */
   danger?: boolean;
+  /** A dot on the entry, without a count (a new version on Settings). */
+  dot?: () => boolean;
 }
 
 /** A button of the desktop top bar's right side (TOTP, passwords, generator). */
@@ -343,8 +345,8 @@ export interface LabelFieldProps {
   tags: string[];
   /** Offer notes and store `note:id` in tags. */
   linkNotes?: boolean;
-  /** Hide the add chip. Existing tags can still be removed. */
-  allowAdd?: boolean;
+  /** Only show them (a record's card): `.badge.tinted`, nothing to add or take off; that is the edit form's. */
+  readonly?: boolean;
   onchange: (tags: string[]) => void;
 }
 

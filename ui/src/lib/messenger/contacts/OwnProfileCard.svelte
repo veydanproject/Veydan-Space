@@ -7,6 +7,7 @@
   person into another app, ShareOutSheet), and the editor.
 -->
 <script lang="ts">
+  import { onPhone as isMobile } from '../phone';
   import { onMount } from 'svelte';
   import { pushState } from '$app/navigation';
   import Notice from '$lib/core/ui/Notice.svelte';
@@ -136,7 +137,7 @@
     {#if !editing}
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
-        <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={startEdit}>
+        <button class="btn btn-ghost" class:btn-sm={!isMobile} disabled={!canAct} onclick={startEdit}>
           <Icon name="pencil" size={12} />{$t('common_edit')}
         </button>
       </span>

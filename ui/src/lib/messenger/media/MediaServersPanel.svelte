@@ -134,9 +134,10 @@
         <label><span>{$t('msg_media_secret_key')}</span><input type="password" bind:value={secretKey} autocomplete="new-password" disabled={busy}
           placeholder={editing ? $t('msg_media_secret_keep') : ''} /></label>
       {/if}
-      <div class="form-actions wide">
-        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{$t('common_back')}</button>
-        <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{$t('msg_media_save_check')}</button>
+      <!-- A phone (design 15): «Cancel | Save» in halves of 48, in the card. -->
+      <div class="form-actions wide" class:pair={phone}>
+        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{phone ? $t('common_cancel') : $t('common_back')}</button>
+        <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{phone ? $t('common_save') : $t('msg_media_save_check')}</button>
       </div>
       <p class="muted small wide">{$t('msg_media_secret_hint')}</p>
     </form>
@@ -176,6 +177,9 @@
   }
   .form input:focus { outline: none; border-color: var(--accent-border); }
   .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
+  .form-actions.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* A half holds its words: a long translation wraps instead of leaving the button. */
+  .pair > .btn { min-height: 48px; min-width: 0; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; }
   .kinds { grid-column: 1 / -1; }
   .add { align-self: flex-start; }
 </style>

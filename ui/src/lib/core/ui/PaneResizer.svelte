@@ -112,7 +112,7 @@
   >
     <span class="pill"></span>
   </div>
-  {#if dragging && moved}<span class="badge">{Math.round(value)} px</span>{/if}
+  {#if dragging && moved}<span class="resize-hint">{Math.round(value)} px</span>{/if}
 </div>
 
 <style>
@@ -155,7 +155,7 @@
   .pane-resizer.dragging .grip { top: 0; height: 100%; transform: none; }
   .pane-resizer.dragging .pill { height: 100%; border-radius: 0; background: #fff; transition: none; }
 
-  .badge {
+  .resize-hint {
     position: absolute;
     top: 12px;
     left: 50%;

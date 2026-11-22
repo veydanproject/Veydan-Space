@@ -133,6 +133,7 @@
     "totp_scan_unavailable": "L'appareil photo n'est pas disponible. Autorisez l'accès à l'appareil photo dans les paramètres du système, ou ajoutez le code par son lien.",
     "pwgen_history_off_hint": "Les nouveaux mots de passe ne sont pas enregistrés.",
     "pwgen_history_off_kept": "Mots de passe enregistrés auparavant, conservés sur cet appareil : {n}.",
-    "pwgen_history_empty_hint": "Les mots de passe que vous générez apparaissent ici. Appuyez sur l'un d'eux pour le copier."
+    "pwgen_history_empty_hint": "Les mots de passe que vous générez apparaissent ici. Appuyez sur l'un d'eux pour le copier.",
+    "pw_locked_notice": "Les mots de passe sont verrouillés. Déverrouillez pour les modifier."
   }
 }

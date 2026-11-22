@@ -208,8 +208,9 @@
     });
   }
 
-  /** On a phone the header keeps its plate free: the calls are entries of its menu. */
+  /** On a phone the head keeps «Call» and ⋮ alone: the video call and «Search in chat» are entries of its menu (design 15). */
   let callButton = $state<ReturnType<typeof GroupCallButton>>();
+  let windowRef = $state<ReturnType<typeof ChatWindow>>();
 
   /** What waits for the team (each to whom it is for): one count on ⋮, the rows at the top of its menu, as a channel's. */
   const waitingQueue = $derived(isModerator(group) && group?.queue ? group.queue : 0);
@@ -228,9 +229,9 @@
       list.push(
         { label: $t('msg_gcall_video_start'), icon: 'video', disabled: blocked, onselect: () => callButton?.start('video') },
         { label: $t('msg_gcall_start'), icon: 'phone', disabled: blocked, onselect: () => callButton?.start('audio') },
-        { type: 'separator' },
       );
     }
+    if (phone) list.push({ label: $t('msg_search_open'), icon: 'search', onselect: () => windowRef?.search() }, { type: 'separator' });
     list.push({ label: $t('msg_group_info'), icon: 'users', onselect: () => { moderation = false; info = true; } });
     if (seesModeration(group)) {
       const tab: ModerationTab = answersRequests(group) && group.requests.length ? 'requests' : hasModeration(group) ? 'queue' : 'requests';
@@ -303,7 +304,7 @@
 {/snippet}
 
 {#snippet window()}
-  <ChatWindow chat={view} {onback} {subtitle} {actions} {banner} {footer} {author} {systemText} chatEntries={entries} menuCount={waitingAll} menuWidth={MENU_W}
+  <ChatWindow bind:this={windowRef} chat={view} {onback} {subtitle} {actions} {banner} {footer} {author} {systemText} chatEntries={entries} menuCount={waitingAll} menuWidth={MENU_W}
     extraEntries={modEntries} canModerate={moderate} moreHistory={membership === 'joined'} {explainError} ontitle={() => { moderation = false; info = !info; }} />
 {/snippet}
 

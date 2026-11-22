@@ -150,7 +150,7 @@
         <Icon name="x" size={12} />
       </button>
     {/if}
-    <span class="count-badge">{filtered().length} / {profiles.length}</span>
+    <span class="count-pill sm quiet filter-count">{filtered().length} / {profiles.length}</span>
   </div>
 
   <!-- Table -->
@@ -179,21 +179,21 @@
             <!-- # -->
             <td class="td-num">
               <span class="row-num">{i + 1}</span>
-              <span class="status-dot" class:active={isRunning}></span>
+              <span class="status-dot" class:ok={isRunning} class:pulse={isRunning} class:off={!isRunning}></span>
             </td>
 
             <!-- Name -->
             <td class="td-name">
               <span class="profile-name">{profile.name}</span>
               {#if isRunning}
-                <span class="running-pill">● live</span>
+                <span class="badge badge-ok live">● live</span>
               {/if}
               <ProfileSyncBadge profileId={profile.id} compact />
             </td>
 
             <!-- OS / Browser -->
             <td class="td-os">
-              <span class="os-chip">
+              <span class="badge">
                 <span class="os-icon">{getOsIcon(profile.fingerprint_preset)}</span>
                 <span class="os-label">{getOsLabel(profile.fingerprint_preset)}</span>
                 <span class="sep">·</span>
@@ -206,10 +206,10 @@
               {#if proxy}
                 <div class="proxy-info">
                   {#if proxyChip(proxy)}
-                    <span class="country-chip">{proxyChip(proxy)}</span>
+                    <span class="badge">{proxyChip(proxy)}</span>
                   {/if}
                   <span class="proxy-name">{proxy.name}</span>
-                  <span class="proxy-type">{proxyTypeName(proxy)}</span>
+                  <span class="badge">{proxyTypeName(proxy)}</span>
                 </div>
               {:else}
                 <span class="no-proxy">
@@ -224,7 +224,7 @@
               <div class="tags-wrap">
               {#each (profile.tags ?? []) as tag}
                 {@const color = tagColorMap.get(tag)}
-                <span class="tag-chip tinted" style:--chip={color} title={tag}>
+                <span class="badge tinted" style:--chip={color} title={tag}>
                   <span class="tag-text">{tag}</span>
                 </span>
               {/each}
@@ -266,7 +266,8 @@
 <style>
   .table-view { display: flex; flex-direction: column; gap: var(--sp-3); height: 100%; }
 
-  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear/.count-badge из base.css */
+  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear из base.css; счёт «x / y» — .count-pill справа */
+  .filter-count { margin-left: auto; }
 
   /* ── Table ── (data-table look: surface card, caps header, subtle row borders) */
   .table-wrap {
@@ -297,33 +298,14 @@
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3);
     min-width: 18px; text-align: right;
   }
-  .status-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--border-2); flex-shrink: 0; transition: background 0.2s;
-  }
-  .status-dot.active {
-    background: var(--success-text);
-    box-shadow: 0 0 0 2px var(--success-bg);
-  }
 
   /* Name */
   .td-name { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
   .profile-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); }
-  .running-pill {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
-    margin-left: var(--sp-1-5); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    color: var(--success-text); background: var(--success-bg);
-    padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-sm);
-  }
+  .live { margin-left: var(--sp-1-5); }
 
-  /* OS — mono chip */
+  /* OS — a neutral badge */
   .td-os { white-space: nowrap; }
-  .os-chip {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2-5); border-radius: var(--radius-sm);
-    background: var(--surface-2); font-family: var(--font-mono);
-    font-size: var(--fs-sm); color: var(--text-body);
-  }
   .os-icon { font-size: var(--fs-base); }
   .os-label { color: var(--text-body); }
   .sep { color: var(--text-3); }
@@ -332,30 +314,12 @@
   /* Proxy */
   .td-proxy { white-space: nowrap; max-width: 200px; }
   .proxy-info { display: flex; align-items: center; gap: var(--sp-1-5); }
-  .country-chip {
-    font-size: var(--fs-xs); font-weight: var(--fw-bold);
-    font-family: var(--font-mono);
-    background: var(--surface-2); border: 1px solid var(--border);
-    padding: var(--sp-0-5) var(--sp-1-5); border-radius: var(--radius-sm); color: var(--text-2);
-  }
   .proxy-name { color: var(--text); max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
-  .proxy-type {
-    font-family: var(--font-mono);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    padding: var(--sp-0-5) var(--sp-2); border-radius: var(--radius-sm);
-    background: var(--surface-2); color: var(--text-2);
-  }
   .no-proxy { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-dim); font-size: var(--fs-sm); }
 
   /* Tags */
   .tags-wrap { max-width: 180px; display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
-  .tag-chip {
-    max-width: 100%; min-width: 0;
-    display: inline-flex; align-items: center;
-    border-width: 1px; border-style: solid;
-    border-radius: var(--radius-pill); padding: var(--sp-0-5) var(--sp-1-5);
-    font-size: var(--fs-xs); white-space: nowrap;
-  }
+  .tags-wrap .badge { max-width: 100%; min-width: 0; }
 
   /* Date */
   .td-date { color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; }

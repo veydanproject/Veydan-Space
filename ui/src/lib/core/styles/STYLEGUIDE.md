@@ -124,8 +124,9 @@ field is a pill.
   `.danger` (missed, errors). A corner count adds only its position and a 2px ring of `--chrome`.
   Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
 · `.menu-count` (the count on the corner of a head's ⋮: a `.count-pill` of 18 under its own name; the button is `position: relative`).
-A button and an icon button sink to .97 under the press (`--dur-press`); the
-phone's `.m-btn-grad` too.
+A button and an icon button sink to .97 under the press (`--dur-press`). On the
+phone the main button is the same `.btn.btn-primary`, 48 and flat (mobile.css);
+a choice is the `.chip` (32, its zone 44), a label in a row a `.badge`.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with
 `accent-color` (20px on the phone); do not re-declare `width: auto` locally.
 A value read or copied character by character — a password, a key, a secret,
@@ -253,8 +254,6 @@ colour, nothing else:
 - Inside a chip, a × or a secondary text inherits the ink and fades by
   `opacity: var(--chip-fade)`; never a fixed `--text-2`/`--text-3`, which
   does not follow the tint under it.
-- On the phone an `.m-chip` has no border, so its tint is mixed over
-  `--m-seg` (the neutral chip) instead of the page (mobile.css).
 - The ink share is computed, not chosen by eye: `chip-contrast.test.ts` takes
   the pickers' palettes, the accent presets of Settings, the colour tokens a
   chip takes, the extremes and a sweep of the RGB cube, resolves the mixes
@@ -270,8 +269,8 @@ colour, nothing else:
 - The component keeps the shape (padding, radius, `border-width` and
   `border-style` — not the `border` shorthand, which sets a colour) and sets
   no colour on the element. A dot, stripe or icon with no text keeps the raw
-  colour. On the phone it is `.m-chip.tinted`; a workspace with no colour of
-  its own passes `var(--success)`.
+  colour. On the phone it is the same `.chip.tinted` / `.badge.tinted`; a
+  workspace with no colour of its own passes `var(--success)`.
 - Without `color-mix` (an old WebView) the chip is neutral with a border of
   the raw colour (`@supports`).
 - The guard (below) fails on text in a colour from data set anywhere else:

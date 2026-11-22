@@ -43,8 +43,8 @@
       </button>
     {/if}
     {#if updaterStore.status === 'available'}
-      <button class="banner-close" onclick={() => updaterStore.dismiss()} title={$t('common_later')}>
-        <Icon name="x" size={13} />
+      <button class="icon-btn banner-close" onclick={() => updaterStore.dismiss()} title={$t('common_later')} aria-label={$t('common_later')}>
+        <Icon name="x" size={18} />
       </button>
     {/if}
   </div>
@@ -67,20 +67,8 @@
     flex: 0 1 auto;
   }
 
+  /* The common icon button (32), at the end of the row. */
   .banner-close {
-    appearance: none;
-    border: none;
-    background: transparent;
-    color: var(--accent-text);
-    cursor: pointer;
     margin-left: auto;
-    padding: 2px;
-    display: flex;
-    align-items: center;
-    opacity: 0.7;
-  }
-
-  .banner-close:hover {
-    opacity: 1;
   }
 </style>

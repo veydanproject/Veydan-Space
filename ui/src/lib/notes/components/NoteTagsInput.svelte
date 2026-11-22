@@ -208,21 +208,6 @@
 
   .tags-wrap { display: contents; }
 
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--sp-1);
-    font-size: var(--fs-xs);
-    line-height: var(--lh-icon);
-    padding: var(--sp-1) var(--sp-2);
-    border-radius: var(--radius-pill);
-    border-width: 1px;
-    border-style: solid;
-    font-weight: var(--fw-medium);
-    white-space: nowrap;
-  }
-
   .chip-x {
     background: none;
     border: none;

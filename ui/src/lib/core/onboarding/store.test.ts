@@ -213,6 +213,18 @@ describe('the wizard opened again from the card «Finish setting up»', () => {
     expect(goto).not.toHaveBeenCalled();
   });
 
+  it('opens at the step with what it was asked to open with (a phone\'s card of the chats, design 15)', () => {
+    use(notes, messenger);
+    core(true);
+    modulesStore.firstRun = false;
+    expect(onboarding.resume('account', 'key')).toBe(true);
+    expect(onboarding.current).toBe('account');
+    expect(onboarding.intent).toBe('key');
+    expect(onboarding.floor).toBe('account');
+    onboarding.close();
+    expect(onboarding.intent).toBeNull();
+  });
+
   it('does not open at a step the product has not now, and closes where it stands', () => {
     use(notes);
     core(false);

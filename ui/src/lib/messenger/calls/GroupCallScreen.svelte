@@ -27,8 +27,10 @@
   interface Props {
     /** Leaves the screen; the call goes on. */
     onleave: () => void;
+    /** «Открыть чат»: leaves the screen for the group's chat; the room goes on. */
+    onchat?: () => void;
   }
-  let { onleave }: Props = $props();
+  let { onleave, onchat }: Props = $props();
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
 
@@ -47,8 +49,8 @@
   const speaker = $derived(groupCallStore.routes?.current === 'speaker');
   const hasSpeaker = $derived(!!groupCallStore.routes?.available.includes('speaker'));
   const cameraOn = $derived(!!call?.video_local && !groupCallStore.screen);
-  /** Four buttons and more do not fit a narrow phone at full size (as on the screen of a call of two). */
-  const many = $derived(3 + (cameraOn ? 1 : 0) + (hasSpeaker ? 1 : 0) >= 4);
+  /** How many buttons stand in the row: four close up, five shrink on a narrow phone (as on the screen of a call of two). */
+  const buttons = $derived(3 + (cameraOn ? 1 : 0) + (hasSpeaker ? 1 : 0));
 
   // Once the sound is the room's (the phone's shell starts with the room's
   // first word), the phone is asked where it can go; once per room.
@@ -73,6 +75,7 @@
         <span class="name">{name}</span>
         <span class="sub"><span class:clock={call?.phase === 'in_room'}>{status}</span>{#if count}<span>· {count}</span>{/if}</span>
       </span>
+      {#if onchat}<button class="icon-btn" onclick={onchat} aria-label={$t('msg_call_open_chat')}><Icon name="message-circle" size={22} /></button>{/if}
       {#if call}
         <button class="round-btn" class:lit={roster} onclick={() => (roster = !roster)} aria-label={$t('msg_gcall_roster')} aria-pressed={roster}>
           <Icon name="users" size={20} />
@@ -81,9 +84,9 @@
     </header>
     {#if call}
       <div class="chips">
-        {#if path}<span class="chip" class:moving><Icon name="server" size={11} />{path}</span>{/if}
-        <span class="chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
-        {#if call.muted}<span class="chip warn"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
+        {#if path}<span class="call-chip" class:moving><Icon name="server" size={11} />{path}</span>{/if}
+        <span class="call-chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
+        {#if call.muted}<span class="call-chip warn"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
       </div>
     {/if}
 
@@ -101,7 +104,7 @@
     {#if error}<p class="error error-msg">{error}</p>{/if}
 
     {#if call}
-      <div class="controls" class:many>
+      <div class="controls" class:many={buttons >= 4} class:crowd={buttons >= 5}>
         <div class="action">
           <button class="round soft" class:on={call.muted} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleMute()}
             aria-pressed={call.muted} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}>
@@ -162,18 +165,21 @@
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
   .round-btn.lit { background: var(--on-media-bg-hover); }
+  /* «Открыть чат»: the common .icon-btn (40, zone 44) in the light of the screen, as on the screen of a call of two. */
+  .top .icon-btn { color: var(--on-media-text); }
+  .top .icon-btn:hover:not(:disabled), .top .icon-btn:active:not(:disabled) { background: var(--on-media-bg-hover); color: #fff; }
   .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: var(--lh-tight); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: flex; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--on-media-text-2); white-space: nowrap; }
   .clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); padding: 0 16px; }
-  .chip {
+  .call-chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--radius-pill);
     background: var(--on-media-bg); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
   }
-  .chip.quiet { color: var(--on-media-text-2); }
-  .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
-  .chip.moving { opacity: 0.55; }
+  .call-chip.quiet { color: var(--on-media-text-2); }
+  .call-chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .call-chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 16px; right: 16px; top: 8px; margin: 0 auto; max-width: 420px;
     display: flex; align-items: center; gap: 12px; padding: var(--sp-2-5) var(--sp-3); border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
@@ -191,13 +197,18 @@
   .controls { display: flex; justify-content: center; gap: clamp(18px, 7vw, 64px); padding-top: 8px; }
   .controls.many { gap: clamp(var(--sp-1-5), 2.5vw, var(--sp-6)); }
   .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--on-media-text); }
-  .many .action { font-size: var(--fs-xs); width: 62px; text-align: center; }
+  .many .action { font-size: var(--fs-xs); width: 72px; text-align: center; }
+  /* 72, as on the screen of a call of two (design 15). */
   .round {
-    width: 66px; height: 66px; border-radius: 50%; border: none; cursor: pointer; color: #fff;
+    width: 72px; height: 72px; border-radius: 50%; border: none; cursor: pointer; color: #fff;
     display: inline-flex; align-items: center; justify-content: center;
     transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
   }
-  .many .round { width: 58px; height: 58px; }
+  /* Five of 72 do not fit a phone of 390: there they shrink, as on the screen of a call of two. */
+  @media (max-width: 420px) {
+    .crowd .action { width: 62px; }
+    .crowd .round { width: 58px; height: 58px; }
+  }
   .round:active:not(:disabled) { transform: scale(0.94); }
   .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }

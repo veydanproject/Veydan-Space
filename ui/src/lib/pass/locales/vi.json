@@ -133,6 +133,7 @@
     "totp_scan_unavailable": "Camera không khả dụng. Hãy cho phép truy cập camera trong cài đặt hệ thống hoặc thêm mã bằng liên kết.",
     "pwgen_history_off_hint": "Mật khẩu mới không được lưu.",
     "pwgen_history_off_kept": "Mật khẩu đã lưu trước đó vẫn còn trên thiết bị này: {n}.",
-    "pwgen_history_empty_hint": "Mật khẩu bạn tạo sẽ hiện ở đây. Chạm vào một mật khẩu để sao chép."
+    "pwgen_history_empty_hint": "Mật khẩu bạn tạo sẽ hiện ở đây. Chạm vào một mật khẩu để sao chép.",
+    "pw_locked_notice": "Mật khẩu đã bị khóa. Hãy mở khóa để thay đổi."
   }
 }

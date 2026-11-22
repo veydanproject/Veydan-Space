@@ -64,9 +64,9 @@
     <button type="button" class="label" onclick={() => (expanded = true)}>
       <Icon name="code" size={16} />
     </button>
-    <div class="strip">
+    <div class="strip hit-row">
       {#each rows.slice(0, 6) as name (name)}
-        <button type="button" class="pill" onclick={() => pick(name)}>{name}</button>
+        <button type="button" class="chip" onclick={() => pick(name)}>{name}</button>
       {/each}
       {#if rows.length === 0}<span class="muted">{$t('notes_placeholder_none')}</span>{/if}
     </div>
@@ -110,13 +110,10 @@
     width: 40px; height: 40px; flex-shrink: 0;
     border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text-2);
   }
-  .strip { flex: 1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  /* Its chips (.chip 32) keep their zones of 44 above and below while the row scrolls sideways (mobile.css .hit-row). */
+  .strip { flex: 1; display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; --hit-row: 6px; }
   .strip::-webkit-scrollbar { display: none; }
-  .pill {
-    flex-shrink: 0; min-height: 40px; padding: 0 var(--sp-3);
-    border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text);
-    font: inherit; font-size: var(--fs-base); font-family: var(--font-mono);
-  }
+  .strip .chip { flex-shrink: 0; }
   .muted { color: var(--text-3); }
   .list-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

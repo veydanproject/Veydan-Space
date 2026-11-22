@@ -23,10 +23,6 @@
 
   const PAGE_SIZE = 20;
 
-  /** The colour of a type's chip (`.tinted`): http/https blue, socks5 purple, ssh teal, tor pink. */
-  const TYPE_CHIP: Record<string, string> = {
-    http: 'var(--cat-blue)', https: 'var(--cat-blue)', socks5: 'var(--cat-purple)', ssh: 'var(--cat-teal)', tor: 'var(--cat-pink)',
-  };
   const STATUS_TONE: Record<string, PillTone> = { active: 'ok', failed: 'bad', unknown: 'neutral' };
 
   let loading = $state(false);
@@ -247,7 +243,7 @@
                 <span class="proxy-name">{proxy.name}</span>
               </td>
               <td class="col-type">
-                <span class="type-chip tinted" style:--chip={TYPE_CHIP[proxy.proxy_type]}>{proxy.proxy_type}</span>
+                <Pill text={proxy.proxy_type} />
               </td>
               <td class="col-host">
                 <ProxyAddress {proxy} {result} />
@@ -351,13 +347,6 @@
   .col-actions { width: 120px; }
 
   .proxy-name { font-weight: var(--fw-semibold); font-size: var(--fs-body); color: var(--text); display: block; overflow-wrap: anywhere; }
-
-  /* The type: a chip in the interface's font, its colour by `--chip` (`.tinted`). */
-  .type-chip {
-    display: inline-flex; align-items: center; height: 24px; padding: 0 var(--sp-3); box-sizing: border-box;
-    border: 1px solid; border-radius: var(--radius-pill);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold); white-space: nowrap;
-  }
 
   /* A narrow window: a row folds — the name and the type on top, the host under them, the state and the buttons at
      the right, the number and the country a line below. No column is lost. */

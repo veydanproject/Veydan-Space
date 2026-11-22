@@ -219,7 +219,7 @@
     <div class="loading"><span class="spinner" aria-hidden="true"></span></div>
   {:else}
     {#if isMobile}
-      <button class="m-btn-grad" type="button" onclick={() => { error = ''; scanning = true; }}>
+      <button class="btn btn-primary wide" type="button" onclick={() => { error = ''; scanning = true; }}>
         <Icon name="scan" size={18} />{$t('cloud_web_scan')}
       </button>
     {:else}

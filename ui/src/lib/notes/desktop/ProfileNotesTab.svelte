@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
+  import Pill from '$lib/core/ui/Pill.svelte';
   import { t, locale, countKey } from '$lib/core/i18n';
   import { relTime as fmtRelTime } from '$lib/core/utils';
   import NotesPanel from '$lib/notes/components/NotesPanel.svelte';
@@ -50,7 +51,7 @@
           <button class="note-card-inline" onclick={() => { noteToOpen = note.id; notesOpen = true; }}>
             <div class="note-card-top">
               <span class="note-title-inline">{note.title || $t('notes_untitled')}</span>
-              <span class="note-badge">{note.format.toUpperCase()}</span>
+              <Pill text={note.format.toUpperCase()} />
             </div>
             {#if note.preview}
               <span class="note-preview-inline">{note.preview}</span>
@@ -138,15 +139,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     flex: 1;
-  }
-  .note-badge {
-    font-size: var(--fs-xs);
-    font-weight: var(--fw-semibold);
-    color: var(--text-2);
-    background: var(--surface-2);
-    border-radius: var(--radius-pill);
-    padding: var(--sp-0-5) var(--sp-1);
-    flex-shrink: 0;
   }
   .note-preview-inline {
     font-size: var(--fs-xs);

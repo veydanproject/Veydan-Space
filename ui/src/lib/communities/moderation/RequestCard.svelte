@@ -71,7 +71,7 @@
 
 <li class="req-card" class:selected aria-label={facts.name}>
   <div class="list-row still head" class:dense={!phone}>
-    <input class="tick" type="checkbox" checked={selected} disabled={busy} onchange={ontick} aria-label={$t('chan_req_select', { name: facts.name })} />
+    <label class="tick-zone"><input class="tick" type="checkbox" checked={selected} disabled={busy} onchange={ontick} aria-label={$t('chan_req_select', { name: facts.name })} /></label>
     <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={phone ? 48 : 36} />
     <div class="list-row-body">
       <span class="list-row-name" title={facts.name}>{facts.name}</span>

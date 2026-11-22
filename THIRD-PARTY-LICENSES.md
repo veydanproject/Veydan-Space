@@ -349,7 +349,7 @@ Thank you to the authors of the following Cargo crates:
 | foreign-types-macros | 0.2.3 | MIT OR Apache-2.0 * |
 | foreign-types-shared | 0.1.1 | MIT OR Apache-2.0 * |
 | foreign-types-shared | 0.3.1 | MIT OR Apache-2.0 * |
-| form_urlencoded | 1.2.2 | MIT OR Apache-2.0 |
+| form_urlencoded | 1.2.3 | MIT OR Apache-2.0 |
 | fs_extra | 1.3.0 | MIT |
 | fs2 | 0.4.3 | MIT OR Apache-2.0 |
 | fsevent-sys | 4.1.0 | MIT * |
@@ -862,7 +862,7 @@ Thank you to the authors of the following Cargo crates:
 | universal-hash | 0.6.1 | MIT OR Apache-2.0 |
 | universal-time | 0.3.1 | MIT |
 | untrusted | 0.9.0 | ISC |
-| url | 2.5.8 | MIT OR Apache-2.0 |
+| url | 2.5.9 | MIT OR Apache-2.0 |
 | urlencoding | 2.1.3 | MIT |
 | urlpattern | 0.3.0 | MIT |
 | utf-8 | 0.7.6 | MIT OR Apache-2.0 |

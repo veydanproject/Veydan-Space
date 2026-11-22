@@ -119,7 +119,7 @@
         <div class="chips">
           {#each nav.all_workspaces as ws (ws.id)}
             <button type="button" class="chip" class:active={bindings.includes(`workspace:${ws.id}`)} onclick={() => (bindings = toggle(bindings, `workspace:${ws.id}`))}>
-              <span class="dot" style:background={ws.color}></span>{ws.name}
+              <span class="status-dot" style:background={ws.color}></span>{ws.name}
             </button>
           {/each}
           {#each nav.all_profiles as p (p.id)}
@@ -152,7 +152,7 @@
         <div class="chips">
           {#each nav.tags as tag (tag.id)}
             <button type="button" class="chip" class:active={tags.includes(tag.name)} onclick={() => (tags = toggle(tags, tag.name))}>
-              <span class="dot" style:background={tag.color}></span>{tag.name}
+              <span class="status-dot" style:background={tag.color}></span>{tag.name}
             </button>
           {/each}
         </div>
@@ -193,7 +193,6 @@
   /* The common .chip, 32 high, --sp-2 apart: the zones of neighbours do not overlap. */
   .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
   .chip { min-height: 32px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
   .trow {
     display: flex;
     align-items: center;

@@ -2,10 +2,10 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import { leave } from '$lib/core/ui/back';
   import type { TotpPreview } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
   import { formatError } from '$lib/core/utils';
@@ -15,6 +15,9 @@
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
   import { syncTotpNotes } from '$lib/pass/totp-notes';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
+  import { leaveGuard } from '$lib/pass/mobile/leaveGuard';
+  import { readQr } from '$lib/pass/qr';
+  import { takeScanned } from '$lib/pass/store/scanned';
   import { onMount } from 'svelte';
 
   type Mode = 'manual' | 'uri';
@@ -28,10 +31,14 @@
   let period = $state(30);
   let advanced = $state(false);
 
-  // Scanner hands the decoded otpauth link over via ?uri=
-  const scanned = page.url.searchParams.get('uri') ?? '';
+  // The scanner hands the otpauth link over in memory, not in the address (its secret stays out of the history).
+  const scanned = takeScanned();
   let uri = $state(scanned);
   if (scanned) mode = 'uri';
+  /** «⋮» of the head: a QR from an image (design 16). */
+  let menu = $state(false);
+  let qrLoading = $state(false);
+  let fileInput = $state<HTMLInputElement | null>(null);
   let preview = $state<TotpPreview | null>(null);
 
   let tags = $state<string[]>([]);
@@ -43,6 +50,48 @@
   const errField = $derived(
     !error ? '' : error === $t('totp_error_name') ? 'name' : error === $t('totp_error_secret') ? 'secret' : error === $t('totp_error_invalid') && mode === 'uri' ? 'uri' : '',
   );
+
+  const guard = leaveGuard(
+    () =>
+      !!(name.trim() || issuer.trim() || secret.trim() || uri.trim()) ||
+      algorithm !== 'SHA1' ||
+      digits !== 6 ||
+      period !== 30 ||
+      tags.length > 0 ||
+      noteIds.length > 0,
+  );
+
+  /** The arrow and «Отмена»: back to the list once the question allows it. */
+  async function cancel() {
+    if (await guard.mayLeave()) void leave('/totp');
+  }
+
+  /** «Выбрать изображение»: the QR of a screenshot becomes the link the form adds, as the computer's QR tab. */
+  async function pickedImage(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    menu = false;
+    error = '';
+    qrLoading = true;
+    try {
+      const data = await readQr(file);
+      if (!data) {
+        error = $t('totp_qr_not_found');
+        return;
+      }
+      if (!data.startsWith('otpauth://')) {
+        error = $t('totp_scan_not_otpauth');
+        return;
+      }
+      uri = data;
+      mode = 'uri';
+    } catch (err) {
+      error = formatError(err);
+    } finally {
+      qrLoading = false;
+      if (fileInput) fileInput.value = '';
+    }
+  }
 
   onMount(() => {
     // Notes to link come through the catalog; a product without them offers none.
@@ -78,7 +127,8 @@
           : { name: name.trim(), issuer: issuer.trim() || null, uri: uri.trim(), tags },
       );
       await syncTotpNotes(created.id, noteIds, []);
-      goto('/totp', { replaceState: true });
+      guard.pass();
+      void leave('/totp');
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -89,10 +139,13 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="icon-btn" href="/totp" aria-label={$t('common_back')}>
+    <button type="button" class="icon-btn" onclick={cancel} aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
-    </a>
+    </button>
     <h1 class="m-title">{$t('totp_add_title')}</h1>
+    <button type="button" class="icon-btn" onclick={() => (menu = true)} disabled={qrLoading} aria-label={$t('nav_more')}>
+      <Icon name={qrLoading ? 'loader' : 'more-vertical'} size={22} class={qrLoading ? 'spin' : ''} />
+    </button>
   </div>
 
   <div class="m-body">
@@ -105,7 +158,8 @@
       <Icon name="link" size={14} />
       {$t('totp_tab_uri')}
     </button>
-    <a class="seg-btn" href="/totp/scan">
+    <!-- The scanner takes this page's place and gives it back with the link: one step of the history. -->
+    <a class="seg-btn" href="/totp/scan" data-sveltekit-replacestate>
       <Icon name="scan" size={14} />
       {$t('totp_tab_scan')}
     </a>
@@ -194,15 +248,29 @@
   {/if}
 
   </div>
-  <!-- Save in the page's foot, the error that is not a field's over it. -->
+  <!-- «Отмена | Сохранить» in the page's foot, over the keyboard; the error that is not a field's over them. -->
   <div class="page-foot">
     {#if error && !errField}<Notice tone="danger">{error}</Notice>{/if}
+    <button type="button" class="btn btn-ghost" onclick={cancel} disabled={saving}>{$t('common_cancel')}</button>
     <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
       <Icon name="check" size={18} />
       {$t('common_save')}
     </button>
   </div>
 </div>
+
+<input bind:this={fileInput} type="file" accept="image/*" hidden onchange={pickedImage} />
+<BottomSheet open={menu} title={$t('totp_add_title')} onclose={() => (menu = false)}>
+  <div class="m-list">
+    <button type="button" class="list-row dense" onclick={() => fileInput?.click()}>
+      <Icon name="image" size={20} />
+      <span class="list-row-body">
+        <span class="list-row-label">{$t('totp_qr_select')}</span>
+        <span class="list-row-line">{$t('totp_qr_hint')}</span>
+      </span>
+    </button>
+  </div>
+</BottomSheet>
 
 <style>
   .mode {

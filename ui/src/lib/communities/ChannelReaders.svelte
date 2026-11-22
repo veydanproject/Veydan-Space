@@ -16,7 +16,7 @@
   import Icon from '$lib/core/Icon.svelte';
   import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { Avatar, fold, longpress, matchesQuery, stamp } from '$lib/messenger/seams/shared';
+  import { Avatar, fold, longpress, matchesQuery, onPhone, stamp } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
   import { nameStore, shortKey } from './names.svelte';
@@ -33,6 +33,8 @@
     hasMenu: (s: StaffView) => boolean;
   }
   let { detail, onmenu, hasMenu }: Props = $props();
+
+  const phone = onPhone();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const cid = $derived(detail.channel.id);
@@ -133,6 +135,18 @@
   {/if}
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
+  {#snippet reader(r: ReaderView, s: StaffView, nm: string)}
+    <Avatar url={nameStore.picture(r.pubkey)} label={nm} seed={r.pubkey} size={36} />
+    <span class="list-row-body">
+      <span class="list-row-name">{nm}</span>
+      <code class="list-row-line">{shortKey(r.pubkey)}</code>
+      {#if chips(r).length}
+        <span class="lvls" title={$t('chan_levels')}>{#each chips(r) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
+      {/if}
+    </span>
+    {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>{/if}
+  {/snippet}
+
   {#snippet moreButton()}
     <button class="more" disabled={loading} aria-busy={loading} onclick={more}>
       {#if loading}<span class="spinner" aria-hidden="true"></span>{/if}{$t('chan_readers_more')}
@@ -147,18 +161,17 @@
           {@const s = staffOf(detail, r.pubkey)}
           {@const nm = nameStore.label(r.pubkey)}
           <li>
-            <button class="list-row dense" class:still={!hasMenu(s)} title={$t('chan_readers_since', { date: stamp(r.since) })}
-              oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>
-              <Avatar url={nameStore.picture(r.pubkey)} label={nm} seed={r.pubkey} size={36} />
-              <span class="list-row-body">
-                <span class="list-row-name">{nm}</span>
-                <code class="list-row-line">{shortKey(r.pubkey)}</code>
-                {#if chips(r).length}
-                  <span class="lvls" title={$t('chan_levels')}>{#each chips(r) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
-                {/if}
-              </span>
-              {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>{/if}
-            </button>
+            <!-- A phone's row with acts has «⋮» at its end (design 13), beside its main button; a computer's stays one button. -->
+            {#if phone && hasMenu(s)}
+              <div class="list-row dense">
+                <button class="list-row-main" title={$t('chan_readers_since', { date: stamp(r.since) })}
+                  oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>{@render reader(r, s, nm)}</button>
+                <button type="button" class="icon-btn row-more" onclick={(e) => onmenu(e, s)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
+              </div>
+            {:else}
+              <button class="list-row dense" class:still={!hasMenu(s)} title={$t('chan_readers_since', { date: stamp(r.since) })}
+                oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>{@render reader(r, s, nm)}</button>
+            {/if}
           </li>
         {/each}
       </ul>

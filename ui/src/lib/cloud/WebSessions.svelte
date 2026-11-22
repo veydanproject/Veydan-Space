@@ -20,6 +20,7 @@
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import RowList from '$lib/cloud/RowList.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import { ask } from '$lib/core/ui/confirm.svelte';
 
   onMount(() => {
     void webStore.load();
@@ -33,6 +34,12 @@
     return key ? $t(key) : e.message || e.code;
   });
 
+  /** Every session of the cabinet ends at once: asked first (design 18); a single «Завершить» is not. */
+  async function endAll() {
+    const label = $t('cloud_web_end_all');
+    if (await ask({ title: label, confirmLabel: label })) await webStore.revoke({ all: true });
+  }
+
   function line(created: number, seen: number): string {
     return $t('cloud_web_session_sub', { since: dateOf(created, $locale), seen: dateOf(seen, $locale) });
   }
@@ -43,17 +50,17 @@
   {#each sessions as session (session.id)}
     <NavRow variant="list" icon="world" title={originLine(session.country, session.ua_family, $t, $locale)} sub={line(session.created_at, session.last_seen_at)}>
       {#snippet end()}
-        <button class="btn btn-danger-soft btn-sm" type="button" disabled={webStore.busy} onclick={() => webStore.revoke({ id: session.id })}>{$t('cloud_web_end')}</button>
+        <button class="btn btn-danger-soft" class:btn-sm={!isMobile} type="button" disabled={webStore.busy} onclick={() => webStore.revoke({ id: session.id })}>{$t('cloud_web_end')}</button>
       {/snippet}
     </NavRow>
   {/each}
   {#if sessions.length > 1}
-    <NavRow variant="list" icon="x" tone="bad" danger title={$t('cloud_web_end_all')} onclick={() => webStore.revoke({ all: true })} disabled={webStore.busy} />
+    <NavRow variant="list" icon="x" tone="bad" danger title={$t('cloud_web_end_all')} onclick={endAll} disabled={webStore.busy} />
   {/if}
   {#if webStore.frozenUntil}
     <NavRow variant="list" icon="lock" tone="warn" title={$t('cloud_web_frozen', { date: dateOf(webStore.frozenUntil, $locale) })} sub={$t('cloud_web_frozen_sub')}>
       {#snippet end()}
-        <button class="btn btn-ghost btn-sm" type="button" disabled={webStore.busy} onclick={() => webStore.unfreeze()}>{$t('cloud_web_unfreeze')}</button>
+        <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" disabled={webStore.busy} onclick={() => webStore.unfreeze()}>{$t('cloud_web_unfreeze')}</button>
       {/snippet}
     </NavRow>
   {/if}

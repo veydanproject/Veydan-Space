@@ -37,7 +37,8 @@
 //!   itself; the network changing under the engine is a restart at once.
 //!   Only the caller makes offers within a call; the called side asks
 //!   with `call.restart`. The pieces of a restart leave without waiting
-//!   for candidates (the first offer and answer wait [`GATHER_WAIT`]):
+//!   for candidates (the first offer and answer wait for the first
+//!   address of a relay, [`GATHER_WAIT`] at most):
 //!   the candidates trickle after them in `call.ice`. A restart whose
 //!   pieces have not come within [`RESTART_SETTLE`] was lost on the
 //!   relays: the call talks on when the way still works, or is
@@ -81,7 +82,7 @@ use crate::call::{
     UI_EVENT_CALL_STATS,
 };
 use crate::engine::{
-    CameraInfo, ConnectionState, IceCandidate, Media, MediaEngine, PairKind, PushedFrame, RelayPolicy, ScreenInfo, SdpKind, Session,
+    CameraInfo, ConnectionState, IceCandidate, IceServer, Media, MediaEngine, PairKind, PushedFrame, RelayPolicy, ScreenInfo, SdpKind, Session,
     SessionEvent, VideoFrame, VideoInput, VideoSettings, VideoTrack,
 };
 use crate::feed::Feed;
@@ -171,11 +172,17 @@ pub const VIDEO_FPS: u32 = 30;
 /// none: switching goes between these two.
 const PHONE_CAMERAS: [&str; 2] = ["front", "back"];
 
-/// How long the first offer or answer of a call waits for candidates
-/// before it leaves. Later ones follow in `call.ice`. The pieces of a
-/// restart do not wait: every second counts then, and the candidates
-/// trickle.
+/// How long the first offer or answer of a call waits at most for
+/// candidates before it leaves. It leaves sooner, on the first candidate
+/// of a relay ([`is_relay`]): the engine gathers for as long as the call
+/// lasts and never says it is done, and by the time a node has given an
+/// address the host's and the reflexive ones are there. Later ones
+/// follow in `call.ice`. The pieces of a restart do not wait: every
+/// second counts then, and the candidates trickle.
 pub const GATHER_WAIT: Duration = Duration::from_millis(1500);
+/// The same wait of a call that has no node to ask: the addresses of the
+/// device itself are all there is, and they are found at once.
+pub const GATHER_ALONE: Duration = Duration::from_millis(200);
 /// How long a lost connection (`Disconnected` from the engine) is given to
 /// come back by itself before a restart is made. Short: the engine has
 /// waited for the peer's answers for seconds already by the time it says
@@ -234,6 +241,9 @@ enum Timer {
 
 struct Current {
     view: CallView,
+    /// When this device began with the call (I called, or its invitation
+    /// came), for the lines of [`Current::mark`].
+    began: std::time::Instant,
     /// Timers and engine events of an older generation are not for this call.
     gen: u64,
     policy: RelayPolicy,
@@ -307,6 +317,32 @@ struct Early {
     /// after an invitation that still says `video`, and the note may
     /// overtake it. With it, whether that video is a screen.
     video: Option<(bool, bool)>,
+    /// The caller's candidates (`call.ice`) that came before the
+    /// invitation: its first offer leaves with the first candidates
+    /// found, the rest follow at once, and a relay may hand them over
+    /// the other way round. No more than [`EARLY_ICE_KEPT`].
+    ice: Vec<IceCandidate>,
+}
+
+/// Candidates kept for an invitation that has not come: a call finds a
+/// few dozen at most, and anyone may send `call.ice` of a call id.
+const EARLY_ICE_KEPT: usize = 64;
+
+/// The wait of the first piece of a call given `servers`.
+fn gather_wait(servers: &[IceServer]) -> Duration {
+    if servers.is_empty() {
+        GATHER_ALONE
+    } else {
+        GATHER_WAIT
+    }
+}
+
+/// Whether `candidate` is an address a node relays through (`typ relay`
+/// in its line): the last kind to be found, and the one that works
+/// through any network.
+fn is_relay(candidate: &IceCandidate) -> bool {
+    let mut words = candidate.candidate.split_ascii_whitespace();
+    words.any(|w| w == "typ") && words.next() == Some("relay")
 }
 
 #[derive(Default)]
@@ -587,6 +623,8 @@ impl CallService {
         };
         cur.view.nodes = picked.nodes;
         cur.view.limits = picked.limits;
+        cur.mark("nodes picked");
+        let gather = gather_wait(&picked.servers);
         let session = match inner.engine.create_session(picked.servers, policy, media).await {
             Ok(s) => s,
             Err(e) => {
@@ -607,13 +645,24 @@ impl CallService {
         cur.session = Some(session);
         cur.offers = 1;
         cur.first = Some((FirstPiece::Invite { restart: false }, offer));
-        inner.schedule(GATHER_WAIT, Timer::Gather, gen);
+        cur.mark("offer made");
+        inner.schedule(gather, Timer::Gather, gen);
         if media == Media::Video {
             // The camera, before the invitation leaves; a camera that
             // fails leaves an audio call, told so with the invitation.
             inner.auto_video(&mut st).await;
         }
         Ok(st.current.as_ref().expect("checked above").view.clone())
+    }
+
+    /// A call with `peer` may follow (its chat was opened): the nodes it
+    /// would go through are asked ahead, so that the call does not wait
+    /// for them. Nothing for a peer who cannot be called.
+    pub async fn warm(&self, peer: impl Into<DmPeer>) {
+        let chat = peer.into();
+        if self.inner.dm.calls_allowed(&chat).await.unwrap_or(false) {
+            self.inner.warm(chat.server()).await;
+        }
     }
 
     /// Take the ringing call.
@@ -628,6 +677,7 @@ impl CallService {
             };
             cur.view.phase = Phase::Connecting;
             cur.view.answered_at = Some(now);
+            cur.mark("answer pressed");
             let (gen, policy, media, view) = (cur.gen, cur.policy, cur.view.media, cur.view.clone());
             inner.feed.answered(call_id, now).await?;
             inner.emit(vec![state_event(&view)]);
@@ -642,6 +692,8 @@ impl CallService {
             let picked = picked?;
             cur.view.nodes = picked.nodes;
             cur.view.limits = picked.limits;
+            cur.mark("nodes picked");
+            let gather = gather_wait(&picked.servers);
             let session = inner.engine.create_session(picked.servers, policy, media).await?;
             inner.pump(session.events(), gen);
             let offer = cur.remote_offer.take().ok_or_else(|| MessengerError::Invalid("no offer".into()))?;
@@ -662,7 +714,8 @@ impl CallService {
             cur.session = Some(session);
             cur.offers = 1;
             cur.first = Some((FirstPiece::Answer, answer));
-            inner.schedule(GATHER_WAIT, Timer::Gather, gen);
+            cur.mark("answer made");
+            inner.schedule(gather, Timer::Gather, gen);
             // The caller may be gone by now: the answer has its time too.
             inner.arm_connect(cur);
             Ok(cur.view.clone())
@@ -844,8 +897,19 @@ impl CallService {
 }
 
 impl Current {
+    /// A line of the log that says how long this device has been at the
+    /// call when it reached `stage`: where the seconds of a slow start go
+    /// (the owner, 2026-11-22). On a phone the lines are in its log
+    /// (`adb logcat -s veydan`); nothing of the call but the head of its
+    /// id is said.
+    fn mark(&self, stage: &str) {
+        let id: String = self.view.call_id.chars().take(8).collect();
+        eprintln!("messenger call: timing {id} {stage} +{} ms", self.began.elapsed().as_millis());
+    }
+
     fn new(view: CallView, gen: u64, policy: RelayPolicy) -> Self {
         Self {
+            began: std::time::Instant::now(),
             gen,
             policy,
             session: None,
@@ -937,6 +1001,17 @@ impl Inner {
             Some(id) => private_nodes(&self.store, id).await?,
         };
         self.nodes.pick(&nodes, policy, now).await
+    }
+
+    /// The nodes [`Inner::pick`] would ask for a call of the chat on
+    /// `server` are asked now, and not waited for: the call that follows
+    /// finds their answers kept ([`NodeClient::warm`]).
+    async fn warm(&self, server: Option<&str>) {
+        let nodes = match server {
+            None => self.servers.call_nodes().await.unwrap_or_default(),
+            Some(id) => private_nodes(&self.store, id).await.unwrap_or_default(),
+        };
+        self.nodes.warm(&nodes, self.clock.now().secs());
     }
 
     async fn video_quality(&self) -> Result<VideoQuality> {
@@ -1128,6 +1203,10 @@ impl Inner {
     async fn flush_first(&self, st: &mut State) {
         let Some(cur) = st.current.as_mut() else { return };
         let Some((piece, sdp)) = cur.first.take() else { return };
+        cur.mark(match piece {
+            FirstPiece::Invite { .. } => "invitation leaves",
+            FirstPiece::Answer => "answer leaves",
+        });
         // What came while the piece waited goes with it.
         let mut ice = std::mem::take(&mut cur.gathered);
         ice.append(&mut cur.pending_ice);
@@ -1323,7 +1402,13 @@ impl Inner {
         match ev {
             SessionEvent::LocalCandidate(c) => {
                 if cur.first.is_some() {
+                    // A relay gave an address: the piece has what it needs
+                    // and leaves, the rest trickles.
+                    let enough = is_relay(&c);
                     cur.gathered.push(c);
+                    if enough {
+                        self.flush_first(&mut st).await;
+                    }
                 } else {
                     cur.pending_ice.push(c);
                     if !cur.flush_scheduled {
@@ -1336,6 +1421,7 @@ impl Inner {
             SessionEvent::ConnectionState(state) => match state {
                 ConnectionState::Connected => {
                     let now = self.clock.now().secs();
+                    cur.mark("connected");
                     cur.connected = true;
                     cur.restart_tried = false;
                     cur.retried = false;
@@ -1571,8 +1657,10 @@ impl Inner {
                 }
                 let gen = st.next_gen();
                 let mut view = CallView::in_chat(call_id.clone(), peer_hex.clone(), server, Direction::In, media, Phase::Incoming, at);
-                // The peer's word of its video that overtook the invitation.
-                if let Some((on, screen)) = st.take_early(&call_id).and_then(|e| e.video) {
+                // The peer's word of its video that overtook the invitation,
+                // and its candidates that did.
+                let early = st.take_early(&call_id).unwrap_or_default();
+                if let Some((on, screen)) = early.video {
                     view.video_remote = on;
                     view.video_remote_screen = screen;
                 }
@@ -1580,8 +1668,13 @@ impl Inner {
                 let mut cur = Current::new(view.clone(), gen, policy);
                 cur.remote_offer = Some(sdp);
                 cur.remote_ice = ice;
+                cur.remote_ice.extend(early.ice);
+                cur.mark("invitation came");
                 cur.peer_live_restart = live_restart;
                 st.current = Some(cur);
+                // While it rings the nodes are asked, so that the answer
+                // does not wait for them.
+                self.warm(server).await;
                 let mut effects = self.feed.begin_in(&call_id, &peer_hex, server, Direction::In, media, at).await?;
                 effects.push(Effect::Emit(UiEvent { name: UI_EVENT_CALL_INCOMING.into(), payload: serde_json::json!({ "call": view }) }));
                 self.emit(effects);
@@ -1727,6 +1820,7 @@ impl Inner {
                     let _ = session.add_ice(c).await;
                 }
                 cur.remote_ice.clear();
+                cur.mark("answer taken");
                 cur.taken_answer = Some(rumor.to_string());
                 cur.answered_offers = cur.offers;
                 cur.view.phase = Phase::Connecting;
@@ -1753,6 +1847,12 @@ impl Inner {
                     } else {
                         cur.remote_ice.extend(ice);
                     }
+                } else if !st.recent.contains(&call_id) {
+                    // Before its invitation (the relays keep no order):
+                    // kept for the call the invitation makes.
+                    let kept = &mut st.early_mut(&call_id).ice;
+                    let room = EARLY_ICE_KEPT.saturating_sub(kept.len());
+                    kept.extend(ice.into_iter().take(room));
                 }
                 Ok(Followup::None)
             }

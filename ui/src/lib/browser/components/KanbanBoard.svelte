@@ -306,7 +306,7 @@
         <Icon name="x" size={12} />
       </button>
     {/if}
-    <span class="count-badge">{profiles.filter(filterProfile).length} / {profiles.length}</span>
+    <span class="count-pill sm quiet filter-count">{profiles.filter(filterProfile).length} / {profiles.length}</span>
   </div>
 
   <!-- Board -->
@@ -321,7 +321,7 @@
         role="list"
       >
         <div class="col-header">
-          <span class="col-dot" style="background:{col.color}"></span>
+          <span class="status-dot" style="background:{col.color}"></span>
           {#if editingCol?.id === col.id}
             <!-- The name and its colours are one edit: it saves when the focus leaves both. -->
             <div class="col-edit" bind:this={colEdit} onfocusout={(e) => { if (!keepEditing(e)) saveEditCol(); }}>
@@ -336,7 +336,7 @@
             </div>
           {:else}
             <span class="col-title">{col.name}</span>
-            <span class="col-count">{cards.length}</span>
+            <span class="count-pill sm quiet">{cards.length}</span>
             <button class="icon-btn" onclick={() => startEditCol(col)} title={$t('kanban_edit_column')} aria-label={$t('kanban_edit_column')}>
               <Icon name="pencil" size={11} />
             </button>
@@ -366,10 +366,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="running-dot"></span>
+                    <span class="status-dot ok pulse"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -397,9 +397,9 @@
         role="list"
       >
         <div class="col-header">
-          <span class="col-dot" style="background:var(--cat-blue)"></span>
+          <span class="status-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_unassigned')}</span>
-          <span class="col-count">{cards.length}</span>
+          <span class="count-pill sm quiet">{cards.length}</span>
         </div>
         <div class="col-cards">
           {#each cards as profile (profile.id)}
@@ -421,10 +421,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="running-dot"></span>
+                    <span class="status-dot ok pulse"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -446,9 +446,9 @@
     {#if columns.length === 0}
       <div class="column" role="list">
         <div class="col-header">
-          <span class="col-dot" style="background:var(--cat-blue)"></span>
+          <span class="status-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_all_profiles')}</span>
-          <span class="col-count">{profiles.filter(filterProfile).length}</span>
+          <span class="count-pill sm quiet">{profiles.filter(filterProfile).length}</span>
         </div>
         <div class="col-cards">
           {#each profiles.filter(filterProfile).sort((a,b)=>a.kanban_order-b.kanban_order) as profile (profile.id)}
@@ -466,10 +466,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="running-dot"></span>
+                    <span class="status-dot ok pulse"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -545,7 +545,8 @@
 <style>
   .kanban-wrap { display: flex; flex-direction: column; gap: var(--sp-3); height: 100%; overflow: hidden; }
 
-  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear/.count-badge из base.css */
+  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear из base.css; счёт «x / y» — .count-pill справа */
+  .filter-count { margin-left: auto; }
 
   .board {
     display: grid;
@@ -573,14 +574,7 @@
     padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border);
     min-height: 44px; flex-wrap: wrap;
   }
-  .col-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-body); flex: 1; }
-  .col-count {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; border-radius: var(--radius-pill);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    background: var(--surface-2); color: var(--text-2);
-  }
 
   .col-edit-input {
     flex: 1; background: var(--surface-3); border: 1px solid var(--accent); border-radius: var(--radius-field);
@@ -609,19 +603,7 @@
   .card-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .card-top-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); }
   .card-name { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .running-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 
-  .totp-badge {
-    background: var(--accent-tint);
-    color: var(--accent-text-2);
-    border: 1px solid var(--accent-tint-border);
-    border-radius: var(--radius-badge);
-    font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1-5);
-    font-weight: var(--fw-semibold);
-    line-height: var(--lh-snug);
-    flex-shrink: 0;
-  }
   .card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
   .meta-item { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-dim); }
   /* OS / fingerprint preset chip */

@@ -25,7 +25,8 @@
   /* Under the sheets of the phone (50), over its screens and its bar. */
   z-index: calc(var(--z-base) + 40);
   inset: 0;
-  padding: var(--sat, 0px) 0 var(--sab, 0px);
+  /* The keyboard covers the bottom (--kb, the gesture stripe under it): the step's foot stands on it. */
+  padding: var(--sat, 0px) 0 max(var(--sab, 0px), var(--kb, 0px));
   align-items: stretch;
   justify-content: stretch;
   flex-direction: column;

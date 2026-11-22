@@ -233,6 +233,10 @@ async fn answer(app: &tauri::AppHandle, push: tauri_plugin_veydan_call::VoipPush
         Ok(outcome) => verdict(outcome),
         Err(_) => Verdict::Failed(format!("not opened within {} s", DESCRIBE_WITHIN.as_secs())),
     };
+    // What the push brought was left for the runtime (`describe`): taken
+    // now and not at the next beat, so that an answer finds the call
+    // there and does not wait for a relay to bring it.
+    rt.take_pushed().await;
     let done = match verdict {
         Verdict::Ring(notice) => {
             eprintln!("messenger call: a VoIP push ({trace}) rings the call {}", notice.call_id);

@@ -133,6 +133,7 @@
     "totp_scan_unavailable": "A câmera não está disponível. Permita o acesso à câmera nas configurações do sistema ou adicione o código pelo link.",
     "pwgen_history_off_hint": "As novas senhas não são salvas.",
     "pwgen_history_off_kept": "As senhas salvas antes continuam neste dispositivo: {n}.",
-    "pwgen_history_empty_hint": "As senhas geradas aparecem aqui. Toque em uma para copiá-la."
+    "pwgen_history_empty_hint": "As senhas geradas aparecem aqui. Toque em uma para copiá-la.",
+    "pw_locked_notice": "As senhas estão bloqueadas. Desbloqueie para fazer alterações."
   }
 }

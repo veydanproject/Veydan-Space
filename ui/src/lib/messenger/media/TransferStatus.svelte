@@ -283,9 +283,10 @@
   .failed .bar span { background: var(--danger-text); }
   .spin :global(svg) { animation: spin 1.1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* A phone: cancel and pause are buttons of 40, their zone 44 (design 02, 15). */
   @media (pointer: coarse) {
-    .act { padding: 9px; }
-    .act.worded { padding: var(--sp-2) var(--sp-2-5); }
-    .mini { width: 30px; height: 30px; }
+    .act { min-width: 40px; height: 40px; justify-content: center; padding: 0 var(--sp-2); }
+    .act.worded { padding: 0 var(--sp-2-5); }
+    .mini { width: 40px; height: 40px; }
   }
 </style>

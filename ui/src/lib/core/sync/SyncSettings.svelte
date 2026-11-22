@@ -565,7 +565,7 @@
         <div class="presets">
           <span class="hint">{$t('settings_sync_interval_presets')}</span>
           {#each presets as sec (sec)}
-            <button type="button" class="chip" class:on={cfg.interval_sec === sec} onclick={() => applyPreset(sec)}>{presetLabel(sec)}</button>
+            <button type="button" class="chip" class:active={cfg.interval_sec === sec} onclick={() => applyPreset(sec)}>{presetLabel(sec)}</button>
           {/each}
         </div>
         {#if remoteFastWarn}
@@ -674,12 +674,6 @@
   .unit { flex: 0 0 180px; }
   .browse { height: var(--control-h-lg); flex-shrink: 0; }
   .presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-  .chip {
-    font-size: var(--fs-sm); height: var(--control-h-sm); padding: 0 var(--sp-3); border-radius: var(--radius-pill);
-    border: 1px solid var(--border); background: var(--surface-3); color: var(--text-dim); cursor: pointer;
-  }
-  .chip:hover { color: var(--text); border-color: var(--border-2); }
-  .chip.on { color: var(--accent-text); background: var(--accent-bg); border-color: var(--accent-border); }
   .warn { font-size: var(--fs-sm); color: var(--warn-text); margin: 0; }
   .input:focus { border-color: var(--accent-border); outline: none; }
   .hint { line-height: var(--lh-snug); margin: 0; }

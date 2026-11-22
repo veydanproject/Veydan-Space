@@ -22,6 +22,10 @@ import { contactLabel, isTauriHost, messengerApi, type MessengerContact, type Me
 export { default as Avatar } from '../contacts/Avatar.svelte';
 export { default as MessageContent } from '../content/MessageContent.svelte';
 export { default as ShareDialog } from '../content/ShareDialog.svelte';
+/** «Выбрать текст»: the words of one message in a window of their own, as a chat's menu opens it. */
+export { default as SelectTextDialog } from '../content/SelectTextDialog.svelte';
+/** The message that window shows. */
+export type { MessengerMessage } from '../api';
 /** «Поделиться…» into another app: the sheet of the ways out and the words of a channel's link. */
 export { default as ShareOutSheet } from '../content/ShareOutSheet.svelte';
 export { channelShareItem } from '../content/shareOut';

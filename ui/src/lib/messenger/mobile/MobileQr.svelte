@@ -37,9 +37,7 @@
 <!-- The middle scrolls; the actions stay in the page's foot (mobile.css .page-foot, the owner's rule). -->
 <MobileFrame title={$t('msg_inv_my_qr')} onback={() => void leave(BASE)} scroll={false}>
   <div class="mid">
-    <div class="pad">
-      <MyQr bind:foot onchat={(id) => goto(chatHref(id))} onmanual={() => (manual = true)} {scan} onscanclosed={() => void leave(BASE)} />
-    </div>
+    <MyQr bind:foot onchat={(id) => goto(chatHref(id))} onmanual={() => (manual = true)} {scan} onscanclosed={() => void leave(BASE)} />
   </div>
   {#if foot}<div class="page-foot">{@render foot()}</div>{/if}
 </MobileFrame>
@@ -47,7 +45,6 @@
 <NewChatDialog bind:open={manual} onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
 
 <style>
-  /* The frame's own scroll and padding, now of the middle alone. */
-  .mid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3); }
-  .pad { padding: var(--sp-4); }
+  /* The frame's own scroll and padding, now of the middle alone: one padding of 16, not 12 and 16 again. */
+  .mid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-4); }
 </style>

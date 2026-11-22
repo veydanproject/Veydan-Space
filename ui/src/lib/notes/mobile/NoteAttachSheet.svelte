@@ -18,6 +18,8 @@
     updatedAt: string;
     folderLabel: string;
     tags: string[];
+    /** A tag's colour, as its chip on the note page has. */
+    tagColor?: (name: string) => string | undefined;
     /** Vault uploads/downloads in flight, keyed by `note_id/name`. */
     transfers?: Map<string, AttachmentTransfer>;
     onclose: () => void;
@@ -33,7 +35,7 @@
   }
 
   let {
-    open, attachments, thumbs, createdAt, updatedAt, folderLabel, tags, transfers = new Map(),
+    open, attachments, thumbs, createdAt, updatedAt, folderLabel, tags, tagColor = () => undefined, transfers = new Map(),
     onclose, onfile, onimage, oninsert, onremove, oncancel, onfetch, onsave,
   }: Props = $props();
 
@@ -104,7 +106,7 @@
             {/if}
             <span class="meta">
               <span class="name">{a.name}</span>
-              <span class="size"><span class="dot"></span>{statusLabel(a, x)}</span>
+              <span class="size"><span class="status-dot ok"></span>{statusLabel(a, x)}</span>
             </span>
           </button>
           {#if st === 'busy'}
@@ -148,7 +150,7 @@
     <dt>{$t('notes_meta_tags')}</dt>
     <dd>
       {#if tags.length}
-        <span class="m-chips">{#each tags as name (name)}<span class="m-chip small">#{name}</span>{/each}</span>
+        <span class="chip-row">{#each tags as name (name)}<span class="badge tinted" style:--chip={tagColor(name)}>#{name}</span>{/each}</span>
       {:else}—{/if}
     </dd>
   </dl>
@@ -216,13 +218,12 @@
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .size { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-xs); color: var(--text-3); }
   .size.err { color: var(--danger-text); }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-text); flex-shrink: 0; }
-  .row.remote .dot { background: var(--text-3); }
+  .row.remote .status-dot { background: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }
   .row.remote .name { color: var(--text-2); }
-  .row.busy .dot { background: var(--accent); }
+  .row.busy .status-dot { background: var(--accent); }
   .row.busy .size { color: var(--accent-text); }
-  .row.error .dot { background: var(--danger-text); }
+  .row.error .status-dot { background: var(--danger-text); }
   .row.error .size { color: var(--danger-text); }
   .x.primary { background: var(--accent); color: #fff; }
   .danger { color: var(--danger-text); }

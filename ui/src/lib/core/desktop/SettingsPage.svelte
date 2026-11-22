@@ -36,6 +36,7 @@
   import { registry } from '$lib/core/registry';
   import { product } from '$lib/core/product';
   import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
+  import { LICENSE_NAME, LICENSE_URL, licenseSummaryUrl, thirdPartyUrl } from '$lib/core/about';
   import type { Key, SettingsSection } from '$lib/core/module';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -166,11 +167,10 @@
   // The product's own repository (products.json `repo`): releases, licence files.
   const REPO_URL: string = product.repo;
   const RELEASES_URL = `${REPO_URL}/releases/latest`;
-  const LICENSE_URL = 'https://polyformproject.org/licenses/perimeter/1.0.1';
   // What the product's modules are built on (the browser's Camoufox): their links of About.
   const aboutLinks = $derived(registry.active.flatMap((m) => m.about ?? []));
-  const summaryUrl = REPO_URL ? `${REPO_URL}/blob/main/LICENSE-SUMMARY.md` : '';
-  const thirdPartyUrl = REPO_URL ? `${REPO_URL}/blob/main/THIRD-PARTY-LICENSES.md` : '';
+  const summaryUrl = REPO_URL ? licenseSummaryUrl(REPO_URL) : '';
+  const thirdPartyLicensesUrl = REPO_URL ? thirdPartyUrl(REPO_URL) : '';
 
   async function openExternal(url: string) {
     if (!url) return;
@@ -609,7 +609,7 @@
         </div>
         <div class="about-fact">
           <span class="about-key">{$t('settings_about_license')}</span>
-          <span class="about-value mono">PolyForm Perimeter 1.0.1</span>
+          <span class="about-value mono">{LICENSE_NAME}</span>
         </div>
       </div>
 
@@ -656,7 +656,7 @@
           <span class="about-row-label">{$t('settings_about_link_summary')}</span>
           <Icon name="external-link" size={18} />
         </button>
-        <button type="button" class="about-row" onclick={() => openExternal(thirdPartyUrl)}>
+        <button type="button" class="about-row" onclick={() => openExternal(thirdPartyLicensesUrl)}>
           <span class="about-row-label">{$t('settings_about_link_thirdparty')}</span>
           <Icon name="external-link" size={18} />
         </button>
@@ -863,8 +863,6 @@
   .demo-chip:hover, .demo-link:hover:not(:disabled) { color: var(--text); background: var(--surface-row-hover); }
   .demo-link.danger { color: var(--danger-text); }
   .demo-link:disabled { opacity: 0.45; cursor: default; }
-
-  .settings-main :global(.btn-sm) { padding: var(--sp-1-5) var(--sp-3); font-size: var(--fs-sm); }
 
   .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: var(--sp-1); }
   .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }

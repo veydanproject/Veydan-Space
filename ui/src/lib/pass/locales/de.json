@@ -133,6 +133,7 @@
     "totp_scan_unavailable": "Die Kamera ist nicht verfügbar. Erlaube den Kamerazugriff in den Systemeinstellungen oder füge den Code über seinen Link hinzu.",
     "pwgen_history_off_hint": "Neue Passwörter werden nicht gespeichert.",
     "pwgen_history_off_kept": "Früher gespeicherte Passwörter bleiben auf diesem Gerät: {n}.",
-    "pwgen_history_empty_hint": "Hier erscheinen die Passwörter, die du generierst. Tippe auf eines, um es zu kopieren."
+    "pwgen_history_empty_hint": "Hier erscheinen die Passwörter, die du generierst. Tippe auf eines, um es zu kopieren.",
+    "pw_locked_notice": "Passwörter sind gesperrt. Entsperre, um Änderungen vorzunehmen."
   }
 }

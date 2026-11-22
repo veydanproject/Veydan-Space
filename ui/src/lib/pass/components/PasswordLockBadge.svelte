@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!-- Tiny lock next to the passwords title: red open without a PIN, green closed with one.
-     Click opens the lock settings. -->
+     Click opens the lock settings. On a phone (`iconBtn`) it is the common .icon-btn beside the title, not in it. -->
 <script lang="ts">
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
@@ -12,9 +12,11 @@
 
   interface Props {
     size?: number;
+    /** The common .icon-btn (40, its icon 22) instead of the tiny round button. */
+    iconBtn?: boolean;
   }
 
-  let { size = 10 }: Props = $props();
+  let { size = 10, iconBtn = false }: Props = $props();
 
   const protected_ = $derived(appLock.status.enabled);
   const setupHref = isMobile ? '/settings/lock' : '/settings';
@@ -23,8 +25,9 @@
 {#if appLock.ready}
   <button
     type="button"
-    class="badge"
-    class:on={protected_}
+    class="lock-btn"
+    class:icon-btn={iconBtn}
+    class:locked={protected_}
     title={protected_ ? $t('pw_lock_on_tip') : $t('pw_lock_off_tip')}
     aria-label={protected_ ? $t('pw_lock_on_tip') : $t('pw_lock_off_tip')}
     onclick={() => goto(setupHref)}
@@ -34,7 +37,7 @@
 {/if}
 
 <style>
-  .badge {
+  .lock-btn:not(.icon-btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -48,6 +51,7 @@
     line-height: var(--lh-icon);
     opacity: 0.85;
   }
-  .badge.on { color: var(--success-text); }
-  .badge:hover { opacity: 1; background: var(--surface-hover); }
+  .lock-btn.icon-btn { color: var(--danger-text); }
+  .lock-btn.locked { color: var(--success-text); }
+  .lock-btn:not(.icon-btn):hover { opacity: 1; background: var(--surface-hover); }
 </style>

@@ -29,7 +29,7 @@ name: string,
  */
 text: string, 
 /**
- * Rumor time of that text (the peer's clock).
+ * Rumor time of that text, or chat activity time for a signal-only request.
  */
 at: number, 
 /**

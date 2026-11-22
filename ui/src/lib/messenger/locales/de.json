@@ -1256,8 +1256,6 @@
     "msg_profile_public_hint": "Name, Foto, „Über mich“, Website und Links sind öffentlich: Alle, die deinen Schlüssel kennen, können sie sehen.",
     "msg_profile_saved": "Profil veröffentlicht",
     "msg_profile_unsaved": "Ungespeicherte Änderungen",
-    "msg_profile_discard_confirm": "Änderungen verwerfen?",
-    "msg_profile_discard": "Verwerfen",
     "msg_profile_send_card": "Meine Karte senden",
     "msg_profile_send_card_hint": "Name, Foto, „Über mich“ und Links in einer Nachricht, damit man dich mit einem Tippen hinzufügen kann.",
     "msg_profile_send_card_to": "Senden an",

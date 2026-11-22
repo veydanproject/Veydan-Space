@@ -233,7 +233,7 @@
 
 {#snippet addBar()}
   <div class="add-bar">
-    <button type="button" class="m-btn-grad add" onclick={add}>{$t('msg_attach_add', { n: String(model.chosen.length) })}</button>
+    <button type="button" class="btn btn-primary add" onclick={add}>{$t('msg_attach_add', { n: String(model.chosen.length) })}</button>
   </div>
 {/snippet}
 
@@ -244,12 +244,12 @@
     {#if caps.grid}
       <p>{$t('msg_attach_no_access')}</p>
       <span>{$t('msg_attach_no_access_hint')}</span>
-      <button type="button" class="m-btn-grad pick" onclick={allow}>{$t('msg_attach_allow')}</button>
+      <button type="button" class="btn btn-primary wide pick" onclick={allow}>{$t('msg_attach_allow')}</button>
       <button type="button" class="m-link" onclick={pickSystem}>{$t('msg_attach_system_gallery')}</button>
     {:else}
       <p>{$t('msg_attach_photos_videos')}</p>
       <span>{$t('msg_attach_gallery_hint')}</span>
-      <button type="button" class="m-btn-grad pick" onclick={pickSystem}>{$t('msg_attach_pick_media')}</button>
+      <button type="button" class="btn btn-primary wide pick" onclick={pickSystem}>{$t('msg_attach_pick_media')}</button>
     {/if}
     {#if caps.capture}
       <span class="cams">
@@ -334,7 +334,7 @@
           </button>
           {#each albums ?? [] as a (a.id)}
             <button type="button" class="list-row dense" role="option" aria-selected={model.album === a.id} onclick={() => chooseAlbum(a.id)}>
-              <span class="list-row-label">{a.title}</span><span class="count">{a.count}</span>
+              <span class="list-row-label">{a.title}</span><span class="count-pill lg quiet">{a.count}</span>
               {#if model.album === a.id}<Icon name="check" size={18} />{/if}
             </button>
           {/each}
@@ -421,5 +421,5 @@
   }
 
   .add-bar { display: flex; align-items: center; width: 100%; min-width: 0; }
-  .add { flex: 1 0 auto; width: auto; min-height: var(--control-h-lg); padding: 0 var(--sp-4); }
+  .add { flex: 1 0 auto; }
 </style>

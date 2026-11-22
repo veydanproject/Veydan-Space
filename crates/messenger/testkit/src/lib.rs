@@ -13,6 +13,8 @@
 //!   network, and the groups a group call asks of (`messenger-calls`).
 //! - [`local_relay`]: a relay of nostr-sdk listening in the process, on a port
 //!   that was not taken meanwhile.
+//! - [`test_relay`]: the same, or the relay `VEYDAN_TEST_RELAY_URL` names
+//!   (and `VEYDAN_TEST_RELAY_KEY`), for a test that only needs a URL.
 //! - [`open_dm`]: a gift wrap opened into the `DmInbound` ingress would
 //!   make of it, for tests that pass wraps between parties.
 //!
@@ -25,7 +27,7 @@ pub mod relay;
 pub use fake_engine::{FakeEngine, FakeHandle};
 pub use fake_node::{FakeDevice, FakeGroups, FakeNode, FakeRegistry};
 pub use file_secrets::FileSecretStore;
-pub use relay::{local_relay, local_relay_with};
+pub use relay::{external_relay_url, local_relay, local_relay_with, test_relay, TestRelay};
 
 use async_trait::async_trait;
 use messenger_core::inbound::Envelope as WireEnvelope;
