@@ -264,8 +264,6 @@ export const translations = {
       pwgen_history_off_hint: 'New passwords are not saved.',
       pwgen_history_off_kept: 'Passwords saved earlier stay on this device: {n}.',
       pwgen_history_empty_hint: 'Passwords you generate appear here. Tap one to copy it.',
-      // The plate over the list and the card of a locked or mismatched vault (design 16, 2026-11-21).
-      pw_locked_notice: 'Passwords are locked. Unlock to make changes.',
     },
     ru: {
       totp_empty_hint: 'Отсканируйте QR-код сервиса, вставьте ссылку otpauth или введите ключ вручную',
@@ -291,7 +289,6 @@ export const translations = {
       pwgen_history_off_hint: 'Новые пароли не сохраняются.',
       pwgen_history_off_kept: 'Ранее сохранённые пароли остаются на этом устройстве: {n}.',
       pwgen_history_empty_hint: 'Здесь появятся сгенерированные пароли. Нажмите на пароль, чтобы скопировать его.',
-      pw_locked_notice: 'Пароли заблокированы. Разблокируйте, чтобы изменять.',
     },
   },
 } as const;

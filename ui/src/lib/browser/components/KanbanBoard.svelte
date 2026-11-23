@@ -3,14 +3,11 @@
 
 <script lang="ts">
   import { t } from '$lib/core/i18n';
-  import { DEFAULT_COLOR } from '$lib/core/palette';
-  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { api } from '$lib/browser/api';
   import type { Profile, Proxy, WorkspaceColumn } from '$lib/browser/types';
   import { proxyChip } from '$lib/browser/proxy-label';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import ProfileSidePanel from './ProfileSidePanel.svelte';
   import { directory } from '$lib/core/directory';
@@ -64,13 +61,16 @@
   // ── Add column modal ─────────────────────────────────────────────────────────
   let showAddColumn = $state(false);
   let newColName = $state('');
-  let newColColor = $state<string>(DEFAULT_COLOR);
+  let newColColor = $state('#8b7bff');
   let addColLoading = $state(false);
 
   // ── Edit column ───────────────────────────────────────────────────────────────
   let editingCol = $state<WorkspaceColumn | null>(null);
   let editColName = $state('');
   let editColColor = $state('');
+
+  const PALETTE = ['#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6'];
+  const PALETTE_NAMES = ['violet', 'blue', 'green', 'amber', 'red', 'pink'] as const;
 
   function cancelAddColumn() {
     showAddColumn = false;
@@ -206,18 +206,6 @@
     editColColor = col.color;
   }
 
-  let colEdit = $state<HTMLElement>();
-
-  /** The focus moved within the edit, or to the system's colour dialog: still editing. */
-  function keepEditing(e: FocusEvent) {
-    return !document.hasFocus() || (!!colEdit && colEdit.contains(e.relatedTarget as Node | null));
-  }
-
-  /** A press on a preset keeps the focus where it is (WebKit does not focus a pressed button). */
-  function keepFocus(e: MouseEvent) {
-    if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
-  }
-
   async function saveEditCol() {
     if (!editingCol || !editColName.trim()) return;
     const updated = await api.workspaces.columns.update(editingCol.id, {
@@ -279,10 +267,10 @@
   <!-- Filters -->
   <div class="filter-bar">
     <div class="search-field">
-      <Icon name="search" size={16} />
+      <Icon name="search" size={13} />
       <input type="text" placeholder={$t('kanban_filter_search')} bind:value={search} />
       {#if search}
-        <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
       {/if}
     </div>
     <div class="filter-select">
@@ -306,7 +294,7 @@
         <Icon name="x" size={12} />
       </button>
     {/if}
-    <span class="count-pill sm quiet filter-count">{profiles.filter(filterProfile).length} / {profiles.length}</span>
+    <span class="count-badge">{profiles.filter(filterProfile).length} / {profiles.length}</span>
   </div>
 
   <!-- Board -->
@@ -321,22 +309,28 @@
         role="list"
       >
         <div class="col-header">
-          <span class="status-dot" style="background:{col.color}"></span>
+          <span class="col-dot" style="background:{col.color}"></span>
           {#if editingCol?.id === col.id}
-            <!-- The name and its colours are one edit: it saves when the focus leaves both. -->
-            <div class="col-edit" bind:this={colEdit} onfocusout={(e) => { if (!keepEditing(e)) saveEditCol(); }}>
-              <input
-                class="col-edit-input"
-                bind:value={editColName}
-                onkeydown={(e) => e.key === 'Enter' && saveEditCol()}
-              />
-              <div class="col-color-row" role="presentation" onmousedown={keepFocus}>
-                <ColorSwatches bind:value={editColColor} label={$t('kanban_edit_column')} />
-              </div>
+            <input
+              class="col-edit-input"
+              bind:value={editColName}
+              onblur={saveEditCol}
+              onkeydown={(e) => e.key === 'Enter' && saveEditCol()}
+            />
+            <div class="col-color-row">
+              {#each PALETTE as c, i}
+                <button
+                  class="swatch"
+                  class:active={editColColor === c}
+                  style="background:{c}"
+                  onclick={() => (editColColor = c)}
+                  aria-label={$t(`kanban_color_${PALETTE_NAMES[i]}`)}
+                ></button>
+              {/each}
             </div>
           {:else}
             <span class="col-title">{col.name}</span>
-            <span class="count-pill sm quiet">{cards.length}</span>
+            <span class="col-count">{cards.length}</span>
             <button class="icon-btn" onclick={() => startEditCol(col)} title={$t('kanban_edit_column')} aria-label={$t('kanban_edit_column')}>
               <Icon name="pencil" size={11} />
             </button>
@@ -351,7 +345,7 @@
             {@const proxy = getProxy(profile.proxy_id)}
             {@const totpCount = directory.get('totp')?.referring?.(`profile:${profile.id}`).length ?? 0}
             <div
-              class="kcard"
+              class="card"
               class:card-running={runningProfiles.has(profile.id)}
               class:dragging={dragId === profile.id}
               onpointerdown={(e) => onCardPointerDown(e, profile)}
@@ -366,10 +360,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="status-dot ok pulse"></span>
+                    <span class="running-dot"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -397,16 +391,16 @@
         role="list"
       >
         <div class="col-header">
-          <span class="status-dot" style="background:var(--cat-blue)"></span>
+          <span class="col-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_unassigned')}</span>
-          <span class="count-pill sm quiet">{cards.length}</span>
+          <span class="col-count">{cards.length}</span>
         </div>
         <div class="col-cards">
           {#each cards as profile (profile.id)}
             {@const proxy = getProxy(profile.proxy_id)}
             {@const totpCount = directory.get('totp')?.referring?.(`profile:${profile.id}`).length ?? 0}
             <div
-              class="kcard"
+              class="card"
               class:card-running={runningProfiles.has(profile.id)}
               class:dragging={dragId === profile.id}
               onpointerdown={(e) => onCardPointerDown(e, profile)}
@@ -421,10 +415,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="status-dot ok pulse"></span>
+                    <span class="running-dot"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -446,16 +440,16 @@
     {#if columns.length === 0}
       <div class="column" role="list">
         <div class="col-header">
-          <span class="status-dot" style="background:var(--cat-blue)"></span>
+          <span class="col-dot" style="background:var(--cat-blue)"></span>
           <span class="col-title">{$t('kanban_all_profiles')}</span>
-          <span class="count-pill sm quiet">{profiles.filter(filterProfile).length}</span>
+          <span class="col-count">{profiles.filter(filterProfile).length}</span>
         </div>
         <div class="col-cards">
           {#each profiles.filter(filterProfile).sort((a,b)=>a.kanban_order-b.kanban_order) as profile (profile.id)}
             {@const proxy = getProxy(profile.proxy_id)}
             {@const totpCount = directory.get('totp')?.referring?.(`profile:${profile.id}`).length ?? 0}
             <div
-              class="kcard"
+              class="card"
               class:card-running={runningProfiles.has(profile.id)}
               onclick={() => openPanel(profile)}
               role="button"
@@ -466,10 +460,10 @@
                 <div class="card-top-row">
                   <span class="card-name">{profile.name}</span>
                   {#if totpCount > 0}
-                    <span class="badge badge-accent" title={$t('kanban_totp_codes')}>{totpCount}</span>
+                    <span class="totp-badge" title={$t('kanban_totp_codes')}>{totpCount}</span>
                   {/if}
                   {#if runningProfiles.has(profile.id)}
-                    <span class="status-dot ok pulse"></span>
+                    <span class="running-dot"></span>
                   {/if}
                 </div>
                 <div class="card-meta">
@@ -506,7 +500,17 @@
             }}
             autofocus
           />
-          <ColorSwatches bind:value={newColColor} />
+          <div class="palette-row">
+            {#each PALETTE as c, i}
+              <button
+                class="swatch"
+                class:active={newColColor === c}
+                style="background:{c}"
+                onclick={() => (newColColor = c)}
+                aria-label={$t(`kanban_color_${PALETTE_NAMES[i]}`)}
+              ></button>
+            {/each}
+          </div>
           <div class="add-col-actions">
             <button class="btn btn-ghost" onclick={cancelAddColumn}>{$t('common_cancel')}</button>
             <button class="btn btn-primary" onclick={addColumn} disabled={addColLoading || !newColName.trim()}>
@@ -545,8 +549,7 @@
 <style>
   .kanban-wrap { display: flex; flex-direction: column; gap: var(--sp-3); height: 100%; overflow: hidden; }
 
-  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear из base.css; счёт «x / y» — .count-pill справа */
-  .filter-count { margin-left: auto; }
+  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear/.count-badge из base.css */
 
   .board {
     display: grid;
@@ -571,41 +574,58 @@
 
   .col-header {
     display: flex; align-items: center; gap: 9px;
-    padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border);
+    padding: 0.8rem 1rem; border-bottom: 1px solid var(--border);
     min-height: 44px; flex-wrap: wrap;
   }
+  .col-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-body); flex: 1; }
+  .col-count {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+    background: var(--surface-2); color: var(--text-2);
+  }
 
   .col-edit-input {
     flex: 1; background: var(--surface-3); border: 1px solid var(--accent); border-radius: var(--radius-field);
-    color: var(--text); font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-1-5); outline: none;
+    color: var(--text); font-size: var(--fs-sm); padding: 0.2rem 0.4rem; outline: none;
   }
-  .col-edit { display: contents; }
-  .col-color-row { width: 100%; padding-top: var(--sp-1); }
+  .col-color-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; width: 100%; padding-top: var(--sp-1); }
 
   .col-cards {
-    padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2-5);
+    padding: var(--sp-3); display: flex; flex-direction: column; gap: 10px;
     overflow-y: auto; flex: 1;
   }
 
-  /* A list's card (design 09), not the page's .card: --radius-md, --sp-3, --surface-2, a line of --border. */
-  .kcard {
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md);
-    padding: var(--sp-3); cursor: grab; transition: border-color 0.15s, background 0.15s, opacity 0.13s;
-    display: flex; gap: var(--sp-2-5); align-items: flex-start;
+  .card {
+    background: var(--pane-strong); border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 0.85rem; cursor: grab; transition: border-color 0.15s, background 0.15s, opacity 0.13s;
+    display: flex; gap: 0.6rem; align-items: flex-start;
     user-select: none; touch-action: none;
   }
-  .kcard:hover { border-color: var(--border-2); background: var(--surface-hover); }
-  .kcard.card-running { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
-  .kcard.dragging { opacity: 0.35; cursor: grabbing; }
+  .card:hover { border-color: var(--border-2); background: var(--surface-hover); }
+  .card.card-running { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
+  .card.dragging { opacity: 0.35; cursor: grabbing; }
 
   .card-drag { color: var(--text-3); padding-top: 2px; flex-shrink: 0; }
-  .card-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-  .card-top-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); }
+  .card-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .card-top-row { display: flex; align-items: center; justify-content: space-between; gap: 0.3rem; }
   .card-name { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .running-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
 
-  .card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-  .meta-item { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-dim); }
+  .totp-badge {
+    background: var(--accent-tint);
+    color: var(--accent-text-2);
+    border: 1px solid var(--accent-tint-border);
+    border-radius: var(--radius-badge);
+    font-size: var(--fs-xs);
+    padding: 0.05rem 0.35rem;
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-snug);
+    flex-shrink: 0;
+  }
+  .card-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .meta-item { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-dim); }
   /* OS / fingerprint preset chip */
   .meta-item:first-child {
     font-size: var(--fs-xs); color: var(--text-soft);
@@ -622,7 +642,7 @@
     background: var(--glass-bg-raised);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-badge);
-    padding: var(--sp-1-5) var(--sp-2-5);
+    padding: 0.4rem 0.65rem;
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
     color: var(--text);
@@ -634,7 +654,7 @@
     white-space: nowrap;
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.35rem;
     max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -649,12 +669,26 @@
   }
   .add-col-btn:hover { border-color: var(--border-2); color: var(--text-2); }
 
-  .add-col-form { padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2-5); }
+  .add-col-form { padding: var(--sp-3); display: flex; flex-direction: column; gap: 10px; }
+  .palette-row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .add-col-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
   .add-col-form input { height: 36px; min-height: 0; padding-top: 0; padding-bottom: 0; }
   .add-col-actions .btn { height: 36px; min-height: 36px; }
 
-  /* The column's buttons (the plain .icon-btn) show while the pointer is over its head. */
-  .col-header .icon-btn { opacity: 0; }
-  .col-header:hover .icon-btn, .col-header .icon-btn:focus-visible { opacity: 1; }
+  .swatch {
+    width: 20px; height: 20px; min-width: 20px; padding: 0; border: 0; border-radius: 50%;
+    flex: none; cursor: pointer;
+  }
+  .swatch.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+
+  /* Column header hover controls (local override of the global .icon-btn) */
+  .icon-btn {
+    width: auto; height: auto;
+    background: none; border: none; cursor: pointer; color: var(--text-3);
+    padding: 0.2rem; border-radius: var(--radius-sm); display: inline-flex; align-items: center;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+  .col-header:hover .icon-btn { opacity: 1; }
+  .icon-btn:hover { color: var(--text); background: var(--surface-3); }
 </style>

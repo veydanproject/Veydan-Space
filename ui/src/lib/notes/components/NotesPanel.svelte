@@ -14,9 +14,7 @@
   import { contextBindings, toNoteFilter, templateNotes, type ActiveFilter } from '$lib/notes/filter';
   import { binding, type EntityKind } from '$lib/core/bindings';
   import TemplateSelect from './TemplateSelect.svelte';
-  import Dialog from '$lib/core/ui/Dialog.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import NotesList from './NotesList.svelte';
   import ListBulkActions from './ListBulkActions.svelte';
   import NoteEditor from './NoteEditor.svelte';
@@ -334,7 +332,7 @@
           <Pill tone="accent" text={String(displayList.length)} />
         </div>
         <div class="header-actions">
-          <button class="icon-btn lg" onclick={() => (open = false)}>
+          <button class="close-btn" onclick={() => (open = false)}>
             <Icon name="x" size={15} />
           </button>
         </div>
@@ -345,18 +343,17 @@
       <div class="panel-body" bind:this={panelBodyEl} class:is-dragging={dragging !== null}>
         {#if sidebarVisible}
           <div class="sidebar" style="width: {colWidths.sidebar}%">
-            <div class="search-field fill">
-              <Icon name="search" size={16} />
+            <div class="search-wrap">
+              <span class="search-icon"><Icon name="search" size={15} /></span>
               <input
                 type="text"
                 bind:value={searchQuery}
                 oninput={onSearchInput}
                 placeholder={$t('notes_search_placeholder')}
+                class="search-input"
               />
               {#if searching}
-                <span class="search-spin"><Icon name="loader" size={12} /></span>
-              {:else if searchQuery}
-                <button type="button" class="search-clear" onclick={(e) => { searchQuery = ''; onSearchInput(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+                <span class="search-spinner"><Icon name="loader" size={12} /></span>
               {/if}
             </div>
             <NoteFilters
@@ -394,7 +391,7 @@
             </div>
             <div class="list-actions">
               {#if !sidebarVisible}
-                <button class="icon-btn lg" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
+                <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
                   <Icon name="sidebar" size={14} />
                 </button>
               {/if}
@@ -436,25 +433,30 @@
         </div>
       </div>
 
-      <Dialog bind:open={showCreate} title={$t('notes_create_title')}>
-        <div class="create-form">
-          <input
-            type="text"
-            bind:value={createTitle}
-            placeholder={$t('notes_title_placeholder')}
-            onkeydown={(e) => e.key === 'Enter' && createNote()}
-          />
-          {#if hasTemplates}
-            <TemplateSelect bind:value={createTemplate} />
-          {/if}
+      <!-- Create modal -->
+      {#if showCreate}
+        <div class="create-overlay" use:backdropDismiss={() => (showCreate = false)} role="presentation">
+          <div class="create-card">
+            <h4>{$t('notes_create_title')}</h4>
+            <input
+              type="text"
+              bind:value={createTitle}
+              placeholder={$t('notes_title_placeholder')}
+              class="create-title"
+              onkeydown={(e) => e.key === 'Enter' && createNote()}
+            />
+            {#if hasTemplates}
+              <TemplateSelect class="create-title" bind:value={createTemplate} />
+            {/if}
+            <div class="create-actions">
+              <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('common_cancel')}</button>
+              <button class="btn btn-primary" onclick={createNote} disabled={!createTitle.trim()}>
+                {$t('common_create')}
+              </button>
+            </div>
+          </div>
         </div>
-        {#snippet footer()}
-          <button class="btn btn-ghost" onclick={() => (showCreate = false)}>{$t('common_cancel')}</button>
-          <button class="btn btn-primary" onclick={createNote} disabled={!createTitle.trim()}>
-            {$t('common_create')}
-          </button>
-        {/snippet}
-      </Dialog>
+      {/if}
     </div>
   </div>
 {/if}
@@ -520,7 +522,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--sp-3) var(--sp-5);
+    padding: 0.85rem var(--sp-5);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -541,12 +543,65 @@
   .header-actions {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.2rem;
   }
 
-  .sidebar > .search-field {
-    width: auto;
+  /* .icon-btn is the global 32px primitive (base.css) */
+  .close-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius);
+    transition: all var(--dur-fast);
+  }
+
+  .close-btn:hover { color: var(--text); background: var(--surface-hover); }
+
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
     margin: var(--sp-3) var(--sp-3) var(--sp-2);
+    flex-shrink: 0;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 0.85rem;
+    color: var(--text-3);
+    pointer-events: none;
+    display: flex;
+  }
+
+  .search-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: var(--control-h);
+    padding: 0 0.6rem 0 var(--sp-8);
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text);
+    font-size: var(--fs-sm);
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent-border);
+  }
+
+  .search-spinner {
+    position: absolute;
+    right: 0.6rem;
+    color: var(--accent-text);
+    display: flex;
+    animation: spin 1s linear infinite;
   }
 
   .panel-body {
@@ -621,7 +676,8 @@
   }
   .list-sub { margin: 0; font-size: var(--fs-sm); color: var(--text-faint); }
 
-  .list-actions { display: flex; align-items: center; gap: var(--sp-1-5); flex-shrink: 0; }
+  .list-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .list-actions .icon-btn { width: 36px; height: 36px; }
 
   .list-scroll {
     flex: 1;
@@ -637,9 +693,54 @@
     min-width: 0;
   }
 
-  .create-form {
+  /* Create modal */
+  .create-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--backdrop);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-sticky);
+  }
+
+  .create-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pane);
+    padding: var(--sp-5);
+    width: 320px;
     display: flex;
     flex-direction: column;
     gap: var(--sp-3);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .create-card h4 {
+    margin: 0;
+    font-size: var(--fs-md);
+    font-weight: var(--fw-semibold);
+  }
+
+  .create-title {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.45rem var(--sp-3);
+    color: var(--text);
+    font-size: var(--fs-base);
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .create-title:focus {
+    outline: none;
+    border-color: var(--accent-border);
+  }
+
+  .create-actions {
+    display: flex;
+    gap: var(--sp-2);
+    justify-content: flex-end;
   }
 </style>

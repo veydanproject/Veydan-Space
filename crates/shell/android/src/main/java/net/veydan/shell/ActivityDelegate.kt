@@ -175,14 +175,6 @@ class ActivityDelegate(private val activity: ComponentActivity) {
     @JavascriptInterface
     fun clipboardImage(): String? = onUi(null) { view -> if (ownPage(view)) clipboardPicture()?.toString() else null }
 
-    /** The text on the clipboard, read on the user's tap only (Android 12+ shows a toast): the WebView refuses `navigator.clipboard.readText`; null without text. */
-    @JavascriptInterface
-    fun clipboardText(): String? = onUi(null) { view ->
-      if (!ownPage(view)) return@onUi null
-      val clip = activity.getSystemService(ClipboardManager::class.java)?.primaryClip ?: return@onUi null
-      if (clip.itemCount == 0) null else clip.getItemAt(0).coerceToText(activity)?.toString()
-    }
-
     /** Whether pictures a keyboard inserts go to the page (`veydan-received-content`): the composer of a chat, while it is focused. */
     @JavascriptInterface
     fun setTakesPictures(takes: Boolean) {

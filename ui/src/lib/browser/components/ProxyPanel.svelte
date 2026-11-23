@@ -118,7 +118,7 @@
 <Drawer open title={isEdit ? $t('proxies_form_edit') : $t('proxies_form_new')} width="var(--drawer-w-md)" {onclose}>
       <form id="px-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
         {#if error && !fieldsErr && !countriesErr}
-          <div class="form-error"><Notice tone="danger">{error}</Notice></div>
+          <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>
         {/if}
 
         <!-- Every caption of the form is the one field caption (`.form-group label`); the type is a segment. -->
@@ -268,16 +268,15 @@
 
 <style>
   .section { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-1); }
-  .form-error { margin-bottom: var(--sp-3); }
 
   .divider { height: 1px; background: var(--border); margin: var(--sp-3) 0; }
 
   .field-hint {
-    font-size: var(--fs-xs); color: var(--text-faint); margin-top: calc(-1 * var(--sp-1));
+    font-size: var(--fs-xs); color: var(--text-faint); margin-top: -0.25rem;
   }
   .field-hint--error { color: var(--danger-text); }
   .link-btn {
-    align-self: flex-start; background: none; border: none; padding: 0; margin-top: var(--sp-1); cursor: pointer;
+    align-self: flex-start; background: none; border: none; padding: 0; margin-top: 0.25rem; cursor: pointer;
     font-size: var(--fs-xs); color: var(--text-faint); text-decoration: underline;
   }
   .link-btn:hover { color: var(--text); }

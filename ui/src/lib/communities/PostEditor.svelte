@@ -20,12 +20,9 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import { tick, untrack } from 'svelte';
-  import { beforeNavigate, goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { ask } from '$lib/core/ui/confirm.svelte';
-  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import { AttachButton, onKeyboard, onPhone, myKey, type MdBlock } from '$lib/messenger/seams/shared';
   import FeedPost from './FeedPost.svelte';
   import PickedNotes from './PickedNotes.svelte';
@@ -203,43 +200,14 @@
     }
   }
 
-  /** An edit with changes is not dropped unasked (design 17); a new post goes back to the composer, its draft kept. */
-  const discards = () => editing && !unchanged && !done;
-  const mayDiscard = () =>
-    ask({ title: tr('common_discard_confirm'), confirmLabel: tr('common_discard'), variant: 'danger' });
-
-  let closing = false;
-  async function close() {
-    if (closing) return;
-    if (discards()) {
-      closing = true;
-      const yes = await mayDiscard();
-      closing = false;
-      if (!yes) return;
-    }
+  function close() {
     done = true;
     if (!editing) postDrafts.drop(draftKey);
     onclose(current());
   }
 
-  // The system «Назад» and any other way off the page ask the same (the app closing cannot wait).
-  beforeNavigate((nav) => {
-    if (nav.type === 'leave' || !discards()) return;
-    nav.cancel();
-    void mayDiscard().then((yes) => {
-      if (!yes) return;
-      done = true;
-      if (nav.type === 'popstate') history.go(nav.delta ?? -1);
-      else if (nav.to) void goto(nav.to.url);
-    });
-  });
-
-  // The phone: the bar stands over the keyboard, right on it (design 17): the page lies in the body, out of
-  // MobileFrame's `.kb-open`, so it zeroes the gesture stripe (--sab) itself while the keyboard is up; the text
-  // ends above the bar, whatever its height: the scroller itself does (a margin, not a padding, which stays in its
-  // scrollport), so the caret the browser brings into view while typing is never under the bar.
+  // The phone: the bar stands over the keyboard.
   let kb = $state(0);
-  let barH = $state(0);
   $effect(() => {
     if (!narrow || !touch) return;
     return onKeyboard((inset) => (kb = inset));
@@ -262,8 +230,8 @@
 </script>
 
 {#snippet head()}
-  <header class="head panel-head" class:narrow>
-    <button class="icon-btn lg back" onclick={close} aria-label={$t(narrow ? 'common_close' : 'common_back')} title={$t(narrow ? 'common_close' : 'common_back')}>
+  <header class="head" class:narrow>
+    <button class="icon back" onclick={close} aria-label={$t(narrow ? 'common_close' : 'common_back')} title={$t(narrow ? 'common_close' : 'common_back')}>
       <Icon name={narrow ? 'x' : 'chevron-left'} size={18} />
     </button>
     <div class="h-title">
@@ -296,8 +264,8 @@
 {/snippet}
 
 {#snippet toolbar(docked: boolean)}
-  <div class="bar" class:docked role="toolbar" aria-label={$t('chan_editor_toolbar')} style:bottom={docked ? `${kb}px` : undefined} bind:offsetHeight={barH}>
-    <div class="marks" use:scrollTabs={{ fadeStart: true }}>
+  <div class="bar" class:docked role="toolbar" aria-label={$t('chan_editor_toolbar')} style:bottom={docked ? `${kb}px` : undefined}>
+    <div class="marks">
     {#each MARKS as m, i (m.mark)}
       {#if !docked && i > 0 && MARKS[i - 1].group !== m.group}<span class="bar-sep" aria-hidden="true"></span>{/if}
       {@const label = !touch && m.key ? `${$t(m.label as 'chan_title')} (${MOD}+${m.key})` : $t(m.label as 'chan_title')}
@@ -388,7 +356,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="editor" class:narrow class:phone style:--sab={phone && kb > 0 ? '0px' : undefined} role="dialog" aria-modal={phone ? 'true' : undefined} tabindex="-1" aria-label={editing ? $t('chan_edit_title') : $t('chan_editor_new')}
+<div class="editor" class:narrow class:phone role="dialog" aria-modal={phone ? 'true' : undefined} tabindex="-1" aria-label={editing ? $t('chan_edit_title') : $t('chan_editor_new')}
   bind:clientWidth={width} use:toBody {onkeydown}>
   {@render head()}
   {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
@@ -400,7 +368,7 @@
         <button class="seg-btn" class:active={tab === 'preview'} role="tab" aria-selected={tab === 'preview'} onclick={() => (tab = 'preview')}>{$t('chan_editor_tab_preview')}</button>
       </div>
     </div>
-    <div class="n-body" style:margin-bottom={tab === 'text' && touch ? `${kb + barH}px` : undefined}>
+    <div class="n-body" style:padding-bottom={tab === 'text' && touch ? `${kb + 64}px` : undefined}>
       {#if tab === 'text'}
         <div class="col fields">{@render fields()}</div>
       {:else}
@@ -428,46 +396,40 @@
   .editor { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; min-height: 0; outline: none; }
   .editor.phone {
     /* Over the phone's bars and the composer's chips (30), under its sheets (50): the attach sheet opens over it. */
-    position: fixed; z-index: calc(var(--z-base) + 40); background: var(--bg-image), var(--bg);
+    position: fixed; z-index: 40; background: var(--bg-image), var(--bg);
     padding-top: var(--sat, 0px);
   }
 
-  /* A computer: the common .panel-head. */
+  .head { display: flex; align-items: center; gap: var(--sp-3); min-height: 64px; padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); flex-shrink: 0; }
   .head.narrow { gap: var(--sp-2); padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1); border-bottom: none; background: none; min-height: 60px; }
-  /* A phone: a page's flat head, the .m-header's 56, its × 40 with the icon 24 (min-height: the phone's rule for .icon-btn
-     would make it 44 high). */
-  .phone .head.narrow { min-height: 56px; padding: var(--sp-2); }
-  .phone .head .back { width: 40px; height: 40px; min-height: 0; border-radius: var(--radius-md); color: var(--text); }
-  .phone .head .back > :global(.icon) { width: 24px; height: 24px; }
-  .phone .head .publish { min-height: 40px; }
-  /* The page's title as a phone page's (.m-header .m-title, 20), the section under it. */
-  .phone.narrow .h-name { font-size: var(--fs-xl); line-height: var(--lh-tight); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  .icon:hover { color: var(--text); background: var(--surface-3); }
   .h-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); }
-  .h-name { font-size: var(--fs-lg); font-weight: var(--fw-bold); white-space: nowrap; }
+  .h-name { font-size: var(--fs-lg, 18px); font-weight: var(--fw-bold); white-space: nowrap; }
   .h-in { color: var(--text-3); font-size: var(--fs-sm); }
   .narrow .h-title { flex-direction: column; align-items: flex-start; gap: 0; }
-  .narrow .h-name { font-size: var(--fs-md); }
+  .narrow .h-name { font-size: var(--fs-md, 17px); }
   .h-where { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .narrow .h-where { gap: 4px; max-width: 100%; }
   .narrow .h-in { font-size: var(--fs-xs); }
   /* The section the post goes to, in its colour when it has one. */
   .sec {
     --tag: var(--sec, var(--accent));
-    display: inline-flex; align-items: center; gap: var(--sp-1-5); min-width: 0; height: 28px; padding: 0 var(--sp-2-5) 0 var(--sp-1); border-radius: var(--radius-sm);
+    display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 28px; padding: 0 10px 0 4px; border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--tag) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tag) 40%, transparent);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text);
   }
-  .sec-icon { width: 20px; height: 20px; border-radius: var(--radius-badge); display: inline-flex; align-items: center; justify-content: center; background: var(--tag); color: var(--on-media-text); flex-shrink: 0; }
+  .sec-icon { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--tag); color: #fff; flex-shrink: 0; }
   .sec-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .narrow .sec { height: auto; padding: 0; border: none; background: none; gap: 4px; font-size: var(--fs-xs); font-weight: var(--fw-medium, 500); color: color-mix(in srgb, var(--tag) 70%, var(--text)); }
   .narrow .sec-icon { width: auto; height: auto; background: none; color: inherit; }
   .saved { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
-  .publish { flex-shrink: 0; gap: var(--sp-1-5); }
+  .publish { flex-shrink: 0; gap: 6px; }
   .err { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
 
   /* A computer: the fields on the left, the preview on the right. */
   .split { flex: 1; min-height: 0; display: flex; }
-  .left { width: min(640px, 54%); flex-shrink: 0; display: flex; flex-direction: column; gap: var(--sp-2-5); padding: var(--sp-4) var(--sp-5); border-right: 1px solid var(--pane-border); overflow-y: auto; }
+  .left { width: min(640px, 54%); flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: var(--sp-4) var(--sp-5); border-right: 1px solid var(--pane-border); overflow-y: auto; }
   .right { flex: 1; min-width: 0; display: flex; flex-direction: column; background: color-mix(in srgb, var(--surface-2) 40%, transparent); }
   .p-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); flex-shrink: 0; }
   .p-lbl { flex: 1; }
@@ -483,8 +445,8 @@
   .title-field, .body-field {
     width: 100%; font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
   }
-  .title-field { height: 48px; padding: 0 var(--sp-3); font-size: var(--fs-lg); font-weight: var(--fw-bold); }
-  .body-field { flex: 1; min-height: 180px; resize: none; padding: var(--sp-3) var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-body); }
+  .title-field { height: 48px; padding: 0 14px; font-size: var(--fs-lg, 18px); font-weight: var(--fw-bold); }
+  .body-field { flex: 1; min-height: 180px; resize: none; padding: 12px 14px; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-body); }
   .body-field.mono { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-base); }
   .title-field:focus, .body-field:focus { outline: none; border-color: var(--accent-border); }
 
@@ -492,16 +454,9 @@
   .bar { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; }
   .marks { flex: 1; min-width: 0; display: flex; align-items: center; gap: 1px; overflow-x: auto; scrollbar-width: none; }
   .marks::-webkit-scrollbar { display: none; }
-  /* A clipped edge of the row fades while there is more of it that way (scrollTabs marks it), as the note's bar (design 12). */
-  .marks:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
-  .marks:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
-  .marks:global(.fade-start.fade-end) {
-    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-  }
   .bar-sep { width: 1px; height: 20px; margin: 0 3px; flex-shrink: 0; background: var(--border-2); }
   .tb {
-    height: 32px; min-width: 31px; padding: 0 var(--sp-1); flex-shrink: 0; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
+    height: 32px; min-width: 31px; padding: 0 5px; flex-shrink: 0; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
     color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold);
   }
   .tb:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
@@ -510,15 +465,14 @@
   .bar.docked {
     position: fixed; left: 0; right: 0; z-index: 1;
     border-radius: 0; border: none; border-top: 1px solid var(--glass-border); background: var(--glass-bg); box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); padding: var(--sp-1) var(--sp-1-5) calc(var(--sp-1) + var(--sab, 0px));
+    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); padding: 6px 6px calc(6px + var(--sab, 0px));
   }
-  /* One row of 48 right on the keyboard (design 17): buttons of 40, their zones of 44 meet across the 4 between them. */
-  .bar.docked .tb { height: 40px; min-width: 40px; flex-shrink: 0; }
-  .bar-attach { flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--border); --attach-w: 40px; --attach-h: 40px; }
+  .bar.docked .tb { height: 44px; min-width: 44px; flex-shrink: 0; }
+  .bar-attach { flex-shrink: 0; padding-left: 4px; border-left: 1px solid var(--border); --attach-w: 44px; --attach-h: 44px; }
   .n-bar { padding: 0 var(--sp-3) var(--sp-3); flex-shrink: 0; }
 
   /* The files. */
-  .tray { display: flex; gap: var(--sp-2-5); flex-wrap: wrap; }
+  .tray { display: flex; gap: 10px; flex-wrap: wrap; }
   .thumb {
     position: relative; width: 84px; height: 84px; flex-shrink: 0; border-radius: var(--radius-md); overflow: hidden;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px;
@@ -529,39 +483,33 @@
   .t-name { max-width: 100%; font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .unpick, .lock {
     position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border: none; border-radius: 50%; padding: 0;
-    display: inline-flex; align-items: center; justify-content: center; background: var(--on-media-scrim); color: var(--on-media-text);
+    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
   }
-  /* «Take the file out»: the round scrim is its icon's (12 in a disc of 22); on a phone the button around it is 40. */
-  .unpick { cursor: pointer; background: none; }
-  .unpick > :global(.icon) { width: 22px; height: 22px; padding: 5px; border-radius: 50%; background: var(--on-media-scrim); }
+  .unpick { cursor: pointer; }
   .thumb.locked img { opacity: 0.8; }
   .thumb.add { border-style: dashed; background: none; color: var(--text-2); padding: 0; }
   .thumb.add:hover { border-color: var(--border-2); color: var(--text); }
   /* The attach button fills the tile; the words over it let the click through. */
   .thumb.add :global(.attach) { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 0; opacity: 0; }
   .add-label { pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: var(--fw-medium, 500); }
-  .hint { margin: 0; display: flex; align-items: center; gap: var(--sp-1-5); line-height: var(--lh-snug); }
+  .hint { margin: 0; display: flex; align-items: center; gap: 6px; line-height: var(--lh-snug); }
 
   /* Narrow: tabs, one column. */
   .tabs { padding: var(--sp-1) var(--sp-3) var(--sp-2); flex-shrink: 0; }
   .tabs-seg { display: flex; width: 100%; }
   .tabs-seg .seg-btn { flex: 1; justify-content: center; }
   .n-body { flex: 1; min-height: 0; overflow-y: auto; }
-  .col { display: flex; flex-direction: column; gap: var(--sp-2-5); padding: var(--sp-1) var(--sp-3) var(--sp-4); min-height: 100%; }
+  .col { display: flex; flex-direction: column; gap: 10px; padding: var(--sp-1) var(--sp-3) var(--sp-4); min-height: 100%; }
   .col .p-head { padding: 0; }
   .col .p-card { width: 100%; }
   .narrow .body-field { min-height: 240px; flex: 1 0 240px; }
   .fmt-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+  .fmt-row .seg-btn { height: 30px; font-size: var(--fs-xs); }
   @media (pointer: coarse) {
-    .title-field { font-size: var(--fs-md); }
-    /* A finger's field is 16, the Markdown's monospace too: no zoom on focus. */
-    .body-field, .body-field.mono { font-size: var(--fs-md); }
-    /* The button's zone of 44 stands out of the tile (5 over its top and right edge): the tile does not clip it, its
-       picture keeps the corners itself. */
-    .thumb { width: 72px; height: 72px; overflow: visible; }
-    .thumb img { border-radius: calc(var(--radius-md) - 1px); }
-    /* A button of 40 (its zone 44), its disc of 26 where it stood, 4 from the tile's corner. */
-    .unpick { top: -3px; right: -3px; width: 40px; height: 40px; border-radius: var(--radius); }
-    .unpick > :global(.icon) { width: 26px; height: 26px; padding: 7px; }
+    .title-field { font-size: var(--fs-md, 17px); }
+    .body-field { font-size: var(--fs-md, 16px); }
+    .body-field.mono { font-size: var(--fs-sm); }
+    .thumb { width: 72px; height: 72px; }
+    .unpick { width: 26px; height: 26px; }
   }
 </style>

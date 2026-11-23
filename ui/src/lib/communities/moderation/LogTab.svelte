@@ -79,7 +79,7 @@
 {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if !items.length && !loading && !error}
-  <p class="empty-state sm">{$t('chan_mod_log_empty')}</p>
+  <p class="empty">{$t('chan_mod_log_empty')}</p>
 {:else}
   <ul class="log">
     {#each items as e, i (`${e.at}:${e.by}:${e.action}:${e.target}:${i}`)}
@@ -97,6 +97,7 @@
 {:else if next}<button class="btn btn-ghost btn-sm more" onclick={() => load(true)}>{$t('chan_load_more')}</button>{/if}
 
 <style>
+  .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
   .entry { display: flex; flex-direction: column; gap: 2px; padding: 8px 4px; border-bottom: 1px solid var(--divider); min-width: 0; }
   .line { font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }

@@ -60,7 +60,7 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: var(--z-max);
+    z-index: 9999;
   }
   .edge,
   .corner {

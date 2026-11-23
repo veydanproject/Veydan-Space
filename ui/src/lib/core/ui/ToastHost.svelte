@@ -52,7 +52,7 @@
           {/if}
         </span>
         {#if action}<button class="btn btn-ghost btn-sm action" type="button" onclick={() => toast.act()}>{action}</button>{/if}
-        <button class="icon-btn close" type="button" onclick={() => toast.close(cur.id)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={18} /></button>
+        <button class="close" type="button" onclick={() => toast.close(cur.id)} aria-label={$t('common_close')} title={$t('common_close')}><Icon name="x" size={16} /></button>
         {#if countdown}<span class="bar" style:width="{(cur.left / cur.total) * 100}%"></span>{/if}
       </div>
     {/key}
@@ -83,9 +83,13 @@
   .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-snug); overflow-wrap: anywhere; }
   .sub { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-2); overflow-wrap: anywhere; }
   .action { flex-shrink: 0; white-space: nowrap; }
-  .close { flex-shrink: 0; }
+  .close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+    border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-2); cursor: pointer;
+  }
+  .close:hover { background: var(--surface-hover); color: var(--text); }
   .bar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); transition: width 250ms linear; }
-  .phone .action { height: 44px; margin: calc(-1 * var(--sp-1-5)) 0; }
-  .phone .close { width: 44px; height: 44px; margin: calc(-1 * var(--sp-1-5)) 0; }
+  .phone .action { height: 44px; margin: -6px 0; }
+  .phone .close { width: 44px; height: 44px; margin: -6px 0; }
   @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
 </style>

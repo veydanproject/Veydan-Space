@@ -22,7 +22,6 @@
   import { secretCopied } from '$lib/core/ui/toast.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import TabBar from '$lib/core/ui/TabBar.svelte';
   import { api } from '$lib/pass/api';
   import { AutoHide } from '$lib/pass/autohide.svelte';
   import { copySecret } from '$lib/pass/clipboard';
@@ -213,14 +212,14 @@
 {#if change}
   <div class="new-key">
     <Notice tone="warn">{$t('totp_key_change_warning')}</Notice>
-    <TabBar selected={change.tab}>
-      <button type="button" class="tab" role="tab" aria-selected={change.tab === 'manual'} class:active={change.tab === 'manual'} onclick={() => pickTab('manual')}>
+    <div class="tab-bar">
+      <button type="button" class="tab" class:active={change.tab === 'manual'} onclick={() => pickTab('manual')}>
         <Icon name="keyboard" size={13} /> {$t('totp_key_tab_manual')}
       </button>
-      <button type="button" class="tab" role="tab" aria-selected={change.tab === 'qr'} class:active={change.tab === 'qr'} onclick={() => pickTab('qr')}>
+      <button type="button" class="tab" class:active={change.tab === 'qr'} onclick={() => pickTab('qr')}>
         <Icon name="scan" size={13} /> {$t('totp_key_tab_qr')}
       </button>
-    </TabBar>
+    </div>
     {#if change.tab === 'manual'}
       <div class="form-group">
         <label for="totp-new-key-{entryId}">{$t('totp_key_new')}</label>
@@ -272,12 +271,13 @@
   .autohide { font-size: var(--fs-xs); color: var(--text-2); }
   .change { display: flex; }
   .new-key { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .tab { justify-content: center; }
   .qr-section {
     display: flex; flex-direction: column; gap: var(--sp-2);
     padding: var(--sp-3); background: var(--surface-3);
     border-radius: var(--radius-md); border: 1px solid var(--border);
   }
-  .qr-detected { display: flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--success-text); }
+  .qr-detected { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); color: var(--success-text); }
   .ok { display: flex; color: var(--success); }
   .hint { margin: 0; }
   input.mono::placeholder { font-family: var(--font-ui); }

@@ -13,7 +13,6 @@
   import { serverStore } from '../servers/serverStore.svelte';
   import { pushErrorKey, pushStore } from './pushStore.svelte';
   import { pushPrivacyKey } from './wording';
-  import { onPhone } from '../phone';
 
   let editingServer = $state(false);
   let serverDraft = $state('');
@@ -214,7 +213,7 @@
             <ul class="list">
               {#each status.relays as r (r.url)}
                 <li class="row">
-                  <span class="status-dot {r.status === 'ok' ? 'ok' : r.status === 'pending' ? 'warn' : r.status === 'unknown' ? 'off' : 'bad'}"></span>
+                  <span class="dot {r.status}"></span>
                   <div class="info">
                     <code>{r.url}</code>
                     <span class="meta">{tr(`msg_push_relay_${r.status}`)}</span>
@@ -252,7 +251,7 @@
             <ul class="list">
               {#each targets as target (target.server_id)}
                 <li class="row">
-                  <span class="status-dot {target.state === 'registered' ? 'ok' : target.state === 'pending' ? 'warn' : 'bad'}"></span>
+                  <span class="dot {target.state === 'registered' ? 'ok' : target.state === 'pending' ? 'pending' : 'failed'}"></span>
                   <div class="info">
                     <span class="name">{target.name?.trim() || serverStore.nameOf(target.server_id) || hostOf(target.server)}</span>
                     <span class="meta">
@@ -315,41 +314,21 @@
           placeholder="https://"
           bind:value={serverDraft}
         />
-        {#if onPhone}
-          <!-- A phone (design 15): the short form keeps its buttons in the card, «Cancel | Save» in halves of 48;
-               the default back is a row of its own over them. -->
-          <div class="actions pair">
-            {#if status.server_custom}
-              <button class="btn btn-ghost whole" disabled={pushStore.busy} onclick={() => saveServer(null)}>
-                {$t('msg_push_server_reset')}
-              </button>
-            {/if}
-            <button class="btn btn-ghost" onclick={() => (editingServer = false)}>{$t('common_cancel')}</button>
-            <button
-              class="btn btn-primary"
-              disabled={pushStore.busy || !serverDraft.trim()}
-              onclick={() => saveServer(serverDraft.trim())}
-            >
-              {$t('common_save')}
+        <div class="actions">
+          <button
+            class="btn btn-primary"
+            disabled={pushStore.busy || !serverDraft.trim()}
+            onclick={() => saveServer(serverDraft.trim())}
+          >
+            {$t('common_save')}
+          </button>
+          {#if status.server_custom}
+            <button class="btn btn-ghost" disabled={pushStore.busy} onclick={() => saveServer(null)}>
+              {$t('msg_push_server_reset')}
             </button>
-          </div>
-        {:else}
-          <div class="actions">
-            <button
-              class="btn btn-primary"
-              disabled={pushStore.busy || !serverDraft.trim()}
-              onclick={() => saveServer(serverDraft.trim())}
-            >
-              {$t('common_save')}
-            </button>
-            {#if status.server_custom}
-              <button class="btn btn-ghost" disabled={pushStore.busy} onclick={() => saveServer(null)}>
-                {$t('msg_push_server_reset')}
-              </button>
-            {/if}
-            <button class="btn btn-ghost" onclick={() => (editingServer = false)}>{$t('common_back')}</button>
-          </div>
-        {/if}
+          {/if}
+          <button class="btn btn-ghost" onclick={() => (editingServer = false)}>{$t('common_back')}</button>
+        </div>
       {:else}
         <div class="line">
           <div class="info">
@@ -388,13 +367,15 @@
   .meta.bad { color: var(--danger-text); }
   .name { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .btn-danger-soft { flex-shrink: 0; }
+  .dot.failed { background: var(--danger-text); }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--danger-text); }
+  .dot.ok { background: var(--success-text); }
+  .dot.pending { background: var(--color-warning); }
+  .dot.unknown { background: var(--text-3); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-  .actions.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pair > .btn { min-height: 48px; min-width: 0; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; }
-  .pair > .whole { grid-column: 1 / -1; }
   input {
-    min-height: 44px; font-family: var(--font-mono); color: var(--text);
+    min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   input:focus { outline: none; border-color: var(--accent-border); }

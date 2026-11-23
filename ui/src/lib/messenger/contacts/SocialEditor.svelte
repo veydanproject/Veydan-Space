@@ -154,10 +154,10 @@
 
 <style>
   .social-editor { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-  .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1-5); }
+  .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .main {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2-5); padding: var(--sp-1-5) var(--sp-2-5); cursor: pointer; text-align: left;
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 10px; cursor: pointer; text-align: left;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font: inherit;
   }
   .main:hover:not(:disabled) { border-color: var(--border-2); background: var(--surface-hover); }
@@ -176,7 +176,7 @@
   .pick { display: flex; flex-direction: column; gap: var(--sp-3); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--sp-2); }
   .platform {
-    display: flex; flex-direction: column; align-items: center; gap: var(--sp-1-5); padding: var(--sp-2-5) var(--sp-1); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; cursor: pointer;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md);
     color: var(--text); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-align: center;
   }

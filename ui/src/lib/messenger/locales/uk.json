@@ -1256,6 +1256,8 @@
     "msg_profile_public_hint": "Ім'я, фото, «Про себе», сайт і посилання публічні: їх бачить кожен, хто знає ваш ключ.",
     "msg_profile_saved": "Профіль опубліковано",
     "msg_profile_unsaved": "Є незбережені зміни",
+    "msg_profile_discard_confirm": "Скасувати зміни?",
+    "msg_profile_discard": "Скасувати",
     "msg_profile_send_card": "Надіслати мою картку",
     "msg_profile_send_card_hint": "Ім'я, фото, «Про себе» і посилання одним повідомленням — щоб вас додали одним дотиком.",
     "msg_profile_send_card_to": "Кому надіслати",

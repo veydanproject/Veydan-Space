@@ -206,7 +206,7 @@
 
 <div class="history-panel">
   <div class="panel-header">
-    <span class="section-label label-icon">
+    <span class="panel-title">
       <Icon name="clock" size={14} />
       {$t('notes_history_title')}
     </span>
@@ -294,7 +294,7 @@
           <Icon name="loader" size={16} />
         </div>
       {:else if diffLines.length === 0}
-        <div class="empty-state sm">{$t('notes_history_no_changes')}</div>
+        <div class="empty-diff">{$t('notes_history_no_changes')}</div>
       {:else}
         {#each diffLines as line}
           <div class="diff-line diff-{line.kind}">
@@ -368,16 +368,18 @@
     flex-shrink: 0;
   }
 
-  /* The common .section-label with its icon on the left. */
-  .label-icon {
+  .panel-title {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--text-2);
   }
 
   .header-actions {
     display: flex;
-    gap: var(--sp-1);
+    gap: 0.2rem;
   }
 
   .btn-close, .btn-mode {
@@ -403,13 +405,13 @@
   .hist-filter {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
-    padding: var(--sp-1-5) var(--sp-2-5);
+    gap: 0.3rem;
+    padding: 0.4rem 0.6rem;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .filter-row { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
-  .filter-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-1); }
+  .filter-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+  .filter-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.3rem; }
   /* A narrow panel stacks the dates: each one whole. */
   @container (max-width: 280px) {
     .filter-dates { grid-template-columns: minmax(0, 1fr); }
@@ -426,7 +428,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.15rem 0.25rem;
     width: 100%;
     min-width: 0;
   }
@@ -435,7 +437,7 @@
     background: none;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: var(--sp-1) var(--sp-1-5);
+    padding: 0.2rem 0.35rem;
     cursor: pointer;
     color: var(--text-2);
     display: flex;
@@ -451,7 +453,7 @@
     font-size: var(--fs-xs);
     color: var(--accent-text);
     background: var(--accent-tint);
-    padding: var(--sp-1) var(--sp-3);
+    padding: 0.3rem var(--sp-3);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     text-align: center;
@@ -461,7 +463,7 @@
     background: var(--danger-bg);
     color: var(--danger-text);
     font-size: var(--fs-xs);
-    padding: var(--sp-1) var(--sp-3);
+    padding: 0.3rem var(--sp-3);
     flex-shrink: 0;
   }
 
@@ -472,7 +474,7 @@
     background: none;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: var(--sp-0-5) var(--sp-2);
+    padding: 0.15rem var(--sp-2);
     font-size: var(--fs-xs);
     color: var(--text-2);
     cursor: pointer;
@@ -488,10 +490,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--sp-1-5) var(--sp-2) var(--sp-1-5) var(--sp-2-5);
+    padding: 0.35rem var(--sp-2) 0.35rem 0.6rem;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
 
   .diff-header-right {
@@ -504,7 +506,7 @@
   .btn-back {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     background: none;
     border: none;
     cursor: pointer;
@@ -535,7 +537,7 @@
 
   .diff-line {
     display: flex;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     padding: 0 var(--sp-2);
     white-space: pre-wrap;
     word-break: break-all;
@@ -567,13 +569,19 @@
     color: var(--text-3);
   }
 
+  .empty-diff {
+    padding: var(--sp-8);
+    text-align: center;
+    color: var(--text-3);
+  }
+
   .day-group { padding-bottom: var(--sp-1); }
 
   .day-label {
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-3);
-    padding: var(--sp-1-5) var(--sp-3) var(--sp-1);
+    padding: 0.4rem var(--sp-3) 0.2rem;
     position: sticky;
     top: 0;
     background: var(--surface);
@@ -587,7 +595,7 @@
     width: 100%;
     background: none;
     border: none;
-    padding: var(--sp-1-5) var(--sp-3);
+    padding: 0.35rem var(--sp-3);
     cursor: pointer;
     text-align: left;
     border-radius: 0;
@@ -611,7 +619,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-0-5);
+    gap: 0.05rem;
   }
 
   .entry-type {

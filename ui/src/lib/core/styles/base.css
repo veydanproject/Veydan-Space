@@ -71,7 +71,7 @@ input, select, textarea {
   border: 1px solid var(--control-border);
   color: var(--text);
   border-radius: var(--radius);
-  padding: var(--sp-2) var(--sp-3);
+  padding: 0.5rem 0.75rem;
   width: 100%;
   transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
@@ -84,7 +84,7 @@ select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237f7f8b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.6rem center;
-  padding-right: var(--sp-8);
+  padding-right: 2rem;
   cursor: pointer;
 }
 
@@ -94,10 +94,6 @@ select {
 :is(input, select, textarea):disabled { opacity: 0.45; cursor: not-allowed; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-border);
-}
-/* A form's field in a window or a drawer is 44 high, in a panel 40 (by its padding); no weight, a field's own height wins. */
-:where(.dialog, .drawer) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select) {
-  min-height: var(--control-h-lg);
 }
 
 /* A checkbox or a radio is a mark, not a field: the rules above would stretch
@@ -150,8 +146,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
    4.5:1 on the lighter glow. A dialog's fields are the same glass over its own. */
 [data-theme='dark'] :is(input, textarea)::placeholder { color: var(--text-2); }
 select option { background: var(--surface); color: var(--text); }
-[data-theme='dark'] :is(.seg, .seg-btn-lg) { border-color: var(--pane-strong-border); }
-[data-theme='dark'] .tab-bar { --tab-line: var(--pane-strong-border); }
+[data-theme='dark'] :is(.tab-bar, .seg, .seg-btn-lg) { border-color: var(--pane-strong-border); }
 
 button {
   cursor: pointer;
@@ -159,7 +154,7 @@ button {
   font-size: var(--fs-base);
   border: none;
   border-radius: var(--radius);
-  padding: var(--sp-2) var(--sp-4);
+  padding: 0.5rem 1rem;
   transition: all var(--dur-fast);
 }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -170,7 +165,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   align-items: center;
   /* A button stretched to its row (New chat's Start chat) keeps its label in the middle. */
   justify-content: center;
-  gap: var(--sp-2);
+  gap: 0.45rem;
   text-decoration: none;
   font-family: inherit;
   font-size: var(--fs-base);
@@ -195,11 +190,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
    are the glass's own; in the light they stay --border, or a white button on a white card has no edge. */
 [data-theme='dark'] .btn-ghost { border-color: var(--pane-strong-border); }
 [data-theme='dark'] .btn-ghost:hover:not(:disabled) { background: var(--pane-strong-border); border-color: var(--border-2); }
-/* The current one of a row of quiet buttons (a page number): the accent's tint, as the picked segment. */
-.btn-ghost.active, .btn-ghost.active:hover:not(:disabled) { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
 .btn-success { background: var(--success-grad); color: #fff; box-shadow: var(--shadow-success); }
 .btn-success:hover:not(:disabled) { background: var(--success-hover); }
 .btn-success:active:not(:disabled) { background: var(--success-active); }
+.btn-success-soft { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
+.btn-success-soft:hover:not(:disabled) { background: var(--success-bg-hover); }
 /* The second, quiet «Delete» of a card or a panel; the red fill (.btn-danger) stays for the main button of a dangerous dialog. */
 .btn-danger-soft { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); }
 .btn-danger-soft:hover:not(:disabled) { background: var(--danger-bg-hover); }
@@ -219,13 +214,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ── Icon buttons ── */
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; padding: 0; border-radius: var(--radius-sm);
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
   background: transparent; border: 1px solid transparent;
   color: var(--text-soft); cursor: pointer; transition: all var(--dur-fast);
   text-decoration: none;
 }
 .icon-btn > .icon { width: 18px; height: 18px; }
 .icon-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.icon-btn.accent-soft:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-text); }
 .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.success { color: var(--success-text); background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, var(--border)); }
 .icon-btn.success:hover:not(:disabled) { filter: brightness(1.1); }
@@ -233,20 +229,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .icon-btn.danger:hover:not(:disabled) { filter: brightness(1.1); }
 /* The delete of a row: grey at rest (the plain .icon-btn), red on hover. */
 .icon-btn.danger-soft:hover:not(:disabled) { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); color: var(--danger-text); }
-/* The button of a head (design 02): a panel, a page, a column, a chat (back, close, menu, call, add, sort) — 36, --radius,
-   the plain one's colours. Everywhere else (rows, editors, fields, bubbles, windows) it is the plain .icon-btn of 32. */
-.icon-btn.lg { width: 36px; height: 36px; flex-shrink: 0; border-radius: var(--radius); }
 /* «Create / Add» in the header of a module: 36, accent fill, white icon 18; the label lives in title and aria-label. */
 .icon-btn.create { width: 36px; height: 36px; flex-shrink: 0; background: var(--accent); color: #fff; border-radius: var(--radius); border: 0; }
 .icon-btn.create:hover:not(:disabled) { background: var(--accent); color: #fff; filter: brightness(1.08); }
-.icon-btn.lg:focus-visible, .icon-btn.create:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.icon-btn.create:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Forms ── */
-.form-group { display: flex; flex-direction: column; gap: var(--sp-1-5); }
-/* The label of a field; .form-label is the same words outside a .form-group (a <span> or <legend> in its own wrap,
-   a group's named by aria-labelledby); a phone's .m-field (mobile.css) takes the same label, 4 above its control. */
-.form-group label, .m-field label, .form-label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
-.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+.form-group { display: flex; flex-direction: column; gap: 0.35rem; }
+.form-group label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.875rem; }
 
 /* The error of a field: a line of 12 in the danger ink with the Tabler
    alert-circle before it, under the field it is about; no frame, no fill.
@@ -341,19 +332,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 [data-theme='dark'] :is(.card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
 .card-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 
-/* The head of a panel on a computer (design 09): a channel's feed, the post editor, a panel beside a chat — one
-   64 high, its title on the left, its .icon-btn.lg on the right, the pane's line under it. A phone's is .m-header. */
-.panel-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-height: 64px;
-  padding: var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid var(--pane-border);
-  background: var(--pane-head);
-  flex-shrink: 0;
-}
-
 .section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .section-label,
 .section-title {
@@ -369,7 +347,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-2-5);
+  padding: 0.25rem 0.65rem;
   border-radius: var(--radius-pill);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
@@ -383,26 +361,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .badge-ok      { background: var(--success-bg);  color: var(--success-text);  border-color: var(--success-border); }
 .badge-danger  { background: var(--danger-bg);   color: var(--danger-text);   border-color: var(--danger-border); }
 .badge-warn    { background: var(--warn-bg);     color: var(--warn-text);     border-color: var(--warn-border); }
-
-/* ── Status dot ── one dot of a state for the whole interface: a circle of 8, no glow.
-   .ok running / connected, .bad an error, .warn a warning or a draft, .off stopped or not known
-   (as no modifier); .pulse breathes (a session on its way). A dot of a colour the user picked
-   (a workspace, a column, a smart view) is the same dot with style="background: …". */
-.status-dot {
-  display: inline-block; flex-shrink: 0;
-  width: var(--sp-2); height: var(--sp-2); border-radius: 50%;
-  background: var(--text-3);
-}
-.status-dot.ok   { background: var(--success); }
-.status-dot.bad  { background: var(--danger-text); }
-.status-dot.warn { background: var(--warn-text); }
-.status-dot.off  { background: var(--text-3); }
-.status-dot.pulse { animation: status-dot-pulse 2s infinite; }
-@keyframes status-dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-@media (prefers-reduced-motion: reduce) { .status-dot.pulse { animation: none; } }
-
-/* The label around a row's checkbox: the mark's own box here, its zone of 44 on a phone (mobile.css). */
-.tick-zone { display: inline-flex; flex-shrink: 0; }
 
 /* ── Chip (interactive / toggleable pill) ── */
 .chip {
@@ -495,10 +453,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   flex-shrink: 0;
 }
 
-/* Поле поиска, одно на всё приложение: лупа 16 слева, поле 40 (на телефоне 44), крестик справа, пока
-   в поле есть текст. 240 в панели фильтров; .fill — на всю ширину списка, окна, листа. Кнопки рядом
-   (стрелки, «Отмена», закрытие) стоят справа от поля, не внутри. Лупа и крестик — 16 здесь, какой бы
-   size ни передало место вызова. */
+/* Поле поиска: иконка слева, опциональная кнопка очистки справа */
 .search-field {
   position: relative;
   display: flex;
@@ -506,97 +461,32 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   width: 240px;
   flex-shrink: 0;
 }
-.search-field.fill { width: 100%; flex-shrink: 1; min-width: 0; }
 .search-field > svg {
   position: absolute;
-  left: var(--sp-3);
-  width: 16px;
-  height: 16px;
+  left: 0.85rem;
   color: var(--text-3);
   pointer-events: none;
 }
 .search-field input {
   height: var(--control-h);
-  min-height: var(--control-h);
   width: 100%;
-  padding: 0 var(--sp-3) 0 calc(var(--sp-3) + 16px + var(--sp-2));
-  border: 1px solid var(--border);
+  padding: 0 1.9rem 0 2.25rem;
   border-radius: var(--radius-pill);
-  background: var(--pane-strong);
-  color: var(--text);
   font-size: var(--fs-base);
-  box-shadow: none;
 }
-.search-field input:hover:not(:focus) { border-color: var(--text-3); }
-.search-field input:focus { border-color: var(--accent-border); box-shadow: none; }
-/* Крестик или индикатор загрузки справа: текст не заходит под них. */
-.search-field:has(> .search-clear, > .search-spin) input { padding-right: 36px; }
-/* Свой крестик у поля type="search": крестик движка рядом с ним не нужен. */
-.search-field input::-webkit-search-cancel-button,
-.search-field input::-webkit-search-decoration {
-  -webkit-appearance: none;
-  appearance: none;
-  display: none;
-}
-/* Ссылка в виде поля (главная телефона): тот же вид, текст — подсказка. */
-.search-field > .search-link {
-  display: block;
-  width: 100%;
-  height: var(--control-h);
-  line-height: calc(var(--control-h) - 2px);
-  padding: 0 var(--sp-3) 0 calc(var(--sp-3) + 16px + var(--sp-2));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--pane-strong);
-  color: var(--text-3);
-  font: inherit;
-  font-size: var(--fs-base);
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.search-field > .search-link:focus-visible { outline-offset: 2px; border-radius: var(--radius-pill); }
-/* A button inside a field (the × of a search, «show» and «copy» of a password): a part of the field, not an
-   icon button — 28 to press, the icon 16 in --text-3, --text under the pointer, no fill; the same in every field. */
-.search-clear, .field-btn {
+.search-clear {
+  position: absolute;
+  right: 0.4rem;
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+  padding: 2px;
   background: none;
   border: none;
-  border-radius: var(--radius-pill);
   color: var(--text-3);
   cursor: pointer;
   transition: color var(--dur-fast);
 }
-.search-clear { position: absolute; right: var(--sp-1); }
-.search-clear:hover, .field-btn:hover:not(:disabled) { color: var(--text); }
-.search-clear > svg, .field-btn > svg { width: 16px; height: 16px; }
-/* Индикатор загрузки — на месте крестика. */
-.search-field > .search-spin {
-  position: absolute;
-  right: calc(var(--sp-1) + 8px);
-  display: flex;
-  color: var(--accent-text);
-  pointer-events: none;
-  animation: spin 1s linear infinite;
-}
-@media (pointer: coarse) {
-  .search-field input, .search-field > .search-link {
-    height: var(--control-h-lg);
-    min-height: var(--control-h-lg);
-    font-size: var(--fs-md);
-  }
-  .search-field > .search-link { line-height: calc(var(--control-h-lg) - 2px); }
-  .search-clear { right: 0; width: 44px; height: 44px; }
-}
+.search-clear:hover { color: var(--text); }
 
 /* Место списка (CustomSelect, поле 40) в панели фильтров: шириной по подписи, не сжимается */
 .filter-select {
@@ -632,7 +522,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text-2);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  padding: var(--sp-1) var(--sp-2-5);
+  padding: 0.2rem 0.6rem;
   border-radius: var(--radius-pill);
   white-space: nowrap;
 }
@@ -651,19 +541,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .empty-state svg { opacity: 0.5; }
 .empty-state p { font-size: var(--fs-body); color: var(--text-2); font-weight: var(--fw-semibold); }
 .empty-state span { font-size: var(--fs-sm); color: var(--text-2); max-width: 260px; line-height: var(--lh-base); }
-/* The small one: an empty block inside a panel, a sheet, a table, a log — one line of text in the middle,
-   no icon, no italics; a longer text wraps in the middle. */
-.empty-state.sm {
-  display: block;
-  margin: 0;
-  padding: var(--sp-4);
-  font-size: var(--fs-sm);
-  font-style: normal;
-  font-weight: var(--fw-normal);
-  line-height: var(--lh-base);
-  color: var(--text-3);
-}
-.empty-state.sm p, .empty-state.sm span { font: inherit; color: inherit; max-width: none; }
 
 /* A hint under a field or a block: one size and one colour everywhere; a place sets only its spacing. */
 .hint { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-base); }
@@ -694,65 +571,40 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .win-close:hover { background: var(--surface-hover); color: var(--text); }
 .win-close:active { background: var(--surface-hover); }
 
-/* ── Tabs ── the sections of a page, a panel, a window (design 01): words on the line of the section, no track.
-   The row stands on a line of 1px across its container (--tab-line: --border, the dark theme's --pane-strong-border),
-   --sp-1 of room around the tabs keeping the keyboard's ring of an edge tab whole. A tab is 44, --sp-2 at its sides
-   (20 between two words). The chosen one: --accent-text, bold, a bar of 3px --accent under its contents (icon, word,
-   count) on the line; hovered, a bar of --border-2 there. Its count is a `.count-pill.sm.quiet` right of the word.
-   TabBar (core/ui) makes it `.inked`: the row scrolls sideways when it does not fit (its ring room below the tabs
-   too) and one bar, `.tab-ink`, moves from the chosen tab to the next (`left` and `width` in --dur-base); a bare
-   .tab-bar draws the bar under each chosen tab. */
+/* ── Tabs ── the sections of a page: the kit's segmented control */
 .tab-bar {
-  --tab-line: var(--border);
-  position: relative;
-  display: flex;
-  gap: var(--sp-1);
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
   max-width: 100%;
-  min-width: 0;
-  padding: var(--sp-1) var(--sp-1) 0;
-  box-shadow: inset 0 -1px 0 var(--tab-line);
+  padding: 3px;
+  background: var(--pane-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   flex-shrink: 0;
 }
-.tab-bar.inked { padding-bottom: var(--sp-1); overflow-x: auto; scrollbar-width: none; }
-.tab-bar.inked::-webkit-scrollbar { display: none; }
 .tab {
   position: relative;
-  flex-shrink: 0;
   min-height: 32px;
-  padding: 0 var(--sp-2);
+  padding: 0 var(--sp-3);
   border: none;
   background: none;
   color: var(--text-2);
-  font: inherit;
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius) - 4px);
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--dur-fast) var(--ease);
+  transition: all var(--dur-fast);
 }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--accent-text); }
-.tab-bar .tab { min-height: var(--control-h-lg); }
-.tab-bar .tab.active { font-weight: var(--fw-bold); }
-.tab::after {
-  content: ''; position: absolute; left: var(--sp-2); right: var(--sp-2); bottom: 0; height: 3px;
-  border-radius: 3px 3px 0 0; background: transparent; pointer-events: none;
-}
-.tab-bar .tab:hover:not(.active)::after { background: var(--border-2); }
-.tab.active::after { background: var(--accent); }
-.tab-bar.inked .tab::after { bottom: calc(-1 * var(--sp-1)); }
-.tab-bar.inked .tab.active::after { background: transparent; }
-.tab-ink {
-  position: absolute; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); pointer-events: none;
-}
-.tab-bar.ready .tab-ink { transition: left var(--dur-base) var(--ease), width var(--dur-base) var(--ease); }
-@media (prefers-reduced-motion: reduce) {
-  .tab-bar.ready .tab-ink { transition: none; }
-}
+/* The chosen one: no fill, no frame; a bar of the accent under its contents (icon, word, count), as under a tab of Tabs.
+   Its count is a `.count-pill.sm.quiet` (a total), the accent when it counts what is unread. */
+.tab.active::after { content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
 
 /* ── A row of a list pane ── one row for the chats, the groups, the channels, the calls, the contacts and the
    requests: 64 high, an avatar of 48, the text column right of it — the name over the line, the marks of the
@@ -760,19 +612,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
    `.list-rows` on the <ul>, each <li> holds one `.list-row` (a button, or a box with a `.list-row-main`
    button and its trailing buttons); an <li> of another kind (a label, a rule) is not a row. Between two
    rows a hairline of --divider from the text (72 from the left) to 12 from the right, hidden beside a
-   hovered or chosen row (a list without an avatar sets `--list-line: var(--sp-3)`). `.unread`: the name
-   heavier, the line bright and bold, the time in the accent; the count is a `.count-pill.lg`. */
+   hovered or chosen row. `.unread`: the name heavier, the line bright and bold, the time in the accent;
+   the count is a `.count-pill.lg`. */
 .list-rows { --list-avatar: 48px; list-style: none; margin: 0; padding: var(--sp-1) 0; display: flex; flex-direction: column; }
 .list-row {
   position: relative; display: flex; align-items: center; gap: var(--sp-3); box-sizing: border-box; width: 100%;
   min-height: 64px; padding: var(--sp-2) var(--sp-3); border: none; border-radius: var(--radius-lg);
-  background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
   transition: background var(--dur-fast) var(--ease);
 }
 .list-row:hover { background: var(--surface-hover); }
 .list-row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
 .list-rows > li:has(> .list-row) + li > .list-row::before {
-  content: ''; position: absolute; top: -0.5px; left: var(--list-line, calc(var(--sp-3) * 2 + var(--list-avatar))); right: var(--sp-3); height: 1px;
+  content: ''; position: absolute; top: -0.5px; left: calc(var(--sp-3) * 2 + var(--list-avatar)); right: var(--sp-3); height: 1px;
   background: var(--divider); pointer-events: none; transition: opacity var(--dur-fast) var(--ease);
 }
 .list-rows > li > .list-row:is(:hover, .active)::before,
@@ -792,18 +644,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .list-row.unread .list-row-name { font-weight: var(--fw-extrabold); }
 .list-row.unread .list-row-line { color: var(--text); font-weight: var(--fw-semibold); }
 .list-row.unread .list-row-time { color: var(--accent-text); font-weight: var(--fw-bold); }
-/* The dense row: a list of people (readers, members, contacts of a window, requests) or of rows without an avatar
-   (levels) — 52 (56 on touch), an avatar of 36, the name in --fs-base, the line in --fs-sm --text-3; the hairline
-   from the text (60 from the left). Its buttons at the end (`.icon-btn` 32) stand in the row, as with `.list-row-main`.
-   `.still` (or a disabled one): a row that only tells (its buttons at the end are the only acts) — no hover, no hand. */
-.list-row.dense { --list-avatar: 36px; min-height: var(--row-h-dense); }
-.list-row:is(.still, :disabled) { cursor: default; }
-.list-row:is(.still, :disabled):hover { background: none; }
-.list-row.dense .list-row-body { gap: 0; line-height: var(--lh-snug); }
-.list-row.dense .list-row-name { font-size: var(--fs-base); }
-@media (pointer: coarse) {
-  .list-row.dense { min-height: 56px; }
-}
 
 /* ── A list as a column of covers ── (the list pane at 72: chats, groups,
    channels, calls, contacts). The open one is lit; a count sits on its corner. */
@@ -827,12 +667,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
    .list-cover-corner and .menu-count are counts of 18 under their own names. */
 .count-pill, .list-cover-corner, .menu-count {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box;
-  min-width: 20px; height: 20px; padding: 0 var(--sp-1-5); border-radius: var(--radius-pill);
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-pill);
   background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums; line-height: var(--lh-icon); white-space: nowrap;
 }
-.count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 var(--sp-1); font-size: var(--fs-xs); }
-.count-pill.lg { min-width: 22px; height: 22px; padding: 0 var(--sp-2); }
+.count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 5px; font-size: var(--fs-xs); }
+.count-pill.lg { min-width: 22px; height: 22px; padding: 0 7px; }
 .count-pill.quiet, .list-cover-corner.muted { background: var(--surface-3); color: var(--text-2); }
 .count-pill.danger, .list-cover-corner.missed { background: var(--danger); color: #fff; }
 /* On a segmented control (itself surface-3) the quiet count steps a shade down to stay visible. */
@@ -855,7 +695,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg-btn {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 7px;
   height: 32px;
   padding: 0 var(--sp-3);
   border: none;
@@ -875,15 +715,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .seg.seg-fill { display: flex; width: 100%; box-sizing: border-box; }
 .seg.seg-fill .seg-btn {
   flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: var(--lh-tight);
-  height: auto; min-height: max(32px, var(--touch, 0px)); padding-block: var(--sp-1-5);
+  height: auto; min-height: max(32px, var(--touch, 0px)); padding-block: 6px;
 }
 /* Standalone segment buttons (Settings language/theme: 44px, own borders) */
 .seg-btn-lg {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: 9px;
   height: var(--control-h-lg);
-  padding: 0 var(--sp-5);
+  padding: 0 20px;
   border-radius: var(--radius);
   background: var(--pane-strong);
   border: 1px solid var(--border);
@@ -942,8 +782,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .mono-chip {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-2-5);
+  gap: 5px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-family: var(--font-mono);

@@ -82,7 +82,7 @@
   .circle {
     position: relative; display: block; width: 220px; height: 220px; max-width: 100%; padding: 0; border: none; border-radius: 50%;
     overflow: hidden; cursor: pointer; flex-shrink: 0;
-    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 45%, var(--on-media-ground)), var(--on-media-ground) 75%);
+    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 45%, #111), #0b0b0f 75%);
   }
   .circle video, .circle img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; background: rgba(0, 0, 0, 0.28); }
@@ -90,7 +90,7 @@
   .spin :global(svg) { animation: spin 1.1s linear infinite; }
   .len {
     position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 2px 8px; border-radius: var(--radius-pill);
-    background: var(--on-media-scrim); color: #fff; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-snug);
+    background: rgba(0, 0, 0, 0.5); color: #fff; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: var(--lh-snug);
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>

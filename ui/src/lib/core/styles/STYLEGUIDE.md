@@ -104,8 +104,8 @@ field is a pill.
 ## Primitives
 
 `.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`/`.card-title`
-· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-danger/-danger-soft/-sm`; `.btn-ghost.active` the current one of a row)
-· `.icon-btn`(+`.success/.danger/.danger-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
+· `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-danger-soft/-sm`)
+· `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
 · `.tab-bar`/`.tab`(+`.active`: `--accent-text` over a bar of `--accent`; its count a `.count-pill.sm.quiet`) · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
@@ -124,9 +124,8 @@ field is a pill.
   `.danger` (missed, errors). A corner count adds only its position and a 2px ring of `--chrome`.
   Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
 · `.menu-count` (the count on the corner of a head's ⋮: a `.count-pill` of 18 under its own name; the button is `position: relative`).
-A button and an icon button sink to .97 under the press (`--dur-press`). On the
-phone the main button is the same `.btn.btn-primary`, 48 and flat (mobile.css);
-a choice is the `.chip` (32, its zone 44), a label in a row a `.badge`.
+A button and an icon button sink to .97 under the press (`--dur-press`); the
+phone's `.m-ibtn` and `.m-btn-grad` too.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with
 `accent-color` (20px on the phone); do not re-declare `width: auto` locally.
 A value read or copied character by character — a password, a key, a secret,
@@ -254,6 +253,8 @@ colour, nothing else:
 - Inside a chip, a × or a secondary text inherits the ink and fades by
   `opacity: var(--chip-fade)`; never a fixed `--text-2`/`--text-3`, which
   does not follow the tint under it.
+- On the phone an `.m-chip` has no border, so its tint is mixed over
+  `--m-seg` (the neutral chip) instead of the page (mobile.css).
 - The ink share is computed, not chosen by eye: `chip-contrast.test.ts` takes
   the pickers' palettes, the accent presets of Settings, the colour tokens a
   chip takes, the extremes and a sweep of the RGB cube, resolves the mixes
@@ -269,8 +270,8 @@ colour, nothing else:
 - The component keeps the shape (padding, radius, `border-width` and
   `border-style` — not the `border` shorthand, which sets a colour) and sets
   no colour on the element. A dot, stripe or icon with no text keeps the raw
-  colour. On the phone it is the same `.chip.tinted` / `.badge.tinted`; a
-  workspace with no colour of its own passes `var(--success)`.
+  colour. On the phone it is `.m-chip.tinted`; a workspace with no colour of
+  its own passes `var(--success)`.
 - Without `color-mix` (an old WebView) the chip is neutral with a border of
   the raw colour (`@supports`).
 - The guard (below) fails on text in a colour from data set anywhere else:

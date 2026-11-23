@@ -5,7 +5,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import Pill from '$lib/core/ui/Pill.svelte';
   import { t, locale, countKey } from '$lib/core/i18n';
   import { relTime as fmtRelTime } from '$lib/core/utils';
   import NotesPanel from '$lib/notes/components/NotesPanel.svelte';
@@ -41,9 +40,9 @@
     </button>
   </div>
   {#if notesStore.loading}
-    <div class="empty-state sm">{$t('loading')}</div>
+    <div class="notes-empty">{$t('loading')}</div>
   {:else if profileNotes.length === 0}
-    <div class="empty-state sm">{$t('panel_notes_empty')}</div>
+    <div class="notes-empty">{$t('panel_notes_empty')}</div>
   {:else}
     <ul class="notes-list-inline">
       {#each profileNotes as note (note.id)}
@@ -51,7 +50,7 @@
           <button class="note-card-inline" onclick={() => { noteToOpen = note.id; notesOpen = true; }}>
             <div class="note-card-top">
               <span class="note-title-inline">{note.title || $t('notes_untitled')}</span>
-              <Pill text={note.format.toUpperCase()} />
+              <span class="note-badge">{note.format.toUpperCase()}</span>
             </div>
             {#if note.preview}
               <span class="note-preview-inline">{note.preview}</span>
@@ -103,6 +102,11 @@
     font-size: var(--fs-sm);
     color: var(--text-2);
   }
+  .notes-empty {
+    font-size: var(--fs-base);
+    color: var(--text-2);
+    padding: var(--sp-2) 0;
+  }
   .notes-list-inline {
     list-style: none;
     margin: 0;
@@ -117,7 +121,7 @@
     background: var(--bg-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-badge);
-    padding: var(--sp-2) var(--sp-2-5);
+    padding: var(--sp-2) 0.65rem;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -129,7 +133,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
   .note-title-inline {
     font-size: var(--fs-sm);
@@ -139,6 +143,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     flex: 1;
+  }
+  .note-badge {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--text-2);
+    background: var(--surface-2);
+    border-radius: var(--radius-pill);
+    padding: 0.1rem 0.3rem;
+    flex-shrink: 0;
   }
   .note-preview-inline {
     font-size: var(--fs-xs);
@@ -154,7 +167,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
   .note-time-inline {
     font-size: var(--fs-xs);
@@ -172,20 +185,20 @@
     background: var(--warn-text);
     color: #fff;
     border-radius: 3px;
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.05rem 0.25rem;
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
   }
   .note-tags-inline {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-1);
-    margin-top: var(--sp-0-5);
+    gap: 0.2rem;
+    margin-top: 0.1rem;
   }
   .note-tag-chip {
     font-size: var(--fs-xs);
     border-radius: var(--radius-pill);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.05rem 0.3rem;
     font-weight: var(--fw-medium);
   }
   .note-tag-more {
@@ -195,12 +208,12 @@
   .btn-open-notes {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     background: transparent;
     color: var(--accent-text);
     border: 1px solid var(--accent);
     border-radius: var(--radius-sm);
-    padding: var(--sp-1) var(--sp-2-5);
+    padding: 0.2rem 0.6rem;
     font-size: var(--fs-sm);
     cursor: pointer;
     transition: background 0.15s;

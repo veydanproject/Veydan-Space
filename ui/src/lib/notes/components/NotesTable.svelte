@@ -6,7 +6,6 @@
   import type { NoteFolder, NoteListItem } from '$lib/notes/types';
   import Icon from '$lib/core/Icon.svelte';
   import { pinnedHead } from '$lib/core/pinnedHead';
-  import { portal } from '$lib/core/portal';
   import { t, locale, type TranslationKey } from '$lib/core/i18n';
   import { relTime } from '$lib/core/utils';
   import { facetKeys, facetValue, facetsOf } from '$lib/notes/facets';
@@ -73,20 +72,6 @@
   /** The table is scrolled sideways: the pinned title gets its line on the right. */
   let scrolled = $state(false);
   let colsOpen = $state(false);
-  let colsBtn = $state<HTMLButtonElement>();
-
-  /** The list of columns hangs under its button on the body, kept inside the table's visible box (a narrow
-      panel scrolls the button to its edge) and the window: the table's scrolling box no longer clips it. */
-  function placeCols(menu: HTMLElement) {
-    if (!colsBtn) return;
-    const b = colsBtn.getBoundingClientRect();
-    const box = (colsBtn.closest('.wrap') ?? document.body).getBoundingClientRect();
-    const w = menu.offsetWidth;
-    const left = Math.min(b.right - w, box.right - w - 4, window.innerWidth - w - 8);
-    menu.style.left = `${Math.max(left, box.left + 4, 8)}px`;
-    menu.style.top = `${b.bottom + 4}px`;
-    menu.style.maxHeight = `${Math.min(window.innerHeight * 0.6, window.innerHeight - b.bottom - 12)}px`;
-  }
 
   /** Tag prefixes present in the vault, most used first */
   const facets = $derived(facetKeys(allNotes, Infinity));
@@ -215,11 +200,11 @@
   {/if}
 {/snippet}
 
-<svelte:window onclick={() => (colsOpen = false)} onresize={() => (colsOpen = false)} />
+<svelte:window onclick={() => (colsOpen = false)} />
 
 <!-- The pinned title has no background of its own: a column scrolled under it is cut at its edge (pinnedHead). -->
 <div class="wrap" class:touch class:data-table={!touch} class:scrolled use:pinnedHead={{ column: true, disabled: touch }}
-  onscroll={(e) => { scrolled = e.currentTarget.scrollLeft > 0; colsOpen = false; }}>
+  onscroll={(e) => (scrolled = e.currentTarget.scrollLeft > 0)}>
   <table class:pinned-head={!touch}>
     <thead class:data-table-head={!touch}>
       <tr>
@@ -231,12 +216,11 @@
         <th class="cols-th">
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span class="cols" onclick={(e) => e.stopPropagation()}>
-            <button class="th" title={$t('notes_table_columns')} bind:this={colsBtn} onclick={() => (colsOpen = !colsOpen)}>
+            <button class="th" title={$t('notes_table_columns')} onclick={() => (colsOpen = !colsOpen)}>
               <Icon name="columns" size={11} />
             </button>
             {#if colsOpen}
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <div class="cols-menu" use:portal {@attach placeCols} onclick={(e) => e.stopPropagation()}>
+              <div class="cols-menu">
                 <div class="cols-group">{$t('notes_table_columns_fields')}</div>
                 {#each FIXED as col (col)}
                   <label class="cols-item">
@@ -281,7 +265,7 @@
     </tbody>
   </table>
   {#if notes.length === 0}
-    <div class="empty-state sm">{emptyText ?? $t('panel_notes_empty')}</div>
+    <div class="empty">{emptyText ?? $t('panel_notes_empty')}</div>
   {/if}
 </div>
 
@@ -290,27 +274,27 @@
   /* The desktop's table fills the list's column and scrolls itself (NotesPage); the phone's scrolls with its page. */
   .wrap:not(.touch) { flex: 1; min-height: 0; }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  th { text-align: left; padding: 0 var(--sp-1-5) var(--sp-1); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { text-align: left; padding: 0 0.4rem 0.3rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
   .th {
-    display: inline-flex; align-items: center; gap: var(--sp-1);
+    display: inline-flex; align-items: center; gap: 0.25rem;
     background: none; border: 0; padding: 0; cursor: pointer;
     font-size: var(--fs-xs);
     color: var(--text-3); font-weight: var(--fw-semibold);
   }
   .th.on { color: var(--text); }
-  td { padding: var(--sp-1-5) var(--sp-1-5); border-bottom: 1px solid var(--divider); vertical-align: middle; }
+  td { padding: 0.35rem 0.4rem; border-bottom: 1px solid var(--divider); vertical-align: middle; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: var(--surface-2); }
   tbody tr.active { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   /* Flex only on wrappers: a flex `td` drops out of the table layout */
-  .title { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; max-width: 320px; }
+  .title { display: flex; align-items: center; gap: 0.35rem; min-width: 0; max-width: 320px; }
   .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The pin's place: kept on the desktop so the titles start in one line, none on the phone without a pin. */
   .pin { display: inline-flex; flex-shrink: 0; }
   .touch .pin:not(:has(svg)) { display: none; }
   .muted { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
   .draft { color: var(--warn-text); }
-  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
   /* A tag: the label of the notes list (22, a pill, its text in the middle), not the toggle .chip of base.css. */
   .label {
     display: inline-flex; align-items: center; box-sizing: border-box; height: 22px; padding: 0 9px;
@@ -318,6 +302,7 @@
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: 1; white-space: nowrap;
   }
   .entity { display: inline-flex; align-items: center; color: var(--text-2); }
+  .empty { padding: var(--sp-4); text-align: center; color: var(--text-3); font-size: var(--fs-sm); }
   .cols-th { width: 1.6rem; text-align: right; }
   .cols { position: relative; display: inline-block; }
 
@@ -359,24 +344,18 @@
   .touch .title { max-width: none; }
   .touch .muted { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; }
   .touch .th { font-size: var(--fs-xs); }
-  /* The flags stay (the list stays open while they are set); the frame, ground and shadow are a menu's (ContextMenu). */
   .cols-menu {
-    position: fixed; z-index: var(--z-popover);
-    min-width: 200px; max-height: 60vh; overflow-y: auto; padding: var(--sp-1);
-    background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
-    display: flex; flex-direction: column;
+    position: absolute; right: 0; top: calc(100% + 4px); z-index: 20;
+    min-width: 200px; max-height: 60vh; overflow-y: auto; padding: 0.4rem;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    display: flex; flex-direction: column; gap: 0.15rem;
   }
   .cols-group {
-    padding: var(--sp-1) var(--sp-3) var(--sp-1); font-size: var(--fs-xs);
-    color: var(--text-3); font-weight: var(--fw-bold);
+    padding: 0.3rem 0.3rem 0.1rem; font-size: var(--fs-xs);
+    color: var(--text-3); font-weight: var(--fw-semibold);
   }
-  .cols-hint { font-size: var(--fs-xs); color: var(--text-3); padding: 0 var(--sp-3) var(--sp-1); white-space: normal; font-weight: var(--fw-normal); }
-  .cols-item {
-    display: flex; align-items: center; gap: var(--sp-2); min-height: 32px; padding: 0 var(--sp-3); border-radius: var(--radius-sm);
-    font-size: var(--fs-sm); color: var(--text); cursor: pointer; font-weight: var(--fw-normal);
-  }
-  .cols-item:hover { background: var(--surface-hover); }
+  .cols-hint { font-size: var(--fs-xs); color: var(--text-3); padding: 0 0.3rem 0.2rem; white-space: normal; font-weight: var(--fw-normal); }
+  .cols-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0.3rem; font-size: var(--fs-sm); color: var(--text); cursor: pointer; font-weight: var(--fw-normal); }
   .cols-item input[type="checkbox"] { margin: 0; }
 </style>

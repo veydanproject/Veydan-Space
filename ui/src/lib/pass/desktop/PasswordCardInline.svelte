@@ -2,11 +2,10 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  The pass module's part of a note's context row for a password: its tags,
-  the codes of its TOTP entries, and the actions (open, copy username, copy
-  password through the lock) in .foot. The notes module renders the row's
-  head, places .foot right of it and the rest under it, and passes its own
-  controls as children, shown first.
+  The pass module's part of a note's context card for a password: its tags,
+  the codes of its TOTP entries, and the row of actions (open, copy username,
+  copy password through the lock). The notes module renders the card's head
+  and passes its own controls as children.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -61,7 +60,6 @@
   }
 </script>
 
-{@render children?.()}
 {#if entry}
   <PassTags tags={entry.tags} />
   {#each shownTotp as tid (tid)}
@@ -71,15 +69,16 @@
     </div>
   {/each}
 {/if}
-{#if totpIds.length > 1}
-  <button type="button" class="more" onclick={() => (codesOpen = !codesOpen)}>
-    {codesOpen ? $t('ctx_totp_less') : $t('ctx_totp_more', { n: String(totpIds.length - 1) })}
-  </button>
-{/if}
+{@render children?.()}
 <div class="foot">
+  {#if totpIds.length > 1}
+    <button type="button" class="more" onclick={() => (codesOpen = !codesOpen)}>
+      {codesOpen ? $t('ctx_totp_less') : $t('ctx_totp_more', { n: String(totpIds.length - 1) })}
+    </button>
+  {/if}
   <div class="pw-actions">
     <button type="button" class="icon-btn" title={$t('common_open')} onclick={() => def.open?.(id)}>
-      <Icon name="external-link" size={18} />
+      <Icon name="external-link" size={13} />
     </button>
     {#if entry?.username}
       <button
@@ -89,7 +88,7 @@
         disabled={busy}
         onclick={() => run('copy-username')}
       >
-        <Icon name="id" size={18} />
+        <Icon name="id" size={13} />
       </button>
     {/if}
     <button
@@ -99,7 +98,7 @@
       disabled={busy}
       onclick={() => run('copy-password')}
     >
-      <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={18} />
+      <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
     </button>
   </div>
 </div>
@@ -119,14 +118,15 @@
   .foot {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.35rem;
     width: 100%;
+    margin-top: auto;
   }
-  .pw-actions { display: flex; gap: var(--sp-1); margin-left: auto; }
+  .pw-actions { display: flex; gap: 0.25rem; margin-left: auto; }
   .pw-code {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.35rem;
     width: 100%;
     min-width: 0;
   }
@@ -141,7 +141,6 @@
   }
   .pw-code :global(.live.compact) { min-height: 0; }
   .more {
-    justify-self: start;
     background: none;
     border: 0;
     padding: 0;

@@ -235,7 +235,7 @@
     <div class="chips">
       {#each entry.tags as tag (tag)}
         {@const color = tagColor(tag)}
-        <span class="tag-chip tinted" title={tagKind(tag)} style:--chip={color}>
+        <span class="chip tinted" title={tagKind(tag)} style:--chip={color}>
           <ChipMark kind={parseBinding(tag)?.kind ?? 'tag'} caption={tagKind(tag)} />
           <span class="chip-text">{tagLabel(tag)}</span>
         </span>
@@ -296,7 +296,7 @@
   /* Under the values' column. */
   .chips { display: flex; flex-wrap: wrap; gap: 4px; padding-left: calc(var(--label-w) + var(--sp-2)); }
   /* Shown, not clicked: a link to an entity of another module goes nowhere here. */
-  .tag-chip {
+  .chip {
     position: relative;
     cursor: default;
     display: inline-flex;
@@ -314,4 +314,6 @@
   }
   /* The chip is inline-flex, so the ellipsis goes on the label itself */
   .chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* Not a toggle: the hover of the global .chip changes nothing here. */
+  .chip:hover:not([style*='--chip']) { border-color: var(--border); color: var(--text-2); }
 </style>

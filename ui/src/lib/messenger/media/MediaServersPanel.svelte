@@ -134,10 +134,9 @@
         <label><span>{$t('msg_media_secret_key')}</span><input type="password" bind:value={secretKey} autocomplete="new-password" disabled={busy}
           placeholder={editing ? $t('msg_media_secret_keep') : ''} /></label>
       {/if}
-      <!-- A phone (design 15): «Cancel | Save» in halves of 48, in the card. -->
-      <div class="form-actions wide" class:pair={phone}>
-        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{phone ? $t('common_cancel') : $t('common_back')}</button>
-        <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{phone ? $t('common_save') : $t('msg_media_save_check')}</button>
+      <div class="form-actions wide">
+        <button type="button" class="btn btn-ghost" disabled={busy} onclick={resetForm}>{$t('common_back')}</button>
+        <button type="submit" class="btn btn-primary" disabled={busy || !formValid}>{$t('msg_media_save_check')}</button>
       </div>
       <p class="muted small wide">{$t('msg_media_secret_hint')}</p>
     </form>
@@ -172,14 +171,11 @@
   .form .wide { grid-column: 1 / -1; }
   .form label { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .form input {
-    font-weight: var(--fw-normal); color: var(--text); min-height: 44px; min-width: 0;
+    font: inherit; font-size: var(--fs-base); font-weight: var(--fw-normal); color: var(--text); min-height: 44px; min-width: 0;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .form input:focus { outline: none; border-color: var(--accent-border); }
   .form-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
-  .form-actions.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* A half holds its words: a long translation wraps instead of leaving the button. */
-  .pair > .btn { min-height: 48px; min-width: 0; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; }
   .kinds { grid-column: 1 / -1; }
   .add { align-self: flex-start; }
 </style>

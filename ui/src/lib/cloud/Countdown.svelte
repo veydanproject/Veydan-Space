@@ -17,7 +17,7 @@
 </div>
 
 <style>
-  .countdown { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--text-2); }
+  .countdown { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
   .bar { height: 4px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
   .fill { display: block; height: 100%; background: var(--accent); transition: width 1s linear; }
   .low .fill { background: var(--danger); }

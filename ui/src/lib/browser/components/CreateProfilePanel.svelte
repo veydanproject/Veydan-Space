@@ -114,7 +114,7 @@
 <Drawer open title={$t('profile_create_title')} width="var(--drawer-w-md)" {onclose}>
       <form id="cp-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
         {#if error && !nameErr}
-          <Notice tone="danger">{error}</Notice>
+          <div style="margin-bottom:0.75rem"><Notice tone="danger">{error}</Notice></div>
         {/if}
 
         <!-- General -->
@@ -259,24 +259,25 @@
             </div>
             <button
               type="button"
-              class="toggle"
-              class:on={form.history_enabled}
+              class="toggle-btn"
+              class:active={form.history_enabled}
               onclick={() => (form.history_enabled = !form.history_enabled)}
-              role="switch"
-              aria-checked={form.history_enabled}
+              aria-pressed={form.history_enabled}
               aria-label={$t('profile_field_history')}
-            ></button>
+            >
+              <span class="toggle-thumb"></span>
+            </button>
           </div>
 
         </div>
 
         {#if warnings().length > 0}
-          <Notice tone="warn">
-            <div class="warning-title">{$t('profile_warning_title')}</div>
+          <div class="warnings">
+            <div class="warning-title">⚠ {$t('profile_warning_title')}</div>
             {#each warnings() as w}
               <div class="warning-item">• {w}</div>
             {/each}
-          </Notice>
+          </div>
         {/if}
 
         <div class="divider"></div>
@@ -295,21 +296,39 @@
 </Drawer>
 
 <style>
-  /* The form's parts, its plates among them, apart by its gap. */
-  form { display: flex; flex-direction: column; gap: var(--sp-4); }
-  /* The common .section-label heads a section, its gap the space to the fields. */
-  .section { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .section { display: flex; flex-direction: column; gap: 1rem; margin-bottom: var(--sp-4); }
 
-  .divider { height: 1px; background: var(--border); }
+  .section-label {
+    font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-dim);
+    margin-bottom: 0.25rem;
+  }
 
+  .divider { height: 1px; background: var(--border); margin: var(--sp-4) 0; }
 
-  .warning-title { font-weight: var(--fw-bold); margin-bottom: var(--sp-1); }
+  /* Tall drawer form fields per design (46px / radius 11) */
+  form :global(input[type='text']),
+  form :global(input[type='number']) {
+    height: var(--control-h-lg);
+    border-radius: var(--radius-field);
+    font-size: var(--fs-base);
+  }
+  form textarea { border-radius: var(--radius-field); font-size: var(--fs-base); }
+
+  .warnings {
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    border-radius: var(--radius-md);
+    padding: 0.6rem var(--sp-3);
+    margin-bottom: var(--sp-3);
+    font-size: var(--fs-sm);
+  }
+  .warning-title { font-weight: var(--fw-bold); margin-bottom: var(--sp-1); color: var(--warn-text); }
   .warning-item { color: var(--text-2); }
 
 
   .toggle-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: var(--sp-4) 0; gap: var(--sp-3);
+    padding: 1rem 0; gap: var(--sp-3);
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
   }
@@ -317,4 +336,18 @@
   .toggle-label { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
   .toggle-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: var(--lh-base); max-width: 290px; }
 
+  .toggle-btn {
+    position: relative; flex-shrink: 0;
+    width: 40px; height: 24px;
+    background: var(--toggle-off); border: none; border-radius: var(--radius-pill);
+    cursor: pointer; padding: 0; transition: background 0.2s;
+  }
+  .toggle-btn.active { background: var(--accent-hover); }
+  .toggle-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; transition: transform 0.2s;
+    box-shadow: var(--shadow-knob);
+  }
+  .toggle-btn.active .toggle-thumb { transform: translateX(16px); }
 </style>

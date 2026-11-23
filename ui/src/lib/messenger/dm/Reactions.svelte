@@ -43,13 +43,13 @@
 
 <div class="reactions msg-font">
   {#each m.reactions as r (r.emoji)}
-    <button class="reaction" class:mine={r.mine} class:pop={popped === r.emoji} disabled={busy} title={$t('msg_react_title')} aria-pressed={r.mine}
+    <button class="chip" class:mine={r.mine} class:pop={popped === r.emoji} disabled={busy} title={$t('msg_react_title')} aria-pressed={r.mine}
       onclick={() => toggle(r.emoji, r.mine)}>
       <span class="emoji">{r.emoji}</span>{#key r.count}<span class="count">{r.count}</span>{/key}
     </button>
   {/each}
   {#if onadd}
-    <button class="reaction add" onclick={(e) => onadd?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')}>
+    <button class="chip add" onclick={(e) => onadd?.(e.currentTarget)} title={$t('msg_react_title')} aria-label={$t('msg_react_title')}>
       <Icon name="smile-plus" size={18} />
     </button>
   {/if}
@@ -57,23 +57,23 @@
 
 <style>
   .reactions { display: flex; flex-wrap: wrap; gap: 4px; }
-  .reaction {
+  .chip {
     position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control-h-sm); padding: 0 var(--sp-3);
     border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-3);
     color: var(--text-2); font: inherit; line-height: var(--lh-icon); cursor: pointer;
     transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
   }
-  .reaction:hover:not(:disabled) { background: var(--surface-hover); }
-  .reaction:disabled { cursor: default; }
-  .reaction.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
-  .reaction.mine .count { color: var(--accent-text); }
-  .reaction:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .chip:hover:not(:disabled) { background: var(--surface-hover); }
+  .chip:disabled { cursor: default; }
+  .chip.mine { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
+  .chip.mine .count { color: var(--accent-text); }
+  .chip:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .emoji { font-size: var(--fs-body); line-height: var(--lh-icon); }
   .count { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-2); font-variant-numeric: tabular-nums; animation: roll 120ms var(--ease); }
-  .reaction.pop .emoji { animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
-  .reaction.add { justify-content: center; padding: 0 var(--sp-2); color: var(--text-3); }
+  .chip.pop .emoji { animation: pop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15); }
+  .chip.add { justify-content: center; padding: 0 var(--sp-2); color: var(--text-3); }
   @keyframes pop { 50% { transform: scale(1.2); } }
   @keyframes roll { from { transform: translateY(60%); opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .count, .reaction.pop .emoji { animation: none; } }
-  @media (pointer: coarse) { .reaction::after { content: ''; position: absolute; inset: -9px 0; } }
+  @media (prefers-reduced-motion: reduce) { .count, .chip.pop .emoji { animation: none; } }
+  @media (pointer: coarse) { .chip::after { content: ''; position: absolute; inset: -9px 0; } }
 </style>

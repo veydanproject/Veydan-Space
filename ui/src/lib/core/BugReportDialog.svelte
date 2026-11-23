@@ -145,6 +145,7 @@
     min-height: 220px;
     resize: vertical;
     font-family: var(--font-mono);
+    font-size: var(--fs-xs);
     line-height: var(--lh-snug);
     white-space: pre;
   }

@@ -18,14 +18,3 @@ export function netState(rt: MessengerRuntimeStatus | null | undefined): NetStat
     default: return 'on';
   }
 }
-
-/** The modifiers of the common `.status-dot` (base.css) for a state: green on, amber pulsing
- *  while it connects, red when lost; grey (none) when off, silent or locked. */
-export function netDot(state: NetState): string {
-  switch (state) {
-    case 'on': return 'ok';
-    case 'connecting': return 'warn pulse';
-    case 'lost': return 'bad';
-    default: return '';
-  }
-}

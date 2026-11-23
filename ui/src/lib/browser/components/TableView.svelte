@@ -9,7 +9,6 @@
   import { runningStore } from '$lib/browser/store/running.svelte';
   import ProfileSyncBadge from '$lib/browser/components/ProfileSyncBadge.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import { pinnedHead } from '$lib/core/pinnedHead';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { formatDateTime } from '$lib/core/utils';
@@ -123,10 +122,10 @@
   <!-- Toolbar -->
   <div class="filter-bar">
     <div class="search-field">
-      <Icon name="search" size={16} />
+      <Icon name="search" size={13} />
       <input type="text" placeholder={$t('kanban_filter_search')} bind:value={search} />
       {#if search}
-        <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+        <button class="search-clear" onclick={() => (search = '')}><Icon name="x" size={11} /></button>
       {/if}
     </div>
     <div class="filter-select">
@@ -150,7 +149,7 @@
         <Icon name="x" size={12} />
       </button>
     {/if}
-    <span class="count-pill sm quiet filter-count">{filtered().length} / {profiles.length}</span>
+    <span class="count-badge">{filtered().length} / {profiles.length}</span>
   </div>
 
   <!-- Table -->
@@ -179,21 +178,21 @@
             <!-- # -->
             <td class="td-num">
               <span class="row-num">{i + 1}</span>
-              <span class="status-dot" class:ok={isRunning} class:pulse={isRunning} class:off={!isRunning}></span>
+              <span class="status-dot" class:active={isRunning}></span>
             </td>
 
             <!-- Name -->
             <td class="td-name">
               <span class="profile-name">{profile.name}</span>
               {#if isRunning}
-                <span class="badge badge-ok live">● live</span>
+                <span class="running-pill">● live</span>
               {/if}
               <ProfileSyncBadge profileId={profile.id} compact />
             </td>
 
             <!-- OS / Browser -->
             <td class="td-os">
-              <span class="badge">
+              <span class="os-chip">
                 <span class="os-icon">{getOsIcon(profile.fingerprint_preset)}</span>
                 <span class="os-label">{getOsLabel(profile.fingerprint_preset)}</span>
                 <span class="sep">·</span>
@@ -206,10 +205,10 @@
               {#if proxy}
                 <div class="proxy-info">
                   {#if proxyChip(proxy)}
-                    <span class="badge">{proxyChip(proxy)}</span>
+                    <span class="country-chip">{proxyChip(proxy)}</span>
                   {/if}
                   <span class="proxy-name">{proxy.name}</span>
-                  <span class="badge">{proxyTypeName(proxy)}</span>
+                  <span class="proxy-type">{proxyTypeName(proxy)}</span>
                 </div>
               {:else}
                 <span class="no-proxy">
@@ -224,7 +223,7 @@
               <div class="tags-wrap">
               {#each (profile.tags ?? []) as tag}
                 {@const color = tagColorMap.get(tag)}
-                <span class="badge tinted" style:--chip={color} title={tag}>
+                <span class="tag-chip tinted" style:--chip={color} title={tag}>
                   <span class="tag-text">{tag}</span>
                 </span>
               {/each}
@@ -239,24 +238,24 @@
             <!-- Actions -->
             <td class="td-actions" onclick={(e) => e.stopPropagation()}>
               {#if isRunning}
-                <button class="icon-btn act-stop" onclick={(e) => stop(e, profile)} disabled={isLoading} title={$t('panel_btn_stop')} aria-label={$t('panel_btn_stop')}>
+                <button class="act-btn act-stop" onclick={(e) => stop(e, profile)} disabled={isLoading} title={$t('panel_btn_stop')} aria-label={$t('panel_btn_stop')}>
                   <Icon name="square" size={12} />
                 </button>
               {:else}
-                <button class="icon-btn act-launch" onclick={(e) => launch(e, profile)} disabled={isLoading} title={syncing ? $t('profile_launch_syncing_hint') : $t('panel_btn_launch')} aria-label={syncing ? $t('profile_launch_syncing') : $t('panel_btn_launch')}>
+                <button class="act-btn act-launch" onclick={(e) => launch(e, profile)} disabled={isLoading} title={syncing ? $t('profile_launch_syncing_hint') : $t('panel_btn_launch')} aria-label={syncing ? $t('profile_launch_syncing') : $t('panel_btn_launch')}>
                   <Icon name="play" size={12} />
                 </button>
               {/if}
-              <button class="icon-btn" onclick={(e) => { e.stopPropagation(); clone(e, profile); }} disabled={isLoading} title={$t('panel_btn_clone')} aria-label={$t('panel_btn_clone')}>
+              <button class="act-btn" onclick={(e) => { e.stopPropagation(); clone(e, profile); }} disabled={isLoading} title={$t('panel_btn_clone')} aria-label={$t('panel_btn_clone')}>
                 <Icon name="copy" size={12} />
               </button>
-              <button class="icon-btn" onclick={(e) => { e.stopPropagation(); onEdit(profile); }} title={$t('common_edit')} aria-label={$t('common_edit')}>
+              <button class="act-btn" onclick={(e) => { e.stopPropagation(); onEdit(profile); }} title={$t('common_edit')} aria-label={$t('common_edit')}>
                 <Icon name="pencil" size={12} />
               </button>
             </td>
           </tr>
         {:else}
-          <tr><td colspan="7"><div class="empty-state"><span class="empty-icon" aria-hidden="true"><Icon name="table" size={22} /></span><p>{$t('table_empty')}</p></div></td></tr>
+          <tr><td colspan="7" class="td-empty">{$t('table_empty')}</td></tr>
         {/each}
       </tbody>
     </table>
@@ -266,8 +265,7 @@
 <style>
   .table-view { display: flex; flex-direction: column; gap: var(--sp-3); height: 100%; }
 
-  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear из base.css; счёт «x / y» — .count-pill справа */
-  .filter-count { margin-left: auto; }
+  /* панель фильтров — единые примитивы .filter-bar/.search-field/.filter-select/.filter-clear/.count-badge из base.css */
 
   /* ── Table ── (data-table look: surface card, caps header, subtle row borders) */
   .table-wrap {
@@ -293,19 +291,38 @@
   td { padding: var(--sp-3) var(--sp-3); vertical-align: middle; }
 
   /* # column */
-  .td-num { width: 52px; display: flex; align-items: center; gap: var(--sp-1-5); }
+  .td-num { width: 52px; display: flex; align-items: center; gap: 0.4rem; }
   .row-num {
     font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3);
     min-width: 18px; text-align: right;
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--border-2); flex-shrink: 0; transition: background 0.2s;
+  }
+  .status-dot.active {
+    background: var(--success-text);
+    box-shadow: 0 0 0 2px var(--success-bg);
   }
 
   /* Name */
   .td-name { white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
   .profile-name { font-weight: var(--fw-semibold); font-size: var(--fs-base); color: var(--text); }
-  .live { margin-left: var(--sp-1-5); }
+  .running-pill {
+    display: inline-flex; align-items: center; gap: 0.2rem;
+    margin-left: 0.4rem; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+    color: var(--success-text); background: var(--success-bg);
+    padding: 0.1rem 0.45rem; border-radius: var(--radius-sm);
+  }
 
-  /* OS — a neutral badge */
+  /* OS — mono chip */
   .td-os { white-space: nowrap; }
+  .os-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: var(--radius-sm);
+    background: var(--surface-2); font-family: var(--font-mono);
+    font-size: var(--fs-sm); color: var(--text-body);
+  }
   .os-icon { font-size: var(--fs-base); }
   .os-label { color: var(--text-body); }
   .sep { color: var(--text-3); }
@@ -313,21 +330,47 @@
 
   /* Proxy */
   .td-proxy { white-space: nowrap; max-width: 200px; }
-  .proxy-info { display: flex; align-items: center; gap: var(--sp-1-5); }
+  .proxy-info { display: flex; align-items: center; gap: 0.35rem; }
+  .country-chip {
+    font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    font-family: var(--font-mono);
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); color: var(--text-2);
+  }
   .proxy-name { color: var(--text); max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+  .proxy-type {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+    padding: 0.15rem 0.45rem; border-radius: var(--radius-sm);
+    background: var(--surface-2); color: var(--text-2);
+  }
   .no-proxy { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text-dim); font-size: var(--fs-sm); }
 
   /* Tags */
   .tags-wrap { max-width: 180px; display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
-  .tags-wrap .badge { max-width: 100%; min-width: 0; }
+  .tag-chip {
+    max-width: 100%; min-width: 0;
+    display: inline-flex; align-items: center;
+    border-width: 1px; border-style: solid;
+    border-radius: var(--radius-pill); padding: 0.1rem 0.4rem;
+    font-size: var(--fs-xs); white-space: nowrap;
+  }
 
   /* Date */
   .td-date { color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; }
 
   /* Actions */
   .td-actions { text-align: right; white-space: nowrap; }
-  /* The plain .icon-btn; launch and stop light their own ink under the pointer. */
-  .act-launch:hover:not(:disabled) { color: var(--success-text); }
-  .act-stop:hover:not(:disabled) { color: var(--danger-text); }
+  .act-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--text-soft); cursor: pointer; padding: 0; transition: all var(--dur-fast);
+  }
+  .act-btn:hover { background: var(--surface-hover); border-color: var(--border-2); color: var(--text); }
+  .act-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .act-launch:hover { background: var(--success-bg) !important; border-color: color-mix(in srgb, var(--success) 40%, var(--border)) !important; color: var(--success-text) !important; }
+  .act-stop:hover   { background: var(--danger-bg)  !important; border-color: color-mix(in srgb, var(--danger)  40%, var(--border)) !important; color: var(--danger-text)  !important; }
 
+  .td-empty { text-align: center; padding: var(--sp-12); color: var(--text-2); }
 </style>

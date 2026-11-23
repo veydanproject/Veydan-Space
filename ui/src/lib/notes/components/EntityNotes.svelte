@@ -62,7 +62,7 @@
     </button>
   </div>
   {#if notes.length === 0}
-    <div class="empty-state sm">{$t('panel_notes_empty')}</div>
+    <div class="empty">{$t('panel_notes_empty')}</div>
   {:else}
     <ul class="list">
       {#each notes as n (n.id)}
@@ -80,14 +80,15 @@
 <NotesPanel bind:open={panelOpen} context={kind} contextId={id} openNoteId={openId} />
 
 <style>
-  .entity-notes { display: flex; flex-direction: column; gap: var(--sp-1-5); margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-  .head { display: flex; align-items: center; gap: var(--sp-1-5); }
-  .label { display: flex; align-items: center; gap: var(--sp-1); flex: 1; font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-semibold); }
+  .entity-notes { display: flex; flex-direction: column; gap: 0.4rem; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+  .head { display: flex; align-items: center; gap: 0.4rem; }
+  .label { display: flex; align-items: center; gap: 0.3rem; flex: 1; font-size: var(--fs-xs); color: var(--text-3); font-weight: var(--fw-semibold); }
   .count { font-weight: var(--fw-normal); }
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); }
+  .empty { font-size: var(--fs-xs); color: var(--text-3); }
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .row {
-    display: flex; align-items: center; gap: var(--sp-2); width: 100%;
-    padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--radius-xs);
+    display: flex; align-items: center; gap: 0.5rem; width: 100%;
+    padding: 0.3rem 0.45rem; border: 0; border-radius: var(--radius-xs);
     background: transparent; color: var(--text); text-align: left; cursor: pointer;
   }
   .row:hover { background: var(--surface-2); }

@@ -4,7 +4,7 @@
 <script lang="ts">
   import { toast } from '$lib/core/ui/toast.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api, formatError, onSyncProgress, onSyncStatus, syncProgressText, type SyncConfig, type SyncProbe, type SyncProgress, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale } from '$lib/core/mobile/i18n';
@@ -49,8 +49,6 @@
   /** Veydan Cloud as the module cloud tells it; nothing where the module is off. */
   let cloud = $state<CloudView>({ choice: 'none', plan: null, usage: null });
   const onCloud = $derived(cfg?.backend === CLOUD_BACKEND);
-  /** The page's verb (create, join, save) stands in its foot, the error over it. */
-  const hasFoot = $derived(!!cfg && !!status && (status.joined || (!!probe && probe !== 'foreign')));
   // Offered with an account; kept among the choices while it is the backend in use.
   const cloudOffered = $derived(cloud.choice === 'option' || onCloud);
   const fullest = $derived(fullestPool(cloud.usage));
@@ -184,15 +182,9 @@
     }
   }
 
-  /** What the probe found, shown under its button: scrolled to, the passphrase field focused. */
-  let probeEl = $state<HTMLElement>();
   const doProbe = () =>
     work('probe', async () => {
       probe = await api.sync.probe();
-      await tick();
-      const field = document.getElementById('pass');
-      (field ?? probeEl)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      field?.focus({ preventScroll: true });
     });
 
   const doCreate = () =>
@@ -343,50 +335,50 @@
   </div>
 
   <div class="m-body">
-  {#if error && !hasFoot}
+  {#if error}
     <div class="m-error">{error}</div>
   {/if}
 
   {#if cfg && status}
     {#if status.joined}
-      <div class="section-label">{$t('settings_sync_status')}</div>
+      <div class="m-section">{$t('settings_sync_status')}</div>
       <div class="m-list group">
-        <div class="list-row dense still">
-          <span class="list-row-label">{$t('settings_sync_vault_id')}</span>
-          <span class="list-row-value mono">{status.vault_id?.slice(0, 12)}</span>
+        <div class="m-row">
+          <span class="m-row-label">{$t('settings_sync_vault_id')}</span>
+          <span class="m-row-value mono">{status.vault_id?.slice(0, 12)}</span>
         </div>
-        <div class="list-row dense still">
-          <span class="list-row-label">{$t('settings_sync_device_id')}</span>
-          <span class="list-row-value mono">{status.device_id}</span>
+        <div class="m-row">
+          <span class="m-row-label">{$t('settings_sync_device_id')}</span>
+          <span class="m-row-value mono">{status.device_id}</span>
         </div>
-        <div class="list-row dense still">
-          <span class="list-row-label">{$t('settings_sync_peers')}</span>
-          <span class="list-row-value">{status.peers}</span>
+        <div class="m-row">
+          <span class="m-row-label">{$t('settings_sync_peers')}</span>
+          <span class="m-row-value">{status.peers}</span>
         </div>
-        <button type="button" class="list-row dense" onclick={() => (devicesOpen = !devicesOpen)}>
-          <span class="list-row-label">{$t('settings_sync_storage_devices')}</span>
-          <span class="list-row-value">{status.storage_devices.length}</span>
+        <button type="button" class="m-row" onclick={() => (devicesOpen = !devicesOpen)}>
+          <span class="m-row-label">{$t('settings_sync_storage_devices')}</span>
+          <span class="m-row-value">{status.storage_devices.length}</span>
           <Icon name={devicesOpen ? 'chevron-down' : 'chevron-right'} size={16} />
         </button>
         {#if devicesOpen}
           {#each status.storage_devices as d (d.id)}
-            <div class="list-row dense still device-card">
+            <div class="m-row device-card">
               <span class="device-name">{d.name || $t('settings_sync_device_unnamed')}</span>
               {#if d.own}<span class="device-own">{$t('settings_sync_device_id')}</span>{/if}
               <span class="device-id mono">{d.id}</span>
             </div>
           {/each}
         {/if}
-        <div class="list-row dense still">
-          <span class="list-row-label">{$t('settings_sync_last_applied')}</span>
-          <span class="list-row-value">{status.last_applied ?? 0}</span>
+        <div class="m-row">
+          <span class="m-row-label">{$t('settings_sync_last_applied')}</span>
+          <span class="m-row-value">{status.last_applied ?? 0}</span>
         </div>
-        <div class="list-row dense still">
-          <span class="list-row-label">{$t('settings_sync_last_run')}</span>
-          <span class="list-row-value">{running ? (progressLine || $t('settings_sync_running')) : formatTime(status.last_run)}</span>
+        <div class="m-row">
+          <span class="m-row-label">{$t('settings_sync_last_run')}</span>
+          <span class="m-row-value">{running ? (progressLine || $t('settings_sync_running')) : formatTime(status.last_run)}</span>
         </div>
         {#if running && progress}
-          <div class="list-row dense still prog">
+          <div class="m-row prog">
             <div class="bar"><div class="fill" style="width: {progress.percent}%"></div></div>
             <span class="prog-label">
               {progressLine}
@@ -395,22 +387,22 @@
           </div>
         {/if}
         {#if status.last_error && !running}
-          <div class="list-row dense still msg danger">{lastErrorText(status.last_error)}</div>
+          <div class="m-row msg danger">{lastErrorText(status.last_error)}</div>
           {#if isNoVault(status.last_error)}
-            <button type="button" class="list-row dense" onclick={doFixNoVault} disabled={busy}>
-              <span class="list-row-label">{$t('settings_sync_no_vault_fix')}</span>
+            <button type="button" class="m-row" onclick={doFixNoVault} disabled={busy}>
+              <span class="m-row-label">{$t('settings_sync_no_vault_fix')}</span>
               <Icon name="chevron-right" size={16} />
             </button>
           {/if}
         {:else if status.last_warning}
-          <div class="list-row dense still msg warn">{status.last_warning}</div>
+          <div class="m-row msg warn">{status.last_warning}</div>
         {/if}
         {#if status.first_read_pending}
-          <div class="list-row dense still msg warn">{$t('settings_sync_first_read')}</div>
+          <div class="m-row msg warn">{$t('settings_sync_first_read')}</div>
         {/if}
-        <button class="list-row dense switch" role="switch" aria-checked={cfg.enabled} onclick={toggleEnabled} disabled={busy}>
+        <button class="m-row switch" role="switch" aria-checked={cfg.enabled} onclick={toggleEnabled} disabled={busy}>
           <span class="words">
-            <span class="list-row-label">{$t('settings_sync_enabled')}</span>
+            <span class="m-row-label">{$t('settings_sync_enabled')}</span>
             <span class="sub">{$t('settings_sync_enabled_hint')}</span>
           </span>
           <span class="toggle" class:on={cfg.enabled}></span>
@@ -418,13 +410,13 @@
       </div>
 
       {#if status.conflicts.length > 0}
-        <div class="section-label">{$t('settings_sync_conflicts')}</div>
+        <div class="m-section">{$t('settings_sync_conflicts')}</div>
         <p class="m-hint">{$t('settings_sync_conflicts_hint')}</p>
         <div class="m-list group">
           {#each status.conflicts as c (c.note_id)}
-            <a class="list-row dense" href={directory.get('note')?.href?.(c.note_id, 'conflict')}>
+            <a class="m-row" href={directory.get('note')?.href?.(c.note_id, 'conflict')}>
               <Icon name="alert-triangle" size={18} />
-              <span class="list-row-label">{c.title || $t('notes_untitled')}</span>
+              <span class="m-row-label">{c.title || $t('notes_untitled')}</span>
               <span class="chev"><Icon name="chevron-right" size={16} /></span>
             </a>
           {/each}
@@ -452,10 +444,14 @@
             {$t('settings_sync_now')}
           {/if}
         </button>
+        <button class="btn btn-ghost danger" onclick={doLeave} disabled={busy || syncVisual === 'syncing'}>
+          <Icon name="shield-off" size={16} />
+          {$t('settings_sync_leave')}
+        </button>
       </div>
     {/if}
 
-    <div class="section-label">{$t('settings_sync_backend')}</div>
+    <div class="m-section">{$t('settings_sync_backend')}</div>
     <div class="seg backend group" class:three={cloudOffered}>
       {#if cloudOffered}
         <button class="seg-btn" class:active={onCloud} onclick={() => chooseBackend(CLOUD_BACKEND)}>
@@ -530,8 +526,8 @@
       </div>
       </div>
       <div class="m-list group">
-        <button class="list-row dense" role="switch" aria-checked={cfg.s3.path_style} onclick={() => (cfg!.s3.path_style = !cfg!.s3.path_style)}>
-          <span class="list-row-label">{$t('settings_sync_s3_path_style')}</span>
+        <button class="m-row" role="switch" aria-checked={cfg.s3.path_style} onclick={() => (cfg!.s3.path_style = !cfg!.s3.path_style)}>
+          <span class="m-row-label">{$t('settings_sync_s3_path_style')}</span>
           <span class="toggle" class:on={cfg.s3.path_style}></span>
         </button>
       </div>
@@ -553,7 +549,7 @@
     </div>
 
     {#if syncsFiles}
-    <div class="section-label">{$t('settings_sync_lf_section')}</div>
+    <div class="m-section">{$t('settings_sync_lf_section')}</div>
     <p class="m-hint">{$t('settings_sync_lf_hint')}</p>
     <div class="m-list group fields">
     <div class="two">
@@ -572,8 +568,8 @@
     </div>
     </div>
     <div class="m-list group">
-      <button class="list-row dense" role="switch" aria-checked={cfg.large_files.resume} onclick={() => (cfg!.large_files.resume = !cfg!.large_files.resume)}>
-        <span class="list-row-label">{$t('settings_sync_lf_resume')}</span>
+      <button class="m-row" role="switch" aria-checked={cfg.large_files.resume} onclick={() => (cfg!.large_files.resume = !cfg!.large_files.resume)}>
+        <span class="m-row-label">{$t('settings_sync_lf_resume')}</span>
         <span class="toggle" class:on={cfg.large_files.resume}></span>
       </button>
     </div>
@@ -584,14 +580,6 @@
       <block.component bind:this={blockRefs[block.id]} />
     {/each}
 
-    <!-- The dangerous way out stands on its own row at the bottom, away from «Синхронизировать» (design 03). -->
-    {#if status.joined}
-      <button class="btn btn-ghost danger wide leave" onclick={doLeave} disabled={busy || syncVisual === 'syncing'}>
-        <Icon name="shield-off" size={16} />
-        {$t('settings_sync_leave')}
-      </button>
-    {/if}
-
     {#if !status.joined}
       <button class="btn btn-ghost wide action-btn" class:busy-anim={working === 'probe'} onclick={doProbe} disabled={busy}>
         <span class="action-icon" class:spin={working === 'probe'}><Icon name={working === 'probe' ? 'loader' : 'search'} size={16} /></span>
@@ -600,56 +588,49 @@
 
       {#if probe}
         <!-- The passphrase of Veydan Cloud comes from the identity: the backend derives it. -->
-        <p class="probe" class:danger={probe === 'foreign'} bind:this={probeEl}>{onCloud && probe !== 'foreign' ? $t('settings_sync_cloud_passphrase_hint') : $t(`settings_sync_probe_${probe}`)}</p>
-        {#if probe !== 'foreign' && !onCloud}
-          <div class="m-field">
-            <label for="pass">{$t('settings_sync_passphrase')}</label>
-            <input id="pass" type="password" bind:value={passphrase} placeholder={$t('settings_sync_passphrase_placeholder')} autocomplete="off" aria-describedby={probe === 'empty' ? 'pass-hint' : undefined} />
-            <!-- The length a new passphrase needs, in words, not only in the placeholder that typing hides. -->
-            {#if probe === 'empty'}<p class="m-hint" id="pass-hint">{$t('settings_sync_passphrase_placeholder')}</p>{/if}
-          </div>
+        <p class="probe" class:danger={probe === 'foreign'}>{onCloud && probe !== 'foreign' ? $t('settings_sync_cloud_passphrase_hint') : $t(`settings_sync_probe_${probe}`)}</p>
+        {#if probe !== 'foreign'}
+          {#if !onCloud}
+            <div class="m-field">
+              <label for="pass">{$t('settings_sync_passphrase')}</label>
+              <input id="pass" type="password" bind:value={passphrase} placeholder={$t('settings_sync_passphrase_placeholder')} autocomplete="off" />
+            </div>
+          {/if}
+          {#if probe === 'empty'}
+            <button class="btn btn-primary wide action-btn" class:busy-anim={working === 'create'} onclick={doCreate} disabled={busy || (!onCloud && passphrase.length < 8)}>
+              <span class="action-icon" class:spin={working === 'create'}><Icon name={working === 'create' ? 'loader' : 'plus'} size={16} /></span>
+              {$t('settings_sync_create')}
+            </button>
+          {:else}
+            <button class="btn btn-primary wide action-btn" class:busy-anim={working === 'join'} onclick={doJoin} disabled={busy || (!onCloud && !passphrase)}>
+              <span class="action-icon" class:spin={working === 'join'}><Icon name={working === 'join' ? 'loader' : 'lock'} size={16} /></span>
+              {$t('settings_sync_join')}
+            </button>
+          {/if}
         {/if}
       {/if}
+    {:else}
+      <button
+        class="btn wide action-btn"
+        class:btn-primary={saveState !== 'saved'}
+        class:btn-success={saveState === 'saved'}
+        class:busy-anim={saveState === 'saving'}
+        class:just-done={saveState === 'saved'}
+        onclick={doSave}
+        disabled={busy || saveState === 'saving'}
+      >
+        <span class="action-icon" class:spin={saveState === 'saving'}>
+          <Icon
+            name={saveState === 'saving' ? 'loader' : 'check'}
+            size={16}
+          />
+        </span>
+        {saveState === 'saving' ? $t('notes_saving') : saveState === 'saved' ? $t('common_saved') : $t('common_save')}
+      </button>
     {/if}
   {/if}
 
   </div>
-  {#if cfg && status && hasFoot}
-    <div class="page-foot">
-      {#if error}<div class="m-error">{error}</div>{/if}
-      {#if !status.joined}
-        {#if probe === 'empty'}
-          <button class="btn btn-primary action-btn" class:busy-anim={working === 'create'} onclick={doCreate} disabled={busy || (!onCloud && passphrase.length < 8)}>
-            <span class="action-icon" class:spin={working === 'create'}><Icon name={working === 'create' ? 'loader' : 'plus'} size={16} /></span>
-            {$t('settings_sync_create')}
-          </button>
-        {:else}
-          <button class="btn btn-primary action-btn" class:busy-anim={working === 'join'} onclick={doJoin} disabled={busy || (!onCloud && !passphrase)}>
-            <span class="action-icon" class:spin={working === 'join'}><Icon name={working === 'join' ? 'loader' : 'lock'} size={16} /></span>
-            {$t('settings_sync_join')}
-          </button>
-        {/if}
-      {:else}
-        <button
-          class="btn action-btn"
-          class:btn-primary={saveState !== 'saved'}
-          class:btn-success={saveState === 'saved'}
-          class:busy-anim={saveState === 'saving'}
-          class:just-done={saveState === 'saved'}
-          onclick={doSave}
-          disabled={busy || saveState === 'saving'}
-        >
-          <span class="action-icon" class:spin={saveState === 'saving'}>
-            <Icon
-              name={saveState === 'saving' ? 'loader' : 'check'}
-              size={16}
-            />
-          </span>
-          {saveState === 'saving' ? $t('notes_saving') : saveState === 'saved' ? $t('common_saved') : $t('common_save')}
-        </button>
-      {/if}
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -660,8 +641,10 @@
   /* A switch with its words in its row. */
   .switch { min-height: 64px; }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .words .list-row-label { white-space: normal; }
+  .words .m-row-label { white-space: normal; }
   .sub { font-size: var(--fs-sm); line-height: 1.35; color: var(--text-2); }
+  /* A tablet: one column of 560, as the sheets (mobile.css). */
+  @media (min-width: 640px) { .m-body { width: 100%; max-width: 560px; margin: 0 auto; } }
   .device-card { flex-direction: column; align-items: stretch; gap: 2px; }
   .device-name { font-size: var(--fs-base); color: var(--text-1); }
   .device-own { font-size: var(--fs-xs); color: var(--text-3); }
@@ -674,7 +657,6 @@
   .actions { display: flex; gap: var(--sp-2); }
   .actions .btn { flex: 1; }
   .wide { width: 100%; margin-top: var(--sp-2); }
-  .leave { margin-top: var(--sp-6); }
   .msg { font-size: var(--fs-sm); word-break: break-word; }
   .danger { color: var(--danger-text); }
   .warn { color: var(--warn-text); }

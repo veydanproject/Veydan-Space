@@ -270,6 +270,8 @@
     "notes_tag_hint": "用“/”表示子分组：",
     "notes_tag_hint_example": "分组/标签",
     "notes_tag_name_ph": "标签名称",
+    "notes_color": "颜色 {c}",
+    "notes_color_custom": "自定义颜色",
     "notes_section_fold": "折叠",
     "notes_section_unfold": "展开",
     "notes_section_fold_all": "全部折叠",

@@ -61,7 +61,7 @@
     background: rgba(15, 23, 42, 0.92);
     border: 1px solid rgba(99, 102, 241, 0.4);
     border-radius: var(--radius-badge);
-    padding: var(--sp-1-5) var(--sp-2-5);
+    padding: 0.4rem 0.6rem;
     font-size: var(--fs-xs);
     color: #e2e8f0;
     min-width: 160px;
@@ -72,12 +72,12 @@
   .tag {
     font-weight: var(--fw-semibold);
     color: #93c5fd;
-    margin-bottom: var(--sp-0-5);
+    margin-bottom: 0.15rem;
   }
 
   .cls {
     color: #86efac;
-    margin-bottom: var(--sp-1);
+    margin-bottom: 0.3rem;
     word-break: break-all;
     font-size: var(--fs-xs);
   }
@@ -85,7 +85,7 @@
   .row {
     display: flex;
     justify-content: space-between;
-    gap: var(--sp-2);
+    gap: 0.5rem;
     line-height: var(--lh-base);
   }
 

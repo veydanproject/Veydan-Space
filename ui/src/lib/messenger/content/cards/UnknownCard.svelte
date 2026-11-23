@@ -35,7 +35,7 @@
         {:else}{$t('msg_card_invalid_text')}{/if}
       </span>
     </div>
-    <button class="btn btn-ghost copy" onclick={copy} aria-label={$t('common_copy')} title={$t('common_copy')}><Icon name="copy" size={18} /></button>
+    <button class="copy" onclick={copy} aria-label={$t('common_copy')} title={$t('common_copy')}><Icon name="copy" size={18} /></button>
   </div>
 </div>
 
@@ -43,8 +43,10 @@
   .box { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
   .top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; width: 100%; }
   .about { flex: 1; }
-  /* The quiet button as a square of 40, as high as the value beside it; its zone 44. */
-  .copy { position: relative; flex-shrink: 0; min-width: var(--control-h); padding: 0; }
+  .copy {
+    position: relative; flex-shrink: 0; width: 40px; height: 40px; border: none; padding: 0; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-bg); color: var(--accent-text-2);
+  }
   .copy::before { content: ''; position: absolute; inset: -2px; }
   .ico {
     width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;

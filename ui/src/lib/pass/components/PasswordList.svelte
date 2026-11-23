@@ -102,14 +102,14 @@
 </script>
 
 {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
-<ul class="list-rows list">
+<div class="list divided">
   {#each entries as entry (entry.id)}
     {@const profiles = profilesOf(entry.tags)}
     {@const labels = [...userLabels(entry.tags), ...notesOf(entry.tags)]}
     {@const firstTotp = entry.totp_ids[0]}
     {@const totp = firstTotp ? totpStore.list.find((item) => item.id === firstTotp) : undefined}
-    <li><div class="list-row entry">
-      <button type="button" class="list-row-main entry-info" onclick={() => onopen(entry.id)}>
+    <div class="entry">
+      <button type="button" class="entry-info" onclick={() => onopen(entry.id)}>
         <div class="entry-name">{entry.title}</div>
         {#if entry.username || entry.url}
           <div class="entry-sub">{entry.username || entry.url}</div>
@@ -125,10 +125,10 @@
                are neutral, a label in the user's colour: the mark tells the kind, never the colour. -->
           <div class="entry-labels">
             {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
-              <span class="badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
+              <span class="label-badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
             {/each}
             {#if rest.length}
-              <span class="badge" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
+              <span class="label-badge tinted" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
             {/if}
           </div>
         {/if}
@@ -162,18 +162,38 @@
           </button>
         {/if}
       </div>
-    </div></li>
+    </div>
   {/each}
-</ul>
+</div>
 
 <VaultUnlock bind:open={unlockOpen} onunlocked={() => { if (pending) void copyPassword(pending); }} />
 
 <style>
-  /* The rows of base.css (64, no avatar: the hairline from the text); the main part opens the entry, the
-     code and the buttons stand at the end. */
-  .list { --list-line: var(--sp-3); }
-  .entry { gap: var(--sp-2); cursor: default; }
-  .entry-info { flex-direction: column; align-items: stretch; justify-content: center; gap: 0; }
+  .list { display: flex; flex-direction: column; gap: 2px; --rows-gap: 2px; }
+  .entry {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--sp-2);
+    min-height: 64px;
+    padding: var(--sp-2) var(--sp-3);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    transition: background var(--dur-fast);
+  }
+  .entry:hover { background: var(--surface-hover); }
+  .entry-info {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
   .entry-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -182,7 +202,7 @@
     font-weight: var(--fw-semibold);
   }
   .entry-sub {
-    margin-top: var(--sp-0-5);
+    margin-top: 0.1rem;
     font-size: var(--fs-xs);
     color: var(--text-2);
     overflow: hidden;
@@ -192,11 +212,22 @@
   .entry-labels {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-1);
-    margin-top: var(--sp-1);
+    gap: 0.25rem;
+    margin-top: 0.25rem;
     min-width: 0;
   }
-  .entry-labels .badge { max-width: 100%; }
+  .label-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    border-width: 1px;
+    border-style: solid;
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
+    padding: 0.05rem 0.35rem;
+    white-space: nowrap;
+  }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
   .totp-more { font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }

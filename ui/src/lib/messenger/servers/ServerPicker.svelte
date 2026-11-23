@@ -12,7 +12,6 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
   import { hostOf } from './serverAccept.svelte';
   import { nameOfServer, serverStore } from './serverStore.svelte';
@@ -85,27 +84,21 @@
           <span class="name">{chosen ? nameOfServer(chosen) : (none ?? '')}</span>
           {#if chosen}<span class="host">{hostOf(chosen.relay)}</span>{/if}
         </span>
-        <span class="count-pill sm quiet">{servers.length}</span>
+        <span class="count">{servers.length}</span>
         <Icon name="chevron-down" size={14} />
       </button>
     {:else}
       <!-- The search takes the field's place; the servers are the list of suggestions under it. -->
       <label class="field open" style:height="{fieldH}px" bind:this={openEl}>
-        <!-- The list closes when the focus leaves the field, not the input: Tab onto the cross keeps it. -->
-        <div class="search-field fill" onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { open = false; query = ''; } }}>
-          <Icon name="search" size={16} />
-          <input bind:this={search} type="text" bind:value={query} placeholder={$t('msg_srv_pick_search')} spellcheck="false" autocomplete="off"
-            aria-label={label || $t('msg_srv_row_server')}
-            onkeydown={(e) => {
-              if (list?.keydown(e)) return;
-              if (e.key === 'Enter' && found.length === 1) pick(found[0].id);
-            }} />
-          <!-- Pressed, it keeps the focus in the input: WebKit gives a pressed button no focus, the focusout would see none. -->
-          {#if query}
-            <button type="button" class="search-clear" onpointerdown={(e) => e.preventDefault()} onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-          {/if}
-        </div>
-        <span class="count-pill sm quiet">{servers.length}</span>
+        <Icon name="search" size={14} />
+        <input bind:this={search} class="search" type="text" bind:value={query} placeholder={$t('msg_srv_pick_search')} spellcheck="false" autocomplete="off"
+          aria-label={label || $t('msg_srv_row_server')}
+          onblur={() => { open = false; query = ''; }}
+          onkeydown={(e) => {
+            if (list?.keydown(e)) return;
+            if (e.key === 'Enter' && found.length === 1) pick(found[0].id);
+          }} />
+        <span class="count">{servers.length}</span>
         <Icon name="chevron-up" size={14} />
       </label>
       <Suggest bind:this={list} {items} anchor={openEl} label={label || $t('msg_srv_row_server')} empty={$t('common_nothing_found')}
@@ -131,13 +124,18 @@
 
   .field {
     display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; text-align: start; cursor: pointer;
-    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-2-5);
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field); padding: 7px 10px;
   }
   .field :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .field-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .name { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .host { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Open, the field holds the search field (base.css), its count and arrow beside it. */
-  .field.open { cursor: text; padding: 0 var(--sp-2-5) 0 var(--sp-1); }
-  @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } }
+  .count { font-size: var(--fs-xs); color: var(--text-3); padding: 0 var(--sp-2); border-radius: var(--radius-pill); background: var(--surface-2); }
+  .field.open { cursor: text; border-color: var(--accent-border); }
+  .search {
+    flex: 1; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+    font: inherit; font-size: var(--fs-sm); color: var(--text);
+  }
+  .search:focus { outline: none; box-shadow: none; }
+  @media (pointer: coarse) { .srv-chip { min-height: 40px; padding: 0 var(--sp-4); } .search { font-size: var(--fs-md); } }
 </style>

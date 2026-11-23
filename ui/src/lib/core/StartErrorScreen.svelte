@@ -158,7 +158,7 @@
   }
 
   .path {
-    padding: 1px var(--sp-1-5);
+    padding: 1px 6px;
     border-radius: var(--radius-xs);
     background: var(--surface-2);
     font-family: var(--font-mono);

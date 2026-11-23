@@ -77,8 +77,7 @@
   }
 </script>
 
-<!-- The phone's sheet has its own «Отмена» in the foot: no × in its head. -->
-<Dialog bind:open closable={false} title={done ? '' : planName ? $t('cloud_key_title_for', { plan: planName }) : $t('cloud_key_enter')}>
+<Dialog bind:open title={done ? '' : planName ? $t('cloud_key_title_for', { plan: planName }) : $t('cloud_key_enter')}>
   {#if done}
     <StateView tone="ok" title={$t('cloud_key_done')}>
       {#if result}

@@ -21,6 +21,6 @@
 </button>
 
 <style>
-  .me { display: inline-flex; padding: var(--sp-1); margin-right: var(--sp-0-5); --hit-r: calc(var(--edge-r, 0px) + var(--sp-0-5)); border: none; border-radius: 50%; background: none; cursor: pointer; }
+  .me { display: inline-flex; padding: 5px; margin-right: 2px; --hit-r: calc(var(--edge-r, 0px) + 2px); border: none; border-radius: 50%; background: none; cursor: pointer; }
   .me:active { opacity: 0.8; }
 </style>

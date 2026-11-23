@@ -4,8 +4,7 @@
 <!-- Two cards, each a switch row and the numbers it governs; the warning about old versions; the save at the foot. -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
-  import Notice from '$lib/core/ui/Notice.svelte';
+  import Icon from '$lib/core/Icon.svelte';
   import { api, DEFAULT_ATTACHMENT_POLICY, type NoteAttachmentPolicy } from '$lib/notes/api';
   import { t } from '$lib/core/i18n';
   import { formatError } from '$lib/core/utils';
@@ -36,7 +35,13 @@
 </script>
 
 {#snippet switchRow(on: boolean, title: string, hint: string, flip: () => void)}
-  <div class="switch"><ToggleRow surface="row" {title} {hint} {on} onclick={flip} /></div>
+  <button type="button" class="switch-row" role="switch" aria-checked={on} onclick={flip}>
+    <span class="words">
+      <span class="title">{title}</span>
+      <span class="hint">{hint}</span>
+    </span>
+    <span class="toggle" class:on aria-hidden="true"></span>
+  </button>
 {/snippet}
 
 {#if loaded}
@@ -69,8 +74,10 @@
         </label>
       </div>
     </div>
-    <Notice tone="info">{$t('settings_att_compat_warn')}</Notice>
-    {#if error}<Notice tone="danger">{error}</Notice>{/if}
+    <p class="note"><Icon name="info" size={18} /><span>{$t('settings_att_compat_warn')}</span></p>
+    {#if error}
+      <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>
+    {/if}
     <div class="foot">
       <button type="button" class="btn btn-primary" onclick={save}>{$t('common_save')}</button>
     </div>
@@ -80,8 +87,18 @@
 <style>
   .policy { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; }
   .card.group { padding: var(--sp-1); }
-  /* The card's switch (ToggleRow `row`, reaching past this padding by --sp-3). */
-  .switch { padding: 0 var(--sp-3); }
+  .switch-row {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
+  }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .switch-row:first-child { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:last-child { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:hover { background: var(--surface-row-hover); }
+  .switch-row .toggle { pointer-events: none; }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
   .nums {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4);
     padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--divider);
@@ -97,6 +114,14 @@
   }
   .input:focus { border-color: var(--accent-border); outline: none; }
   .hint { line-height: var(--lh-snug); margin: 0; }
+  .note { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+  .note :global(svg) { flex-shrink: 0; color: var(--text-dim); }
+  .fail {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
+    overflow-wrap: anywhere;
+  }
+  .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
   .foot { display: flex; justify-content: flex-end; align-items: center; gap: var(--sp-3); }
 
   /* A narrow window: the numbers one under another. */

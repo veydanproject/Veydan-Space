@@ -55,7 +55,7 @@
     {#each group as item (item.action)}
       <button
         type="button"
-        class="icon-btn"
+        class="fb"
         {disabled}
         aria-label={label(item)}
         onpointerdown={(e) => e.preventDefault()}
@@ -64,17 +64,17 @@
         {#if isHeading(item.action)}
           <span class="h-label">{item.label}</span>
         {:else}
-          <Icon name={item.icon} size={22} />
+          <Icon name={item.icon} size={18} />
         {/if}
       </button>
     {/each}
   {/each}
   <span class="spacer"></span>
   <div class="modes" role="group" aria-label={$t('notes_mode')}>
-    <button type="button" class="icon-btn" class:on={mode === 'rich'} onclick={() => onmode('rich')} aria-label={$t('notes_mode_rich')}>
-      <Icon name="pencil" size={22} />
+    <button type="button" class="mode" class:on={mode === 'rich'} onclick={() => onmode('rich')} aria-label={$t('notes_mode_rich')}>
+      <Icon name="pencil" size={16} />
     </button>
-    <button type="button" class="icon-btn" class:on={mode === 'md'} onclick={() => onmode('md')} aria-label={$t('notes_mode_md')}>
+    <button type="button" class="mode" class:on={mode === 'md'} onclick={() => onmode('md')} aria-label={$t('notes_mode_md')}>
       <span class="h-label">MD</span>
     </button>
   </div>
@@ -90,7 +90,7 @@
     -webkit-overflow-scrolling: touch;
     margin-inline: calc(-1 * var(--sp-4));
     padding-inline: var(--sp-4);
-    --hit-row: 2px;
+    --hit-row: 3px;
   }
   .bar::-webkit-scrollbar { display: none; }
   /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
@@ -100,7 +100,21 @@
     -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
     mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
   }
-  /* The buttons are the common .icon-btn: 40, its zone 44 (mobile.css); 4 between two, their zones meet and do not cross. */
+  .fb {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-2);
+  }
+  .fb:active { background: var(--m-seg); color: var(--text); }
+  .fb:disabled { opacity: 0.45; }
   .h-label {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
@@ -114,6 +128,25 @@
     background: var(--border);
   }
   .spacer { flex: 1; min-width: var(--sp-2); }
-  /* The editor's mode: two icon buttons, the chosen one .on. */
-  .modes { flex-shrink: 0; display: inline-flex; gap: var(--sp-1); }
+  .modes {
+    flex-shrink: 0;
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+
+  }
+  .mode {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 38px;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text-2);
+  }
+  .mode:first-child { border-radius: calc(var(--radius-sm) - 1px) 0 0 calc(var(--radius-sm) - 1px); }
+  .mode:last-child { border-radius: 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px) 0; }
+  .mode.on { color: var(--accent-text); background: var(--accent-tint); }
 </style>

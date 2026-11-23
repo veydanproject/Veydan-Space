@@ -16,7 +16,7 @@
   import type { HostInfo } from '$lib/core/types';
   import { api, onSyncStatus, type SyncStatus } from '$lib/core/mobile/api';
   import { t, locale, type Locale } from '$lib/core/mobile/i18n';
-  import { LANGUAGES, taglineOf, type TranslationKey } from '$lib/core/i18n';
+  import { LANGUAGES } from '$lib/core/i18n';
   import { loadDefaultApp, registry, saveDefaultApp } from '$lib/core/registry';
   import PickerSheet from '$lib/core/mobile/PickerSheet.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
@@ -28,8 +28,7 @@
   import DataConfirmFields from '$lib/core/DataConfirmFields.svelte';
   import { product } from '$lib/core/product';
   import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
-  import { LICENSE_NAME, LICENSE_URL, licenseSummaryUrl, thirdPartyUrl } from '$lib/core/about';
-  import { updateCheck, updateOffered } from '$lib/core/store/update-check.svelte';
+  import { updateCheck } from '$lib/core/store/update-check.svelte';
 
   const locales: { id: Locale; label: string; code: string; lang: string }[] = LANGUAGES.map((l) => ({ id: l.code, label: l.native, code: l.code, lang: l.tag }));
 
@@ -65,11 +64,6 @@
   let dataScope = $state<'device' | 'all'>('device');
   let dataWrong = $state(false);
   let bugOpen = $state(false);
-  // About as on a computer (design 18): the project's links and those of the product's modules.
-  const aboutLinks = $derived(registry.active.flatMap((m) => m.about ?? []));
-  // The deletion itself is the Cloud's page; the site's page stays for the store, its address under it.
-  const cloudDelete = registry.enabled('cloud');
-  const deleteSite = LEGAL.deleteAccount.replace(/^https:\/\//, '');
 
   const themeOptions = $derived([
     { id: 'dark', label: $t('settings_theme_dark'), icon: 'moon' },
@@ -112,8 +106,8 @@
   );
   const updateLabel = $derived(
     updateCheck.status === 'checking' ? $t('update_checking')
-    // The row over the list says it already: one phrase on the screen.
-    : updateCheck.status === 'available' && !updateOffered() ? $t('update_available', { version: updateCheck.latest })
+    // The card over the list says it already: one phrase on the screen.
+    : updateCheck.status === 'available' && distribution.fromStore ? $t('update_available', { version: updateCheck.latest })
     : updateCheck.status === 'upToDate' ? $t('update_up_to_date')
     : '',
   );
@@ -208,10 +202,10 @@
 <div class="m-page">
   <div class="m-header">
 {#if hasHome()}
-      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {:else if pages.length > 0}
       <!-- Not a tab of the bar: opened by the avatar of a tab, back to it. -->
-      <button type="button" class="icon-btn" onclick={() => void leave('/')} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+      <button type="button" class="m-ibtn" onclick={() => void leave('/')} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
     {/if}
     <h1 class="m-title">{$t('app_settings')}</h1>
   </div>
@@ -225,19 +219,14 @@
   {#if shown}
     <shown.component {...shown.props} />
   {:else}
-  <!-- A new version: the row of the computer's banner (design 18). A phone installs nothing itself: its button opens the release page. -->
-  {#if updateOffered()}
-    <div class="m-list update-list">
-      <div class="list-row dense still set-row update-row" role="status">
-        <span class="set-tile update-tile"><Icon name="circle-arrow-up" size={20} /></span>
-        <span class="set-text">
-          <span class="list-row-label">{$t('update_banner_available', { version: updateCheck.latest })}</span>
-        </span>
-        <span class="update-actions">
-          <button type="button" class="btn btn-sm btn-ghost" onclick={() => updateCheck.postpone()}>{$t('common_later')}</button>
-          <button type="button" class="btn btn-sm btn-primary" onclick={() => updateCheck.open()}>{$t('settings_update_open_releases')}</button>
-        </span>
-      </div>
+  {#if updateCheck.status === 'available' && !distribution.fromStore}
+    <div class="m-card update-card">
+      <span class="update-title">{$t('update_available', { version: updateCheck.latest })}</span>
+      <span class="m-sub">{$t('update_available_hint')}</span>
+      <button type="button" class="btn btn-primary update-open" onclick={() => updateCheck.open()}>
+        <Icon name="download" size={18} />
+        {$t('update_open')}
+      </button>
     </div>
   {/if}
 
@@ -248,44 +237,44 @@
   {/each}
 
   {#each afterAccount as section (section.id)}
-    <div class="section-label set-h"><Icon name={section.icon ?? 'layers'} size={16} />{$t(section.group)}</div>
+    <div class="m-section set-h"><Icon name={section.icon ?? 'layers'} size={16} />{$t(section.group)}</div>
     <div class="m-list rows">
       <section.component {...section.props} />
     </div>
   {/each}
 
-  <div class="section-label set-h"><Icon name="settings" size={16} />{$t('settings_main')}</div>
+  <div class="m-section set-h"><Icon name="settings" size={16} />{$t('settings_main')}</div>
   <div class="m-list">
     {#if startChoice}
-      <button type="button" class="list-row dense set-row" onclick={() => (picker = 'app')}>
+      <button type="button" class="m-row set-row" onclick={() => (picker = 'app')}>
         <span class="set-tile"><Icon name="home" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{startTitle}</span>
-          <span class="list-row-value">{defaultAppLabel}</span>
+          <span class="m-row-label">{startTitle}</span>
+          <span class="m-row-value">{defaultAppLabel}</span>
         </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
     {/if}
-    <button type="button" class="list-row dense set-row" onclick={() => (picker = 'theme')}>
+    <button type="button" class="m-row set-row" onclick={() => (picker = 'theme')}>
         <span class="set-tile"><Icon name="sun" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_theme')}</span>
-          <span class="list-row-value">{themeLabel}</span>
+          <span class="m-row-label">{$t('settings_theme')}</span>
+          <span class="m-row-value">{themeLabel}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense set-row" onclick={() => (picker = 'lang')}>
+    <button type="button" class="m-row set-row" onclick={() => (picker = 'lang')}>
         <span class="set-tile"><Icon name="language" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_language')}</span>
-          <span class="list-row-value">{localeLabel}</span>
+          <span class="m-row-label">{$t('settings_language')}</span>
+          <span class="m-row-value">{localeLabel}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
   </div>
 
   {#if withModules}
-    <div class="section-label set-h"><Icon name="layout-grid" size={16} />{$t('modules_section')}</div>
+    <div class="m-section set-h"><Icon name="layout-grid" size={16} />{$t('modules_section')}</div>
     <div class="m-list">
       <ModulesSettings mobile />
     </div>
@@ -293,19 +282,19 @@
   {/if}
 
   {#each sections as section (section.id)}
-    <div class="section-label set-h"><Icon name="layers" size={16} />{$t(section.group)}</div>
+    <div class="m-section set-h"><Icon name="layers" size={16} />{$t(section.group)}</div>
     <div class="m-list">
       <section.component />
     </div>
   {/each}
 
-  <div class="section-label set-h"><Icon name="lock" size={16} />{$t('settings_security')}</div>
+  <div class="m-section set-h"><Icon name="lock" size={16} />{$t('settings_security')}</div>
   <div class="m-list">
-    <a class="list-row dense set-row" href="/settings/lock">
+    <a class="m-row set-row" href="/settings/lock">
         <span class="set-tile"><Icon name="lock" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_lock_section')} <Pill tone="warn" text={$t('settings_lock_beta')} /></span>
-          <span class="list-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
+          <span class="m-row-label">{$t('settings_lock_section')} <Pill tone="warn" text={$t('settings_sync_beta')} /></span>
+          <span class="m-row-value" class:ok={appLock.status.enabled}>{appLock.ready ? lockLabel : ''}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </a>
@@ -313,104 +302,81 @@
 
   <!-- With an account on the page, its card leads to sync. -->
   {#if accountSections.length === 0}
-    <div class="section-label set-h"><Icon name="refresh-cw" size={16} />{$t('settings_data')}</div>
+    <div class="m-section set-h"><Icon name="refresh-cw" size={16} />{$t('settings_data')}</div>
     <div class="m-list">
-      <a class="list-row dense set-row" href="/settings/sync">
+      <a class="m-row set-row" href="/settings/sync">
         <span class="set-tile"><Icon name="refresh-cw" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_sync_section')}</span>
-          <span class="list-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
+          <span class="m-row-label">{$t('settings_sync_section')}</span>
+          <span class="m-row-value" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
         </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </a>
     </div>
   {/if}
 
-  <div class="section-label set-h"><Icon name="info" size={16} />{$t('settings_about')}</div>
+  <div class="m-section set-h"><Icon name="info" size={16} />{$t('settings_about')}</div>
   <div class="m-list">
-    <div class="list-row dense still about-head">
+    <div class="m-row about-head">
       <img src="/logo.png" alt="" class="about-logo" />
       <div class="about-text">
-        <span class="list-row-label">{product.name}</span>
-        <span class="list-row-value mono">{info ? `${info.version} · ${info.os}/${info.arch}` : ''}</span>
-        <span class="list-row-value about-tagline">{taglineOf($locale)}</span>
+        <span class="m-row-label">{product.name}</span>
+        <span class="m-row-value mono">{info ? `${info.version} · ${info.os}/${info.arch}` : ''}</span>
       </div>
-    </div>
-    <!-- The facts of the program and the licence's note, as the card of a computer. -->
-    <div class="about-facts">
-      <div class="about-fact">
-        <span class="about-key">{$t('settings_about_version')}</span>
-        <span class="about-value mono">{info ? `v${info.version}` : '—'}</span>
-      </div>
-      <div class="about-fact">
-        <span class="about-key">{$t('settings_about_license')}</span>
-        <span class="about-value mono">{LICENSE_NAME}</span>
-      </div>
-      <p class="about-note">{$t('settings_about_license_note')}</p>
     </div>
     {#if !distribution.fromStore}
     <button
       type="button"
-      class="list-row dense set-row"
+      class="m-row set-row"
       disabled={updateCheck.status === 'checking'}
       onclick={() => updateCheck.check()}
     >
         <span class="set-tile"><Icon name="circle-arrow-up" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('update_check')}</span>
-          <span class="list-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>{updateLabel}</span>
+          <span class="m-row-label">{$t('update_check')}</span>
+          <span class="m-row-value" class:ok={updateCheck.status === 'upToDate'} class:new={updateCheck.status === 'available'}>{updateLabel}</span>
         </span>
     </button>
     {/if}
-    <button type="button" class="list-row dense set-row" onclick={() => (bugOpen = true)}>
+    <button type="button" class="m-row set-row" onclick={() => (bugOpen = true)}>
         <span class="set-tile"><Icon name="alert-triangle" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_bug_report')}</span>
+          <span class="m-row-label">{$t('settings_bug_report')}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LEGAL.privacy)}>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.privacy)}>
         <span class="set-tile"><Icon name="file-text-shield" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_privacy')}</span>
+          <span class="m-row-label">{$t('settings_about_privacy')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LEGAL.terms)}>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.terms)}>
         <span class="set-tile"><Icon name="file-text" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_terms')}</span>
+          <span class="m-row-label">{$t('settings_about_terms')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LEGAL.childSafety)}>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.childSafety)}>
         <span class="set-tile"><Icon name="mood-kid" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_child_safety')}</span>
+          <span class="m-row-label">{$t('settings_about_child_safety')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
-    {#if cloudDelete}
-      <a class="list-row dense set-row" href="/cloud?delete=1">
+    <button type="button" class="m-row set-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
         <span class="set-tile"><Icon name="trash-2" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_delete_account')}</span>
-        </span>
-        <span class="chev"><Icon name="chevron-right" size={16} /></span>
-      </a>
-    {/if}
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LEGAL.deleteAccount)}>
-        <span class="set-tile"><Icon name="trash-2" size={20} /></span>
-        <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_delete_account')}</span>
-          <span class="list-row-value">{deleteSite}</span>
+          <span class="m-row-label">{$t('settings_about_delete_account')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(ABUSE_MAIL)}>
+    <button type="button" class="m-row set-row" onclick={() => openLegal(ABUSE_MAIL)}>
         <span class="set-tile"><Icon name="alert-triangle" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_about_abuse')}</span>
+          <span class="m-row-label">{$t('settings_about_abuse')}</span>
         </span>
       <span class="chev"><Icon name="external-link" size={16} /></span>
     </button>
@@ -418,68 +384,40 @@
   {#if updateCheck.status === 'error' && !distribution.fromStore}
     <div class="update-err"><Notice tone="danger">{$t('settings_update_failed')}</Notice></div>
   {/if}
-  <!-- The licence, its summary, the licences of the dependencies, the repository and the modules' links (a computer's second card). -->
-  <div class="m-list about-links">
-    <button type="button" class="list-row dense set-row" onclick={() => openLegal(LICENSE_URL)}>
-      <span class="set-text"><span class="list-row-label">{$t('settings_about_link_license')}</span></span>
-      <span class="chev"><Icon name="external-link" size={16} /></span>
-    </button>
-    {#if product.repo}
-      <button type="button" class="list-row dense set-row" onclick={() => openLegal(licenseSummaryUrl(product.repo))}>
-        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_summary')}</span></span>
-        <span class="chev"><Icon name="external-link" size={16} /></span>
-      </button>
-      <button type="button" class="list-row dense set-row" onclick={() => openLegal(thirdPartyUrl(product.repo))}>
-        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_thirdparty')}</span></span>
-        <span class="chev"><Icon name="external-link" size={16} /></span>
-      </button>
-      <button type="button" class="list-row dense set-row" onclick={() => openLegal(product.repo)}>
-        <span class="set-text"><span class="list-row-label">{$t('settings_about_link_repo')}</span></span>
-        <span class="chev"><Icon name="external-link" size={16} /></span>
-      </button>
-    {/if}
-    {#each aboutLinks as link (link.id)}
-      <button type="button" class="list-row dense set-row" onclick={() => openLegal(link.url)}>
-        <span class="set-text"><span class="list-row-label">{$t(link.title as TranslationKey)}</span></span>
-        <span class="chev"><Icon name="external-link" size={16} /></span>
-      </button>
-    {/each}
-  </div>
-  <p class="about-copyright">{$t('settings_about_copyright')}</p>
 
   <BugReportDialog bind:open={bugOpen} />
 
   <!-- For developers: rows of the same height as every other, the destructive one marked. -->
-  <div class="section-label set-h"><Icon name="code" size={16} />{$t('dev_sync_link')}</div>
+  <div class="m-section set-h"><Icon name="code" size={16} />{$t('dev_sync_link')}</div>
   <div class="m-list">
-    <a class="list-row dense set-row" href="/settings/dev">
+    <a class="m-row set-row" href="/settings/dev">
         <span class="set-tile"><Icon name="code" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('dev_sync_title')}</span>
+          <span class="m-row-label">{$t('dev_sync_title')}</span>
         </span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </a>
     {#if hasDemo}
-      <button type="button" class="list-row dense set-row" onclick={() => (picker = 'demoLang')}>
+      <button type="button" class="m-row set-row" onclick={() => (picker = 'demoLang')}>
         <span class="set-tile"><Icon name="language" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{$t('settings_demo_locale')}</span>
-          <span class="list-row-value">{demoLocaleLabel}</span>
+          <span class="m-row-label">{$t('settings_demo_locale')}</span>
+          <span class="m-row-value">{demoLocaleLabel}</span>
         </span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
-      <button type="button" class="list-row dense set-row" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
+      <button type="button" class="m-row set-row" disabled={demoBusy || clearBusy} onclick={askLoadDemo}>
         <span class="set-tile"><Icon name="file-plus" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}</span>
+          <span class="m-row-label">{demoBusy ? $t('settings_demo_loading') : $t('settings_demo_load')}</span>
         </span>
       </button>
     {/if}
     {#if hasData}
-      <button type="button" class="list-row dense set-row set-danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
+      <button type="button" class="m-row set-row set-danger" disabled={demoBusy || clearBusy} onclick={askClearData}>
         <span class="set-tile"><Icon name="trash-2" size={20} /></span>
         <span class="set-text">
-          <span class="list-row-label">{clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}</span>
+          <span class="m-row-label">{clearBusy ? $t('settings_clear_clearing') : $t('settings_clear_data')}</span>
         </span>
       </button>
     {/if}
@@ -491,10 +429,8 @@
 </div>
 
 {#if pendingData}
-  <!-- Its own «Отмена» in the foot: no × in the sheet's head. -->
   <Dialog
     open={true}
-    closable={false}
     onclose={() => (pendingData = null)}
     title={pendingData === 'clear' ? $t('settings_clear_data') : $t('settings_demo_load')}
   >
@@ -540,47 +476,38 @@
 
 <style>
   .page-tabs { flex-shrink: 0; padding: 0 var(--sp-4); }
-  .ok, .list-row-value.ok { color: var(--success-text); font-weight: var(--fw-semibold); }
+  .ok, .m-row-value.ok { color: var(--success-text); font-weight: var(--fw-semibold); }
   .account { margin-top: var(--sp-3); }
-  .new, .list-row-value.new { color: var(--accent-text); font-weight: var(--fw-semibold); }
-  /* The row of a new version, framed in the accent; its buttons go under the words when a phone has no room beside them. */
-  .update-list { margin-top: var(--sp-3); border-color: var(--accent-border); }
-  .update-row { flex-wrap: wrap; row-gap: var(--sp-2); }
-  .update-tile { background: var(--accent-tint); color: var(--accent-text); }
-  .update-row .set-text { flex: 1 1 8rem; }
-  .update-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
+  .new, .m-row-value.new { color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .update-card {
+    display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2);
+    margin-top: var(--sp-3); padding: var(--sp-4);
+    border-color: var(--accent-border);
+  }
+  .update-title { font-size: var(--fs-body); font-weight: var(--fw-bold); color: var(--text); }
+  /* The download the whole width of the card, a full touch target. */
+  .update-open { margin-top: var(--sp-1); align-self: stretch; min-height: var(--sp-12); justify-content: center; }
   .update-err { margin-top: var(--sp-2); }
   .about-head { gap: var(--sp-3); }
-  /* The facts under the head, a line over them; the licence's note under them, a line under it. */
-  .about-facts { display: flex; flex-direction: column; padding: var(--sp-1) var(--sp-3) var(--sp-3); border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); }
-  .about-fact { display: flex; align-items: baseline; gap: var(--sp-4); min-height: var(--control-h); padding: var(--sp-2) 0; }
-  .about-key { flex: 0 0 6rem; font-size: var(--fs-sm); color: var(--text-dim); }
-  .about-value { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-body); }
-  .about-note { margin: var(--sp-1) 0 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); }
-  .about-links { margin-top: var(--sp-3); }
-  .about-copyright { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
   .about-logo { width: 40px; height: 40px; object-fit: contain; flex-shrink: 0; }
-  .about-text { flex: 1; display: flex; flex-direction: column; gap: var(--sp-0-5); min-width: 0; }
-  /* The tagline is a sentence, not a value: it wraps inside the card on a narrow phone. */
-  .about-tagline { white-space: normal; overflow-wrap: break-word; }
+  .about-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .mono { font-size: var(--fs-xs); }
   .under-list { margin-top: var(--sp-2); padding: 0 var(--sp-1); }
-  .list-row:disabled { opacity: 0.45; }
+  .m-row:disabled { opacity: 0.45; }
 
   /* The rows of the design kit: a tile with the icon, the name, its value under it. */
   .set-h { display: flex; align-items: center; gap: var(--sp-2); }
   .set-h :global(.icon) { color: var(--text-2); }
   .m-list:has(.set-row), .m-list.rows { padding: var(--sp-1); }
-  /* A dense row of 56 (base.css), its own corners in the padded card; mobile.css draws no hairline between the tiles. */
-  .m-list .set-row { padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); }
+  .set-row { gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-bottom: 0; border-radius: var(--radius-lg); }
   .set-tile {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
     width: 36px; height: 36px; border-radius: var(--radius);
     background: var(--m-seg); color: var(--text-soft);
   }
-  .set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); }
-  .set-text .list-row-label { flex: none; font-weight: var(--fw-medium); }
-  .set-text .list-row-value { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; }
+  .set-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .set-text .m-row-label { flex: none; font-weight: var(--fw-medium); }
+  .set-text .m-row-value { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; }
   .set-danger { color: var(--danger-text); }
   .set-danger .set-tile { background: var(--danger-bg); color: var(--danger-text); }
   .ok-msg { margin: var(--sp-2) var(--sp-1) 0; font-size: var(--fs-sm); color: var(--success-text); }

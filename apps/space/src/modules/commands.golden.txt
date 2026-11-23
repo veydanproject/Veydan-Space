@@ -98,7 +98,6 @@ chrome_clipboard_image shell all
 chrome_edges shell all
 files_save shell all
 files_stage shell all
-clipboard_read_text shell desktop
 clipboard_write_text shell desktop
 cloud_account_refresh cloud all
 cloud_activate_free cloud all

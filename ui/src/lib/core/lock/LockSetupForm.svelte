@@ -4,7 +4,7 @@
 <!-- Turn the app lock on/off, change the secret, auto-lock timeout, recovery key. -->
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
@@ -19,11 +19,6 @@
   import RecoveryKeyCard from './RecoveryKeyCard.svelte';
 
   const TIMEOUTS = [0, 1, 5, 15, 30, 60];
-
-  /** `page`: the form is a phone's page (settings/lock): it brings the page's scrolling body, `lead` first in it,
-   *  and its foot (.page-foot) with the main button and the error over it, above the keyboard. */
-  let { page = false, lead }: { page?: boolean; lead?: Snippet } = $props();
-  const paged = $derived(page && isMobile);
 
   let current = $state('');
   let kind = $state<LockKind>('pin');
@@ -87,12 +82,7 @@
       }
     });
 
-  // The protection of the whole app goes: asked first, as the reset below (design 18).
-  async function remove() {
-    const label = $t('settings_lock_disable');
-    if (!(await ask({ title: label, confirmLabel: label }))) return;
-    await run(() => appLock.setSecret(null, current).then(() => {}));
-  }
+  const remove = () => run(() => appLock.setSecret(null, current).then(() => {}));
 
   const regenerate = () =>
     run(async () => {
@@ -121,30 +111,6 @@
     });
 </script>
 
-{#if paged}
-  <div class="m-body">
-    {@render lead?.()}
-    {@render form()}
-  </div>
-  {#if !recoveryCode}
-    <div class="page-foot">
-      {#if error}
-        <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>
-      {/if}
-      {@render primary()}
-    </div>
-  {/if}
-{:else}
-  {@render form()}
-{/if}
-
-{#snippet primary()}
-  <button type="button" class="btn btn-primary" disabled={busy || !canSave} onclick={save}>
-    {enabled ? $t('settings_lock_change') : $t('settings_lock_enable')}
-  </button>
-{/snippet}
-
-{#snippet form()}
 {#if recoveryCode}
   <RecoveryKeyCard code={recoveryCode} title={recoveryTitle} ondone={() => (recoveryCode = null)} />
 {:else}
@@ -180,19 +146,18 @@
 
       <LockSecretFields bind:kind bind:password bind:confirm bind:hint disabled={busy} />
 
-      {#if error && !paged}
+      {#if error}
         <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{error}</span></div>
       {/if}
 
-      <!-- A phone's page keeps only the disable here: the main button is its foot's. -->
-      {#if !paged || enabled}
-        <div class="foot">
-          {#if enabled}
-            <button type="button" class="btn btn-ghost" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
-          {/if}
-          {#if !paged}{@render primary()}{/if}
-        </div>
-      {/if}
+      <div class="foot">
+        {#if enabled}
+          <button type="button" class="btn btn-ghost" disabled={busy || !current} onclick={remove}>{$t('settings_lock_disable')}</button>
+        {/if}
+        <button type="button" class="btn btn-primary" disabled={busy || !canSave} onclick={save}>
+          {enabled ? $t('settings_lock_change') : $t('settings_lock_enable')}
+        </button>
+      </div>
     </div>
 
     {#if enabled}
@@ -254,7 +219,6 @@
     {/if}
   </div>
 {/if}
-{/snippet}
 
 <style>
   .lock-settings { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; }

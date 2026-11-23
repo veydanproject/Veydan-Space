@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ChannelDetail, FeedItemView } from './api';
-import { asMessage, itemEntries, type ItemActions } from './itemMenu';
+import { itemEntries, type ItemActions } from './itemMenu';
 
 const ME = 'aa'.repeat(32);
 const tr = (key: string) => key;
@@ -29,19 +29,6 @@ const labels = (d: ChannelDetail, item: FeedItemView) =>
   itemEntries(item, d, ME, tr, acts).map((e) => (e.type === 'separator' ? '—' : e.type === 'heading' ? `# ${e.label}` : e.type === 'pair' ? e.items.map((p) => p.label).join(' | ') : e.label));
 
 describe('the menu of a post', () => {
-  it('offers «Выбрать текст» after the copy where the page gives it (a phone), not on a post without words (design 17)', () => {
-    const select = (item: FeedItemView) => itemEntries(item, detail(null), ME, tr, { ...acts, select: noop }).flatMap((e) => ('label' in e && e.label ? [e.label] : []));
-    expect(select(post('w'))).toEqual(['chan_menu_comments', 'chan_menu_copy', 'msg_select_text', 'chan_menu_write', 'chan_menu_report']);
-    expect(select(post('w', { text: undefined }))).not.toContain('msg_select_text');
-    expect(labels(detail(null), post('w'))).not.toContain('msg_select_text');
-  });
-
-  it('shows a post in «Выбрать текст» as a message: its words and their Markdown, whose, mine on the right', () => {
-    const m = asMessage(post(ME, { fmt: 'md', rich: [], edited_at: 5 }), ME);
-    expect(m).toMatchObject({ text: 'hi', fmt: 'md', rich: [], sender_pubkey: ME, direction: 'out', edited_at: 5, created_at: 1 });
-    expect(asMessage(post('w'), ME)).toMatchObject({ direction: 'in', fmt: null, rich: null, edited_at: null });
-  });
-
   it('offers a reader the comments, the copy, a message to the author and a report', () => {
     expect(labels(detail(null), post('w'))).toEqual(['chan_menu_comments', 'chan_menu_copy', 'chan_menu_write', '—', 'chan_menu_report']);
   });

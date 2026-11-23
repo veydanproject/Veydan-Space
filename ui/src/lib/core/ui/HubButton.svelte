@@ -8,12 +8,16 @@
 </script>
 
 {#if hub.available}
-  <button type="button" class="icon-btn hub" onclick={() => hub.open()} aria-label={product.name}>
+  <button type="button" class="hub" onclick={() => hub.open()} aria-label={product.name}>
     <img src="/logo.png" alt="" />
   </button>
 {/if}
 
 <style>
-  /* A button of the phone's head (.m-header): the common .icon-btn, 40, its zone 44 (mobile.css); the logo 30 in it. */
+  .hub {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 44px; height: 44px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer;
+  }
+  .hub:active { background: var(--surface-3); }
   .hub img { width: 30px; height: 30px; object-fit: contain; }
 </style>

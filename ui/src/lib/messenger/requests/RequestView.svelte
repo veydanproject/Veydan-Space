@@ -122,10 +122,10 @@
   }
   .who { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow-wrap: anywhere; }
-  .sub { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
+  .sub { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; }
   .nip05 { color: var(--text-2); }
   .tag {
-    display: inline-flex; align-items: center; gap: var(--sp-1); padding: var(--sp-0-5) var(--sp-2-5); border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: var(--radius-pill);
     background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
   .message { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -141,8 +141,6 @@
     flex-shrink: 0; border-top: 1px solid var(--border); background: var(--surface);
     padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--sab, 0px));
   }
-  /* A phone: the foot lies on the screen's own background, as the screen above it (no band of --surface under the glow). */
-  :global(.msg-m) .bottom { background: transparent; }
   .error-line { margin: 0 auto var(--sp-2); max-width: 560px; font-size: var(--fs-sm); color: var(--danger-text); }
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); max-width: 560px; margin-inline: auto; }
   .actions .btn { flex: 1 1 auto; justify-content: center; }

@@ -18,8 +18,6 @@
     updatedAt: string;
     folderLabel: string;
     tags: string[];
-    /** A tag's colour, as its chip on the note page has. */
-    tagColor?: (name: string) => string | undefined;
     /** Vault uploads/downloads in flight, keyed by `note_id/name`. */
     transfers?: Map<string, AttachmentTransfer>;
     onclose: () => void;
@@ -35,7 +33,7 @@
   }
 
   let {
-    open, attachments, thumbs, createdAt, updatedAt, folderLabel, tags, tagColor = () => undefined, transfers = new Map(),
+    open, attachments, thumbs, createdAt, updatedAt, folderLabel, tags, transfers = new Map(),
     onclose, onfile, onimage, oninsert, onremove, oncancel, onfetch, onsave,
   }: Props = $props();
 
@@ -106,7 +104,7 @@
             {/if}
             <span class="meta">
               <span class="name">{a.name}</span>
-              <span class="size"><span class="status-dot ok"></span>{statusLabel(a, x)}</span>
+              <span class="size"><span class="dot"></span>{statusLabel(a, x)}</span>
             </span>
           </button>
           {#if st === 'busy'}
@@ -150,7 +148,7 @@
     <dt>{$t('notes_meta_tags')}</dt>
     <dd>
       {#if tags.length}
-        <span class="chip-row">{#each tags as name (name)}<span class="badge tinted" style:--chip={tagColor(name)}>#{name}</span>{/each}</span>
+        <span class="m-chips">{#each tags as name (name)}<span class="m-chip small">#{name}</span>{/each}</span>
       {:else}—{/if}
     </dd>
   </dl>
@@ -158,16 +156,16 @@
 
 <BottomSheet open={menu !== null} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={() => act(oninsert)}>
-      <Icon name="link" size={20} /><span class="list-row-label">{$t('notes_insert')}</span>
+    <button type="button" class="m-row" onclick={() => act(oninsert)}>
+      <Icon name="link" size={20} /><span class="m-row-label">{$t('notes_insert')}</span>
     </button>
-    <button type="button" class="list-row dense" onclick={() => act(onsave)}>
-      <Icon name="save" size={20} /><span class="list-row-label">{$t('notes_attach_save')}</span>
+    <button type="button" class="m-row" onclick={() => act(onsave)}>
+      <Icon name="save" size={20} /><span class="m-row-label">{$t('notes_attach_save')}</span>
     </button>
   </div>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={() => act(onremove)}>
-      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
+    <button type="button" class="m-row" onclick={() => act(onremove)}>
+      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
 </BottomSheet>
@@ -206,7 +204,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--sp-2-5);
+    gap: 10px;
     padding: 8px 0;
     border: 0;
     background: none;
@@ -216,14 +214,15 @@
   .open img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; }
   .meta { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .size { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-xs); color: var(--text-3); }
+  .size { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); }
   .size.err { color: var(--danger-text); }
-  .row.remote .status-dot { background: var(--text-3); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success-text); flex-shrink: 0; }
+  .row.remote .dot { background: var(--text-3); }
   .row.remote .badge { border: 1px dashed var(--m-card-border); background: transparent; color: var(--text-3); }
   .row.remote .name { color: var(--text-2); }
-  .row.busy .status-dot { background: var(--accent); }
+  .row.busy .dot { background: var(--accent); }
   .row.busy .size { color: var(--accent-text); }
-  .row.error .status-dot { background: var(--danger-text); }
+  .row.error .dot { background: var(--danger-text); }
   .row.error .size { color: var(--danger-text); }
   .x.primary { background: var(--accent); color: #fff; }
   .danger { color: var(--danger-text); }

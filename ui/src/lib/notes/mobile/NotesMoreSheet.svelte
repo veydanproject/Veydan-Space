@@ -17,12 +17,22 @@
 
 <BottomSheet {open} title={$t('nav_more')} {onclose}>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={() => go('/settings/sync')}>
-      <Icon name="refresh-cw" size={20} /><span class="list-row-label">{$t('notes_sync')}</span>
+    <button type="button" class="m-row" onclick={() => go('/notes?kind=archived')}>
+      <Icon name="archive" size={20} /><span class="m-row-label">{$t('notes_filter_archived')}</span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
-    <button type="button" class="list-row dense" onclick={() => go('/settings')}>
-      <Icon name="settings" size={20} /><span class="list-row-label">{$t('app_settings')}</span>
+    <button type="button" class="m-row" onclick={() => go('/notes?kind=trash')}>
+      <Icon name="trash-2" size={20} /><span class="m-row-label">{$t('notes_filter_trash')}</span>
+      <span class="chev"><Icon name="chevron-right" size={16} /></span>
+    </button>
+  </div>
+  <div class="m-list">
+    <button type="button" class="m-row" onclick={() => go('/settings/sync')}>
+      <Icon name="refresh-cw" size={20} /><span class="m-row-label">{$t('notes_sync')}</span>
+      <span class="chev"><Icon name="chevron-right" size={16} /></span>
+    </button>
+    <button type="button" class="m-row" onclick={() => go('/settings')}>
+      <Icon name="settings" size={20} /><span class="m-row-label">{$t('app_settings')}</span>
       <span class="chev"><Icon name="chevron-right" size={16} /></span>
     </button>
   </div>

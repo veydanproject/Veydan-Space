@@ -11,7 +11,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import Avatar from '$lib/cloud/Avatar.svelte';
   import { accountName, accountSource, loadAccount, type AccountProfile } from '$lib/core/account';
   import { api, onSyncStatus, type SyncStatus } from '$lib/core/mobile/api';
   import { t } from '$lib/core/mobile/i18n';
@@ -22,6 +21,7 @@
   let plan = $state('');
   let sync = $state<SyncStatus | null>(null);
 
+  const letter = $derived(profile ? ([...accountName(profile).trim()][0] ?? '?').toUpperCase() : '');
   const syncLabel = $derived(
     sync?.running ? $t('settings_sync_running') : sync?.enabled && sync.joined ? $t('settings_sync_connected') : $t('settings_sync_disconnected'),
   );
@@ -46,8 +46,8 @@
 </script>
 
 {#if profile}
-  <a class="list-row who" href="/cloud">
-    <Avatar name={accountName(profile)} size={48} />
+  <a class="m-row who" href="/cloud">
+    <span class="ava" aria-hidden="true">{letter}</span>
     <span class="words">
       <strong>{accountName(profile)}</strong>
       <span class="sub">{plan ? `${$t('cloud_settings_title')} · ${planName(null, plan)}` : $t('cloud_account_title')}</span>
@@ -55,8 +55,8 @@
     <span class="chev"><Icon name="chevron-right" size={16} /></span>
   </a>
 {:else if profile === null}
-  <a class="list-row who" href={accountSource()?.createHref ?? '/cloud'}>
-    <Avatar size={48} ghost />
+  <a class="m-row who" href={accountSource()?.createHref ?? '/cloud'}>
+    <span class="ava ghost" aria-hidden="true"><Icon name="user" size={22} /></span>
     <span class="words">
       <strong>{$t('cloud_account_none')}</strong>
       <span class="sub">{$t('cloud_account_invite')}</span>
@@ -64,10 +64,10 @@
     <span class="go">{$t('common_create')}</span>
   </a>
 {/if}
-<a class="list-row dense sync" href="/settings/sync">
+<a class="m-row sync" href="/settings/sync">
   <span class="tile"><Icon name="refresh-cw" size={20} /></span>
   <span class="words">
-    <span class="list-row-label">{$t('settings_sync_section')}</span>
+    <span class="m-row-label">{$t('settings_sync_section')}</span>
     <span class="sub" class:ok={sync?.enabled && sync?.joined}>{sync ? syncLabel : ''}</span>
   </span>
   <span class="chev"><Icon name="chevron-right" size={16} /></span>
@@ -75,16 +75,23 @@
 
 <style>
   /* The rows of the design kit's settings: a tile, the name, its value under it. */
-  .list-row { gap: var(--sp-3); padding-left: var(--sp-3); padding-right: var(--sp-3); }
+  .m-row { gap: var(--sp-3); padding-left: var(--sp-3); padding-right: var(--sp-3); }
+  .who { min-height: 72px; padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
+  .sync { min-height: 60px; border-bottom: 0; }
   .tile {
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-    width: 36px; height: 36px; margin: 0 var(--sp-1-5); border-radius: var(--radius);
+    width: 36px; height: 36px; margin: 0 6px; border-radius: var(--radius);
     background: var(--m-seg); color: var(--text-soft);
   }
-  .sync .list-row-label { flex: none; font-weight: var(--fw-medium); }
+  .sync .m-row-label { flex: none; font-weight: var(--fw-medium); }
+  .ava {
+    display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
+    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
+  }
+  .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   strong { font-size: var(--fs-md); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
-  .go { flex-shrink: 0; padding: var(--sp-1-5) var(--sp-3); border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
+  .go { flex-shrink: 0; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--accent-tint); color: var(--accent-text); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
   .ok { color: var(--success-text); font-weight: var(--fw-semibold); }
 </style>

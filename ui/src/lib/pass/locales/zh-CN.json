@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "摄像头不可用。请在系统设置中允许访问摄像头，或通过链接添加验证码。",
     "pwgen_history_off_hint": "新密码不会被保存。",
     "pwgen_history_off_kept": "之前保存的密码仍保留在此设备上：{n}。",
-    "pwgen_history_empty_hint": "你生成的密码会显示在这里。轻点密码即可复制。",
-    "pw_locked_notice": "密码已锁定。解锁后才能修改。"
+    "pwgen_history_empty_hint": "你生成的密码会显示在这里。轻点密码即可复制。"
   }
 }

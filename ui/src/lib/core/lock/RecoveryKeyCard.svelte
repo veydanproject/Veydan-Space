@@ -10,7 +10,6 @@
 <script lang="ts">
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import type { Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
   import { saveAs } from '$lib/core/ui/saveAs';
   import { isMobile } from '$lib/core/platform';
@@ -23,16 +22,9 @@
     title?: string;
     intro?: string;
     ondone: () => void;
-    /** The host keeps the buttons at its foot (a phone's step: the foot stays in sight, the words scroll): they are given in `foot`, not drawn under the key. */
-    pinned?: boolean;
-    foot?: Snippet;
   }
 
-  let { code, title, intro, ondone, pinned = false, foot = $bindable() }: Props = $props();
-
-  $effect(() => {
-    if (pinned) foot = isWords && checking ? checkButtons : keyButtons;
-  });
+  let { code, title, intro, ondone }: Props = $props();
 
   const words = $derived(splitWords(code));
   const isWords = $derived(words.length === RECOVERY_WORDS);
@@ -114,8 +106,15 @@
         </label>
       {/each}
     </div>
-    {#if wrong}<p class="error-msg" role="alert">{$t('lock_recovery_check_wrong')}</p>{/if}
-    {#if !pinned}<div class="finish">{@render checkButtons()}</div>{/if}
+    {#if wrong}<p class="error-msg">{$t('lock_recovery_check_wrong')}</p>{/if}
+    <div class="finish">
+      <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={showAgain}>
+        {$t('lock_recovery_check_back')}
+      </button>
+      <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!typedOk} onclick={confirmWords}>
+        {$t('common_done')}
+      </button>
+    </div>
   {:else}
     <div class="head">
       <Icon name="key" size={24} />
@@ -132,66 +131,37 @@
       <div class="code mono">{#each halves as half, i (i)}<span class="half">{half}{i < halves.length - 1 ? '-' : ''}</span>{/each}</div>
     {/if}
     <!-- The phone stacks full-width buttons; the desktop keeps the compact row of its cards. -->
-    {#if !pinned}<div class="actions">{@render copyButtons()}</div>{/if}
+    <div class="actions">
+      <!-- The way to keep the key, not the step's end: the end («Готово», «Продолжить») is the one primary button. -->
+      <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={copy}>
+        <Icon name="copy" size={16} />
+        {$t('lock_recovery_copy')}
+      </button>
+      {#if !isMobile}
+        <button class="btn btn-ghost btn-sm" type="button" onclick={saveToFile}>
+          <Icon name="download" size={16} />
+          {$t('lock_recovery_save_file')}
+        </button>
+      {/if}
+    </div>
     <div class="finish">
       {#if isWords}
         <span class="ack-text">{$t('lock_recovery_words_ack')}</span>
+        <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" onclick={startCheck}>
+          {$t('lock_recover_continue')}
+        </button>
       {:else}
         <label class="ack">
           <input type="checkbox" bind:checked={acknowledged} />
           <span>{$t('lock_recovery_ack')}</span>
         </label>
+        <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!acknowledged} onclick={ondone}>
+          {$t('common_done')}
+        </button>
       {/if}
-      {#if !pinned}{@render doneButton()}{/if}
     </div>
   {/if}
 </div>
-
-{#snippet copyButtons()}
-  <!-- The way to keep the key, not the step's end: the end («Готово», «Продолжить») is the one primary button. -->
-  <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={copy}>
-    <Icon name="copy" size={16} />
-    {$t('lock_recovery_copy')}
-  </button>
-  {#if !isMobile}
-    <button class="btn btn-ghost btn-sm" type="button" onclick={saveToFile}>
-      <Icon name="download" size={16} />
-      {$t('lock_recovery_save_file')}
-    </button>
-  {/if}
-{/snippet}
-
-{#snippet doneButton()}
-  {#if isWords}
-    <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" onclick={startCheck}>
-      {$t('lock_recover_continue')}
-    </button>
-  {:else}
-    <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!acknowledged} onclick={ondone}>
-      {$t('common_done')}
-    </button>
-  {/if}
-{/snippet}
-
-<!-- At the host's foot: the step's verb first (a phone's foot puts it on top), the way to keep the key under it. -->
-{#snippet keyButtons()}
-  {@render doneButton()}
-  {@render copyButtons()}
-{/snippet}
-
-{#snippet checkButtons()}
-  {#if pinned}{@render checkDone()}{/if}
-  <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={showAgain}>
-    {$t('lock_recovery_check_back')}
-  </button>
-  {#if !pinned}{@render checkDone()}{/if}
-{/snippet}
-
-{#snippet checkDone()}
-  <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" disabled={!typedOk} onclick={confirmWords}>
-    {$t('common_done')}
-  </button>
-{/snippet}
 
 <style>
   .recovery { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 560px; }
@@ -223,7 +193,7 @@
   .words {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: var(--sp-1-5) var(--sp-3);
+    gap: 6px var(--sp-3);
     margin: 0;
     padding: var(--sp-3);
     list-style: none;
@@ -236,15 +206,16 @@
     user-select: all;
   }
   .mobile .words { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); font-size: var(--fs-body); }
-  .words li { display: flex; align-items: baseline; gap: var(--sp-1-5); white-space: nowrap; }
+  .words li { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
   .words .num { min-width: 1.6em; font-size: var(--fs-xs); font-weight: var(--fw-normal); color: var(--text-3); text-align: right; }
   .ack-text { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text); }
   .check { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .check-word { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); }
+  .check-word { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
   .check-word input {
     width: 100%;
-    min-height: var(--field-h);
-    padding: var(--sp-1-5) var(--sp-2-5);
+    min-height: 40px;
+    padding: 6px 10px;
+    font: inherit;
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
     background: var(--bg-2);
@@ -255,7 +226,7 @@
   /* Global input rules set width 100% and a touch min-height, which turns the box into a full-width slab. */
   .ack input[type="checkbox"] {
     /* The mark of base.css */
-    margin: var(--sp-0-5) 0 0;
+    margin: 2px 0 0;
     flex: 0 0 auto;
   }
   .ack span { flex: 1; min-width: 0; line-height: var(--lh-snug); }

@@ -66,7 +66,7 @@
   }
 </script>
 
-<li class="req-card" class:selected aria-label={facts.name}>
+<li class="req" class:selected aria-label={facts.name}>
   <div class="head">
     <input class="tick" type="checkbox" checked={selected} disabled={busy} onchange={ontick} aria-label={$t('msg_greq_select', { name: facts.name })} />
     <Avatar url={facts.picture} label={facts.name} seed={request.requester} size={36} />
@@ -122,12 +122,12 @@
 
 <style>
   /* A compact card (c11): who, their words as a paragraph, one line of facts, «Отказать | Принять». */
-  .req-card {
+  .req {
     list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); min-width: 0;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0;
     transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
   }
-  .req-card.selected { background: var(--accent-bg); border-color: var(--accent-border); }
+  .req.selected { background: var(--accent-bg); border-color: var(--accent-border); }
   .head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
   .tick { flex-shrink: 0; }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }

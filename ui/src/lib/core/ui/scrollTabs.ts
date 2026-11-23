@@ -4,10 +4,10 @@
 // A row of tabs that scrolls sideways when it does not fit (`overflow-x: auto` is the caller's):
 // - a clipped edge is marked so the caller fades it: `fade-end` while there is more to the right,
 //   `fade-start` (with `fadeStart`) while there is more to the left — the caller's CSS draws the
-//   fade (`.tabs:global(.fade-end) { mask-image: … }`); `onedges` hears the same (TabBar shows its arrows by it);
+//   fade (`.tabs:global(.fade-end) { mask-image: … }`);
 // - the chosen tab (`[aria-selected="true"]`) is kept in view when `selected` changes: the row
 //   alone is moved (`scrollTo`, never `scrollIntoView`, which would move the page around it), as
-//   little as it takes, clear of `inset` at a clipped edge (TabBar's arrow and its fade);
+//   little as it takes;
 // - with `wheel`, a mouse's wheel (up and down) moves the row sideways while there is room;
 // - the marks follow the row's room: its own size (a ResizeObserver) and `watch`, anything that
 //   may widen the tabs (their list, their counts).
@@ -24,10 +24,6 @@ export interface ScrollTabsOptions {
   wheel?: boolean;
   /** The start edge is marked too, not only the end. */
   fadeStart?: boolean;
-  /** How far from a clipped edge the chosen tab stands when brought into view, in pixels. */
-  inset?: number;
-  /** Told whether there is more of the row before and after what shows, whenever that is measured. */
-  onedges?: (before: boolean, after: boolean) => void;
 }
 
 /** How far from an edge still counts as at it, in pixels. */
@@ -41,7 +37,6 @@ export function scrollTabs(node: HTMLElement, options: ScrollTabsOptions = {}): 
     const atEnd = node.scrollLeft + node.clientWidth >= node.scrollWidth - SLACK;
     node.classList.toggle('fade-start', !!opts.fadeStart && !atStart);
     node.classList.toggle('fade-end', !atEnd);
-    opts.onedges?.(!atStart, !atEnd);
   }
 
   function chosenIntoView() {
@@ -51,13 +46,7 @@ export function scrollTabs(node: HTMLElement, options: ScrollTabsOptions = {}): 
     const r = on.getBoundingClientRect();
     const start = r.left - box.left + node.scrollLeft;
     const end = start + r.width;
-    const inset = opts.inset ?? 0;
-    // At the row's very start or end that edge is not clipped, so the inset falls away by itself.
-    const max = Math.max(node.scrollWidth - node.clientWidth, 0);
-    const left =
-      start < node.scrollLeft + inset ? Math.max(start - inset, 0)
-      : end > node.scrollLeft + node.clientWidth - inset ? Math.min(end + inset - node.clientWidth, max)
-      : null;
+    const left = start < node.scrollLeft ? start : end > node.scrollLeft + node.clientWidth ? end - node.clientWidth : null;
     if (left !== null) node.scrollTo?.({ left });
   }
 

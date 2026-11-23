@@ -21,7 +21,6 @@
   import { joinErrorKey } from '$lib/core/join-error';
   import { isMobile } from '$lib/core/platform';
   import { appLock } from '$lib/core/lock/store.svelte';
-  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import RecoveryKeyCard from '$lib/core/lock/RecoveryKeyCard.svelte';
   import { asCloudError, cloudApi, socialApi, type CloudError, type CloudRecoveryInfo, type CloudRecoveryKeyStatus, type CloudTrustees } from '$lib/cloud/api';
   import { dateOf } from '$lib/cloud/account';
@@ -144,9 +143,9 @@
       {#snippet end()}
         {#if !asking && !words && status}
           {#if issued}
-            <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" onclick={() => start('reissue')}>{$t('cloud_recovery_reissue_short')}</button>
+            <button class="btn btn-ghost btn-sm" type="button" onclick={() => start('reissue')}>{$t('cloud_recovery_reissue_short')}</button>
           {:else}
-            <button class="btn btn-primary" class:btn-sm={!isMobile} type="button" onclick={() => start('setup')}>{elsewhere ? $t('cloud_recovery_elsewhere_anew') : $t('cloud_recovery_setup_short')}</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick={() => start('setup')}>{elsewhere ? $t('cloud_recovery_elsewhere_anew') : $t('cloud_recovery_setup_short')}</button>
           {/if}
         {/if}
       {/snippet}
@@ -176,7 +175,11 @@
           {/if}
         {/if}
         {#if lockOn && !(asking === 'setup' && vault === 'own')}
-          <LockSecretInput id="cloud-recovery-secret" label={$t('cloud_recovery_lock_secret')} bind:value={secret} disabled={busy} autofocus />
+          <div class="form-group">
+            <label for="cloud-recovery-secret">{$t('cloud_recovery_lock_secret')}</label>
+            <!-- svelte-ignore a11y_autofocus -->
+            <input id="cloud-recovery-secret" type="password" bind:value={secret} autocomplete="current-password" disabled={busy} autofocus />
+          </div>
         {/if}
         {#if error}<Notice tone="danger">{error}</Notice>{/if}
         <Actions>

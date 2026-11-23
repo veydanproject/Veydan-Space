@@ -46,7 +46,7 @@
     flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
     border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent-text);
   }
-  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1-5); }
+  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .text { line-height: var(--lh-snug); }
   .bar { height: 3px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
   .fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent-grad); transition: width 0.4s ease; }

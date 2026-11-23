@@ -75,7 +75,7 @@
 
   .toolbar-count {
     font-size: var(--fs-sm);
-    color: var(--text-2);
+    color: var(--text-faint);
   }
 
   /* .btn / .btn-ghost / .btn-sm are global primitives (base.css) */

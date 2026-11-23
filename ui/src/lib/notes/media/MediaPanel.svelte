@@ -120,7 +120,7 @@
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--sp-2-5);
+    gap: 10px;
     padding: 8px 0;
     border: 0;
     background: none;

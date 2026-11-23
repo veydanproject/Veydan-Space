@@ -30,18 +30,18 @@
     if (chat.id !== last) { last = chat.id; info = false; }
   });
 
-  /** On a phone the header keeps «Call» and ⋮ alone: «Video call» and «Search in chat» are the first entries of the chat's menu (design 15). */
+  /** On a phone the header keeps «Call» alone: «Video call» is the first entry of the chat's menu. */
   const phone = onPhone();
   let callButton = $state<ReturnType<typeof CallButton>>();
-  let windowRef = $state<ReturnType<typeof ChatWindow>>();
 
   const lead = $derived.by((): MenuEntry[] => {
     const list: MenuEntry[] = [];
-    if (!phone) return list;
-    if (callButton?.canCall()) {
-      list.push({ label: $t('msg_call_video_start'), icon: 'video', disabled: !!callButton.callBlocked(), onselect: () => callButton?.start('video') });
+    if (phone && callButton?.canCall()) {
+      list.push(
+        { label: $t('msg_call_video_start'), icon: 'video', disabled: !!callButton.callBlocked(), onselect: () => callButton?.start('video') },
+        { type: 'separator' },
+      );
     }
-    list.push({ label: $t('msg_search_open'), icon: 'search', onselect: () => windowRef?.search() }, { type: 'separator' });
     return list;
   });
 </script>
@@ -51,7 +51,7 @@
 {/snippet}
 
 {#snippet window()}
-  <ChatWindow bind:this={windowRef} {chat} {onback} {actions} leadEntries={lead} menuWidth={288} ontitle={() => (info = !info)} />
+  <ChatWindow {chat} {onback} {actions} leadEntries={lead} menuWidth={288} ontitle={() => (info = !info)} />
 {/snippet}
 
 {#snippet panel()}

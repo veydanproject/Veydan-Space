@@ -10,7 +10,6 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import LockSecretFields from '$lib/core/lock/LockSecretFields.svelte';
-  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import { isMobile } from '$lib/core/platform';
   import type { RestoreSecretState } from '$lib/cloud/restoreSecret';
 
@@ -40,7 +39,17 @@
     </button>
   </div>
   {#if state.mode === 'old'}
-    <LockSecretInput id="cloud-restore-old" label={$t('cloud_restore_old_label')} bind:value={state.old} {disabled} />
+    <input
+      class="lock-field"
+      type="password"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      aria-label={$t('cloud_restore_old_label')}
+      placeholder={$t('cloud_restore_old_label')}
+      bind:value={state.old}
+      {disabled}
+    />
   {:else}
     <LockSecretFields bind:kind={state.kind} bind:password={state.password} bind:confirm={state.confirm} bind:hint={state.hint} {disabled} />
   {/if}
@@ -53,5 +62,18 @@
   .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
   .seg { display: flex; width: 100%; }
   .seg .seg-btn { flex: 1; justify-content: center; }
+  /* As the fields of LockSecretFields beside it. */
+  .lock-field {
+    width: 100%;
+    height: var(--control-h-lg);
+    padding: 0 var(--sp-3);
+    font: inherit;
+    font-size: var(--fs-sm);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-field);
+    background-color: var(--surface-3);
+    color: var(--text-body);
+  }
   .mobile .seg-btn { min-height: 44px; }
+  .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
 </style>

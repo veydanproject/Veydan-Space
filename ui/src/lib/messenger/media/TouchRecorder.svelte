@@ -249,14 +249,14 @@
     </div>
   {:else if locked}
     <button class="btn-x" onpointerdown={keep} onclick={cancel} aria-label={$t('msg_rec_delete')}><Icon name="trash-2" size={19} /></button>
-    <span class="status-dot {ready ? 'bad pulse' : 'off'}"></span>
+    <span class="dot" class:on={ready}></span>
     <span class="time">{tenths(elapsed)}</span>
     <span class="level" aria-hidden="true">
       {#each bars as b, i (i)}<i style="height:{Math.max(3, Math.round(b * 24))}px"></i>{/each}
     </span>
     <button class="stop" disabled={!ready} onpointerdown={keep} onclick={stop} aria-label={$t('msg_rec_stop')}><Icon name="square" size={13} /></button>
   {:else}
-    <span class="status-dot {ready ? 'bad pulse' : 'off'}"></span>
+    <span class="dot" class:on={ready}></span>
     <span class="time">{tenths(elapsed)}</span>
     <span class="slide" style:opacity={1 + dx / CANCEL_PX} style:transform="translateX({dx * 0.5}px)">
       <span class="nudge"><Icon name="chevron-left" size={15} /></span>{$t('msg_rec_slide_cancel')}
@@ -268,6 +268,9 @@
   .rec { display: flex; align-items: center; gap: var(--sp-2); height: 40px; flex: 1; min-width: 0; padding-left: var(--sp-2); }
   .btn-x { width: 40px; height: 40px; margin-left: calc(-1 * var(--sp-2)); flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .btn-x:active { background: var(--danger-bg); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+  .dot.on { background: var(--danger); animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
   .time { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; }
   .level, .wave { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 2px; overflow: hidden; }
   .level { justify-content: flex-end; }
@@ -277,16 +280,15 @@
   .slide { flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-right: var(--sp-6); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); white-space: nowrap; }
   .nudge { display: inline-flex; animation: nudge 1.2s ease-in-out infinite; }
   @keyframes nudge { 50% { transform: translateX(-5px); } }
-  /* «Stop» and «Play» are buttons of 40, their zone 44 (design 02, 15). */
-  .stop { width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--danger-bg); color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .stop { width: 36px; height: 36px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--danger-bg); color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .stop:disabled { opacity: 0.45; }
-  .pill { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-1); border-radius: var(--radius-pill); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
-  .play { width: 40px; height: 40px; margin: -1px 0 -1px calc(-1 * var(--sp-1) - 1px); flex-shrink: 0; border: none; border-radius: 50%; background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .pill { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 14px 0 4px; border-radius: var(--radius-pill); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
+  .play { width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 
   /* Above the composer, over the conversation, centred over the send (48 at the row's right edge). */
   .lock {
     --send: 48px; --w: 40px;
-    position: absolute; right: calc((var(--send) - var(--w)) / 2); bottom: calc(100% + 64px); z-index: 2; width: var(--w); padding: var(--sp-2-5) 0 var(--sp-1-5);
+    position: absolute; right: calc((var(--send) - var(--w)) / 2); bottom: calc(100% + 64px); z-index: 2; width: var(--w); padding: 10px 0 6px;
     display: flex; flex-direction: column; align-items: center; gap: 4px;
     background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-pill); box-shadow: var(--glass-highlight), var(--shadow-lg); color: var(--text-2);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
@@ -307,5 +309,5 @@
   .over { position: absolute; inset: 8px; border: none; border-radius: 50%; background: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .flip { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--text); display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow); cursor: pointer; }
   .flip:disabled { opacity: 0.45; }
-  @media (prefers-reduced-motion: reduce) { .nudge, .up { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .dot.on, .nudge, .up { animation: none; } }
 </style>

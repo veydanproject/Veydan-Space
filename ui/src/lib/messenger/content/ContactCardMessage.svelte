@@ -211,9 +211,9 @@
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .server { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; }
-  .offer { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--text); font-weight: var(--fw-semibold); }
+  .offer { display: inline-flex; align-items: center; gap: 5px; color: var(--text); font-weight: var(--fw-semibold); }
   .server .btn { align-self: flex-start; }
-  .status { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-2); }
+  .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
   /* Its buttons 40, side by side the card's width; stacked for a finger. */
   .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
@@ -221,7 +221,7 @@
   .row .btn { flex: 1 1 auto; min-width: 0; min-height: var(--control-h); gap: var(--sp-2); justify-content: center; white-space: nowrap; }
   .row .btn-ghost { flex: 0 0 auto; }
   .known { display: inline-flex; flex: none; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--success-text, var(--success)); white-space: nowrap; }
-  .damaged { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
+  .damaged { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   @media (pointer: coarse) {
     .fact { min-height: var(--control-h); }
     .more { padding: 4px 0; }

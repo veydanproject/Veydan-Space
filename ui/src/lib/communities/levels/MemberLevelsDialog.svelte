@@ -12,7 +12,6 @@
   import { t } from '$lib/core/i18n';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { channelError } from '../errors';
   import { nameStore } from '../names.svelte';
@@ -69,17 +68,19 @@
 <Dialog bind:open title={$t('chan_member_levels_title', { name: nameStore.label(who) })} width="min(420px, calc(100vw - 24px))">
   <div class="body">
     <p class="hint">{$t('chan_member_levels_hint')}</p>
-    <!-- Several of a few: ToggleRow lines; the base level is always on. -->
-    <div class="levels">
+    <ul class="levels">
       {#each levels as l (l.id)}
-        <ToggleRow surface="row" title={l.name} on={l.id === BASE_LEVEL || picked.includes(l.id)} disabled={busy || l.id === BASE_LEVEL} onclick={() => toggle(l.id)}>
-          {#snippet hintContent()}
-            {#if l.id === BASE_LEVEL}<span class="badge badge-accent">{$t('chan_level_base')}</span>{/if}
-            {l.scopes.map(titleOf).filter(Boolean).join(', ') || $t('chan_level_no_scopes')}
-          {/snippet}
-        </ToggleRow>
+        <li>
+          <label class="check">
+            <input type="checkbox" checked={l.id === BASE_LEVEL || picked.includes(l.id)} disabled={busy || l.id === BASE_LEVEL} onchange={() => toggle(l.id)} />
+            <span class="text">
+              <span class="name">{l.name}{#if l.id === BASE_LEVEL}<span class="tag">{$t('chan_level_base')}</span>{/if}</span>
+              <span class="sub">{l.scopes.map(titleOf).filter(Boolean).join(', ') || $t('chan_level_no_scopes')}</span>
+            </span>
+          </label>
+        </li>
       {/each}
-    </div>
+    </ul>
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
@@ -91,6 +92,13 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .hint { margin: 0; line-height: var(--lh-snug); }
-  .levels { display: flex; flex-direction: column; }
-  .badge { margin-right: var(--sp-1-5); }
+  .levels { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .check { display: flex; align-items: flex-start; gap: var(--sp-2); padding: 6px 4px; border-radius: var(--radius-sm); cursor: pointer; user-select: none; }
+  .check:hover { background: var(--surface-row-hover); }
+  .check input { margin-top: 3px; flex-shrink: 0; }
+  .text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
+  .sub { font-size: var(--fs-xs); color: var(--text-3); }
+  .tag { font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 0 var(--sp-2); border-radius: var(--radius-pill); border: 1px solid var(--border-strong); color: var(--text-2); }
+  @media (pointer: coarse) { .check { padding: 10px 4px; } }
 </style>

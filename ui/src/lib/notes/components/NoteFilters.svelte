@@ -3,10 +3,8 @@
 
 <script lang="ts">
   import type { NoteListItem, NoteTag, NoteFolder, NoteSmartView } from '$lib/notes/types';
-  import { PALETTE } from '$lib/core/palette';
   import Icon from '$lib/core/Icon.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import SmartViewDialog from './SmartViewDialog.svelte';
   import { directory } from '$lib/core/directory';
   import { notesStore } from '$lib/notes/store/notes.svelte';
@@ -15,7 +13,11 @@
   import { findTag } from '$lib/notes/tag-name';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Suggest, { type SuggestItem } from '$lib/core/ui/Suggest.svelte';
-  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
+
+  const TAG_COLORS = [
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
+  ];
 
   interface Props {
     notes: NoteListItem[];
@@ -70,14 +72,14 @@
   let popupOpen    = $state(false);
   let popupPrefix  = $state('');
   let popupInput   = $state('');
-  let popupColor   = $state(PALETTE[0]);
+  let popupColor   = $state(TAG_COLORS[0]);
   let popupInputEl = $state<HTMLInputElement | null>(null);
   let creating     = $state(false);
 
   function openPopup(prefix = '') {
     popupPrefix = prefix;
     popupInput  = prefix;
-    popupColor  = PALETTE[0];
+    popupColor  = TAG_COLORS[0];
     popupOpen   = true;
     setTimeout(() => popupInputEl?.focus(), 50);
   }
@@ -133,12 +135,12 @@
   let tagEditModalOpen = $state(false);
   let tagEditTag       = $state<NoteTag | null>(null);
   let tagEditName      = $state('');
-  let tagEditColor     = $state(PALETTE[0]);
+  let tagEditColor     = $state(TAG_COLORS[0]);
   let tagEditInputEl   = $state<HTMLInputElement | null>(null);
   let tagEditSaving    = $state(false);
 
-  function startEdit(tag: NoteTag, e?: MouseEvent) {
-    e?.stopPropagation();
+  function startEdit(tag: NoteTag, e: MouseEvent) {
+    e.stopPropagation();
     tagEditTag       = tag;
     tagEditName      = tag.name;
     tagEditColor     = tag.color;
@@ -168,8 +170,8 @@
     if (e.key === 'Escape') closeTagEditModal();
   }
 
-  async function deleteTag(tag: NoteTag, e?: MouseEvent) {
-    e?.stopPropagation();
+  async function deleteTag(tag: NoteTag, e: MouseEvent) {
+    e.stopPropagation();
     await notesStore.deleteTag(tag.id);
     if (activeFilter.type === 'tag' && activeFilter.id === tag.name) onfilter({ type: 'all' });
   }
@@ -178,14 +180,14 @@
   let folderModalOpen     = $state(false);
   let folderModalParentId = $state('');
   let folderInput         = $state('');
-  let folderColor         = $state(PALETTE[0]);
+  let folderColor         = $state(TAG_COLORS[0]);
   let folderInputEl       = $state<HTMLInputElement | null>(null);
   let creatingFolder      = $state(false);
 
   function openFolderModal(parentId = '') {
     folderModalParentId = parentId;
     folderInput         = '';
-    folderColor         = PALETTE[0];
+    folderColor         = TAG_COLORS[0];
     folderModalOpen     = true;
     setTimeout(() => folderInputEl?.focus(), 50);
   }
@@ -215,37 +217,14 @@
 
   // ── Folder context menu ───────────────────────────────────────────────────────
   let openMenuKey      = $state<string | null>(null); // 'folder:id' | 'tag:path'
-  // The common menu, under the ⋮, its right edge at the button's (it keeps itself on the screen).
+  // The menu is position: fixed (the overflow-y of the .filters scroller would clip it)
   let menuPos          = $state({ x: 0, y: 0 });
-  let menuItems        = $state<MenuEntry[]>([]);
-  function openMenuAt(e: MouseEvent, key: string, items: MenuEntry[]) {
+  function openMenuAt(e: MouseEvent, key: string) {
     e.stopPropagation();
     if (openMenuKey === key) { openMenuKey = null; return; }
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    menuPos = { x: r.right - 200, y: r.bottom + 4 };
-    menuItems = items;
+    menuPos = { x: r.right, y: r.bottom + 4 };
     openMenuKey = key;
-  }
-
-  function folderMenu(f: NoteFolder): MenuEntry[] {
-    return [
-      ...(!f.parent_id ? [{ label: $t('notes_folder_sub'), icon: 'folder-plus', onselect: () => openFolderModal(f.id) }] : []),
-      { label: $t('common_edit'), icon: 'pencil', onselect: () => startEditFolder(f) },
-      ...(onexportfolder ? [{ label: $t('notes_folder_export'), icon: 'file-export', onselect: () => onexportfolder(f.id) }] : []),
-      { label: $t('common_delete'), icon: 'trash-2', danger: true, onselect: () => void deleteFolder(f) },
-    ];
-  }
-  function tagMenu(tag: NoteTag): MenuEntry[] {
-    return [
-      { label: $t('common_edit'), icon: 'pencil', onselect: () => startEdit(tag) },
-      { label: $t('common_delete'), icon: 'trash-2', danger: true, onselect: () => void deleteTag(tag) },
-    ];
-  }
-  function smartMenu(view: NoteSmartView): MenuEntry[] {
-    return [
-      { label: $t('notes_smart_edit'), icon: 'pencil', onselect: () => openSmartDialog(view) },
-      { label: $t('common_delete'), icon: 'trash-2', danger: true, onselect: () => void deleteSmartView(view) },
-    ];
   }
   let hoveredFolderId  = $state<string | null>(null);
   let hoveredTagPath   = $state<string | null>(null);
@@ -258,8 +237,8 @@
   let editFolderName  = $state('');
   let editFolderColor = $state('');
 
-  function startEditFolder(f: NoteFolder, e?: MouseEvent) {
-    e?.stopPropagation();
+  function startEditFolder(f: NoteFolder, e: MouseEvent) {
+    e.stopPropagation();
     editFolderId    = f.id;
     editFolderName  = f.name;
     editFolderColor = f.color;
@@ -272,8 +251,8 @@
     editFolderId = null;
   }
 
-  async function deleteFolder(f: NoteFolder, e?: MouseEvent) {
-    e?.stopPropagation();
+  async function deleteFolder(f: NoteFolder, e: MouseEvent) {
+    e.stopPropagation();
     await notesStore.deleteFolder(f.id);
     if (activeFilter.type === 'folder' && activeFilter.id === f.id) onfilter({ type: 'all' });
   }
@@ -386,8 +365,8 @@
     openMenuKey = null;
   }
 
-  async function deleteSmartView(view: NoteSmartView, e?: MouseEvent) {
-    e?.stopPropagation();
+  async function deleteSmartView(view: NoteSmartView, e: MouseEvent) {
+    e.stopPropagation();
     openMenuKey = null;
     await notesStore.deleteSmartView(view.id);
     if (activeFilter.type === 'smart' && activeFilter.id === view.id) onfilter({ type: 'all' });
@@ -454,7 +433,7 @@
 
   <div class="tree-node">
     {#if editFolderId === f.id}
-      <div class="edit-row" style="padding-left: {depth > 0 ? 'var(--sp-6)' : 'var(--sp-2)'}">
+      <div class="edit-row" style="padding-left: {depth > 0 ? '1.5rem' : '0.5rem'}">
         <input type="color" bind:value={editFolderColor} class="color-pick" />
         <input
           type="text"
@@ -477,10 +456,14 @@
       >
         <button
           class="{filterClass('folder', f.id)} tree-item"
-          style="padding-left: {depth > 0 ? 'var(--sp-6)' : 'var(--sp-2)'}"
+          style="padding-left: {depth > 0 ? '1.5rem' : '0.5rem'}"
           onclick={() => onfilter({ type: 'folder', id: f.id })}
         >
-          <span class="mark-slot tinted-text" style:--chip={f.color || undefined}><Icon name="folder" size={16} /></span>
+          {#if depth === 0}
+            <span class="dot-slot"><span class="dot" style="background:{f.color}"></span></span>
+          {:else}
+            <span class="icon-slot"><span class="dot" style="background:{f.color}"></span></span>
+          {/if}
           <span class="item-name" title={f.name}>{f.name}</span>
         </button>
 
@@ -497,15 +480,35 @@
           onclick={(e) => e.stopPropagation()}
         >
           {#if node.noteCount > 0}
-            <span class="count count-pill sm quiet count-num">{node.noteCount}</span>
+            <span class="count count-num">{node.noteCount}</span>
           {/if}
           <button
             class="dots-btn"
-            onclick={(e) => openMenuAt(e, `folder:${f.id}`, folderMenu(f))}
+            onclick={(e) => openMenuAt(e, `folder:${f.id}`)}
             title={$t('notes_item_actions')}
           >
             <Icon name="more-vertical" size={11} />
           </button>
+          {#if openFolderMenuId === f.id}
+            <div class="folder-menu" style="left:{menuPos.x}px; top:{menuPos.y}px">
+              {#if !f.parent_id}
+                <button onclick={() => { openFolderModal(f.id); openMenuKey = null; }}>
+                  <Icon name="folder-plus" size={11} /><span>{$t('notes_folder_sub')}</span>
+                </button>
+              {/if}
+              <button onclick={(e) => { startEditFolder(f, e); openMenuKey = null; }}>
+                <Icon name="pencil" size={11} /><span>{$t('common_edit')}</span>
+              </button>
+              {#if onexportfolder}
+                <button onclick={() => { onexportfolder(f.id); openMenuKey = null; }}>
+                  <Icon name="file-export" size={11} /><span>{$t('notes_folder_export')}</span>
+                </button>
+              {/if}
+              <button class="menu-del" onclick={(e) => { void deleteFolder(f, e); openMenuKey = null; }}>
+                <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -525,7 +528,7 @@
   {@const filterType  = hasChildren ? 'tag-group' : 'tag'}
 
   <div class="tree-node">
-      <div class="tree-row tag-row" role="group" style="padding-left: calc(var(--sp-4) * {depth})"
+      <div class="tree-row tag-row" role="group" style="padding-left: {depth * 1.0}rem"
         onmouseenter={() => hoveredTagPath = node.fullPath}
         onmouseleave={() => hoveredTagPath = null}
       >
@@ -533,7 +536,11 @@
           class="{filterClass(filterType, node.fullPath)} tree-item"
           onclick={() => onfilter({ type: filterType, id: node.fullPath })}
         >
-          <span class="mark-slot tinted-text" style:--chip={node.tag?.color || undefined} style:opacity={node.tag ? 1 : 0.4}><Icon name="tag" size={16} /></span>
+          {#if depth === 0}
+            <span class="dot-slot"><span class="dot" style="background:{node.tag?.color ?? 'var(--text-3)'}; opacity:{node.tag ? 1 : 0.4}"></span></span>
+          {:else}
+            <span class="icon-slot"><span class="dot" style="background:{node.tag?.color ?? 'var(--text-3)'}; opacity:{node.tag ? 1 : 0.4}"></span></span>
+          {/if}
           <span class="item-name" title={node.label}>{node.label}</span>
         </button>
 
@@ -550,16 +557,26 @@
           onclick={(e) => e.stopPropagation()}
         >
           {#if count > 0}
-            <span class="count count-pill sm quiet count-num">{count}</span>
+            <span class="count count-num">{count}</span>
           {/if}
           {#if node.tag}
             <button
               class="dots-btn"
-              onclick={(e) => openMenuAt(e, `tag:${node.fullPath}`, tagMenu(node.tag!))}
+              onclick={(e) => openMenuAt(e, `tag:${node.fullPath}`)}
               title={$t('notes_item_actions')}
             >
               <Icon name="more-vertical" size={11} />
             </button>
+            {#if openTagMenuPath === node.fullPath}
+              <div class="folder-menu" style="left:{menuPos.x}px; top:{menuPos.y}px">
+                <button onclick={(e) => { startEdit(node.tag!, e); openMenuKey = null; }}>
+                  <Icon name="pencil" size={11} /><span>{$t('common_edit')}</span>
+                </button>
+                <button class="menu-del" onclick={(e) => { void deleteTag(node.tag!, e); openMenuKey = null; }}>
+                  <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
+                </button>
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
@@ -568,7 +585,7 @@
         {#each node.children as child (child.fullPath)}
           {@render tagNode(child, depth + 1)}
         {/each}
-        <div class="group-add-row" style="padding-left: calc(var(--sp-4) * {depth + 1} + var(--sp-5))">
+        <div class="group-add-row" style="padding-left: {(depth + 1) * 1.0 + 1.25}rem">
           <button class="btn-group-add" onclick={() => openPopup(node.fullPath + '/')}>
             <Icon name="plus" size={10} />
             <span>{$t('notes_tag_add_in', { name: node.label })}</span>
@@ -584,30 +601,30 @@
     <button class={filterClass('all')} onclick={() => onfilter({ type: 'all' })}>
       <span class="global-icon-slot"><Icon name="notes" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_all')}>{$t('notes_filter_all')}</span>
-      <span class="count count-pill sm quiet">{countAll}</span>
+      <span class="count">{countAll}</span>
     </button>
     <!-- Global (bound to no workspace or profile) says nothing in a product without workspaces where every note is global -->
     {#if directory.owned('workspace') || workspaceTree.length > 0 || countGlobal !== countAll || activeFilter.type === 'global'}
       <button class={filterClass('global')} onclick={() => onfilter({ type: 'global' })}>
         <span class="global-icon-slot"><Icon name="world" size={13} /></span>
         <span class="item-name" title={$t('notes_filter_global')}>{$t('notes_filter_global')}</span>
-        <span class="count count-pill sm quiet">{countGlobal}</span>
+        <span class="count">{countGlobal}</span>
       </button>
     {/if}
     <button class={filterClass('pinned')} onclick={() => onfilter({ type: 'pinned' })}>
       <span class="global-icon-slot"><Icon name="pin" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_pinned')}>{$t('notes_filter_pinned')}</span>
-      <span class="count count-pill sm quiet">{countPinned}</span>
+      <span class="count">{countPinned}</span>
     </button>
     <button class={filterClass('archived')} onclick={() => onfilter({ type: 'archived' })}>
       <span class="global-icon-slot"><Icon name="archive" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_archived')}>{$t('notes_filter_archived')}</span>
-      <span class="count count-pill sm quiet">{countArchived}</span>
+      <span class="count">{countArchived}</span>
     </button>
     <button class={filterClass('trash')} onclick={() => onfilter({ type: 'trash' })}>
       <span class="global-icon-slot"><Icon name="trash-2" size={13} /></span>
       <span class="item-name" title={$t('notes_filter_trash')}>{$t('notes_filter_trash')}</span>
-      <span class="count count-pill sm quiet">{trashCount}</span>
+      <span class="count">{trashCount}</span>
     </button>
   </div>
 
@@ -620,7 +637,7 @@
         <div class="tree-node">
           <div class="tree-row">
             <button class="{filterClass('workspace', ws.id)} tree-item" onclick={() => onfilter({ type: 'workspace', id: ws.id })}>
-              <span class="dot-slot"><span class="status-dot" style="background:{ws.color}"></span></span>
+              <span class="dot-slot"><span class="dot" style="background:{ws.color}"></span></span>
               <span class="item-name" title={ws.name}>{ws.name}</span>
             </button>
             {#if ws.profiles.length > 0}
@@ -628,14 +645,14 @@
                 <Icon name={collapsed.has('ws:' + ws.id) ? 'chevron-right' : 'chevron-down'} size={10} />
               </button>
             {/if}
-            {#if ws.noteCount > 0}<span class="count count-pill sm quiet">{ws.noteCount}</span>{/if}
+            {#if ws.noteCount > 0}<span class="count">{ws.noteCount}</span>{/if}
           </div>
           {#if !collapsed.has('ws:' + ws.id)}
             {#each ws.profiles as p (p.id)}
               <button class="{filterClass('profile', p.id)} nav-item profile-item" onclick={() => onfilter({ type: 'profile', id: p.id })}>
                 <span class="icon-slot"><Icon name="browser" size={11} /></span>
                 <span class="item-name" title={p.name}>{p.name}</span>
-                <span class="count count-pill sm quiet">{p.noteCount}</span>
+                <span class="count">{p.noteCount}</span>
               </button>
             {/each}
           {/if}
@@ -648,7 +665,7 @@
   <!-- Folders -->
   <div class="filter-section">
     <div class="section-label-row">
-      <span class="section-label label-clip">{$t('notes_filter_folders')}</span>
+      <span class="section-label">{$t('notes_filter_folders')}</span>
       <span class="head-actions">
         {@render foldChevs('folders', () => { const keys: string[] = []; walkFolders(folderTree, keys); return keys; })}
         <span class="plus-slot">
@@ -663,7 +680,7 @@
       {@render folderNode(node, 0)}
     {/each}
     {#if folderTree.length === 0}
-      <p class="empty-state sm">{$t('notes_filter_folders_empty')}</p>
+      <span class="empty-hint">{$t('notes_filter_folders_empty')}</span>
     {/if}
     {/if}
   </div>
@@ -671,7 +688,7 @@
   <!-- Smart views -->
   <div class="filter-section">
     <div class="section-label-row">
-      <span class="section-label label-clip">{$t('notes_smart_title')}</span>
+      <span class="section-label">{$t('notes_smart_title')}</span>
       <span class="head-actions">
         {@render foldChevs('smart', () => [])}
         <span class="plus-slot">
@@ -689,7 +706,7 @@
           onmouseleave={() => hoveredSmartId = null}
         >
           <button class="{filterClass('smart', view.id)} tree-item" onclick={() => onfilter({ type: 'smart', id: view.id })}>
-            <span class="dot-slot"><span class="status-dot" style="background:{view.color}"></span></span>
+            <span class="dot-slot"><span class="dot" style="background:{view.color}"></span></span>
             <span class="item-name" title={view.name}>{view.name}</span>
           </button>
           <div class="count-wrap"
@@ -698,15 +715,25 @@
             role="presentation"
             onclick={(e) => e.stopPropagation()}
           >
-            <button class="dots-btn" onclick={(e) => openMenuAt(e, `smart:${view.id}`, smartMenu(view))} title={$t('notes_item_actions')}>
+            <button class="dots-btn" onclick={(e) => openMenuAt(e, `smart:${view.id}`)} title={$t('notes_item_actions')}>
               <Icon name="more-vertical" size={11} />
             </button>
+            {#if openMenuKey === 'smart:' + view.id}
+              <div class="folder-menu" style="left:{menuPos.x}px; top:{menuPos.y}px">
+                <button onclick={(e) => openSmartDialog(view, e)}>
+                  <Icon name="pencil" size={11} /><span>{$t('notes_smart_edit')}</span>
+                </button>
+                <button class="menu-del" onclick={(e) => deleteSmartView(view, e)}>
+                  <Icon name="trash-2" size={11} /><span>{$t('common_delete')}</span>
+                </button>
+              </div>
+            {/if}
           </div>
         </div>
       </div>
     {/each}
     {#if notesStore.smartViews.length === 0}
-      <p class="empty-state sm">{$t('notes_smart_empty')}</p>
+      <span class="empty-hint">{$t('notes_smart_empty')}</span>
     {/if}
     {/if}
   </div>
@@ -720,7 +747,7 @@
           <button class={filterClass('domain', site.domain)} onclick={() => onfilter({ type: 'domain', id: site.domain })}>
             <span class="global-icon-slot"><Icon name="world" size={12} /></span>
             <span class="item-name" title={site.domain}>{site.domain}</span>
-            <span class="count count-pill sm quiet">{site.noteCount}</span>
+            <span class="count">{site.noteCount}</span>
           </button>
         {/each}
       {/if}
@@ -730,7 +757,7 @@
   <!-- Tags -->
   <div class="filter-section">
     <div class="section-label-row">
-      <span class="section-label label-clip">{$t('notes_areas_title')}</span>
+      <span class="section-label">{$t('notes_areas_title')}</span>
       <span class="head-actions">
         {@render foldChevs('tags', () => { const keys: string[] = []; walkTags(tagTree, keys); return keys; })}
         <span class="plus-slot">
@@ -745,7 +772,7 @@
       {@render tagNode(node, 0)}
     {/each}
     {#if tagTree.length === 0}
-      <p class="empty-state sm">{$t('notes_areas_empty')}</p>
+      <span class="empty-hint">{$t('notes_areas_empty')}</span>
     {/if}
     {/if}
   </div>
@@ -783,7 +810,7 @@
 
 {#snippet foldHead(label: string, sectionKey: string, childKeys: () => string[])}
   <div class="section-label-row">
-    <span class="section-label label-clip">{label}</span>
+    <span class="section-label">{label}</span>
     <span class="head-actions">
       {@render foldChevs(sectionKey, childKeys)}
       <span class="plus-slot"></span>
@@ -794,7 +821,7 @@
 <SmartViewDialog open={smartDialogOpen} view={smartEditing} onclose={() => (smartDialogOpen = false)} />
 
 <!-- New tag dialog -->
-<Dialog open={popupOpen} width="360px" title={popupPrefix ? $t('notes_tag_in', { name: popupPrefix.replace(/\/$/, '') }) : $t('notes_areas_new')} onclose={closePopup}>
+<Dialog open={popupOpen} width="300px" title={popupPrefix ? $t('notes_tag_in', { name: popupPrefix.replace(/\/$/, '') }) : $t('notes_areas_new')} onclose={closePopup}>
   <div class="nf-modal-body">
     {#if !popupPrefix}
       <p class="popup-hint">{$t('notes_tag_hint')} <code>{$t('notes_tag_hint_example')}</code></p>
@@ -804,6 +831,7 @@
       bind:this={popupInputEl}
       bind:value={popupInput}
       type="text"
+      class="popup-input"
       placeholder={popupPrefix ? `${popupPrefix}${$t('notes_tag_name_ph')}` : $t('notes_tag_name_ph')}
       onkeydown={onPopupKeydown}
       oninput={() => (popupListOpen = true)}
@@ -821,7 +849,17 @@
     {/if}
 
     {#if popupIsNew}
-      <ColorSwatches bind:value={popupColor} label={$t('notes_tag_add')} />
+      <div class="color-row">
+        {#each TAG_COLORS as c}
+          <button class="color-swatch" class:active={popupColor === c} style="background:{c}" aria-label={$t('notes_color', { c })} onclick={() => popupColor = c}></button>
+        {/each}
+        <label class="color-swatch color-swatch-custom" class:active={!TAG_COLORS.includes(popupColor)} title={$t('notes_color_custom')}>
+          <input type="color" bind:value={popupColor} />
+          {#if !TAG_COLORS.includes(popupColor)}
+            <span class="custom-dot" style="background:{popupColor}"></span>
+          {/if}
+        </label>
+      </div>
     {/if}
   </div>
   <!-- The same footer as New folder; Enter still creates -->
@@ -834,12 +872,13 @@
 </Dialog>
 
 <!-- New folder dialog -->
-<Dialog open={folderModalOpen} width="360px" title={$t('notes_folder_new')} onclose={closeFolderModal}>
+<Dialog open={folderModalOpen} width="300px" title={$t('notes_folder_new')} onclose={closeFolderModal}>
   <div class="nf-modal-body">
     <input
       bind:this={folderInputEl}
       bind:value={folderInput}
       type="text"
+      class="popup-input"
       placeholder={$t('notes_folder_name_ph')}
       onkeydown={onFolderModalKeydown}
     />
@@ -854,7 +893,17 @@
       </div>
     </div>
 
-    <ColorSwatches bind:value={folderColor} label={$t('notes_folder_new')} />
+    <div class="color-row">
+      {#each TAG_COLORS as c}
+        <button class="color-swatch" class:active={folderColor === c} style="background:{c}" aria-label={$t('notes_color', { c })} onclick={() => folderColor = c}></button>
+      {/each}
+      <label class="color-swatch color-swatch-custom" class:active={!TAG_COLORS.includes(folderColor)} title={$t('notes_color_custom')}>
+        <input type="color" bind:value={folderColor} />
+        {#if !TAG_COLORS.includes(folderColor)}
+          <span class="custom-dot" style="background:{folderColor}"></span>
+        {/if}
+      </label>
+    </div>
   </div>
   {#snippet footer()}
     <button class="btn btn-ghost" onclick={closeFolderModal}>{$t('common_cancel')}</button>
@@ -865,17 +914,28 @@
 </Dialog>
 
 <!-- Edit tag dialog -->
-<Dialog open={tagEditModalOpen} width="360px" title={$t('notes_tag_edit')} onclose={closeTagEditModal}>
+<Dialog open={tagEditModalOpen} width="300px" title={$t('notes_tag_edit')} onclose={closeTagEditModal}>
   <div class="nf-modal-body">
     <input
       bind:this={tagEditInputEl}
       bind:value={tagEditName}
       type="text"
+      class="popup-input"
       placeholder={$t('notes_tag_name_ph')}
       onkeydown={onTagEditKeydown}
     />
 
-    <ColorSwatches bind:value={tagEditColor} label={$t('notes_tag_edit')} />
+    <div class="color-row">
+      {#each TAG_COLORS as c}
+        <button class="color-swatch" class:active={tagEditColor === c} style="background:{c}" aria-label={$t('notes_color', { c })} onclick={() => tagEditColor = c}></button>
+      {/each}
+      <label class="color-swatch color-swatch-custom" class:active={!TAG_COLORS.includes(tagEditColor)} title={$t('notes_color_custom')}>
+        <input type="color" bind:value={tagEditColor} />
+        {#if !TAG_COLORS.includes(tagEditColor)}
+          <span class="custom-dot" style="background:{tagEditColor}"></span>
+        {/if}
+      </label>
+    </div>
   </div>
   {#snippet footer()}
     <button class="btn btn-ghost" onclick={closeTagEditModal}>{$t('common_cancel')}</button>
@@ -884,8 +944,6 @@
     </button>
   {/snippet}
 </Dialog>
-
-<ContextMenu open={openMenuKey !== null} x={menuPos.x} y={menuPos.y} items={menuItems} onclose={() => (openMenuKey = null)} />
 
 <style>
   .filters {
@@ -900,7 +958,7 @@
     display: flex;
     flex-direction: column;
     padding: 0 var(--sp-2);
-    gap: var(--sp-0-5);
+    gap: 0.1rem;
   }
 
   .filter-section + .filter-section {
@@ -914,15 +972,17 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--sp-2-5) var(--sp-2) var(--sp-1);
+    padding: 0.6rem var(--sp-2) 0.2rem;
   }
 
-  /* The label is the common .section-label; in its row it clips with «…». */
-  .label-clip {
+  .section-label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: var(--fs-xs);
+    color: var(--text-3);
+    font-weight: var(--fw-semibold);
   }
 
   .section-toggle {
@@ -960,7 +1020,7 @@
     display: flex;
     align-items: center;
     gap: 11px;
-    padding: var(--sp-2) var(--sp-3);
+    padding: 0.55rem var(--sp-3);
     border: none;
     background: none;
     cursor: pointer;
@@ -977,8 +1037,22 @@
   .nav-item:hover  { background: var(--surface-2); color: var(--text); }
   .nav-item.active { background: var(--accent-bg); color: var(--accent-text); }
 
-  /* The count: a .count-pill.sm.quiet at the right edge, grey on the chosen row too (design 06). */
-  .count { margin-left: auto; }
+  /* The count: a column of 28 at the right, its number at its right edge — «1068» whole in a column of 200. */
+  .count {
+    margin-left: auto;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    flex-shrink: 0;
+    width: 28px;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+  .nav-item.active .count { color: var(--accent-text); }
 
   /* count in a tree-row: makes up for the button padding it lacks, so it ends where the buttons' counts do */
   .tree-row > .count { margin-right: var(--sp-3); }
@@ -994,12 +1068,8 @@
   .tree-row:hover .item-actions { opacity: 1; max-width: 6rem; margin-right: var(--sp-1); }
 
   /* Fixed-width slots keep the text on one vertical line */
-  .dot-slot  { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-0-5)); margin-right: var(--sp-0-5); }
-  /* A folder's and a tag's mark: the icon of 16 in its colour, where a workspace has its dot (design 06). */
-  .mark-slot { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-1)); margin-right: calc(-1 * var(--sp-0-5)); }
-  /* The mark of a tag or a folder takes the ink of its colour (.tinted-text); with none, --text-3. */
-  .mark-slot:not([style*='--chip']) { color: var(--text-3); }
-  .icon-slot { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(-1 * var(--sp-1)); margin-right: var(--sp-1); }
+  .dot-slot  { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(0.2rem - 5px); margin-right: calc(-0.2rem + 5px); }
+  .icon-slot { flex-shrink: 0; display: flex; align-items: center; margin-left: calc(0.1rem - 5px); margin-right: calc(-0.1rem + 5px); }
 
   /* Icons of the global rows: as wide as dot-slot + dot + gap, so their text lines up with the workspaces */
   .global-icon-slot {
@@ -1008,8 +1078,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-left: calc(-1 * var(--sp-1));
-    margin-right: calc(-1 * var(--sp-0-5));
+    margin-left: -5px;
+    margin-right: calc(-0.4rem + 5px);
+  }
+
+  /* Colour dot */
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
   /* Item name */
@@ -1037,7 +1114,7 @@
   .item-actions {
     display: flex;
     align-items: center;
-    gap: var(--sp-0-5);
+    gap: 0.1rem;
     opacity: 0;
     max-width: 0;
     overflow: hidden;
@@ -1050,7 +1127,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-3);
-    padding: var(--sp-0-5);
+    padding: 0.15rem;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
@@ -1067,7 +1144,7 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    min-width: 28px;
+    width: 28px;
     height: 1.25rem;
   }
 
@@ -1099,13 +1176,44 @@
   .count-wrap.hovered .dots-btn,
   .count-wrap.menu-open .dots-btn  { display: flex; }
 
+  .folder-menu {
+    position: fixed;
+    transform: translateX(-100%);
+    z-index: var(--z-popover);
+    background: var(--surface-drawer);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    min-width: 150px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .folder-menu button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-body);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .folder-menu button:hover  { background: var(--surface-2); color: var(--text); }
+  .folder-menu .menu-del:hover { color: var(--danger-text); }
+
   /* Inline edit row */
   .edit-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding-top: var(--sp-0-5);
-    padding-bottom: var(--sp-0-5);
+    gap: 0.3rem;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
     padding-right: var(--sp-2);
   }
 
@@ -1121,7 +1229,7 @@
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
-    padding: var(--sp-1) var(--sp-1-5);
+    padding: var(--sp-1) 0.4rem;
     font-size: var(--fs-sm);
     color: var(--text);
     outline: none;
@@ -1133,7 +1241,7 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: var(--sp-1);
+    padding: 0.2rem;
     border-radius: var(--radius-sm);
     display: flex;
     align-items: center;
@@ -1151,7 +1259,7 @@
     border: none;
     cursor: pointer;
     color: var(--text-2);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.1rem 0.2rem;
     border-radius: 3px;
     display: flex;
     align-items: center;
@@ -1159,7 +1267,7 @@
   .btn-add-area:hover { color: var(--accent-text); background: var(--surface-2); }
 
   /* Add-a-subtag button inside a group */
-  .group-add-row { padding-top: var(--sp-0-5); padding-bottom: var(--sp-0-5); }
+  .group-add-row { padding-top: 0.05rem; padding-bottom: 0.1rem; }
 
   .btn-group-add {
     display: flex;
@@ -1170,35 +1278,44 @@
     cursor: pointer;
     color: var(--text-3);
     font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.15rem 0.3rem;
     border-radius: 3px;
   }
   .btn-group-add:hover { color: var(--accent-text); background: var(--accent-bg); }
+
+  .empty-hint {
+    font-size: var(--fs-xs);
+    color: var(--text-2);
+    padding: 0.2rem var(--sp-2);
+    font-style: italic;
+  }
 
   /* Dialogs */
   .nf-modal-body {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-2-5);
+    gap: 0.6rem;
   }
 
   .popup-hint {
     font-size: var(--fs-xs);
     color: var(--text-3);
     line-height: var(--lh-snug);
-    padding: 0 var(--sp-0-5);
+    padding: 0 0.1rem;
   }
   .popup-hint code {
     background: var(--surface-2);
     border-radius: 3px;
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.05rem var(--sp-1);
     font-size: var(--fs-xs);
   }
+
+  /* .popup-input takes the global field of base.css: the same size as every other form */
 
   .parent-select-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
 
   .parent-select-label {
@@ -1208,4 +1325,38 @@
   }
 
   .parent-select { flex: 1; min-width: 0; }
+
+  .color-row { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+  .color-swatch {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.1s;
+  }
+  .color-swatch.active { border-color: var(--text); transform: scale(1.2); }
+  .color-swatch:hover  { transform: scale(1.15); }
+
+  .color-swatch-custom {
+    position: relative;
+    background: conic-gradient(#f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #f43f5e);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .color-swatch-custom input[type="color"] {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0;
+  }
+
+  .custom-dot {
+    position: absolute; inset: 3px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.7);
+    pointer-events: none;
+  }
 </style>

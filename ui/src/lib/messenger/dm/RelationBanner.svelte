@@ -8,7 +8,6 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { onPhone } from '../shared/phone';
   import type { ChatMode, DmAction, MessengerChat } from '../api';
 
   interface Props {
@@ -61,19 +60,13 @@
     if (chat.mode === 'blocked' && chat.banned) return { ...specs.blocked, ctas: [] };
     return specs[chat.mode];
   });
-  const phone = onPhone();
-  // A computer: the main action last, the plate reads to it. A phone (design 15): the main one first and filled, the
-  // others after it, the red ones last, in the order of the request's screen (RequestView).
-  const ordered = $derived.by((): Cta[] => {
-    if (!spec) return [];
-    const of = (kind: Cta['kind']) => spec.ctas.filter((c) => c.kind === kind);
-    return phone ? [...of('primary'), ...of('ghost'), ...of('danger')] : [...spec.ctas.filter((c) => c.kind !== 'primary'), ...of('primary')];
-  });
+  // The main action last: the plate reads to it.
+  const ordered = $derived(spec ? [...spec.ctas.filter((c) => c.kind !== 'primary'), ...spec.ctas.filter((c) => c.kind === 'primary')] : []);
 </script>
 
 {#snippet acts()}
   {#each ordered as c (c.action)}
-    <button class="btn btn-sm {c.kind === 'danger' ? 'btn-danger-soft' : phone && c.kind === 'primary' ? 'btn-primary' : 'btn-ghost'}"
+    <button class="btn btn-sm {c.kind === 'danger' ? 'btn-danger-soft' : 'btn-ghost'}"
       disabled={busy} onclick={() => onaction(c.action)}>
       {$t(c.label as 'msg_rel_cta_accept')}
     </button>
@@ -81,9 +74,8 @@
 {/snippet}
 
 {#if spec}
-  <!-- A plate of the page (core/ui/Notice): on a computer the buttons secondary, the main one last; on a phone the main
-       one first and filled; red only for the block. -->
-  <div class="rel" class:m={phone}>
+  <!-- A plate of the page (core/ui/Notice): the buttons secondary, the main one last, red only for the block. -->
+  <div class="rel">
     <Notice tone={spec.tone === 'warn' ? 'warn' : 'info'} icon={spec.icon} role="status" action={ordered.length ? acts : undefined}>
       {chat.mode === 'blocked' && chat.banned ? $t('msg_rel_banned') : $t(chat.mode === 'request_declined' ? 'msg_err_dm_request_declined' : `msg_rel_${chat.mode}` as 'msg_rel_blocked', { name: chat.title })}
     </Notice>
@@ -92,6 +84,4 @@
 
 <style>
   .rel { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
-  /* A phone: the buttons 40 high (their zone 44, mobile.css), the main one too, in the words of the others. */
-  .rel.m .btn { min-height: 40px; font-size: var(--fs-sm); }
 </style>

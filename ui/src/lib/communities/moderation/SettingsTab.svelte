@@ -15,8 +15,6 @@
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
-  import { onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
   import { moderationError } from '../errors';
   import { channelsApi, type ChannelDetail, type ModSettings } from '../api';
@@ -28,8 +26,6 @@
     detail: ChannelDetail;
   }
   let { detail }: Props = $props();
-  const phone = onPhone();
-  const PREMOD_ICON: Record<Premod, string> = { off: 'circle-check', newcomers: 'user-question', all: 'shield-check' };
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const PREMODS: Premod[] = ['off', 'newcomers', 'all'];
@@ -133,52 +129,49 @@
 
   <section class="block">
     <div class="label">{$t('chan_rule_premod')}</div>
-    <!-- One value of a few: the rows of the channel's join rule (ChoiceRow), each with its hint. -->
-    <div class="kinds" role="radiogroup" aria-label={$t('chan_rule_premod')}>
+    <div class="seg" role="radiogroup" aria-label={$t('chan_rule_premod')}>
       {#each PREMODS as v (v)}
-        <ChoiceRow surface="panel" icon={PREMOD_ICON[v]} title={$t(`chan_premod_${v}` as 'chan_premod_off')} hint={$t(`chan_premod_hint_${v}` as 'chan_premod_hint_off')}
-          checked={premod === v} disabled={busy} onclick={() => { premod = v; }} />
+        <button class="seg-btn" class:active={premod === v} role="radio" aria-checked={premod === v} disabled={busy}
+          onclick={() => { premod = v; }}>{$t(`chan_premod_${v}` as 'chan_premod_off')}</button>
       {/each}
     </div>
+    <p class="hint">{$t(`chan_premod_hint_${premod}` as 'chan_premod_hint_off')}</p>
   </section>
 
   <!-- The verb stays at the foot of the panel while the rules scroll under it (the owner's rule, 2026-10-25). -->
-  <!-- A phone's: the one foot of its pages (mobile.css .page-foot), over the gesture stripe. -->
-  <div class="pin" class:actions={!phone} class:page-foot={phone}>
+  <div class="actions">
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
-    {#if phone}
-      <button class="btn btn-primary" disabled={busy || !valid} onclick={save}>{$t('common_save')}</button>
-    {:else}
-      <div class="actions-row">
-        <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('common_save')}</button>
-      </div>
-    {/if}
+    <div class="actions-row">
+      <button class="btn btn-primary btn-sm" disabled={busy || !valid} onclick={save}>{$t('common_save')}</button>
+    </div>
   </div>
 </div>
 
 <style>
   /* It fills the panel's scroll down into its bottom padding (--sp-4), so its bar of actions stands at the very foot even when the rules are short. */
-  .settings { flex: 1 0 auto; margin-bottom: calc(-1 * (var(--sp-4) + var(--page-sab, 0px))); display: flex; flex-direction: column; gap: var(--sp-5); }
+  .settings { flex: 1 0 auto; margin-bottom: calc(-1 * var(--sp-4)); display: flex; flex-direction: column; gap: var(--sp-5); }
   .block { display: flex; flex-direction: column; gap: var(--sp-2); }
   .label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .bad-text { color: var(--danger-text); }
   .option { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-  .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .days { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); }
+  /* A phone is narrower than three choices in one line: each wraps its words. */
+  .seg { align-self: flex-start; max-width: 100%; }
+  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: var(--lh-tight); }
+  .days { display: flex; flex-wrap: wrap; gap: 6px; }
   .times { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
   .time { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); flex: 1; min-width: 110px; }
   .zone { display: flex; flex-direction: column; gap: 4px; }
   .field {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface-2);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-2-5);
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 7px 10px;
   }
   .field:focus { outline: none; border-color: var(--accent-border); }
   .field.bad { border-color: var(--danger-border); }
-  /* Pinned to the foot of ModerationPanel's scroll, out to its edges: the negative margins and bottom take back its padding (--sp-4 and a phone's gesture stripe), which a sticky box otherwise keeps clear of. */
-  .pin { position: sticky; bottom: calc(-1 * (var(--sp-4) + var(--page-sab, 0px))); z-index: calc(var(--z-base) + 1); margin: auto calc(-1 * var(--sp-4)) 0; }
+  /* Pinned to the foot of ModerationPanel's scroll, out to its edges: the negative margins and bottom take back its padding (--sp-4), which a sticky box otherwise keeps clear of. */
   .actions {
+    position: sticky; bottom: calc(-1 * var(--sp-4)); z-index: calc(var(--z-base) + 1); margin: auto calc(-1 * var(--sp-4)) 0;
     display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4);
     background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); border-top: 1px solid var(--border);
   }

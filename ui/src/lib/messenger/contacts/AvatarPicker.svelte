@@ -259,7 +259,7 @@
   .badge-cam .spinner { border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
   .drop {
     position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center;
-    padding: var(--sp-1-5); font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-tight);
+    padding: 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-tight);
     background: color-mix(in srgb, var(--accent) 78%, transparent); color: #fff; pointer-events: none;
   }
   .side { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }

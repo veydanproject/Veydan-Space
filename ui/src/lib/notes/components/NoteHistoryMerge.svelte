@@ -5,7 +5,6 @@
   import type { MergeBlock, MergeResult } from '$lib/notes/types';
   import Pill from '$lib/core/ui/Pill.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import Dialog from '$lib/core/ui/Dialog.svelte';
   import { t } from '$lib/core/i18n';
   import MergeHunk from './MergeHunk.svelte';
   import {
@@ -65,7 +64,7 @@
     loadMerge();
   });
 
-  // Unchanged text can fill the window; keep the conflict, and its line buttons, in view.
+  // Unchanged text can fill the panel; keep the conflict, and its line buttons, in view.
   $effect(() => {
     if (loading || !hasConflicts || !scrollEl) return;
     scrollEl.querySelector('.conflict-block')?.scrollIntoView({ block: 'start' });
@@ -126,91 +125,162 @@
   }
 </script>
 
-<Dialog open={true} title={$t('notes_merge_title')} width="min(900px, 92vw)" onclose={oncancel}>
-  {#if loading}
-    <div class="loading loading-center">
-      <Icon name="loader" size={18} />
-      <span>{$t('notes_merge_running')}</span>
-    </div>
-  {:else if error}
-    <div class="error-bar">{error}</div>
-  {:else if !hasConflicts}
-    <div class="no-conflicts">
-      <Icon name="check" size={20} />
-      <p>{$t('notes_merge_clean')}</p>
-      <span>{$t('notes_merge_clean_hint')}</span>
-    </div>
-  {:else}
-    <div class="conflicts-summary">
-      <div class="summary-top">
-        {#if unresolvedCount > 0}
-          <Pill tone="warn">
-            <Icon name="alert-triangle" size={12} />
-            {$t('notes_merge_unresolved', { n: String(unresolvedCount) })}
-          </Pill>
-        {:else}
-          <Pill tone="ok">
-            <Icon name="check" size={12} />
-            {$t('notes_merge_resolved')}
-          </Pill>
-        {/if}
-      </div>
-      <div class="summary-actions">
-        <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('ours')} onclick={() => chooseAll('ours')}>
-          {oursAction ?? $t('notes_merge_keep_current')}
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('both')} onclick={() => chooseAll('both')}>
-          {bothAction ?? $t('notes_merge_keep_both')}
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('theirs')} onclick={() => chooseAll('theirs')}>
-          {theirsAction ?? $t('notes_merge_keep_history')}
-        </button>
-      </div>
+<div class="merge-overlay">
+  <div class="merge-panel">
+    <div class="merge-header">
+      <span class="merge-title">
+        <Icon name="git-merge" size={14} />
+        {$t('notes_merge_title')}
+      </span>
+      <button class="btn-cancel-header" onclick={oncancel} title={$t('common_cancel')}>
+        <Icon name="x" size={14} />
+      </button>
     </div>
 
-    <div class="blocks" bind:this={scrollEl}>
-      {#each blocks as block, i}
-        {#if block.kind === 'conflict'}
-          <MergeHunk
-            {blocks}
-            index={i}
-            {choices}
-            {picks}
-            localLabel={sideHead(localHead, localName)}
-            remoteLabel={sideHead(remoteHead, remoteName)}
-            resolved={blockResolved(i)}
-            ontoggle={(side, line) => toggleLine(i, side, line)}
-          />
-        {/if}
-      {/each}
-    </div>
-  {/if}
+    {#if loading}
+      <div class="loading loading-center">
+        <Icon name="loader" size={18} />
+        <span>{$t('notes_merge_running')}</span>
+      </div>
+    {:else if error}
+      <div class="error-bar">{error}</div>
+      <div class="footer">
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
+      </div>
+    {:else if !hasConflicts}
+      <div class="no-conflicts">
+        <Icon name="check" size={20} />
+        <p>{$t('notes_merge_clean')}</p>
+        <span>{$t('notes_merge_clean_hint')}</span>
+      </div>
+      <div class="footer">
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
+        <button class="btn btn-primary btn-sm" onclick={apply}>{$t('notes_merge_apply')}</button>
+      </div>
+    {:else}
+      <div class="conflicts-summary">
+        <div class="summary-top">
+          {#if unresolvedCount > 0}
+            <Pill tone="warn">
+              <Icon name="alert-triangle" size={12} />
+              {$t('notes_merge_unresolved', { n: String(unresolvedCount) })}
+            </Pill>
+          {:else}
+            <Pill tone="ok">
+              <Icon name="check" size={12} />
+              {$t('notes_merge_resolved')}
+            </Pill>
+          {/if}
+        </div>
+        <div class="summary-actions">
+          <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('ours')} onclick={() => chooseAll('ours')}>
+            {oursAction ?? $t('notes_merge_keep_current')}
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('both')} onclick={() => chooseAll('both')}>
+            {bothAction ?? $t('notes_merge_keep_both')}
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" class:active={allChosen('theirs')} onclick={() => chooseAll('theirs')}>
+            {theirsAction ?? $t('notes_merge_keep_history')}
+          </button>
+        </div>
+      </div>
 
-  {#snippet footer()}
-    {#if !loading}
-      <button class="btn btn-ghost" onclick={oncancel}>{$t('common_cancel')}</button>
-      {#if !error}
-        <button class="btn btn-primary" onclick={apply} disabled={!allResolved}>
+      <div class="blocks-scroll" bind:this={scrollEl}>
+        {#each blocks as block, i}
+          {#if block.kind === 'conflict'}
+            <MergeHunk
+              {blocks}
+              index={i}
+              {choices}
+              {picks}
+              localLabel={sideHead(localHead, localName)}
+              remoteLabel={sideHead(remoteHead, remoteName)}
+              resolved={blockResolved(i)}
+              ontoggle={(side, line) => toggleLine(i, side, line)}
+            />
+          {/if}
+        {/each}
+      </div>
+
+      <div class="footer">
+        <button class="btn btn-ghost btn-sm" onclick={oncancel}>{$t('common_cancel')}</button>
+        <button class="btn btn-primary btn-sm" onclick={apply} disabled={!allResolved}>
           {$t('notes_merge_apply')}
         </button>
-      {/if}
+      </div>
     {/if}
-  {/snippet}
-</Dialog>
+  </div>
+</div>
 
 <style>
-  /* .loading covers the layout; keep only the flex-fill delta for the window */
+  .merge-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--backdrop);
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-end;
+    z-index: var(--z-panel);
+  }
+
+  .merge-panel {
+    width: 100%;
+    max-width: 640px;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: var(--fs-sm);
+  }
+
+  .merge-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem var(--sp-4);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface-2);
+  }
+
+  .merge-title {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-weight: var(--fw-semibold);
+    font-size: var(--fs-base);
+    color: var(--text);
+  }
+
+  .btn-cancel-header {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-3);
+    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+  }
+
+  .btn-cancel-header:hover { color: var(--text); }
+
+  /* .loading covers the layout; keep only the flex-fill delta for the overlay */
   .loading-center { flex: 1; }
 
   .error-bar {
     background: var(--danger-bg);
     color: var(--danger-text);
     padding: var(--sp-2) var(--sp-4);
-    border-radius: var(--radius-md);
     font-size: var(--fs-sm);
   }
 
   .no-conflicts {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -228,9 +298,9 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    padding-bottom: var(--sp-3);
-    margin-bottom: var(--sp-3);
+    padding: 0.4rem var(--sp-4);
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
     gap: var(--sp-2);
   }
 
@@ -255,10 +325,25 @@
     border-color: var(--accent-border);
   }
 
-  .blocks {
+  .blocks-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--sp-2);
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    font-size: var(--fs-sm);
   }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    padding: 0.6rem var(--sp-4);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface-drawer-footer);
+  }
+
 </style>

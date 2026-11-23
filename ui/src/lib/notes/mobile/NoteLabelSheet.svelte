@@ -3,12 +3,9 @@
 
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
-  import { PALETTE } from '$lib/core/palette';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import { api, type BindingSummary, type NavChild, type NoteTag } from '$lib/notes/mobile/api';
   import { t, type MobileKey } from '$lib/core/mobile/i18n';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
-  import ColorSwatches from '$lib/core/ui/ColorSwatches.svelte';
   import { labelPickerText } from '$lib/notes/label-kinds';
   import { findTag, normalizeTagName } from '$lib/notes/tag-name';
 
@@ -44,13 +41,18 @@
     busy = false, onclose, onaddTag, onaddFolder, onaddBinding,
   }: Props = $props();
 
+  const TAG_COLORS = [
+    // The kit's presets (N.colors); the colour is the user's, never the kind.
+    '#8b7bff', '#5ab0f0', '#59c28a', '#e8a33d', '#e66b6b', '#d58ad6',
+  ];
+
   let query = $state('');
-  let color = $state(PALETTE[0]);
+  let color = $state(TAG_COLORS[0]);
 
   $effect(() => {
     if (open) {
       query = '';
-      color = PALETTE[0];
+      color = TAG_COLORS[0];
     }
   });
 
@@ -117,9 +119,6 @@
       return;
     }
     onaddTag(name, canCreate ? color : undefined);
-    // The sheet stays open: the field is cleared for the next one.
-    query = '';
-    color = PALETTE[0];
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -131,7 +130,7 @@
 </script>
 
 <BottomSheet {open} title={$t('notes_label_title')} share={0.45} {onclose}>
-  <div class="search-field fill">
+  <div class="find">
     <Icon name="search" size={16} />
     <input
       type="text"
@@ -140,9 +139,6 @@
       onkeydown={onKeydown}
       {@attach (el: HTMLInputElement) => el.focus()}
     />
-    {#if query}
-      <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-    {/if}
   </div>
   {#if !q && entityHits.length === 0}
     <p class="hint">{pickerText.hint}</p>
@@ -158,7 +154,7 @@
       {/each}
       {#each folderHits as f (f.id)}
         <button type="button" class="hit" disabled={busy} onpointerdown={(e) => e.preventDefault()} onclick={() => onaddFolder(f.id)}>
-          <span class="m-folder tinted-text" style:--chip={f.color || undefined}><Icon name="folder" size={18} /></span>
+          <span class="dot" style:background={f.color}></span>
           <span class="name">{f.name}</span>
           <span class="kind">{$t('notes_kind_folder')}</span>
         </button>
@@ -195,18 +191,45 @@
   {/if}
 
   {#if canCreate}
-    <div class="colors"><ColorSwatches bind:value={color} label={$t('notes_tags_add')} /></div>
-    <button type="button" class="btn btn-primary wide" disabled={busy} onclick={submitTag}>{$t('notes_tags_add')}</button>
+    <div class="colors">
+      {#each TAG_COLORS as c (c)}
+        <button type="button" class="swatch" class:on={color === c} style:background={c} aria-label={c} onclick={() => (color = c)}></button>
+      {/each}
+      <label class="swatch custom" class:on={!TAG_COLORS.includes(color)}>
+        <input type="color" bind:value={color} />
+      </label>
+    </div>
+    <button type="button" class="m-btn-grad" disabled={busy} onclick={submitTag}>{$t('notes_tags_add')}</button>
   {/if}
-  <!-- The sheet stays open after each label (several are added); «Готово» closes it. -->
-  {#snippet footer()}
-    <button type="button" class="btn btn-primary" onclick={onclose}>{$t('common_done')}</button>
-  {/snippet}
 </BottomSheet>
 
 <style>
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: var(--radius-pill);
+    background: var(--m-field);
+    flex-shrink: 0;
+  }
+  .find input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--fs-body);
+  }
+  .find input:focus { border: 0; box-shadow: none; }
   .hint { margin: var(--sp-3) var(--sp-2) 0; }
-  /* The suggestions of a phone: rows of 56 (a dense row, base.css); the sheet keeps to 45% of the screen (share), they scroll inside it. */
+  /* The suggestions of a phone: rows of 44; the sheet keeps to 45% of the screen (share), they scroll inside it. */
   .hits.hits {
     flex: 0 1 auto;
     min-height: 0;
@@ -221,7 +244,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    min-height: 56px;
+    min-height: 44px;
     padding: 0 var(--sp-2);
     border: 0;
     border-radius: var(--radius-md);
@@ -243,5 +266,21 @@
   .sub { color: var(--text-3); font-size: var(--fs-sm); }
   .dot.muted { background: var(--text-3); }
   .kind { color: var(--text-3); font-size: var(--fs-xs); }
-  .colors { padding: var(--sp-2) 0; }
+  .colors { display: flex; gap: 8px; padding: var(--sp-2) 0; }
+  .swatch {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+  }
+  .swatch.on { border-color: var(--text); }
+  .custom { position: relative; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); overflow: hidden; }
+  .custom input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    border: 0;
+    padding: 0;
+  }
 </style>

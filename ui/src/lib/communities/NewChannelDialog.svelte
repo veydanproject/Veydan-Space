@@ -19,10 +19,7 @@
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
-  import QrScanner from '$lib/core/ui/QrScanner.svelte';
-  import { chromeBridge } from '$lib/core/ui/chrome';
-  import { Avatar, ServerPicker, accountServers, homeServersLabel, isTauriHost, nameOfServer, onPhone, serverStore } from '$lib/messenger/seams/shared';
-  import { api } from '$lib/core/api';
+  import { Avatar, ServerPicker, accountServers, homeServersLabel, isTauriHost, nameOfServer, serverStore } from '$lib/messenger/seams/shared';
   import { channelsApi, type ChannelPreview } from './api';
   import { cover as coverOf } from './cover';
   import { channelStore, chatIdOf } from './channelStore.svelte';
@@ -176,25 +173,6 @@
   });
   const readers = $derived(preview ? $t('chan_readers_n', { n: new Intl.NumberFormat(localeTag($locale)).format(preview.members) }) : '');
 
-  // «Вставить» and, on a phone, «Сканировать QR» (design 17): the link read goes into the field, the rest as typed by hand.
-  const phone = onPhone();
-  let scanning = $state(false);
-
-  async function paste() {
-    // A computer reads the clipboard through the backend, Android through its bridge: WebKitGTK and
-    // Android's WebView refuse a button `navigator.clipboard`. A webview that refused leaves a long press in the field.
-    const bridge = phone ? chromeBridge() : undefined;
-    const read = bridge?.clipboardText ? Promise.resolve().then(() => bridge.clipboardText?.() ?? '')
-      : !phone && isTauriHost ? api.system.clipboardReadText() : navigator.clipboard.readText();
-    const text = (await read.catch(() => '')).trim();
-    if (text) url = text;
-  }
-
-  function scanned(content: string) {
-    scanning = false;
-    url = content.trim();
-  }
-
   async function enter() {
     if (!linkLooksRight) return;
     if (way === 'open' && preview) { open = false; onopened?.(chatIdOf(preview.community_id)); return; }
@@ -204,24 +182,6 @@
     finally { busy = false; }
   }
 </script>
-
-{#if scanning && open}
-  <QrScanner
-    title={$t('msg_inv_scan_title')}
-    hint={$t('chan_join_link')}
-    manual={$t('lock_recover_paste')}
-    words={{
-      starting: $t('msg_inv_scan_starting'),
-      denied: $t('msg_attach_camera_denied'),
-      failed: $t('msg_inv_scan_failed'),
-      retry: $t('msg_inv_scan_retry'),
-      openSettings: $t('msg_inv_scan_open_settings'),
-    }}
-    onresult={scanned}
-    onclose={() => (scanning = false)}
-    onmanual={() => { scanning = false; void paste(); }}
-  />
-{/if}
 
 <Dialog bind:open title={tab === 'join' ? $t('chan_join_title') : $t('chan_new_title')} width="min(520px, calc(100vw - 24px))">
   <div class="body">
@@ -279,6 +239,7 @@
       </section>
 
       <p class="note"><Icon name="info" size={18} /><span>{$t('chan_keeper_note')}</span></p>
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {:else}
       {#if fromCard && !showLink}
         <button type="button" class="link-toggle" aria-expanded="false" onclick={() => (showLink = true)}><Icon name="link" size={18} />{$t('chan_join_show_link')}</button>
@@ -287,10 +248,6 @@
           <span class="cap">{$t('chan_join_link')}</span>
           <textarea class="field mono" class:bad={!!url.trim() && !linkLooksRight} rows="3" bind:value={url} placeholder="veydan://channel/…" aria-label={$t('chan_join_link')} spellcheck="false" disabled={busy}></textarea>
         </label>
-        <div class="link-acts">
-          <button type="button" class="btn btn-ghost" onclick={paste} disabled={busy}><Icon name="clipboard-paste" size={18} />{$t('lock_recover_paste')}</button>
-          {#if phone}<button type="button" class="btn btn-ghost" onclick={() => (scanning = true)} disabled={busy}><Icon name="qr-code" size={18} />{$t('msg_inv_scan_qr')}</button>{/if}
-        </div>
       {/if}
       {#if url.trim() && !linkLooksRight}
         <p class="hint bad"><Icon name="alert-triangle" size={16} /><span>{$t('chan_err_bad_link')}</span></p>
@@ -324,12 +281,11 @@
       {:else}
         <p class="hint">{$t('chan_join_hint')}</p>
       {/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {/if}
   </div>
 
   {#snippet footer()}
-    <!-- The error over the button, not at the end of the long form. -->
-    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     {#if tab === 'create'}
       <button class="btn btn-primary go" disabled={busy || !name.trim() || !serversOk} aria-busy={busy} onclick={create}>
         {#if busy}<span class="spinner light" aria-hidden="true"></span>{/if}{$t('chan_create')}
@@ -344,7 +300,7 @@
 
 <style>
   /* The spinner of a primary button, on its fill. */
-  .spinner.light { border-color: color-mix(in srgb, var(--on-media-text) 40%, transparent); border-top-color: var(--on-media-text); }
+  .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
   .body { display: flex; flex-direction: column; gap: var(--sp-4); }
   .body > :global(*) { flex-shrink: 0; min-width: 0; }
   .tabs { display: flex; width: 100%; }
@@ -357,7 +313,7 @@
     width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--accent-border); background: var(--accent-bg);
     color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
-  .cover.picked { border-style: solid; background: var(--accent-grad); color: var(--on-media-text); }
+  .cover.picked { border-style: solid; background: var(--accent-grad); color: #fff; }
   .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 
   .sec { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -394,9 +350,6 @@
   .ch-card-sub { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-3); }
   .ch-card-about { font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .retry { align-self: flex-start; }
-  /* Under the field of the link: «Вставить» and «Сканировать QR», halves of its width, 40 high. */
-  .link-acts { display: flex; gap: var(--sp-2); }
-  .link-acts .btn { flex: 1 1 0; min-width: 0; justify-content: center; gap: var(--sp-2); min-height: 40px; }
   .link-toggle {
     align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) 0; border: none; background: none; cursor: pointer;
     font: inherit; font-size: var(--fs-sm); color: var(--text-3);

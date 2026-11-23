@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import { t } from '$lib/core/i18n';
-  import { onPhone as isMobile } from '../phone';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { stamp } from '../shared/time';
   import Icon from '$lib/core/Icon.svelte';
@@ -52,7 +51,7 @@
     <div class="locked-note"><Icon name="lock-square-rounded" size={14} /><span>{$t('msg_id_locked')}</span></div>
   {/if}
 
-  <div class="actions" class:apart={isMobile}>
+  <div class="actions">
     <button class="btn btn-ghost" disabled={locked} onclick={() => open(panel === 'export' ? 'none' : 'export')}>
       <Icon name="file-export" size={18} />{$t('msg_id_export_btn')}
     </button>
@@ -73,9 +72,7 @@
           <input type="password" bind:value={exportPassword} autocomplete="new-password" disabled={busy} />
         </label>
         {#if error}<div class="error-msg">{error}</div>{/if}
-        <!-- A phone (design 15): «Cancel | Export» in halves of 48, in the card. -->
-        <div class="actions end" class:pair={isMobile}>
-          {#if isMobile}<button class="btn btn-ghost" disabled={busy} onclick={() => open('none')}>{$t('common_cancel')}</button>{/if}
+        <div class="actions end">
           <button class="btn btn-primary" disabled={busy} onclick={doExport}>{$t('msg_id_export_confirm')}</button>
         </div>
       {/if}
@@ -84,8 +81,8 @@
     <div class="panel">
       <p class="warn">{$t('msg_id_delete_warning')}</p>
       {#if error}<Notice tone="danger">{error}</Notice>{/if}
-      <div class="actions end" class:pair={isMobile}>
-        <button class="btn btn-ghost" disabled={busy} onclick={() => open('none')}>{isMobile ? $t('common_cancel') : $t('common_back')}</button>
+      <div class="actions end">
+        <button class="btn btn-ghost" disabled={busy} onclick={() => open('none')}>{$t('common_back')}</button>
         <button class="btn btn-danger" disabled={busy} onclick={doDelete}>{$t('common_remove')}</button>
       </div>
     </div>
@@ -108,11 +105,6 @@
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .actions .btn :global(svg) { flex-shrink: 0; }
   .actions.end { justify-content: flex-end; }
-  .actions.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pair > .btn { min-height: 48px; min-width: 0; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; }
-  /* On a phone the dangerous one stands away from the other, at the far end of the row (design 03);
-     when the two do not fit one row it takes the far end of its own. */
-  .actions.apart > .btn-danger-soft { margin-inline-start: auto; }
   .panel {
     display: flex; flex-direction: column; gap: var(--sp-3);
     border-top: 1px solid var(--border); padding-top: var(--sp-3);
@@ -121,10 +113,10 @@
     margin: 0; font-size: var(--fs-sm); color: var(--text-body);
     background: var(--danger-bg); border-radius: var(--radius-md); padding: var(--sp-2) var(--sp-3);
   }
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
   .field span { color: var(--text-2); font-size: var(--fs-sm); font-weight: var(--fw-bold); }
   .field input {
-    color: var(--text);
+    font: inherit; color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius);
     min-height: 44px; padding: 0 var(--sp-3);
   }

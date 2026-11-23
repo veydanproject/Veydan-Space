@@ -270,6 +270,8 @@
     "notes_tag_hint": "Usa «/» para subgrupos:",
     "notes_tag_hint_example": "Grupo/etiqueta",
     "notes_tag_name_ph": "nombre de la etiqueta",
+    "notes_color": "Color {c}",
+    "notes_color_custom": "Color personalizado",
     "notes_section_fold": "Contraer",
     "notes_section_unfold": "Expandir",
     "notes_section_fold_all": "Contraer todo",

@@ -15,7 +15,6 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Avatar from '../../contacts/Avatar.svelte';
   import AuthorQueue from './AuthorQueue.svelte';
   import { nameStore } from '../names.svelte';
@@ -128,12 +127,9 @@
 {#if author}
   <AuthorQueue {group} {author} {filter} onback={back} />
 {:else}
-  <div class="search-field fill">
+  <div class="search">
     <Icon name="search" size={16} />
     <input type="search" bind:value={search} placeholder={$t('msg_mod_search')} aria-label={$t('msg_mod_search')} />
-    {#if search}
-      <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-    {/if}
   </div>
 
   <!-- One quiet line over the list: «Ждут: N» (all ticked) on the left, the periods on the right. -->
@@ -199,7 +195,7 @@
       {/each}
     </ul>
   {:else if !loading && !error}
-    <p class="empty-state sm">{filtered ? $t('msg_mod_queue_empty_filtered') : $t('msg_mod_queue_empty')}</p>
+    <p class="empty">{filtered ? $t('msg_mod_queue_empty_filtered') : $t('msg_mod_queue_empty')}</p>
   {/if}
 
   {#if loading}<div class="loading"><Icon name="loader" size={14} /></div>
@@ -207,12 +203,20 @@
 {/if}
 
 <style>
+  /* The search the whole width, 40 high (c11). */
+  .search {
+    display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h); padding: 0 var(--sp-3); color: var(--text-3);
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill);
+  }
+  .search:focus-within { border-color: var(--accent-border); }
+  .search :global(svg) { flex-shrink: 0; }
+  .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .listbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding-left: var(--sp-1); }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); cursor: pointer; user-select: none; }
   .periods { margin-left: auto; gap: 2px; padding: 2px; }
   .periods .seg-btn { height: var(--control-h-sm); padding: 0 var(--sp-2); font-size: var(--fs-xs); }
   .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-  .bulk-acts { display: flex; gap: var(--sp-1-5); flex-wrap: wrap; }
+  .bulk-acts { display: flex; gap: 6px; flex-wrap: wrap; }
   /* The queue: one card, a row per author under a divider. */
   .queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; container-type: inline-size; }
   .q-row { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--sp-2); row-gap: var(--sp-2); padding: var(--sp-3); }
@@ -225,7 +229,7 @@
   .open:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .open > :global(svg:last-child) { flex-shrink: 0; margin-top: 2px; color: var(--text-3); }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .line { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; }
+  .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .many { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); font-weight: var(--fw-bold); padding: 1px var(--sp-2); border-radius: var(--radius-pill); background: var(--accent-bg, var(--surface-3)); color: var(--accent-text, var(--text-2)); }
   .when { margin-left: auto; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
@@ -239,9 +243,11 @@
   @container (max-width: 304px) {
     .acts { padding-left: 0; }
   }
+  .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) {
+    .search input { font-size: var(--fs-md); min-height: 40px; }
     .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-h); }
     .acts .btn { min-height: var(--control-h); }
     .acts .spam { width: var(--control-h); height: var(--control-h); }

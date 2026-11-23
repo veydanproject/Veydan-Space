@@ -53,8 +53,8 @@
 {:else}
 <div class="list-wrap">
   {#if contacts.length === 0}
-    <div class="empty-state">
-      <span class="empty-icon"><Icon name="book-user" size={22} /></span>
+    <div class="empty">
+      <Icon name="book-user" size={28} />
       <p>{q ? $t('common_nothing_found') : $t('msg_contacts_empty')}</p>
       {#if !q}<span>{$t('msg_contacts_text')}</span>{/if}
     </div>
@@ -79,6 +79,9 @@
 <style>
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
+  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-8) var(--sp-4); color: var(--text-3); }
+  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-body); }
+  .empty span { font-size: var(--fs-sm); line-height: var(--lh-base); }
   /* The column of covers: the open one lit. */
   .covers { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; align-items: center; padding: var(--sp-1) 0 var(--sp-3); }
   .covers-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }

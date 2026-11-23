@@ -5,11 +5,9 @@
 <!-- Invitations to channels that wait for my answer, above the list of channels. -->
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { countKey, locale, t } from '$lib/core/i18n';
+  import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { ask, confirmTitle } from '$lib/core/ui/confirm.svelte';
-  import { toast } from '$lib/core/ui/toast.svelte';
   import { Avatar, onPhone } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { nameStore } from './names.svelte';
@@ -25,13 +23,10 @@
   let busy = $state<string | null>(null);
   let error = $state('');
 
-  /** «Войти» at once; «Отклонить» cannot be taken back, so it is asked first, and told when done (design 17). */
   async function answer(i: InviteView, accept: boolean) {
-    if (!accept && !(await ask({ title: confirmTitle($t('chan_invite_decline')), message: i.name, confirmLabel: $t('chan_invite_decline'), icon: 'x' }))) return;
     error = ''; busy = i.invite_id;
     try {
       await channelStore.answerInvite(i.invite_id, accept);
-      if (!accept) toast.success($t(countKey('chan_req_done_reject', 1, $locale), { n: '1' }));
     } catch (e) {
       error = channelError(e, tr);
       channelStore.refreshInvites().catch(() => {});
@@ -42,14 +37,14 @@
 {#if channelStore.invites.length}
   <div class="invites" class:phone>
     {#each channelStore.invites as i (i.invite_id)}
-      <div class="invite" class:list-row={phone} class:still={phone}>
-        <Avatar {...cover(i.picture)} label={i.name} seed={i.community_id} size={phone ? 48 : 38} />
+      <div class="invite">
+        <Avatar {...cover(i.picture)} label={i.name} seed={i.community_id} size={38} />
         <div class="text">
           <span class="title">{i.name}</span>
           <span class="sub">{$t('chan_invited_by', { name: nameStore.label(i.peer) })}</span>
         </div>
         <button class="btn btn-primary btn-sm" disabled={busy === i.invite_id} onclick={() => answer(i, true)}>{$t('chan_invite_accept')}</button>
-        <button class="icon-btn" disabled={busy === i.invite_id} title={$t('chan_invite_decline')} aria-label={$t('chan_invite_decline')} onclick={() => answer(i, false)}><Icon name="x" size={18} /></button>
+        <button class="icon" disabled={busy === i.invite_id} title={$t('chan_invite_decline')} aria-label={$t('chan_invite_decline')} onclick={() => answer(i, false)}><Icon name="x" size={18} /></button>
       </div>
     {/each}
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
@@ -65,7 +60,7 @@
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  .icon:hover { color: var(--text); background: var(--surface-3); }
   .invites.phone { padding-inline: var(--sp-3); }
-  /* A phone's invitation is the common row (base.css .list-row, 64) with the avatar of 48, on its tint. */
-  .invites.phone .invite { gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); background: var(--accent-tint); }
 </style>

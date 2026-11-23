@@ -175,7 +175,7 @@
     {#if picked.length}
       <div class="picked">
         {#each picked as c (c.id)}
-          <button class="pick" disabled={busy} onclick={() => toggle(c)} title={$t('msg_fwd_remove', { name: c.title })} aria-label={$t('msg_fwd_remove', { name: c.title })}>
+          <button class="chip" disabled={busy} onclick={() => toggle(c)} title={$t('msg_fwd_remove', { name: c.title })} aria-label={$t('msg_fwd_remove', { name: c.title })}>
             <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={32} />
             <span class="chip-x" aria-hidden="true"><Icon name="x" size={9} /></span>
           </button>
@@ -222,7 +222,7 @@
   .tick.on { background: var(--accent); border-color: var(--accent); }
   /* The chosen chats: their faces in a strip, a tap takes one out. */
   .picked { display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
-  .pick { position: relative; flex-shrink: 0; padding: 0; border: none; background: none; cursor: pointer; border-radius: 50%; }
+  .chip { position: relative; flex-shrink: 0; padding: 0; border: none; background: none; cursor: pointer; border-radius: 50%; }
   .chip-x {
     position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center; background: var(--text-2); color: var(--surface); border: 2px solid var(--surface);
@@ -232,7 +232,7 @@
   .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: var(--lh-snug); }
   .toggle:disabled { opacity: 0.45; cursor: default; }
   .hint { margin: 0; line-height: var(--lh-snug); }
-  .send { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-1-5); }
+  .send { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .send :global(svg) { flex-shrink: 0; }
   .spin { display: inline-flex; animation: spin 1.1s linear infinite; }
   @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

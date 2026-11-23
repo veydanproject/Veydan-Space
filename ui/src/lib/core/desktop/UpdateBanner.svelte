@@ -30,21 +30,21 @@
     {:else}
       <span class="banner-text">{$t('update_banner_available', { version: updaterStore.version })}</span>
       {#if updaterStore.supported}
-        <button class="btn btn-sm btn-primary" onclick={() => updaterStore.install()}>
+        <button class="banner-btn primary" onclick={() => updaterStore.install()}>
           {$t('update_banner_install')}
         </button>
       {:else}
-        <button class="btn btn-sm btn-primary" onclick={() => api.system.openUrl(RELEASES_URL)}>
+        <button class="banner-btn primary" onclick={() => api.system.openUrl(RELEASES_URL)}>
           {$t('settings_update_open_releases')}
         </button>
       {/if}
-      <button class="btn btn-sm btn-ghost" onclick={() => updaterStore.dismiss()}>
+      <button class="banner-btn" onclick={() => updaterStore.dismiss()}>
         {$t('common_later')}
       </button>
     {/if}
     {#if updaterStore.status === 'available'}
-      <button class="icon-btn banner-close" onclick={() => updaterStore.dismiss()} title={$t('common_later')} aria-label={$t('common_later')}>
-        <Icon name="x" size={18} />
+      <button class="banner-close" onclick={() => updaterStore.dismiss()} title={$t('common_later')}>
+        <Icon name="x" size={13} />
       </button>
     {/if}
   </div>
@@ -54,12 +54,12 @@
   .update-banner {
     display: flex;
     align-items: center;
-    gap: var(--sp-2-5);
-    padding: var(--sp-1-5) var(--sp-4);
+    gap: 10px;
+    padding: 6px 16px;
     background: var(--accent-bg);
     border-bottom: 1px solid var(--accent-border);
     color: var(--accent-text);
-    font-size: var(--fs-sm);
+    font-size: var(--fs-sm, 12.5px);
     flex-shrink: 0;
   }
 
@@ -67,8 +67,49 @@
     flex: 0 1 auto;
   }
 
-  /* The common icon button (32), at the end of the row. */
+  .banner-btn {
+    appearance: none;
+    border: 1px solid var(--accent-tint-border);
+    background: transparent;
+    color: var(--accent-text);
+    border-radius: var(--radius-sm);
+    padding: 2px 10px;
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .banner-btn:hover {
+    background: var(--accent-tint);
+    border-color: var(--accent-border);
+  }
+
+  .banner-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .banner-btn.primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
   .banner-close {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--accent-text);
+    cursor: pointer;
     margin-left: auto;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    opacity: 0.7;
+  }
+
+  .banner-close:hover {
+    opacity: 1;
   }
 </style>

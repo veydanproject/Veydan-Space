@@ -12,7 +12,7 @@
   import { t } from '$lib/core/i18n';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import { messengerStore } from '../store.svelte';
-  import { netDot, netState as netStateOf } from '../shared/net-state';
+  import { netState as netStateOf } from '../shared/net-state';
   import { markPhone } from '../shared/phone';
   import CallHistory from '../calls/CallHistory.svelte';
   import CallDetails from '../calls/CallDetails.svelte';
@@ -48,7 +48,7 @@
 </script>
 
 {#snippet lead()}
-  <span class="status-dot {netDot(netState)}" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}></span>
+  <span class="net {netState}" title={$t(`msg_net_${netState}` as 'msg_net_on', { connected: String(connected), total: String(total) })}></span>
 {/snippet}
 
 {#snippet actions()}
@@ -70,6 +70,11 @@
 
 <style>
   .calls { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: var(--sp-2); }
-  /* The list scrolls its last row out from under the «+» (.m-fab). */
-  .calls :global(.list-wrap) { padding-bottom: var(--fab-room); }
+  .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
+  .net.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+  .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
+  .net.lost { background: var(--danger); }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  /* The shared «+» (.m-fab), in the corner of this frame rather than over the bottom bar. */
+  .m-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); --hit-r: var(--sp-4); }
 </style>

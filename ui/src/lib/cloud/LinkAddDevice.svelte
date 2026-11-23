@@ -8,7 +8,6 @@
   import Icon from '$lib/core/Icon.svelte';
   import { isMobile } from '$lib/core/platform';
   import { appLock } from '$lib/core/lock/store.svelte';
-  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import { linkErrorKey, OldDeviceLink } from '$lib/cloud/link.svelte';
   import Actions from '$lib/cloud/Actions.svelte';
   import QrScanner from '$lib/core/ui/QrScanner.svelte';
@@ -94,7 +93,10 @@
     </div>
     <WordChips words={link.target.fingerprint} large />
     {#if needsPassword}
-      <LockSecretInput id="cloud-link-password" label={$t('cloud_link_password')} bind:value={password} disabled={link.phase === 'sending'} />
+      <div class="form-group">
+        <label for="cloud-link-password">{$t('cloud_link_password')}</label>
+        <input id="cloud-link-password" type="password" bind:value={password} autocomplete="current-password" disabled={link.phase === 'sending'} />
+      </div>
     {/if}
     {#if errorText}<div class="error-msg" role="alert">{errorText}</div>{/if}
     <Actions>
@@ -111,7 +113,7 @@
       <p class="text">{$t('cloud_link_add_hint')}</p>
     </div>
     {#if isMobile}
-      <button class="btn btn-primary wide" type="button" disabled={link.phase === 'resolving'} onclick={() => (scanning = true)}>
+      <button class="m-btn-grad" type="button" disabled={link.phase === 'resolving'} onclick={() => (scanning = true)}>
         <Icon name="scan" size={18} />{$t('cloud_link_scan')}
       </button>
       <div class="or"><span>{$t('cloud_or')}</span></div>

@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "Kamera tidak tersedia. Izinkan akses kamera di setelan sistem, atau tambahkan kode melalui tautannya.",
     "pwgen_history_off_hint": "Kata sandi baru tidak disimpan.",
     "pwgen_history_off_kept": "Kata sandi yang disimpan sebelumnya tetap ada di perangkat ini: {n}.",
-    "pwgen_history_empty_hint": "Kata sandi yang Anda buat muncul di sini. Ketuk salah satunya untuk menyalin.",
-    "pw_locked_notice": "Kata sandi terkunci. Buka kunci untuk membuat perubahan."
+    "pwgen_history_empty_hint": "Kata sandi yang Anda buat muncul di sini. Ketuk salah satunya untuk menyalin."
   }
 }

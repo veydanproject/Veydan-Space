@@ -145,14 +145,14 @@
   {#if notice}<Notice tone="warn" role="status">{notice}</Notice>{/if}
 
   {#if loading && !view}
-    <p class="wait"><Icon name="loader" size={16} /></p>
+    <p class="empty"><Icon name="loader" size={16} /></p>
   {:else if !view}
-    <p class="empty-state sm">{$t('common_nothing_found')}</p>
+    <p class="empty">{$t('common_nothing_found')}</p>
   {:else}
     <div class="bulk">
-      <button type="button" class="chip" class:active={allChosen('ours')} disabled={busy} onclick={() => chooseAll('ours')}>{$t('note_sync_conflict_accept_local')}</button>
-      <button type="button" class="chip" class:active={allChosen('both')} disabled={busy} onclick={() => chooseAll('both')}>{$t('note_sync_conflict_accept_both')}</button>
-      <button type="button" class="chip" class:active={allChosen('theirs')} disabled={busy} onclick={() => chooseAll('theirs')}>{$t('note_sync_conflict_accept_remote')}</button>
+      <button type="button" class="m-chip" class:active={allChosen('ours')} disabled={busy} onclick={() => chooseAll('ours')}>{$t('note_sync_conflict_accept_local')}</button>
+      <button type="button" class="m-chip" class:active={allChosen('both')} disabled={busy} onclick={() => chooseAll('both')}>{$t('note_sync_conflict_accept_both')}</button>
+      <button type="button" class="m-chip" class:active={allChosen('theirs')} disabled={busy} onclick={() => chooseAll('theirs')}>{$t('note_sync_conflict_accept_remote')}</button>
       {#if left > 0}
         <span class="left">{$t('note_sync_conflict_unresolved', { n: String(left) })}</span>
       {/if}
@@ -179,7 +179,7 @@
 </BottomSheet>
 
 <style>
-  .wait { color: var(--text-3); text-align: center; padding: var(--sp-6) 0; }
+  .empty { color: var(--text-3); text-align: center; padding: var(--sp-6) 0; }
   .bulk { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .left { margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); }
   .blocks {

@@ -63,7 +63,7 @@
     {#if gi > 0}<span class="tb-sep"></span>{/if}
     {#each group as item (item.action)}
       <button
-        class="icon-btn"
+        class="tb-btn"
         class:tb-h={item.action.startsWith('h')}
         title={title(item)}
         {disabled}
@@ -80,7 +80,7 @@
   {/each}
   <span class="tb-sep"></span>
   <button
-    class="icon-btn"
+    class="tb-btn"
     class:active={findOpen}
     title="{$t('note_find_title')} (Ctrl+F)"
     onmousedown={(e) => e.preventDefault()}
@@ -110,14 +110,32 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: var(--sp-0-5);
-    padding: var(--sp-1) var(--sp-2);
+    gap: 0.1rem;
+    padding: 0.3rem var(--sp-2);
     border-bottom: 1px solid var(--pane-border);
     background: transparent;
     flex-shrink: 0;
     flex-wrap: wrap;
   }
-  .icon-btn.active { color: var(--accent-text); background: var(--accent-bg); }
+  .tb-btn {
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.4rem;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+    line-height: var(--lh-icon);
+    transition: background 0.12s, color 0.12s;
+    min-width: 1.8rem;
+    height: 1.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .tb-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+  .tb-btn:disabled { opacity: 0.45; cursor: default; }
+  .tb-btn.active { color: var(--accent-text); background: var(--accent-bg); }
   .tb-h-label {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
@@ -127,7 +145,7 @@
     width: 1px;
     height: 1.1rem;
     background: var(--border);
-    margin: 0 var(--sp-1);
+    margin: 0 0.2rem;
     flex-shrink: 0;
   }
 
@@ -142,7 +160,7 @@
   .tb-mode-toggle {
     background: none;
     border: none;
-    padding: var(--sp-1) var(--sp-2);
+    padding: 0.2rem 0.5rem;
     color: var(--text-2);
     cursor: pointer;
     display: inline-flex;

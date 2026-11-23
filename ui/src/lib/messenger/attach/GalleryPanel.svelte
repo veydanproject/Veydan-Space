@@ -228,28 +228,28 @@
     type="button" class="pick-circle" class:on={n > 0}
     role="checkbox" aria-checked={n > 0} aria-label={n ? $t('msg_attach_chosen', { n: String(n) }) : $t('msg_attach_choose')}
     onclick={(e) => { e.stopPropagation(); toggle(item); }}
-  ><span class="disc">{#if n}{n}{/if}</span></button>
+  >{#if n}{n}{/if}</button>
 {/snippet}
 
 {#snippet addBar()}
   <div class="add-bar">
-    <button type="button" class="btn btn-primary add" onclick={add}>{$t('msg_attach_add', { n: String(model.chosen.length) })}</button>
+    <button type="button" class="m-btn-grad add" onclick={add}>{$t('msg_attach_add', { n: String(model.chosen.length) })}</button>
   </div>
 {/snippet}
 
 {#if !caps.grid || access === 'denied'}
   <!-- No grid: the source has none, or the user gave no access. -->
   <div class="empty-state gallery">
-    <div class="empty-icon"><Icon name="image" size={22} /></div>
+    <div class="empty-icon tile"><Icon name="image" size={28} /></div>
     {#if caps.grid}
       <p>{$t('msg_attach_no_access')}</p>
       <span>{$t('msg_attach_no_access_hint')}</span>
-      <button type="button" class="btn btn-primary wide pick" onclick={allow}>{$t('msg_attach_allow')}</button>
+      <button type="button" class="m-btn-grad pick" onclick={allow}>{$t('msg_attach_allow')}</button>
       <button type="button" class="m-link" onclick={pickSystem}>{$t('msg_attach_system_gallery')}</button>
     {:else}
       <p>{$t('msg_attach_photos_videos')}</p>
       <span>{$t('msg_attach_gallery_hint')}</span>
-      <button type="button" class="btn btn-primary wide pick" onclick={pickSystem}>{$t('msg_attach_pick_media')}</button>
+      <button type="button" class="m-btn-grad pick" onclick={pickSystem}>{$t('msg_attach_pick_media')}</button>
     {/if}
     {#if caps.capture}
       <span class="cams">
@@ -304,11 +304,11 @@
         {/each}
       </div>
       {#if model.done && !model.items.length}
-        <div class="empty-state"><span class="empty-icon" aria-hidden="true"><Icon name="image" size={22} /></span><p>{$t('msg_attach_gallery_empty')}</p></div>
+        <div class="empty-state none"><span>{$t('msg_attach_gallery_empty')}</span></div>
       {/if}
       {#if model.failed}
-        <div class="empty-state">
-          <div class="empty-icon"><Icon name="alert-triangle" size={22} /></div>
+        <div class="empty-state none">
+          <div class="empty-icon"><Icon name="alert-triangle" size={24} /></div>
           <span>{$t('msg_attach_gallery_failed')}</span>
           <button type="button" class="btn btn-ghost btn-sm" onclick={() => model.more()}><Icon name="arrow-forward-up" size={16} />{$t('common_retry')}</button>
         </div>
@@ -320,7 +320,7 @@
       <div class="viewer" role="dialog" aria-label={item.kind === 'video' ? $t('msg_attach_video_item', { d: durationLabel(item.duration) }) : $t('msg_attach_photo_item')}>
         {#if viewer.url}<img src={viewer.url} alt="" draggable="false" onerror={() => viewer.failed()} />{/if}
         {#if item.kind === 'video'}<span class="play"><Icon name="play" size={28} /></span><span class="dur big">{durationLabel(item.duration)}</span>{/if}
-        <button type="button" class="icon-btn back" onclick={() => viewer.close()} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+        <button type="button" class="m-ibtn back" onclick={() => viewer.close()} aria-label={$t('common_back')}><Icon name="chevron-left" size={20} /></button>
         {@render circle(item)}
       </div>
     {/if}
@@ -328,13 +328,13 @@
     {#if choosingAlbum}
       <div class="albums" role="listbox" aria-label={$t('msg_attach_albums')}>
         <div class="m-list">
-          <button type="button" class="list-row dense" role="option" aria-selected={!model.album} onclick={() => chooseAlbum(undefined)}>
-            <span class="list-row-label">{$t('msg_attach_all_media')}</span>
+          <button type="button" class="m-row" role="option" aria-selected={!model.album} onclick={() => chooseAlbum(undefined)}>
+            <span class="m-row-label">{$t('msg_attach_all_media')}</span>
             {#if !model.album}<Icon name="check" size={18} />{/if}
           </button>
           {#each albums ?? [] as a (a.id)}
-            <button type="button" class="list-row dense" role="option" aria-selected={model.album === a.id} onclick={() => chooseAlbum(a.id)}>
-              <span class="list-row-label">{a.title}</span><span class="count-pill lg quiet">{a.count}</span>
+            <button type="button" class="m-row" role="option" aria-selected={model.album === a.id} onclick={() => chooseAlbum(a.id)}>
+              <span class="m-row-label">{a.title}</span><span class="count">{a.count}</span>
               {#if model.album === a.id}<Icon name="check" size={18} />{/if}
             </button>
           {/each}
@@ -345,8 +345,9 @@
 {/if}
 
 <style>
-  .gallery { flex: 1; }
+  .gallery { flex: 1; padding: var(--sp-4) 0; }
   .tile.chosen img { transform: scale(0.92); }
+  .empty-icon.tile { background: var(--accent-tint); color: var(--accent-text); }
   .pick { margin-top: var(--sp-2); }
   .cams { display: flex; gap: var(--sp-2); }
   .note { color: var(--text-2); font-size: var(--fs-xs); text-align: center; padding: var(--sp-1) 0; }
@@ -376,20 +377,15 @@
     position: absolute; left: var(--sp-1); bottom: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--radius-xs);
     background: var(--media-scrim); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-base);
   }
-  /* The button is an icon button's 40 (its zone 44, mobile.css), the circle of 26 in its middle stands where it stood
-     (--sp-1 from the tile's corner). */
   .pick-circle {
-    --c: var(--media-check); --at: var(--sp-1);
-    position: absolute; top: calc(var(--at) + (var(--c) - 40px) / 2); right: calc(var(--at) + (var(--c) - 40px) / 2);
-    width: 40px; height: 40px; padding: 0; border: 0; background: none; color: #fff;
-    display: inline-flex; align-items: center; justify-content: center;
-  }
-  .disc {
-    width: var(--c); height: var(--c); border-radius: var(--radius-pill); border: 2px solid #fff; background: var(--media-scrim-soft);
+    position: absolute; top: var(--sp-1); right: var(--sp-1); width: var(--media-check); height: var(--media-check); padding: 0;
+    border-radius: var(--radius-pill); border: 2px solid #fff; background: var(--media-scrim-soft); color: #fff;
     font-size: var(--fs-xs); font-weight: var(--fw-bold); display: inline-flex; align-items: center; justify-content: center;
     box-shadow: var(--media-ring);
   }
-  .pick-circle.on .disc { background: var(--accent); border-color: var(--accent); }
+  .pick-circle.on { background: var(--accent); border-color: var(--accent); }
+  /* A larger place to hit than to see. */
+  .pick-circle::before { content: ''; position: absolute; inset: calc(-1 * var(--sp-2)); }
 
   /* What the camera sees under two halves, a photo and a video; the stub when the camera is not allowed. */
   .camera { position: relative; width: 100%; height: 100%; border-radius: var(--radius-xs); overflow: hidden; background: var(--surface-2); color: var(--text-2); }
@@ -408,18 +404,13 @@
   }
   .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .viewer .back { position: absolute; top: var(--sp-2); left: var(--sp-2); background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); }
-  .viewer .pick-circle { --c: var(--media-check-lg); --at: var(--sp-3); }
+  .viewer .pick-circle { top: var(--sp-3); right: var(--sp-3); width: var(--media-check-lg); height: var(--media-check-lg); }
   .play { position: absolute; color: #fff; filter: var(--media-icon-shadow); }
   .dur.big { left: var(--sp-3); bottom: var(--sp-3); font-size: var(--fs-xs); }
 
-  /* Its rows are the list's own (a title, a count, a check); its frame, ground and shadow are a menu's (ContextMenu). */
-  .albums {
-    position: absolute; inset: var(--control-h) 0 0; z-index: var(--z-popover); overflow-y: auto; padding: var(--sp-1);
-    background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
-  }
+  .albums { position: absolute; inset: var(--control-h) 0 0; z-index: var(--z-panel); overflow-y: auto; background: var(--m-sheet); border-radius: var(--radius-md); }
+  .none { padding: var(--sp-6) 0; }
 
   .add-bar { display: flex; align-items: center; width: 100%; min-width: 0; }
-  .add { flex: 1 0 auto; }
+  .add { flex: 1 0 auto; width: auto; min-height: var(--control-h-lg); padding: 0 var(--sp-4); }
 </style>

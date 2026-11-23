@@ -2,7 +2,6 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import Icon from '$lib/core/Icon.svelte';
   import { inspectorApp } from './inspector.svelte';
   import type { GridSize, ZoomLevel } from './inspector.svelte';
   import { t } from '$lib/core/i18n';
@@ -171,7 +170,7 @@
   <div class="sep"></div>
 
   <!-- Close -->
-  <button class="icon-btn close-btn" onclick={() => inspectorApp.toggle()} title="Close inspector"><Icon name="x" size={18} /></button>
+  <button class="close-btn" onclick={() => inspectorApp.toggle()} title="Close inspector">✕</button>
 </div>
 
 <style>
@@ -184,8 +183,8 @@
     height: var(--bar-h);
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding: 0 var(--sp-2);
+    gap: 0.25rem;
+    padding: 0 0.5rem;
     background: rgba(15, 23, 42, 0.94);
     border-bottom: 1px solid rgba(99, 102, 241, 0.3);
     backdrop-filter: blur(6px);
@@ -211,7 +210,7 @@
     height: 18px;
     background: rgba(99, 102, 241, 0.25);
     flex-shrink: 0;
-    margin: 0 var(--sp-0-5);
+    margin: 0 0.1rem;
   }
 
   .viewport-size {
@@ -226,20 +225,19 @@
     gap: 1px;
   }
 
-  /* The bar's own buttons; the close is the common .icon-btn. */
-  button:not(.icon-btn) {
+  button {
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius-xs);
     color: #94a3b8;
-    padding: var(--sp-0-5) var(--sp-1-5);
+    padding: 0.15rem 0.4rem;
     cursor: pointer;
     font-size: var(--fs-xs);
     white-space: nowrap;
     transition: all 0.1s;
   }
 
-  button:not(.icon-btn):hover {
+  button:hover {
     background: rgba(99, 102, 241, 0.15);
     color: #e2e8f0;
   }
@@ -256,7 +254,8 @@
     flex-shrink: 0;
   }
 
-  .close-btn:hover:not(:disabled) {
+  .close-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
     color: #fca5a5;
   }
 
@@ -268,7 +267,7 @@
     border-radius: var(--radius-xs);
     color: #e2e8f0;
     font-size: var(--fs-xs);
-    padding: var(--sp-0-5) var(--sp-1-5);
+    padding: 0.15rem 0.35rem;
     width: 120px;
   }
 

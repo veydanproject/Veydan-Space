@@ -108,7 +108,7 @@
   .row { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
   .time { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); }
   .rate {
-    height: 18px; padding: 0 var(--sp-1-5); border: none; border-radius: var(--radius-pill); background: var(--surface-hover);
+    height: 18px; padding: 0 6px; border: none; border-radius: var(--radius-pill); background: var(--surface-hover);
     color: var(--text-2); font: inherit; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold); cursor: pointer;
   }
   @media (pointer: coarse) { .play { width: 44px; height: 44px; } }

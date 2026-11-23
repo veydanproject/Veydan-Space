@@ -206,6 +206,7 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .section-label { color: var(--text-3); font-size: var(--fs-xs); }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .row {
     display: flex; align-items: center; gap: var(--sp-2);

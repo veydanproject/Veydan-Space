@@ -27,10 +27,8 @@
   interface Props {
     /** Leaves the screen; the call goes on. */
     onleave: () => void;
-    /** «Открыть чат»: leaves the screen for the group's chat; the room goes on. */
-    onchat?: () => void;
   }
-  let { onleave, onchat }: Props = $props();
+  let { onleave }: Props = $props();
 
   const tr = (key: string, params?: Record<string, string>) => $t(key as 'msg_title', params);
 
@@ -49,8 +47,8 @@
   const speaker = $derived(groupCallStore.routes?.current === 'speaker');
   const hasSpeaker = $derived(!!groupCallStore.routes?.available.includes('speaker'));
   const cameraOn = $derived(!!call?.video_local && !groupCallStore.screen);
-  /** How many buttons stand in the row: four close up, five shrink on a narrow phone (as on the screen of a call of two). */
-  const buttons = $derived(3 + (cameraOn ? 1 : 0) + (hasSpeaker ? 1 : 0));
+  /** Four buttons and more do not fit a narrow phone at full size (as on the screen of a call of two). */
+  const many = $derived(3 + (cameraOn ? 1 : 0) + (hasSpeaker ? 1 : 0) >= 4);
 
   // Once the sound is the room's (the phone's shell starts with the room's
   // first word), the phone is asked where it can go; once per room.
@@ -75,7 +73,6 @@
         <span class="name">{name}</span>
         <span class="sub"><span class:clock={call?.phase === 'in_room'}>{status}</span>{#if count}<span>· {count}</span>{/if}</span>
       </span>
-      {#if onchat}<button class="icon-btn" onclick={onchat} aria-label={$t('msg_call_open_chat')}><Icon name="message-circle" size={22} /></button>{/if}
       {#if call}
         <button class="round-btn" class:lit={roster} onclick={() => (roster = !roster)} aria-label={$t('msg_gcall_roster')} aria-pressed={roster}>
           <Icon name="users" size={20} />
@@ -84,9 +81,9 @@
     </header>
     {#if call}
       <div class="chips">
-        {#if path}<span class="call-chip" class:moving><Icon name="server" size={11} />{path}</span>{/if}
-        <span class="call-chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
-        {#if call.muted}<span class="call-chip warn"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
+        {#if path}<span class="chip" class:moving><Icon name="server" size={11} />{path}</span>{/if}
+        <span class="chip quiet"><Icon name="lock-check" size={11} />{$t('msg_call_e2e')}</span>
+        {#if call.muted}<span class="chip warn"><Icon name="mic-off" size={11} />{$t('msg_call_muted')}</span>{/if}
       </div>
     {/if}
 
@@ -104,7 +101,7 @@
     {#if error}<p class="error error-msg">{error}</p>{/if}
 
     {#if call}
-      <div class="controls" class:many={buttons >= 4} class:crowd={buttons >= 5}>
+      <div class="controls" class:many>
         <div class="action">
           <button class="round soft" class:on={call.muted} disabled={groupCallStore.busy} onclick={() => groupCallStore.toggleMute()}
             aria-pressed={call.muted} aria-label={$t(call.muted ? 'msg_call_unmute' : 'msg_call_mute')}>
@@ -154,68 +151,60 @@
 
 <style>
   .screen {
-    position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-1-5);
+    position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px;
     padding: calc(var(--sat, 0px) + 4px) 0 calc(var(--sab, 0px) + var(--sp-5));
     background: var(--call-bg); color: #fff;
   }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .top { display: flex; align-items: center; gap: var(--sp-1-5); min-height: 48px; padding: 0 8px; }
+  .top { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 0 8px; }
   .round-btn {
     border: none; background: none; color: inherit; width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
-  .round-btn.lit { background: var(--on-media-bg-hover); }
-  /* «Открыть чат»: the common .icon-btn (40, zone 44) in the light of the screen, as on the screen of a call of two. */
-  .top .icon-btn { color: var(--on-media-text); }
-  .top .icon-btn:hover:not(:disabled), .top .icon-btn:active:not(:disabled) { background: var(--on-media-bg-hover); color: #fff; }
+  .round-btn.lit { background: rgba(255, 255, 255, 0.16); }
   .title { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: var(--lh-tight); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-extrabold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sub { display: flex; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--on-media-text-2); white-space: nowrap; }
+  .sub { display: flex; gap: 5px; font-size: var(--fs-xs); color: rgba(255, 255, 255, 0.72); white-space: nowrap; }
   .clock { font-variant-numeric: tabular-nums; color: var(--call-ok); font-weight: var(--fw-semibold); }
-  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-1-5); padding: 0 16px; }
-  .call-chip {
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px; }
+  .chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--radius-pill);
-    background: var(--on-media-bg); color: var(--on-media-text); font-size: var(--fs-xs); white-space: nowrap;
+    background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.85); font-size: var(--fs-xs); white-space: nowrap;
   }
-  .call-chip.quiet { color: var(--on-media-text-2); }
-  .call-chip.warn { background: var(--warn-bg); color: var(--warn-text); }
-  .call-chip.moving { opacity: 0.55; }
+  .chip.quiet { color: rgba(255, 255, 255, 0.65); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .chip.moving { opacity: 0.55; }
   .moving-note {
     position: absolute; z-index: 5; left: 16px; right: 16px; top: 8px; margin: 0 auto; max-width: 420px;
-    display: flex; align-items: center; gap: 12px; padding: var(--sp-2-5) var(--sp-3); border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
-    background: var(--call-glass); border: 1px solid var(--on-media-border); color: var(--on-media-text); box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-sm); line-height: var(--lh-snug);
+    background: var(--call-glass); border: 1px solid rgba(255, 255, 255, 0.14); color: rgba(255, 255, 255, 0.8); box-shadow: var(--shadow);
   }
   .moving-note b { display: block; color: #fff; font-weight: var(--fw-semibold); }
   .spin { width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); border-top-color: #fff; animation: spin 900ms linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .stage { position: relative; flex: 1; min-height: 0; }
-  .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: var(--on-media-text); }
+  .over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: var(--fs-md); color: rgba(255, 255, 255, 0.85); }
   .error {
-    align-self: center; margin: 0 16px; padding: var(--sp-1-5) var(--sp-3); border-radius: var(--radius-md); text-align: center;
+    align-self: center; margin: 0 16px; padding: 6px 12px; border-radius: var(--radius-md); text-align: center;
     background: var(--danger-bg); border: 1px solid var(--danger-border);
   }
   .controls { display: flex; justify-content: center; gap: clamp(18px, 7vw, 64px); padding-top: 8px; }
-  .controls.many { gap: clamp(var(--sp-1-5), 2.5vw, var(--sp-6)); }
-  .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--on-media-text); }
-  .many .action { font-size: var(--fs-xs); width: 72px; text-align: center; }
-  /* 72, as on the screen of a call of two (design 15). */
+  .controls.many { gap: clamp(6px, 2.5vw, 22px); }
+  .action { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: rgba(255, 255, 255, 0.88); }
+  .many .action { font-size: var(--fs-xs); width: 62px; text-align: center; }
   .round {
-    width: 72px; height: 72px; border-radius: 50%; border: none; cursor: pointer; color: #fff;
+    width: 66px; height: 66px; border-radius: 50%; border: none; cursor: pointer; color: #fff;
     display: inline-flex; align-items: center; justify-content: center;
     transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
   }
-  /* Five of 72 do not fit a phone of 390: there they shrink, as on the screen of a call of two. */
-  @media (max-width: 420px) {
-    .crowd .action { width: 62px; }
-    .crowd .round { width: 58px; height: 58px; }
-  }
+  .many .round { width: 58px; height: 58px; }
   .round:active:not(:disabled) { transform: scale(0.94); }
   .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
-  .soft { background: var(--on-media-bg-hover); border: 1px solid rgba(255, 255, 255, 0.22); }
+  .soft { background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.22); }
   .soft.on { background: #fff; color: #111; }
   .soft.lit { background: color-mix(in srgb, var(--accent) 55%, rgba(0, 0, 0, 0.3)); border-color: transparent; }
-  .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: var(--on-media-scrim); cursor: pointer; }
+  .scrim { position: absolute; inset: 0; z-index: 10; border: none; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
   .sheet {
     position: absolute; z-index: 11; left: 0; right: 0; bottom: 0; max-height: 70%; display: flex; flex-direction: column;
     padding-bottom: calc(var(--sab, 0px) + 8px); border-radius: var(--radius-card) var(--radius-card) 0 0; background: var(--glass-bg); color: var(--text);

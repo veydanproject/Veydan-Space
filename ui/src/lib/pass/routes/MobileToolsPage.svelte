@@ -91,7 +91,7 @@
 <div class="m-page">
   <div class="m-header">
     {#if hasHome()}
-      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{$t('tools_generator')}</h1>
   </div>
@@ -99,8 +99,8 @@
   <div class="m-body">
   <div class="output m-card" class:empty={!password}>
     <span class="pw mono">{password || $t('pwgen_placeholder')}</span>
-    <button class="icon-btn" disabled={!password} onclick={() => copyText(password)} aria-label={$t('common_copy')}>
-      <Icon name="copy" size={22} />
+    <button class="m-ibtn" disabled={!password} onclick={() => copyText(password)} aria-label={$t('common_copy')}>
+      <Icon name="copy" size={20} />
     </button>
   </div>
 
@@ -109,32 +109,32 @@
   {/if}
 
   <div class="m-list">
-    <div class="list-row dense still length">
-      <span class="list-row-label">{$t('pwgen_length_label', { n: String($pwSettings.length) })}</span>
+    <div class="m-row length">
+      <span class="m-row-label">{$t('pwgen_length_label', { n: String($pwSettings.length) })}</span>
       <input type="range" min="8" max="64" bind:value={$pwSettings.length} />
     </div>
     {#each flags as f (f.key)}
-      <button class="list-row dense" onclick={() => toggle(f.key)}>
-        <span class="list-row-label">{$t(f.label)}</span>
+      <button class="m-row" onclick={() => toggle(f.key)}>
+        <span class="m-row-label">{$t(f.label)}</span>
         <span class="toggle" class:on={$pwSettings[f.key]}></span>
       </button>
     {/each}
   </div>
 
-  <button class="btn btn-primary wide generate" onclick={generate}>
+  <button class="m-btn-grad generate" onclick={generate}>
     <Icon name="refresh-cw" size={18} />
     {$t('pwgen_btn_generate')}
   </button>
 
   <div class="m-list history-settings">
-    <button class="list-row dense" role="switch" aria-checked={$pwSettings.historyEnabled} onclick={toggleHistory}>
-      <span class="list-row-label">{$t('pwgen_save_history')}</span>
+    <button class="m-row" role="switch" aria-checked={$pwSettings.historyEnabled} onclick={toggleHistory}>
+      <span class="m-row-label">{$t('pwgen_save_history')}</span>
       <span class="toggle" class:on={$pwSettings.historyEnabled}></span>
     </button>
     {#if $pwSettings.historyEnabled}
-      <button class="list-row dense" onclick={() => (limitOpen = true)}>
-        <span class="list-row-label">{$t('pwgen_limit_label')}</span>
-        <span class="list-row-value">{limitLabel}</span>
+      <button class="m-row" onclick={() => (limitOpen = true)}>
+        <span class="m-row-label">{$t('pwgen_limit_label')}</span>
+        <span class="m-row-value">{limitLabel}</span>
         <span class="chev"><Icon name="chevron-right" size={16} /></span>
       </button>
     {/if}
@@ -158,7 +158,7 @@
 
   {#if $pwSettings.historyEnabled && pwgenHistory.loaded}
     <div class="history-head">
-      <span class="section-label">{$t('pwgen_history_title', { n: String(history.length) })}</span>
+      <span class="m-section">{$t('pwgen_history_title', { n: String(history.length) })}</span>
       {#if history.length > 0}
         <button class="m-link danger" onclick={clearHistory}>
           <Icon name="trash-2" size={16} />
@@ -168,8 +168,8 @@
     </div>
     {#if history.length === 0}
       <div class="m-card">
-        <div class="empty-state">
-          <span class="empty-icon"><Icon name="clock" size={22} /></span>
+        <div class="m-empty">
+          <Icon name="clock" size={40} />
           <p>{$t('pwgen_history_empty')}</p>
           <span>{$t('pwgen_history_empty_hint')}</span>
         </div>
@@ -178,15 +178,15 @@
       <div class="m-list">
         {#each history as entry (entry.id)}
           {@const shown = revealed.has(entry.id)}
-          <div class="list-row dense still entry">
+          <div class="m-row entry">
             <button class="entry-copy" onclick={() => copyText(entry.password)} aria-label={$t('common_copy')}>
               <span class="entry-pw mono" class:masked={!shown}>
                 {shown ? entry.password : '•'.repeat(Math.min(entry.password.length, 20))}
               </span>
               <span class="entry-date">{formatDateTime(entry.created_at, $locale)}</span>
             </button>
-            <button class="icon-btn" onclick={() => toggleReveal(entry.id)} aria-label={$t('pwgen_btn_show_hide')}>
-              <Icon name={shown ? 'eye-off' : 'eye'} size={22} />
+            <button class="m-ibtn" onclick={() => toggleReveal(entry.id)} aria-label={$t('pwgen_btn_show_hide')}>
+              <Icon name={shown ? 'eye-off' : 'eye'} size={20} />
             </button>
           </div>
         {/each}
@@ -211,7 +211,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    min-height: var(--row-h-tile);
+    min-height: 60px;
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
     margin-bottom: var(--sp-4);
   }
@@ -223,6 +223,7 @@
     user-select: text;
     -webkit-user-select: text;
   }
+  .m-ibtn:disabled { opacity: 0.45; }
   .generate { margin-top: var(--sp-5); }
   .length {
     flex-direction: column;
@@ -231,7 +232,7 @@
     padding-top: var(--sp-3);
     padding-bottom: var(--sp-3);
   }
-  .length .list-row-label { font-weight: var(--fw-semibold); }
+  .length .m-row-label { font-weight: var(--fw-semibold); }
   .length input[type='range'] {
     width: 100%;
     min-height: 0;
@@ -252,9 +253,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-2);
-    /* The space around its .section-label is the head's. */
-    padding: var(--sp-2) 0 var(--sp-2) var(--sp-1);
   }
+  .history-head .m-section { padding-top: var(--sp-2); }
   .m-link.danger { color: var(--danger-text); }
   .entry { padding: 0 var(--sp-2) 0 0; gap: 0; }
   .entry-copy {
@@ -263,9 +263,9 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--sp-0-5);
+    gap: 2px;
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-    min-height: var(--row-h-dense);
+    min-height: 52px;
     justify-content: center;
     border: 0;
     border-radius: 0;

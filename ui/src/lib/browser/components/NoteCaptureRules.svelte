@@ -76,8 +76,8 @@
 
 <div class="card rules">
   {#if loaded && rows.length === 0}
-    <div class="first">
-      <p class="empty-state sm">{$t('settings_capture_empty')}</p>
+    <div class="empty">
+      <p>{$t('settings_capture_empty')}</p>
       {@render add()}
     </div>
   {:else}
@@ -160,8 +160,8 @@
   .del { width: var(--control-h); height: var(--control-h); padding: 0; justify-content: center; color: var(--text-2); }
   .foot { margin-top: var(--sp-1); padding-top: var(--sp-2); border-top: 1px solid var(--divider); }
   .add { height: var(--control-h); display: inline-flex; align-items: center; gap: var(--sp-2); }
-  /* No rules: the small empty line, the add under it. */
-  .first { display: flex; flex-direction: column; align-items: center; padding: var(--sp-2) 0 var(--sp-3); }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-6) 0 var(--sp-3); }
+  .empty p { margin: 0; font-size: var(--fs-base); color: var(--text-2); }
 
   /* A narrow place (the four in one line would leave the domain under 160): the domain over the
      whole width with the delete on its right, then folder, tags and template, wrapping as they fit. */

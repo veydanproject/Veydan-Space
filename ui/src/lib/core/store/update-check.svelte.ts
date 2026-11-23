@@ -7,7 +7,6 @@
 // uses the updater store instead.
 
 import { api } from '$lib/core/api';
-import { distribution } from '$lib/core/store/distribution.svelte';
 import { formatError } from '$lib/core/utils';
 import type { UpdateCheck } from '$lib/core/types';
 
@@ -22,8 +21,6 @@ export class UpdateCheckStore {
   /** The version the product's latest.json offers. */
   latest = $state('');
   error = $state('');
-  /** «Позже»: the offer of the version is out of sight until the app starts again, as the banner of a computer. */
-  later = $state(false);
   private started = false;
 
   private readonly ask: Check;
@@ -53,8 +50,6 @@ export class UpdateCheckStore {
   /** The user's check: always asks the network, reports a failure. */
   async check() {
     if (this.status === 'checking') return;
-    // The person asks again: what it finds is offered again.
-    this.later = false;
     this.status = 'checking';
     this.error = '';
     try {
@@ -65,11 +60,6 @@ export class UpdateCheckStore {
       console.error('update check failed:', this.error);
       this.status = 'error';
     }
-  }
-
-  /** «Позже» of the update's row. */
-  postpone() {
-    this.later = true;
   }
 
   /** The release page of the new version, in the system browser. */
@@ -83,11 +73,6 @@ export class UpdateCheckStore {
 }
 
 export const updateCheck = new UpdateCheckStore();
-
-/** A new version is offered: the row of Settings and the mark of its tab (design 18). An app from a store is updated by the store. */
-export function updateOffered(): boolean {
-  return updateCheck.status === 'available' && !updateCheck.later && !distribution.fromStore;
-}
 
 /** Starts the check of the start a little after the app came up. */
 export function startUpdateCheck(delayMs = 5000): () => void {

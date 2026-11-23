@@ -50,7 +50,7 @@
   }: Props = $props();
 
   // On the phone a dialog is a bottom sheet, like every other choice there:
-  // the same title, body and footer, the footer the sheet's one foot (.page-foot).
+  // the same title, body and footer, the footer's buttons full-width.
   $effect(() => {
     if (!open || isMobile) return;
     acquireScrollLock();
@@ -72,10 +72,11 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<!-- The phone's footer goes to the sheet's own foot (mobile.css .page-foot), outside its scrolling body: the buttons stay in sight. -->
+<!-- The phone's footer goes to the sheet's own foot, outside its scrolling body: the buttons stay in sight. -->
+{#snippet sheetFooter()}<div class="sheet-actions">{@render footer?.()}</div>{/snippet}
 
 {#if isMobile}
-  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable} {titleAside} {expandable} {label} {footer}>
+  <BottomSheet open={!!open} title={header ? '' : (title ?? '')} onclose={close} {closable} {titleAside} {expandable} {label} footer={footer ? sheetFooter : undefined}>
     {#if header}<div class="sheet-header">{@render header()}</div>{/if}
     <div class="sheet-body" class:grow={expandable}>{@render children()}</div>
   </BottomSheet>
@@ -198,6 +199,16 @@
   .sheet-body.grow { flex: 1 0 auto; }
   /* A finger does not drag a resize corner: the field grows with its text. */
   .sheet-body :global(textarea) { resize: none; }
+  /* Stacked, the whole width, 48 high, the verb on top: the footer reads
+     «Отмена, verb» like the desktop's, the sheet turns it over (design kit). */
+  .sheet-actions { display: flex; flex-direction: column-reverse; gap: var(--sp-2); }
+  .sheet-actions :global(.btn) {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    font-size: var(--fs-base);
+  }
+
   .dialog-footer {
     display: flex;
     align-items: center;
@@ -207,7 +218,4 @@
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
-  /* The form's error stands over the buttons, the whole width (design 08; a phone's .page-foot does the same). */
-  .dialog-footer:has(> :global(.notice)) { flex-wrap: wrap; }
-  .dialog-footer > :global(.notice) { flex-basis: 100%; }
 </style>

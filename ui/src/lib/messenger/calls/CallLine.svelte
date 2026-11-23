@@ -100,7 +100,7 @@
 <style>
   .row { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: var(--sp-2) var(--sp-4); }
   .call {
-    display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%;
+    display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
     padding: 4px 12px 4px 4px; border-radius: var(--radius-pill);
     border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
     font: inherit; font-size: var(--fs-xs); line-height: var(--lh-snug); text-align: left;
@@ -127,5 +127,5 @@
     padding: 1px 8px; border-radius: var(--radius-pill); background: var(--success); color: #fff;
     font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
-  @media (pointer: coarse) { .call { padding-block: var(--sp-1-5); } }
+  @media (pointer: coarse) { .call { padding-block: 6px; } }
 </style>

@@ -10,7 +10,6 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { afterNavigate, goto } from '$app/navigation';
   import { t } from '$lib/core/i18n';
   import { leaveOnce } from '$lib/core/ui/back';
   import { messengerStore } from '../store.svelte';
@@ -44,18 +43,6 @@
   // nowhere goes to the chat instead, and the arrow stays alive.
   const leave = leaveOnce(() => (chatId ? chatHref(chatId) : BASE));
 
-  /** The page this one was come to from: the call's own chat is gone back to, not opened twice. */
-  let from = $state<string | null>(null);
-  afterNavigate((nav) => { from = nav.from ? nav.from.url.pathname + nav.from.url.search : null; });
-
-  /** «Открыть чат»: the chat takes this page's place in the history (the call goes on, «Вернуться к звонку» comes back
-      here); a back from the chat goes where the user was before the call, not to its page again. */
-  function openChat() {
-    if (!chatId) return;
-    if (from === chatHref(chatId)) void leave();
-    else void goto(chatHref(chatId), { replaceState: true });
-  }
-
   // Nothing to show any more: the ending was shown, or no call was ever here.
   $effect(() => {
     if (settled && !callStore.call && !callStore.ended) leave();
@@ -64,7 +51,7 @@
 
 {#if callStore.call || callStore.ended}
   <MobileFrame bare scroll={false}>
-    <CallScreen onleave={leave} onchat={chatId ? openChat : undefined} />
+    <CallScreen onleave={leave} />
   </MobileFrame>
 {:else}
   <MobileFrame title={$t('msg_title')} onback={leave}>

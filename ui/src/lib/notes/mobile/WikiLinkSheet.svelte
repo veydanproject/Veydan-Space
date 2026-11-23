@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import { api, type BindingSummary, type NoteListItem } from '$lib/notes/mobile/api';
   import { onKeyboard } from '$lib/core/mobile/keyboard';
   import { t } from '$lib/core/mobile/i18n';
@@ -95,53 +94,50 @@
 
 {#if open && !expanded}
   <div class="bar" style:bottom="{kb}px" style:padding-bottom="{kb > 0 ? '8px' : 'calc(8px + var(--sab))'}">
-    <div class="search-field fill">
-      <Icon name="search" size={16} />
-      <button type="button" class="search-link" onclick={() => (expanded = true)}>{query.trim() || $t('notes_link_search')}</button>
-    </div>
+    <button type="button" class="find" onclick={() => (expanded = true)}>
+      <span class="ico"><Icon name="search" size={18} /></span>
+      <span class="ph">{query.trim() || $t('notes_link_search')}</span>
+    </button>
   </div>
 {/if}
 
 <BottomSheet open={open && expanded} title={$t('notes_links')} onclose={close}>
-  <div class="search-field fill">
-    <Icon name="search" size={16} />
+  <div class="find sheet">
+    <span class="ico"><Icon name="search" size={18} /></span>
     <input
       type="search"
       bind:value={query}
       placeholder={$t('notes_link_search')}
       {@attach (el: HTMLInputElement) => { if (open && expanded) el.focus(); }}
     />
-    {#if query}
-      <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-    {/if}
   </div>
 
   <div class="m-list">
     {#if entityQuery}
       {#each entityHits as s (s.binding)}
-        <button type="button" class="list-row dense" onclick={() => onpick(s.binding, s.name)}>
+        <button type="button" class="m-row" onclick={() => onpick(s.binding, s.name)}>
           <Icon name={ICON[entityQuery.kind]} size={20} />
-          <span class="list-row-label">{s.name}{#if s.subtitle}<span class="muted"> · {s.subtitle}</span>{/if}</span>
+          <span class="m-row-label">{s.name}{#if s.subtitle}<span class="muted"> · {s.subtitle}</span>{/if}</span>
         </button>
       {/each}
       {#if entityHits.length === 0}
-        <div class="list-row dense still"><span class="list-row-label muted">{$t('common_nothing_found')}</span></div>
+        <div class="m-row"><span class="m-row-label muted">{$t('common_nothing_found')}</span></div>
       {/if}
     {:else}
       {#each matches as n (n.id)}
-        <button type="button" class="list-row dense" onclick={() => onpick(n.title)}>
+        <button type="button" class="m-row" onclick={() => onpick(n.title)}>
           <Icon name="notes" size={20} />
-          <span class="list-row-label">{n.title}</span>
+          <span class="m-row-label">{n.title}</span>
         </button>
       {/each}
       {#if canCreate}
-        <button type="button" class="list-row dense" onclick={() => onpick(query.trim())}>
+        <button type="button" class="m-row" onclick={() => onpick(query.trim())}>
           <Icon name="plus" size={20} />
-          <span class="list-row-label">{$t('notes_link_create', { title: query.trim() })}</span>
+          <span class="m-row-label">{$t('notes_link_create', { title: query.trim() })}</span>
         </button>
       {/if}
       {#if matches.length === 0 && !canCreate}
-        <div class="list-row dense still"><span class="list-row-label muted">{$t('common_nothing_found')}</span></div>
+        <div class="m-row"><span class="m-row-label muted">{$t('common_nothing_found')}</span></div>
       {/if}
     {/if}
   </div>
@@ -163,16 +159,44 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: calc(var(--z-base) + 21);
+    z-index: 21;
     padding: 8px 12px;
     background: var(--m-nav);
     border-top: 1px solid var(--border);
   }
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--m-field);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+  }
+  .find.sheet { flex-shrink: 0; }
+  .find input {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  .find input:focus { box-shadow: none; }
+  .ico { color: var(--text-3); display: inline-flex; flex-shrink: 0; }
+  .ph { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .muted { color: var(--text-3); }
   .hints { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--sp-3) var(--sp-2) 0; font-size: var(--fs-sm); }
   .hint {
     display: inline-flex; align-items: center; gap: 4px;
-    min-height: 32px; padding: 0 var(--sp-2-5);
+    min-height: 32px; padding: 0 10px;
     border: 1px solid var(--border); border-radius: var(--radius-pill);
     background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-sm); font-family: var(--font-mono);
   }

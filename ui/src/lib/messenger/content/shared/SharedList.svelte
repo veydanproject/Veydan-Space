@@ -18,7 +18,6 @@
   import { linkItems, SECTION_ORDER, SECTIONS } from './sections';
   import { sharedStore } from './sharedStore.svelte';
   import { monthTitle, stamp } from '../../shared/time';
-  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   interface Props {
     chatId: string;
@@ -69,22 +68,20 @@
 <div class="panel">
   <PanelHead title={$t('msg_shared_title')} {onback} />
 
-  <div class="tabs">
-    <TabBar selected={section}>
-      {#each SECTION_ORDER as s (s)}
-        <button class="tab" class:active={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
-          {$t(SECTIONS[s].label)}
-        </button>
-      {/each}
-    </TabBar>
+  <div class="tab-bar tabs" role="tablist">
+    {#each SECTION_ORDER as s (s)}
+      <button class="tab" class:active={s === section} role="tab" aria-selected={s === section} onclick={() => (section = s)}>
+        {$t(SECTIONS[s].label)}
+      </button>
+    {/each}
   </div>
 
   <div class="scroll">
     {#if !messages.length}
       {#if page?.loading || !page}
-        <div class="wait"><Icon name="loader" size={16} /></div>
+        <div class="empty"><Icon name="loader" size={16} /></div>
       {:else}
-        <div class="empty-state"><span class="empty-icon"><Icon name={SECTIONS[section].icon} size={22} /></span><p>{$t(SECTIONS[section].empty)}</p></div>
+        <div class="empty"><Icon name={SECTIONS[section].icon} size={22} /><span>{$t(SECTIONS[section].empty)}</span></div>
       {/if}
     {:else if section === 'links'}
       {#each linkMonths as mo (mo.key)}
@@ -126,8 +123,10 @@
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--surface); }
-  /* The sections: the common row of tabs under the head. */
-  .tabs { margin: var(--sp-3) var(--sp-4) 0; }
+  /* The sections: the page's .tab-bar under the head; here only the layout. */
+  .tabs { align-self: stretch; margin: var(--sp-3) var(--sp-4) 0; overflow-x: auto; scrollbar-width: none; }
+  .tabs .tab { flex: 1 0 auto; justify-content: center; }
+  .tabs .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
   .month { font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-bold); padding-top: var(--sp-2); }
   .month:first-child { padding-top: 0; }
@@ -141,10 +140,16 @@
   /* Its own line height, never squeezed by the column: descenders and commas stay whole */
   .meta { flex: none; line-height: var(--lh-base); font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item { flex: none; }
-  .wait { display: flex; justify-content: center; padding: var(--sp-6, 32px) var(--sp-4); color: var(--text-3); }
-  .wait :global(svg) { opacity: 0.7; }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6, 32px) var(--sp-4); color: var(--text-3); font-size: var(--fs-xs); text-align: center; }
+  .empty :global(svg) { opacity: 0.7; }
   .end { display: flex; justify-content: center; padding: var(--sp-2) 0; }
+  @media (pointer: coarse) { .tabs .tab { min-height: 40px; } }
+  /* On a phone the sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
   :global(.msg-m) .panel { background: transparent; }
-  :global(.msg-m) .tabs { margin-top: 0; }
+  :global(.msg-m) .tabs { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; margin: 0; align-self: auto; padding-inline: var(--sp-4); }
+  :global(.msg-m) .tabs .tab { position: relative; flex: 0 0 auto; gap: var(--sp-1); height: var(--control-h-lg); padding: 0; border-radius: 0; background: none; font-size: var(--fs-base); }
+  :global(.msg-m) .tabs .tab:hover:not(.active) { background: none; color: var(--text); }
+  :global(.msg-m) .tabs .tab.active { background: none; color: var(--text); font-weight: var(--fw-bold); }
+  :global(.msg-m) .tabs .tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--sp-1); height: 3px; border-radius: 3px; background: var(--accent); }
   :global(.msg-m) .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
 </style>

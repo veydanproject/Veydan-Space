@@ -6,7 +6,6 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
@@ -93,16 +92,13 @@
     <HubButton />
     <NotesBurger />
     <h1 class="m-title">{$t('notes_tags')}</h1>
-    <button class="icon-btn" onclick={openNew} aria-label={$t('notes_tag_create')}><Icon name="plus" size={22} /></button>
+    <button class="m-ibtn" onclick={openNew} aria-label={$t('notes_tag_create')}><Icon name="plus" size={24} /></button>
   </div>
 
-  <div class="m-find-row">
-    <div class="search-field fill">
+  <div class="m-search">
+    <div class="field">
       <Icon name="search" size={16} />
-      <input type="search" bind:value={query} placeholder={$t('notes_tags_search')} aria-label={$t('notes_tags_search')} />
-      {#if query}
-        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-      {/if}
+      <input type="search" bind:value={query} placeholder={$t('notes_tags_search')} />
     </div>
   </div>
 
@@ -112,24 +108,21 @@
   {#if shown.length}
     <div class="m-list">
       {#each shown as tag (tag.id)}
-        <div class="list-row dense">
-          <button
-            type="button"
-            class="list-row-main"
-            onclick={() => goto(`/notes?kind=tag&id=${encodeURIComponent(tag.name)}`)}
-            {@attach longpress(() => (menu = tag))}
-          >
-            <span class="m-folder tinted-text" style:--chip={tag.color || undefined}><Icon name="tag" size={16} /></span>
-            <span class="list-row-label">{tag.name}</span>
-            <span class="count-pill lg quiet">{tag.count}</span>
-          </button>
-          <button type="button" class="icon-btn row-more" onclick={() => (menu = tag)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-        </div>
+        <button
+          type="button"
+          class="m-row"
+          onclick={() => goto(`/notes?kind=tag&id=${encodeURIComponent(tag.name)}`)}
+          {@attach longpress(() => (menu = tag))}
+        >
+          <span class="m-dot" style:background={tag.color}></span>
+          <span class="m-row-label">{tag.name}</span>
+          <span class="count">{tag.count}</span>
+        </button>
       {/each}
     </div>
   {:else}
-    <div class="empty-state">
-      <span class="empty-icon"><Icon name="tag" size={22} /></span>
+    <div class="m-empty">
+      <Icon name="tag" size={40} />
       <p>{query.trim() ? $t('common_nothing_found') : $t('notes_areas_empty')}</p>
     </div>
   {/if}
@@ -138,8 +131,8 @@
 
 <BottomSheet open={!!menu} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={openEdit}><Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span></button>
-    <button type="button" class="list-row dense" onclick={remove}><Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span></button>
+    <button type="button" class="m-row" onclick={openEdit}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span></button>
+    <button type="button" class="m-row" onclick={remove}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span></button>
   </div>
 </BottomSheet>
 

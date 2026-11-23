@@ -37,8 +37,6 @@ declare namespace App {
     selectSheet?: boolean;
     /** The window of a message's text to select is open (messenger/content/SelectTextDialog.svelte). */
     selectText?: boolean;
-    /** A drawer of a phone is open (core/ui/Drawer.svelte). */
-    drawer?: boolean;
     /** My profile is being edited (messenger/contacts/OwnProfileCard.svelte). */
     profileEdit?: boolean;
   }

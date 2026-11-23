@@ -9,9 +9,9 @@
 
   `variant` is where it stands:
   - `panel` (the default) — the contents of an info panel (a channel's, a
-    group's): 56 (on touch too), `--radius-md`, in a card of rows; the root is
+    group's): 56 (60 on touch), `--radius-md`, in a card of rows; the root is
     `.nav`, and `page` names it, so the focus comes back to it from its page.
-  - `list` — a row of a list of the cloud: 64 (56 on touch), a hairline under it from the text, the tile
+  - `list` — a row of a list of the cloud: 64, a hairline under it, the tile
     in the accent by default, the end in place of the chevron.
   - `compact` — a line of a block (what a chat has shared): 46 (50 on touch),
     the icon without a tile.
@@ -109,13 +109,9 @@
   .panel .sub:has(:global(.stack)) { overflow: visible; }
 
   /* A list of the cloud. */
-  /* The hairline under a row starts from the text (the row's padding, the tile, the gap), as in .list-rows. */
-  .list { --row-x: var(--sp-5); position: relative; min-height: 64px; padding: var(--sp-3) var(--row-x); border-radius: 0; }
-  .list:not(:last-child)::after {
-    content: ''; position: absolute; bottom: 0; left: calc(var(--row-x) + 36px + var(--sp-3)); right: var(--row-x); height: 1px;
-    background: var(--divider); pointer-events: none;
-  }
-  .list.m { --row-x: var(--sp-4); }
+  .list { min-height: 64px; padding: var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--divider); border-radius: 0; }
+  .list:last-child { border-bottom: 0; }
+  .list.m { padding: var(--sp-3) var(--sp-4); }
   .list .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-snug); }
   .list .sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
   .trailing { flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-2); }
@@ -125,9 +121,8 @@
   .compact .ico { display: inline-flex; color: var(--accent-text-2); }
   .compact .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* A phone's row is a dense row of 56 (base.css .list-row.dense), in a panel and in a list alike. */
   @media (pointer: coarse) {
-    .list { min-height: 56px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+    .panel { min-height: 60px; }
     .compact { min-height: 50px; }
   }
 </style>

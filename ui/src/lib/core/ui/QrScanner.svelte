@@ -171,7 +171,7 @@
       <p class="hint">{phase === 'starting' ? words.starting : hint}</p>
     </div>
     <div class="bottom">
-      <button class="btn btn-ghost" type="button" onclick={byHand}>{manual}</button>
+      <button class="pill" type="button" onclick={byHand}>{manual}</button>
     </div>
   {/if}
 </div>
@@ -219,8 +219,11 @@
   /* Over a bright picture the words keep a ground of their own. */
   .live .hint { padding: var(--sp-2) var(--sp-4); border-radius: var(--radius-md); background: var(--backdrop); }
   .bottom { position: relative; z-index: 1; display: flex; justify-content: center; }
-  /* Over the camera the quiet button keeps a ground of its own, as the words do. */
-  .live .btn-ghost { background: var(--backdrop); border-color: transparent; color: inherit; }
+  .pill {
+    min-height: 48px; padding: 0 var(--sp-6); border-radius: var(--radius-pill); border: 0;
+    background: var(--surface-3); color: inherit; font: inherit; font-size: var(--fs-body); font-weight: var(--fw-semibold);
+  }
+  .live .pill { background: var(--backdrop); }
 
   .stop { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); text-align: center; }
   .mark {

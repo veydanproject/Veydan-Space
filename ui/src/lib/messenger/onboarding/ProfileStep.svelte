@@ -76,12 +76,12 @@
 
 <style>
   .picture { margin-bottom: var(--sp-4); }
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--sp-3); font-size: var(--fs-sm); }
   .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input {
-    color: var(--text); min-height: 44px;
+    font: inherit; color: var(--text); min-height: 44px;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: var(--sp-2) var(--sp-2-5);
+    padding: 8px 10px;
   }
   .field input:focus { outline: none; border-color: var(--accent-border); }
 </style>

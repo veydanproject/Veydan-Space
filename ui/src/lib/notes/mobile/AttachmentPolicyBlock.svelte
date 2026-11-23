@@ -26,11 +26,11 @@
 
 <!-- One card: the switch with its words in its row, the threshold it governs under a line. -->
 {#if policy}
-  <div class="section-label">{$t('settings_att_section')}</div>
+  <div class="m-section">{$t('settings_att_section')}</div>
   <div class="m-list group">
-    <button class="list-row dense switch" role="switch" aria-checked={policy.download_on_sync} onclick={() => (policy!.download_on_sync = !policy!.download_on_sync)}>
+    <button class="m-row switch" role="switch" aria-checked={policy.download_on_sync} onclick={() => (policy!.download_on_sync = !policy!.download_on_sync)}>
       <span class="words">
-        <span class="list-row-label wrap">{$t('settings_att_download_on_sync')}</span>
+        <span class="m-row-label wrap">{$t('settings_att_download_on_sync')}</span>
         <span class="sub">{$t('settings_att_download_on_sync_hint')}</span>
       </span>
       <span class="toggle" class:on={policy.download_on_sync}></span>

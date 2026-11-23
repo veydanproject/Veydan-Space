@@ -153,17 +153,17 @@
     <span class="att-title"><Icon name="paperclip" size={12} /> {$t('note_att_title')} ({attachments.length})</span>
     <div class="att-actions">
       {#if !readonly}
-        <button class="icon-btn" title={$t('note_att_add')} onclick={onpick}>
+        <button class="att-btn" title={$t('note_att_add')} onclick={onpick}>
           <Icon name="plus" size={12} />
         </button>
-        <button class="icon-btn" title={mt('record')} onclick={() => onrecord('audio')}>
+        <button class="att-btn" title={mt('record')} onclick={() => onrecord('audio')}>
           <Icon name="mic" size={12} />
         </button>
-        <button class="icon-btn" title={mt('camera')} onclick={() => onrecord('video')}>
+        <button class="att-btn" title={mt('camera')} onclick={() => onrecord('video')}>
           <Icon name="video" size={12} />
         </button>
       {/if}
-      <button class="icon-btn" title={$t('note_att_gc')} onclick={gc} disabled={gcBusy}>
+      <button class="att-btn" title={$t('note_att_gc')} onclick={gc} disabled={gcBusy}>
         <Icon name="trash-2" size={12} />
       </button>
     </div>
@@ -185,14 +185,14 @@
           <Icon name={iconOf(a)} size={13} />
           <button class="att-name" title={a.name} onclick={() => open(a)}>{a.name}</button>
           {#if kind && a.present}
-            <button class="icon-btn" title={mt(playing === a.name ? 'stop_play' : 'play')} onclick={() => open(a)}>
+            <button class="att-btn" title={mt(playing === a.name ? 'stop_play' : 'play')} onclick={() => open(a)}>
               <Icon name={playing === a.name ? 'square' : 'play'} size={12} />
             </button>
           {/if}
           {#if x}
             <span class="att-size" class:att-error={!!x.error} title={x.error ?? ''}>{transferLabel(x)}</span>
             {#if !x.finished}
-              <button class="icon-btn" title={$t('note_att_cancel')} onclick={() => cancel(a.name)}><Icon name="x" size={12} /></button>
+              <button class="att-btn" title={$t('note_att_cancel')} onclick={() => cancel(a.name)}><Icon name="x" size={12} /></button>
             {/if}
           {:else if !a.present}
             <span class="att-size">{$t('note_att_not_downloaded', { size: fmtSize(a.size) })}</span>
@@ -201,18 +201,18 @@
           {/if}
           {#if !a.present}
             {#if !x || x.finished}
-              <button class="icon-btn" title={$t('note_att_fetch')} onclick={() => onfetch(a)}>
+              <button class="att-btn" title={$t('note_att_fetch')} onclick={() => onfetch(a)}>
                 <Icon name="download" size={12} />
               </button>
             {/if}
           {:else}
-            <button class="icon-btn" title={$t('note_att_download')} onclick={() => downloadNoteAttachment(noteId, a.name)}>
+            <button class="att-btn" title={$t('note_att_download')} onclick={() => downloadNoteAttachment(noteId, a.name)}>
               <Icon name="download" size={12} />
             </button>
           {/if}
           {#if !readonly}
-            <button class="icon-btn" title={$t('note_att_insert')} onclick={() => oninsert(a)}><Icon name="link" size={12} /></button>
-            <button class="icon-btn danger-soft" title={$t('note_att_delete')} onclick={() => remove(a)}><Icon name="x" size={12} /></button>
+            <button class="att-btn" title={$t('note_att_insert')} onclick={() => oninsert(a)}><Icon name="link" size={12} /></button>
+            <button class="att-btn att-danger" title={$t('note_att_delete')} onclick={() => remove(a)}><Icon name="x" size={12} /></button>
           {/if}
         </li>
         {#if kind && playing === a.name && playSrc}
@@ -232,7 +232,7 @@
           <span class="att-name" title={x.name}>{x.name}</span>
           <span class="att-size" class:att-error={!!x.error} title={x.error ?? ''}>{transferLabel(x)}</span>
           {#if !x.finished}
-            <button class="icon-btn" title={$t('note_att_cancel')} onclick={() => cancel(x.name)}><Icon name="x" size={12} /></button>
+            <button class="att-btn" title={$t('note_att_cancel')} onclick={() => cancel(x.name)}><Icon name="x" size={12} /></button>
           {/if}
         </li>
       {/each}
@@ -258,21 +258,34 @@
   .att-title {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.35rem;
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     color: var(--text-2);
   }
-  .att-actions { display: flex; gap: var(--sp-1); }
-  .att-hint { margin: var(--sp-1) 0; font-size: var(--fs-xs); color: var(--text-3); }
-  .att-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); }
+  .att-actions { display: flex; gap: 0.2rem; }
+  .att-btn {
+    background: none;
+    border: none;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    padding: 0.15rem 0.3rem;
+    display: inline-flex;
+    align-items: center;
+  }
+  .att-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+  .att-btn.att-danger:hover { color: var(--danger); }
+  .att-btn:disabled { opacity: 0.45; }
+  .att-hint { margin: 0.2rem 0; font-size: var(--fs-xs); color: var(--text-3); }
+  .att-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .att-item {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
     font-size: var(--fs-xs);
     color: var(--text-2);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.15rem 0.2rem;
     border-radius: var(--radius-xs);
   }
   .att-item:hover { background: var(--surface-2); }
@@ -292,7 +305,7 @@
   }
   .att-name:hover { text-decoration: underline; }
   .att-size { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
-  .att-player { padding: var(--sp-1) var(--sp-1) var(--sp-1-5); }
+  .att-player { padding: 0.2rem 0.2rem 0.4rem; }
   .att-player audio { width: 100%; height: 32px; }
   .att-player video { width: 100%; max-height: 150px; border-radius: var(--radius-badge); background: #000; }
   .att-busy { opacity: 0.8; }

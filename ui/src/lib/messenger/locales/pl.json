@@ -1256,6 +1256,8 @@
     "msg_profile_public_hint": "Nazwa, zdjęcie, „O mnie”, strona i linki są publiczne: widzi je każdy, kto zna twój klucz.",
     "msg_profile_saved": "Profil opublikowany",
     "msg_profile_unsaved": "Niezapisane zmiany",
+    "msg_profile_discard_confirm": "Odrzucić zmiany?",
+    "msg_profile_discard": "Odrzuć",
     "msg_profile_send_card": "Wyślij moją wizytówkę",
     "msg_profile_send_card_hint": "Nazwa, zdjęcie, „O mnie” i linki w jednej wiadomości, aby można cię było dodać jednym dotknięciem.",
     "msg_profile_send_card_to": "Wyślij do",

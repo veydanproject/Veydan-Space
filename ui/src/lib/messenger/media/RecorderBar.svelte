@@ -81,7 +81,7 @@
   <button class="btn-x" onpointerdown={keep} onclick={cancel} title={$t('msg_media_cancel')} aria-label={$t('msg_media_cancel')}>
     <Icon name="trash-2" size={17} />
   </button>
-  <span class="status-dot {ready ? 'bad pulse' : 'off'}"></span>
+  <span class="dot" class:on={ready}></span>
   <span class="time">{clockOf(elapsed)}</span>
   <span class="level" aria-hidden="true">
     {#each bars as b, i (i)}<i style="height:{Math.max(3, Math.round(b * 26))}px"></i>{/each}
@@ -95,6 +95,9 @@
   .rec { display: flex; align-items: center; gap: var(--sp-2); min-height: 40px; flex: 1; min-width: 0; }
   .btn-x { width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; background: none; color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .btn-x:hover { background: var(--danger-bg); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+  .dot.on { background: var(--danger); animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
   .time { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text); min-width: 42px; }
   .level { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; justify-content: flex-start; gap: 2px; overflow: hidden; }
   .level i { display: block; width: 3px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }

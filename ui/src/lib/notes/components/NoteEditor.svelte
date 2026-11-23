@@ -23,7 +23,6 @@
   import { isEntityBinding, isEntityKind, parseBinding } from '$lib/core/bindings';
   import { canBindEntities, contextKeys, ensureEntitiesLoaded, entitySummary, resolvePlaceholder } from '$lib/notes/context';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import Drawer from '$lib/core/ui/Drawer.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import CaptureScreen from '$lib/notes/media/CaptureScreen.svelte';
   import MediaPrefsBar from '$lib/notes/media/MediaPrefsBar.svelte';
@@ -277,18 +276,18 @@
     applyEdit({ text, selStart: caret, selEnd: caret });
   }
 
-  // ── Context: entity bindings and `[[kind:id]]` mentions as rows in a drawer ──────
-  // A drawer on the right, opened by the head's button or a mention in the text; never remembered open.
-  let contextOpen = $state(false);
+  // ── Context: entity bindings and `[[kind:id]]` mentions as cards ─────────────
+  const CONTEXT_KEY = 'notes-context-open';
+  let contextOpen = $state(localStorage.getItem(CONTEXT_KEY) !== '0');
   let contextFocus = $state<string | null>(null);
   const mentions = $derived(extractWikiTargets(contentValue).filter(isEntityBinding));
   const contextCount = $derived(contextKeys(note?.bindings ?? [], mentions, note?.id).length);
   /** The Context toggle is offered where the panel can have content: bound objects, or kinds to bind. */
   const showContext = $derived(contextCount > 0 || canBindEntities());
 
-  function openContext() {
-    contextFocus = null;
-    contextOpen = true;
+  function toggleContext() {
+    contextOpen = !contextOpen;
+    try { localStorage.setItem(CONTEXT_KEY, contextOpen ? '1' : '0'); } catch {}
   }
 
   /** Start a wiki link at the caret; opens the picker via the editors' `[[` tracking. */
@@ -805,13 +804,14 @@
         <span class="updated-at">{formatUpdatedAt(note.updated_at)}</span>
         {#if showContext}
           <button
-            class="icon-btn ctx-btn"
-            onclick={openContext}
+            class="icon-action"
+            class:active={contextOpen}
+            onclick={toggleContext}
             title={$t('ctx_title')}
             aria-label={$t('ctx_title')}
           >
-            <Icon name="layers" size={18} />
-            {#if contextCount > 0}<span class="count-pill sm">{contextCount}</span>{/if}
+            <Icon name="file-text" size={13} />
+            {#if contextCount > 0}<span class="att-count">{contextCount}</span>{/if}
           </button>
         {/if}
         <span
@@ -822,16 +822,16 @@
           <Icon name={saveIcon[saveStatus] ?? 'check'} size={14} />
         </span>
         <button
-          class="icon-btn with-count"
+          class="icon-action"
           class:active={attachmentsOpen}
           onclick={() => (attachmentsOpen = !attachmentsOpen)}
           title={$t('note_att_title')}
         >
           <Icon name="paperclip" size={13} />
-          {#if attachments.length > 0}<span class="count-pill sm quiet">{attachments.length}</span>{/if}
+          {#if attachments.length > 0}<span class="att-count">{attachments.length}</span>{/if}
         </button>
         <button
-          class="icon-btn"
+          class="icon-action"
           class:active={linksOpen}
           onclick={() => (linksOpen = !linksOpen)}
           title={$t('note_links_title')}
@@ -839,7 +839,7 @@
           <Icon name="link" size={13} />
         </button>
         <button
-          class="icon-btn"
+          class="icon-action"
           class:active={showHistory}
           onclick={() => { showHistory = !showHistory; mergeHistoryId = null; }}
           title={$t('notes_history_title')}
@@ -863,7 +863,7 @@
         />
     </div>
 
-    <Drawer bind:open={contextOpen} title={$t('ctx_title')} bodyPadding="var(--sp-2)">
+    {#if contextOpen}
       <NoteContext
         noteId={note.id}
         bindings={note.bindings}
@@ -873,7 +873,7 @@
         onbind={(b) => bindEntity(note!.id, b)}
         onunbind={(b) => notesStore.removeNoteBinding(note!.id, b)}
       />
-    </Drawer>
+    {/if}
 
     <div class="note-content">
       <NoteToolbar
@@ -987,14 +987,14 @@
       <div class="footer-actions">
         {#if note.deleted}
           <button
-            class="icon-btn"
+            class="icon-action"
             onclick={() => note && notesStore.restoreNote(note.id)}
             title={$t('common_restore')}
           >
             <Icon name="rotate-ccw" size={13} />
           </button>
           <button
-            class="icon-btn danger-soft"
+            class="icon-action icon-danger"
             onclick={confirmDeleteForever}
             title={$t('note_btn_delete_forever')}
           >
@@ -1002,7 +1002,7 @@
           </button>
         {:else}
           <button
-            class="icon-btn"
+            class="icon-action"
             onclick={() => note && notesStore.togglePin(note.id)}
             title={note.pinned ? $t('note_btn_unpin') : $t('note_btn_pin')}
             class:active={note.pinned}
@@ -1011,7 +1011,7 @@
           </button>
           {#if note.archived}
             <button
-              class="icon-btn active"
+              class="icon-action active"
               onclick={() => note && notesStore.restoreNote(note.id)}
               title={$t('note_btn_unarchive')}
             >
@@ -1019,7 +1019,7 @@
             </button>
           {:else}
             <button
-              class="icon-btn"
+              class="icon-action"
               onclick={() => note && notesStore.archiveNote(note.id)}
               title={$t('note_btn_archive')}
             >
@@ -1027,14 +1027,14 @@
             </button>
           {/if}
           <button
-            class="icon-btn"
+            class="icon-action"
             onclick={() => note && api.notes.openExternal(note.id)}
             title={$t('note_btn_open_external')}
           >
             <Icon name="external-link" size={13} />
           </button>
           <button
-            class="icon-btn danger-soft"
+            class="icon-action icon-danger"
             onclick={() => note && notesStore.deleteNote(note.id)}
             title={$t('note_btn_delete')}
           >
@@ -1217,7 +1217,7 @@
   .title-wrap {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     flex: 1;
     min-width: 0;
   }
@@ -1247,7 +1247,7 @@
   .header-right {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
     flex-shrink: 0;
     margin-left: auto;
   }
@@ -1282,6 +1282,7 @@
 
   .note-content {
     flex: 1;
+    /* Never squeezed to nothing by the context cards above it. */
     min-height: 180px;
     display: flex;
     flex-direction: column;
@@ -1322,7 +1323,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--sp-1-5) var(--sp-3);
+    padding: 0.4rem var(--sp-3);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -1335,13 +1336,27 @@
 
   .footer-actions {
     display: flex;
-    gap: var(--sp-0-5);
+    gap: 0.1rem;
   }
 
-  /* The paperclip with its count: as wide as it needs, not under 32. */
-  .icon-btn.with-count { width: auto; min-width: 32px; padding-inline: var(--sp-1-5); gap: var(--sp-1); }
-  .icon-btn.active { color: var(--accent-text); }
-  /* The count on the button's corner, as the context's count on the phone (MobileNotePage). */
-  .ctx-btn { position: relative; }
-  .ctx-btn .count-pill { position: absolute; top: 0; right: 0; pointer-events: none; }
+  .icon-action {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-2);
+    padding: var(--sp-1);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .icon-action:hover { color: var(--text); background: var(--surface); }
+  .att-count {
+    font-size: var(--fs-xs);
+    font-family: var(--font-mono);
+    margin-left: 2px;
+  }
+  .icon-action.active { color: var(--accent-text); }
+  .icon-danger:hover { color: var(--danger-text) !important; }
 </style>

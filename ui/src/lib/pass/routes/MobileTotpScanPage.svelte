@@ -15,7 +15,6 @@
   import Icon from '$lib/core/Icon.svelte';
   import { formatError } from '$lib/core/utils';
   import { t } from '$lib/core/mobile/i18n';
-  import { putScanned } from '$lib/pass/store/scanned';
 
   let error = $state('');
   let denied = $state(false);
@@ -42,9 +41,7 @@
         error = $t('totp_scan_not_otpauth');
         return;
       }
-      // The link goes in memory, not in the address: its secret stays out of the history.
-      putScanned(result.content);
-      goto('/totp/add', { replaceState: true });
+      goto(`/totp/add?uri=${encodeURIComponent(result.content)}`, { replaceState: true });
     } catch (e) {
       active = false;
       fail(e);
@@ -71,7 +68,7 @@
 <!-- The header of every phone page (.m-header); over the camera picture it is transparent. -->
 <div class="m-page scan">
   <div class="m-header">
-    <a class="icon-btn" href="/totp/add" data-sveltekit-replacestate aria-label={$t('common_back')}>
+    <a class="m-ibtn" href="/totp/add" aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </a>
     <h1 class="m-title">{$t('totp_scan_title')}</h1>
@@ -79,14 +76,14 @@
 
   <div class="body">
   {#if denied}
-    <div class="empty-state msg">
-      <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
+    <div class="msg">
+      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
       <p>{$t('totp_scan_denied')}</p>
       <button class="btn btn-ghost" onclick={() => openAppSettings()}>{$t('totp_scan_open_settings')}</button>
     </div>
   {:else if error}
-    <div class="empty-state msg">
-      <span class="empty-icon"><Icon name="alert-triangle" size={22} /></span>
+    <div class="msg">
+      <span class="empty-icon"><Icon name="alert-triangle" size={24} /></span>
       <p>{error}</p>
       <button class="btn btn-ghost btn-sm" onclick={() => { error = ''; start(); }}><Icon name="arrow-forward-up" size={16} />{$t('common_try_again')}</button>
     </div>
@@ -108,14 +105,12 @@
     padding: var(--sp-4);
     background: var(--bg);
   }
-  /* The ink over media only over the camera picture (while scanning); the page colours otherwise. The hint stands
-     on a scrim, so a light picture does not swallow it. */
+  /* White only over the camera picture (while scanning); the page colours otherwise. */
   :global(html.scanning) .scan .m-header,
   :global(html.scanning) .scan .body { background: transparent; }
   :global(html.scanning) .scan .m-title,
-  :global(html.scanning) .scan .icon-btn,
-  :global(html.scanning) .hint { color: var(--on-media-text); }
-  :global(html.scanning) .hint { padding: var(--sp-1-5) var(--sp-3); border-radius: var(--radius-pill); background: var(--on-media-scrim); }
+  :global(html.scanning) .scan .m-ibtn,
+  :global(html.scanning) .hint { color: #fff; }
 
   .frame {
     width: min(70vw, 300px);
@@ -129,6 +124,14 @@
     text-align: center;
   }
 
-  /* The message stands where the frame would: lower than the top. */
-  .msg { margin-top: 20vh; }
+  .msg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: 20vh;
+    color: var(--text-2);
+    text-align: center;
+  }
+  .msg p { margin: 0; }
 </style>

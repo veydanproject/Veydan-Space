@@ -15,7 +15,6 @@
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
   import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import { onPhone as isMobile } from '../phone';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
@@ -269,7 +268,7 @@
     {#if permanent}
       <span class="muted">{$t('msg_inv_qr_permanent_hint')}</span>
       {#if current && isPermanentQr(current)}
-        <button class="btn btn-danger-soft" class:btn-sm={!isMobile} disabled={!!inviteStore.revoking} onclick={() => void setPermanent(false)}>{$t('msg_inv_revoke')}</button>
+        <button class="btn btn-danger-soft btn-sm" disabled={!!inviteStore.revoking} onclick={() => void setPermanent(false)}>{$t('msg_inv_revoke')}</button>
       {/if}
     {:else if left !== null}
       <span class="muted" aria-live="off">{$t('msg_inv_qr_left', { time: countdown(left) })}</span>
@@ -299,23 +298,22 @@
         {#if code}
           <div class="code-row">
             <span class="code mono">{formatCode(code.secret)}</span>
-            <button class="btn btn-ghost" class:btn-sm={!isMobile} onclick={copyCode}><Icon name="copy" size={16} />{$t('common_copy')}</button>
+            <button class="btn btn-ghost btn-sm" onclick={copyCode}><Icon name="copy" size={13} />{$t('common_copy')}</button>
           </div>
           {#if code.expires_at != null}<p class="muted small">{$t('msg_inv_code_until', { time: stamp(code.expires_at) })}</p>{/if}
           <p class="muted small">{$t('msg_inv_code_hint')}</p>
-          <button class="btn btn-ghost self-start" class:btn-sm={!isMobile} onclick={() => (code = null)}>{$t('msg_inv_code_another')}</button>
+          <button class="btn btn-ghost btn-sm self-start" onclick={() => (code = null)}>{$t('msg_inv_code_another')}</button>
         {:else}
           <span class="label">{$t('msg_inv_code_for')}</span>
           <CustomSelect options={forOptions} bind:value={codeFor} />
-          <button class="btn btn-primary self-start" class:btn-sm={!isMobile} disabled={codeBusy} onclick={makeCode}>{$t('msg_inv_create_code')}</button>
+          <button class="btn btn-primary btn-sm self-start" disabled={codeBusy} onclick={makeCode}>{$t('msg_inv_create_code')}</button>
         {/if}
       </div>
     {/if}
 
     {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <div class="actions">
-      <!-- On a phone the page has one main button: «Сохранить» (design 03). -->
-      <button class="btn" class:btn-primary={isMobile} class:btn-ghost={!isMobile} disabled={saving || !(qrServer ? serverQr : qrSrc)} onclick={save}><Icon name="download" size={18} />{$t('common_save')}</button>
+      <button class="btn btn-ghost" disabled={saving || !(qrServer ? serverQr : qrSrc)} onclick={save}><Icon name="download" size={18} />{$t('common_save')}</button>
       <button class="btn btn-ghost" onclick={copyLink}><Icon name={qrServer ? 'link' : 'upload'} size={18} />{$t(qrServer ? 'msg_inv_copy_link' : 'msg_share_out_open')}</button>
       {#if !qrServer}
       <button class="btn btn-ghost" class:active={codeOpen} aria-expanded={codeOpen} onclick={() => (codeOpen = !codeOpen)}>

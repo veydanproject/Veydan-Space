@@ -13,7 +13,7 @@
 </script>
 
 <script lang="ts">
-  import TabBar from '$lib/core/ui/TabBar.svelte';
+  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { PanelHead } from '$lib/messenger/seams/shared';
@@ -67,7 +67,7 @@
 <div class="scroll">
   {#if showsTickets(detail)}<TicketsLine {detail} />{/if}
   {#if tabs.length > 1}
-    <TabBar label={$t('chan_mod_title')} selected={tab} watch={widths} wheel>
+    <div class="tab-bar tabs" role="tablist" aria-label={$t('chan_mod_title')} use:scrollTabs={{ selected: tab, watch: widths, wheel: true, fadeStart: true }}>
       {#each tabs as v (v)}
         {@const label = $t(`chan_mod_tab_${v}` as 'chan_mod_tab_queue')}
         <!-- Every tab says its word; when they do not fit the panel's width they scroll sideways. -->
@@ -76,7 +76,7 @@
           {#if count(v)}<span class="count-pill sm quiet">{count(v) > 99 ? '99+' : count(v)}</span>{/if}
         </button>
       {/each}
-    </TabBar>
+    </div>
   {/if}
 
   {#if tab === 'requests'}<RequestsTab {detail} />
@@ -87,6 +87,22 @@
 </div>
 
 <style>
-  /* Its end over the gesture stripe of a phone screen without the bar. */
-  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-4) calc(var(--sp-4) + var(--page-sab, 0px)); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+  /* The tabs are words on the panel's background: no track, the chosen one bold with a short mark; they scroll sideways
+     when a language makes them longer and a clipped edge fades. */
+  /* The tabs are the page's .tab-bar; here only the layout: the panel's width, scrolled sideways when a language makes
+     them longer, a clipped edge fades. */
+  .tabs { align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs .tab { flex: 0 0 auto; justify-content: center; }
+  /* The keyboard's ring inside the tab: the row clips what sticks out. */
+  .tabs .tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
+  .tabs:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
+  .tabs:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
+  .tabs:global(.fade-start.fade-end) {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+    mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+  }
+  .tabs .count-pill.quiet { background: var(--surface-3); color: var(--text-2); }
 </style>

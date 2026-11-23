@@ -171,14 +171,6 @@
   --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
   --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
   --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
-  /* Over a video or a photo: the same in both themes (the picture is the ground). */
-  --on-media-bg:        rgba(255, 255, 255, 0.1);   /* a button */
-  --on-media-bg-hover:  rgba(255, 255, 255, 0.16);
-  --on-media-border:    rgba(255, 255, 255, 0.14);
-  --on-media-text:      rgba(255, 255, 255, 0.85);
-  --on-media-text-2:    rgba(255, 255, 255, 0.7);   /* muted */
-  --on-media-scrim:     rgba(0, 0, 0, 0.55);        /* a plate under a caption */
-  --on-media-ground:    #111;                       /* the viewfinder, the round video */
   /* A call's windows: dark in both themes (the video is the picture). */
   --call-bg:            #0b0d10;
   --call-surface:       #12161b;
@@ -341,14 +333,6 @@
   --media-scrim-soft:   rgba(0, 0, 0, 0.25);  /* an empty circle of choice */
   --media-ring:         0 0 0 1px rgba(0, 0, 0, 0.15);  /* the edge of a white mark on a light picture */
   --media-icon-shadow:  drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));  /* a white icon on a picture */
-  /* Over a video or a photo: the same in both themes (the picture is the ground). */
-  --on-media-bg:        rgba(255, 255, 255, 0.1);   /* a button */
-  --on-media-bg-hover:  rgba(255, 255, 255, 0.16);
-  --on-media-border:    rgba(255, 255, 255, 0.14);
-  --on-media-text:      rgba(255, 255, 255, 0.85);
-  --on-media-text-2:    rgba(255, 255, 255, 0.7);   /* muted */
-  --on-media-scrim:     rgba(0, 0, 0, 0.55);        /* a plate under a caption */
-  --on-media-ground:    #111;                       /* the viewfinder, the round video */
   /* A call's windows and the terminal: dark here too, as in the dark block. */
   --call-bg:            #0b0d10;
   --call-surface:       #12161b;

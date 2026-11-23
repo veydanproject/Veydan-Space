@@ -78,40 +78,34 @@
     type === 'sync' ? $t('notes_history_type_sync') : type === 'restore' ? $t('notes_history_type_restore') : $t('notes_history_type_autosave');
 </script>
 
-<!-- A version's verb stands in the sheet's foot, beside «Отмена». -->
-{#snippet restoreFoot()}
-  <button type="button" class="btn btn-ghost" onclick={onclose}>{$t('common_cancel')}</button>
-  <button type="button" class="btn btn-primary" disabled={loading} onclick={restore}>
-    <Icon name="rotate-ccw" size={16} /> {$t('notes_history_restore')}
-  </button>
-{/snippet}
-
 <BottomSheet
   {open}
   title={selected ? $t('notes_history_version', { n: String(selected.revision) }) : $t('notes_history')}
   {onclose}
   onback={selected ? () => (selected = null) : undefined}
-  footer={selected ? restoreFoot : undefined}
 >
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
   {#if selected}
     <div class="meta">
-      <span class="badge">{typeLabel(selected.version_type)}</span>
-      {#if selected.device}<span class="badge">{selected.device}</span>{/if}
+      <span class="m-chip small">{typeLabel(selected.version_type)}</span>
+      {#if selected.device}<span class="m-chip small">{selected.device}</span>{/if}
       <span class="when">{fmtDateTime(selected.created_at, $locale)}</span>
     </div>
     {#if selected.title}<h3 class="vtitle">{selected.title}</h3>{/if}
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
     <div class="preview md">{@html html}</div>
+    <button type="button" class="btn btn-primary" disabled={loading} onclick={restore}>
+      <Icon name="rotate-ccw" size={16} /> {$t('notes_history_restore')}
+    </button>
   {:else if entries.length === 0 && !loading}
-    <p class="empty-state sm">{$t('notes_history_empty')}</p>
+    <p class="empty">{$t('notes_history_empty')}</p>
   {:else}
     <div class="m-list">
       {#each entries as e (e.id)}
-        <button type="button" class="list-row dense" onclick={() => show(e)}>
+        <button type="button" class="m-row" onclick={() => show(e)}>
           <span class="rev">{e.revision}</span>
-          <span class="list-row-label">
+          <span class="m-row-label">
             <span class="row-title">{e.title || $t('notes_untitled')}</span>
             <span class="row-sub">
               {typeLabel(e.version_type)}{#if e.device} · {e.device}{/if} · {fmtDateTime(e.created_at, $locale)}
@@ -125,6 +119,7 @@
 </BottomSheet>
 
 <style>
+  .empty { color: var(--text-3); text-align: center; padding: var(--sp-6) 0; }
   .rev {
     min-width: 28px;
     text-align: center;
@@ -132,7 +127,7 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-3);
   }
-  .list-row-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .m-row-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .row-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row-sub { font-size: var(--fs-xs); color: var(--text-3); }
   .meta { display: flex; align-items: center; gap: var(--sp-2); }
@@ -157,5 +152,6 @@
   .preview :global(a) { color: var(--accent-text); }
   .preview :global(h1), .preview :global(h2), .preview :global(h3) { margin: var(--sp-2) 0 var(--sp-1); }
   .preview :global(table) { border-collapse: collapse; }
-  .preview :global(td), .preview :global(th) { border: 1px solid var(--border); padding: var(--sp-1) var(--sp-1-5); }
+  .preview :global(td), .preview :global(th) { border: 1px solid var(--border); padding: 3px 6px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 </style>

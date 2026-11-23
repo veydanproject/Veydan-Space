@@ -10,7 +10,6 @@
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import { formatError, formatEpochDate } from '$lib/core/utils';
   import { locale, t } from '$lib/core/i18n';
-  import TabBar from '$lib/core/ui/TabBar.svelte';
 
   interface Props {
     profile: Profile;
@@ -77,21 +76,19 @@
 
 <Drawer open title={$t('raw_title', { name: profile.name })} width="var(--drawer-w-lg)" {onclose}>
   {#snippet subheader()}
-    <div class="rd-tabs">
-      <TabBar selected={tab} watch={data?.cookies.length}>
-        <button class="tab" role="tab" aria-selected={tab === 'fingerprint'} class:active={tab === 'fingerprint'} onclick={() => (tab = 'fingerprint')}>
-          {$t('raw_tab_fingerprint')}
-        </button>
-        <button class="tab" role="tab" aria-selected={tab === 'config'} class:active={tab === 'config'} onclick={() => (tab = 'config')}>
-          {$t('raw_tab_config')}
-        </button>
-        <button class="tab" role="tab" aria-selected={tab === 'cookies'} class:active={tab === 'cookies'} onclick={() => (tab = 'cookies')}>
-          {$t('raw_tab_cookies')}
-          {#if data}
-            <span class="count-pill sm quiet">{data.cookies.length}</span>
-          {/if}
-        </button>
-      </TabBar>
+    <div class="tab-bar">
+      <button class="tab" class:active={tab === 'fingerprint'} onclick={() => (tab = 'fingerprint')}>
+        {$t('raw_tab_fingerprint')}
+      </button>
+      <button class="tab" class:active={tab === 'config'} onclick={() => (tab = 'config')}>
+        {$t('raw_tab_config')}
+      </button>
+      <button class="tab" class:active={tab === 'cookies'} onclick={() => (tab = 'cookies')}>
+        {$t('raw_tab_cookies')}
+        {#if data}
+          <span class="count-pill sm quiet">{data.cookies.length}</span>
+        {/if}
+      </button>
     </div>
   {/snippet}
   <div class="rd-body">
@@ -103,7 +100,7 @@
 
         {#if tab === 'fingerprint'}
           <div class="section">
-            <div class="section-label">Navigator</div>
+            <div class="section-title">Navigator</div>
             <div class="rows">
               <div class="row"><span class="label">userAgent</span><span class="value ua">{data.user_agent}</span></div>
               <div class="row"><span class="label">platform</span><span class="value">{data.platform}</span></div>
@@ -113,7 +110,7 @@
           </div>
 
           <div class="section">
-            <div class="section-label">{$t('raw_section_screen')}</div>
+            <div class="section-title">{$t('raw_section_screen')}</div>
             <div class="rows">
               <div class="row"><span class="label">width</span><span class="value">{data.screen_width}</span></div>
               <div class="row"><span class="label">height</span><span class="value">{data.screen_height}</span></div>
@@ -121,7 +118,7 @@
           </div>
 
           <div class="section">
-            <div class="section-label">WebGL</div>
+            <div class="section-title">WebGL</div>
             <div class="rows">
               <div class="row">
                 <span class="label">vendor</span>
@@ -135,7 +132,7 @@
           </div>
 
           <div class="section">
-            <div class="section-label">{$t('raw_section_geo')}</div>
+            <div class="section-title">{$t('raw_section_geo')}</div>
             <div class="rows">
               <div class="row">
                 <span class="label">timezone</span>
@@ -151,7 +148,7 @@
           </div>
 
           <div class="section">
-            <div class="section-label">{$t('raw_section_privacy')}</div>
+            <div class="section-title">{$t('raw_section_privacy')}</div>
             <div class="rows">
               <div class="row">
                 <span class="label">WebRTC</span>
@@ -161,7 +158,7 @@
           </div>
 
           <div class="section">
-            <div class="section-label">{$t('raw_section_seeds')}</div>
+            <div class="section-title">{$t('raw_section_seeds')}</div>
             <div class="rows">
               <div class="row"><span class="label">canvas</span><span class="value mono">{data.canvas_seed}</span></div>
               <div class="row"><span class="label">audio</span><span class="value mono">{data.audio_seed}</span></div>
@@ -206,9 +203,9 @@
           {/if}
           {#if data.cookies.length === 0}
             <div class="empty-state">
-              <span class="empty-icon"><Icon name="cookie" size={22} /></span>
-              <p>{$t('raw_cookies_empty')}</p>
-              <span>{$t('raw_cookies_empty_hint')}</span>
+              <Icon name="cookie" size={28} />
+              <span>{$t('raw_cookies_empty')}</span>
+              <span class="empty-hint">{$t('raw_cookies_empty_hint')}</span>
             </div>
           {:else}
             <div class="cookies-table-wrap">
@@ -246,7 +243,10 @@
 </Drawer>
 
 <style>
-  .rd-tabs { padding: var(--sp-2) var(--sp-4) 0; }
+
+  /* .tab-bar / .tab / .count-pill styling is global (base.css); only local deltas kept below */
+  .tab-bar { padding-top: 0.3rem; }
+  .tab { justify-content: center; }
 
   .rd-body {
     display: flex;
@@ -257,12 +257,16 @@
   .centered { text-align: center; color: var(--text-2); padding: var(--sp-12); }
 
   /* Fingerprint rows */
-  /* A section is the common .section: its .section-label, then the rows, --sp-2 apart. */
+  .section { display: flex; flex-direction: column; gap: 0.3rem; }
+  .section-title {
+    font-size: var(--fs-xs); font-weight: var(--fw-bold);
+    color: var(--text-dim); margin-bottom: 0.2rem;
+  }
   .rows { display: flex; flex-direction: column; gap: var(--sp-1); }
   .row {
     display: flex; gap: var(--sp-2); font-size: var(--fs-base);
     background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: var(--sp-1) var(--sp-2-5);
+    border-radius: var(--radius-sm); padding: 0.3rem 0.6rem;
     align-items: flex-start;
   }
   .label { color: var(--text-3); min-width: 90px; flex-shrink: 0; font-size: var(--fs-sm); padding-top: 1px; }
@@ -277,12 +281,12 @@
     display: flex; align-items: center; justify-content: space-between;
     background: var(--surface-2); border: 1px solid var(--border);
     border-bottom: none; border-radius: var(--radius-md) var(--radius-md) 0 0;
-    padding: var(--sp-1-5) var(--sp-2-5); font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-semibold);
+    padding: 0.35rem 0.6rem; font-size: var(--fs-sm); color: var(--text-2); font-weight: var(--fw-semibold);
   }
   .copy-btn {
     display: flex; align-items: center; gap: var(--sp-1);
     font-size: var(--fs-xs); color: var(--text-2); background: none; border: none;
-    cursor: pointer; padding: var(--sp-0-5) var(--sp-1); border-radius: var(--radius-sm);
+    cursor: pointer; padding: 0.1rem 0.3rem; border-radius: var(--radius-sm);
     transition: all var(--dur-fast);
   }
   .copy-btn:hover { color: var(--accent-text-3); background: var(--surface-3); }
@@ -309,7 +313,7 @@
   }
   .cookie-export-msg {
     font-size: var(--fs-sm);
-    padding: var(--sp-1) var(--sp-2-5);
+    padding: 0.3rem 0.6rem;
     border-radius: var(--radius-sm);
     border: 1px solid var(--success-border);
     background: var(--success-bg);
@@ -330,7 +334,7 @@
   /* The head: the common .data-table-head, no background */
   .cookies-table th { text-align: left; padding: 0 var(--sp-2); white-space: nowrap; }
   .cookies-table td {
-    padding: var(--sp-1-5) var(--sp-2);
+    padding: 0.35rem var(--sp-2);
     border-bottom: 1px solid var(--surface-2);
     color: var(--text); vertical-align: top;
   }
@@ -339,11 +343,18 @@
   .name-cell { font-weight: var(--fw-medium); white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
   .value-cell { color: var(--text-3); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .expiry-cell { color: var(--text-2); white-space: nowrap; }
-  .flags-cell { display: flex; gap: var(--sp-1); }
+  .flags-cell { display: flex; gap: 0.2rem; }
   .flag {
     font-size: var(--fs-xs); font-weight: var(--fw-bold); border-radius: var(--radius-xs);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.05rem 0.3rem;
   }
   .flag.s { background: var(--success-bg); color: var(--success-text); }
   .flag.h { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+  /* Empty state */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: var(--sp-2); padding: var(--sp-12); color: var(--text-3); text-align: center;
+  }
+  .empty-hint { font-size: var(--fs-sm); color: var(--text-3); max-width: 260px; }
 </style>

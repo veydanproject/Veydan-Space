@@ -15,12 +15,11 @@
   account (none made, or the person's own servers): the wizard goes on.
 -->
 <script lang="ts">
-  import { onMount, type Snippet } from 'svelte';
+  import { onMount } from 'svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { t, locale } from '$lib/core/i18n';
   import { joinErrorKey } from '$lib/core/join-error';
   import { appLock } from '$lib/core/lock/store.svelte';
-  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import RecoveryKeyCard from '$lib/core/lock/RecoveryKeyCard.svelte';
   import type { OnboardingStepProps } from '$lib/core/module';
   import { SYNC_HREF } from '$lib/core/onboarding/setup';
@@ -46,8 +45,6 @@
   let preparing = $state(false);
   let error = $state('');
   let words = $state<string | null>(null);
-  /** The key card's buttons, kept at the step's foot. */
-  let keyFoot = $state<Snippet>();
 
   const lockOn = $derived(appLock.status.enabled);
   const issued = $derived(status?.issued === true);
@@ -105,10 +102,8 @@
   </div>
 {:else if words}
   <div class="ob-main">
-    <RecoveryKeyCard code={words} ondone={next} pinned bind:foot={keyFoot} />
+    <RecoveryKeyCard code={words} ondone={next} />
   </div>
-  <!-- «Копировать», «Продолжить» and the check's buttons stay at the step's foot while the words scroll. -->
-  {#if keyFoot}<div class="ob-foot">{@render keyFoot()}</div>{/if}
 {:else if issued}
   <div class="ob-main">
     <span class="ob-tile"><Icon name="check" size={28} /></span>
@@ -131,9 +126,10 @@
       <Notice tone="warn">{$t('cloud_recovery_no_vault')}</Notice>
     {/if}
     {#if lockOn && vault !== 'own'}
-      <div class="field">
-        <LockSecretInput id="cloud-ob-recovery-secret" label={$t('cloud_recovery_lock_secret')} bind:value={secret} disabled={busy} />
-      </div>
+      <label class="field">
+        <span>{$t('cloud_recovery_lock_secret')}</span>
+        <input type="password" bind:value={secret} autocomplete="current-password" disabled={busy} />
+      </label>
     {/if}
     {#if preparing}<p class="ob-wait wait" role="status"><span class="spinner" aria-hidden="true"></span>{$t('ob_sync_preparing')}</p>{/if}
     {#if error}<p class="ob-error" role="alert">{error}</p>{/if}
@@ -149,7 +145,14 @@
 {/if}
 
 <style>
-  .field { margin-top: var(--sp-4); }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-4); font-size: var(--fs-sm); }
+  .field span { color: var(--text-3); font-size: var(--fs-xs); }
+  .field input {
+    font: inherit; color: var(--text); min-height: 44px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
+    padding: 8px 10px;
+  }
+  .field input:focus { outline: none; border-color: var(--accent-border); }
   .wait { margin: var(--sp-4) 0 0; }
   .activating { margin: var(--sp-4) 0 0; }
 </style>

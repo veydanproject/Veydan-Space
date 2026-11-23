@@ -16,7 +16,6 @@
   } from '$lib/core/theme';
   import ColorField from '$lib/core/ui/ColorField.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { inspectorApp } from '$lib/core/inspector/inspector.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import { api } from '$lib/core/api';
@@ -36,7 +35,6 @@
   import { registry } from '$lib/core/registry';
   import { product } from '$lib/core/product';
   import { ABUSE_MAIL, LEGAL, openLegal } from '$lib/core/legal';
-  import { LICENSE_NAME, LICENSE_URL, licenseSummaryUrl, thirdPartyUrl } from '$lib/core/about';
   import type { Key, SettingsSection } from '$lib/core/module';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -167,10 +165,11 @@
   // The product's own repository (products.json `repo`): releases, licence files.
   const REPO_URL: string = product.repo;
   const RELEASES_URL = `${REPO_URL}/releases/latest`;
+  const LICENSE_URL = 'https://polyformproject.org/licenses/perimeter/1.0.1';
   // What the product's modules are built on (the browser's Camoufox): their links of About.
   const aboutLinks = $derived(registry.active.flatMap((m) => m.about ?? []));
-  const summaryUrl = REPO_URL ? licenseSummaryUrl(REPO_URL) : '';
-  const thirdPartyLicensesUrl = REPO_URL ? thirdPartyUrl(REPO_URL) : '';
+  const summaryUrl = REPO_URL ? `${REPO_URL}/blob/main/LICENSE-SUMMARY.md` : '';
+  const thirdPartyUrl = REPO_URL ? `${REPO_URL}/blob/main/THIRD-PARTY-LICENSES.md` : '';
 
   async function openExternal(url: string) {
     if (!url) return;
@@ -406,7 +405,7 @@
       {#each LANGUAGES as lang (lang.code)}
         <button
           type="button"
-          class="seg-btn-lg"
+          class="lang-btn"
           class:active={$locale === lang.code}
           role="radio"
           aria-checked={$locale === lang.code}
@@ -429,7 +428,7 @@
       {#each [{ id: 'dark', icon: 'moon', label: 'settings_theme_dark' }, { id: 'light', icon: 'sun', label: 'settings_theme_light' }] as const as o (o.id)}
         <button
           type="button"
-          class="seg-btn-lg"
+          class="theme-opt"
           class:active={$theme === o.id}
           role="radio"
           aria-checked={$theme === o.id}
@@ -466,8 +465,15 @@
   <!-- One row, the whole of it the inspector's switch; its hotkey as a key chip. -->
   <div class="card switch-card" id="devtools">
     <div class="card-title">{$t('inspector_developer_tools')}</div>
-    <ToggleRow surface="row" title={$t('inspector_toggle')} on={inspectorApp.enabled} onclick={() => inspectorApp.toggle()}>
-      {#snippet hintContent()}
+    <button
+      type="button"
+      class="switch-row"
+      role="switch"
+      aria-checked={inspectorApp.enabled}
+      onclick={() => inspectorApp.toggle()}
+    >
+      <span class="switch-words">
+        <span class="switch-title">{$t('inspector_toggle')}</span>
         <span class="switch-sub">
           {#each $t('inspector_hotkey_hint').split('{keys}') as part, i}
             {#if i > 0}
@@ -477,8 +483,9 @@
             {part}
           {/each}
         </span>
-      {/snippet}
-    </ToggleRow>
+      </span>
+      <span class="toggle" class:on={inspectorApp.enabled} aria-hidden="true"></span>
+    </button>
   </div>
 
   <div id="hotkeys">
@@ -490,7 +497,13 @@
   <div class="card switch-card" id="tray">
     <div class="card-title">{$t('settings_tray_section')}</div>
     {#snippet trayRow(on: boolean, title: string, hint: string, flip: () => void)}
-      <ToggleRow surface="row" {title} {hint} {on} disabled={!isTauri} onclick={() => { flip(); saveTray(); }} />
+      <button type="button" class="switch-row" role="switch" aria-checked={on} disabled={!isTauri} onclick={() => { flip(); saveTray(); }}>
+        <span class="switch-words">
+          <span class="switch-title">{title}</span>
+          <span class="switch-sub">{hint}</span>
+        </span>
+        <span class="toggle" class:on aria-hidden="true"></span>
+      </button>
     {/snippet}
     {@render trayRow(trayMinimize, $t('settings_tray_minimize'), $t('settings_tray_minimize_hint'), () => (trayMinimize = !trayMinimize))}
     {@render trayRow(trayClose, $t('settings_tray_close'), $t('settings_tray_close_hint'), () => (trayClose = !trayClose))}
@@ -564,15 +577,16 @@
 
     {#if updaterStore.status === 'available' && !updaterStore.supported}
       <div class="update-work">
-        <Notice tone="info">
-          {$t('settings_update_unsupported')}
-          {#snippet action()}
-            <button type="button" class="btn btn-sm" onclick={() => openExternal(RELEASES_URL)}>
+        <div class="update-note">
+          <Icon name="info" size={18} />
+          <span class="update-note-words">
+            <span>{$t('settings_update_unsupported')}</span>
+            <button type="button" class="btn btn-ghost btn-sm" onclick={() => openExternal(RELEASES_URL)}>
               <Icon name="external-link" size={18} />
               {$t('settings_update_open_releases')}
             </button>
-          {/snippet}
-        </Notice>
+          </span>
+        </div>
       </div>
     {:else if updaterStore.status === 'downloading'}
       <!-- The percent is the update bar's (UpdateBanner) alone: here only the state. -->
@@ -609,7 +623,7 @@
         </div>
         <div class="about-fact">
           <span class="about-key">{$t('settings_about_license')}</span>
-          <span class="about-value mono">{LICENSE_NAME}</span>
+          <span class="about-value mono">PolyForm Perimeter 1.0.1</span>
         </div>
       </div>
 
@@ -656,7 +670,7 @@
           <span class="about-row-label">{$t('settings_about_link_summary')}</span>
           <Icon name="external-link" size={18} />
         </button>
-        <button type="button" class="about-row" onclick={() => openExternal(thirdPartyLicensesUrl)}>
+        <button type="button" class="about-row" onclick={() => openExternal(thirdPartyUrl)}>
           <span class="about-row-label">{$t('settings_about_link_thirdparty')}</span>
           <Icon name="external-link" size={18} />
         </button>
@@ -799,8 +813,11 @@
   .bare { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
   .bare-hint { margin: 0; font-size: var(--fs-base); }
 
-  /* local deltas over global .card (its padding is the global one): internal flex layout, gap */
-  .card { display: flex; flex-direction: column; gap: var(--sp-4); }
+  /* local deltas over global .card: bg, internal flex layout, gap, shadow */
+  .card {
+    padding: var(--sp-6);
+    display: flex; flex-direction: column; gap: var(--sp-4);
+  }
 
   /* a section's mark is core/ui/Pill */
 
@@ -864,30 +881,57 @@
   .demo-link.danger { color: var(--danger-text); }
   .demo-link:disabled { opacity: 0.45; cursor: default; }
 
-  .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .settings-main :global(.btn-sm) { padding: 0.35rem var(--sp-3); font-size: var(--fs-sm); }
+
+  .settings-main :global(.progress-wrap) { display: flex; flex-direction: column; gap: 0.3rem; }
   .settings-main :global(.progress-bar) { height: 5px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
   .settings-main :global(.progress-fill) { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .settings-main :global(.progress-label) { font-size: var(--fs-xs); color: var(--text-2); font-family: var(--font-mono); }
 
   .lang-options { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-2); }
   .card.lang-options { padding: var(--sp-3); }
-  .lang-options > .seg-btn-lg { min-width: 130px; }
 
+  /* Segment buttons per design: 46px, radius 11, accent tint when active */
+  .lang-btn {
+    display: flex; align-items: center; gap: 9px;
+    min-height: var(--sp-12); padding: 0 var(--sp-4); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius-field);
+    color: var(--text-body); font-size: var(--fs-base); font-weight: var(--fw-semibold); cursor: pointer;
+    transition: all 0.15s; min-width: 130px;
+  }
+  .lang-btn:hover { border-color: var(--border-2); color: var(--text); }
+  .lang-btn.active { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
 
   /* The language's code as a small chip: the bundled fonts have no flag glyphs. */
   .lang-code {
-    padding: 1px var(--sp-1-5); border: 1px solid var(--border-2); border-radius: var(--radius-xs);
+    padding: 1px 6px; border: 1px solid var(--border-2); border-radius: var(--radius-xs);
     font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold);
     color: var(--text-2);
   }
-  .seg-btn-lg.active .lang-code { border-color: var(--accent-border); color: var(--accent-text); }
+  .lang-btn.active .lang-code { border-color: var(--accent-border); color: var(--accent-text); }
   .confirm-text { display: flex; flex-direction: column; gap: var(--sp-3); }
   .lang-native { flex: 1; text-align: left; }
   .lang-check { display: inline-flex; color: var(--accent-text); font-weight: var(--fw-bold); }
 
-  /* Rows that are switches (ToggleRow `row`): they reach past the card's padding by --sp-3, their hover --sp-1 inside it. */
-  .card.switch-card { padding: var(--sp-1) var(--sp-4); display: flex; flex-direction: column; gap: 0; }
-  .switch-sub { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+  /* A row that is a switch, the whole width (developer tools), as the modules' rows. */
+  .card.switch-card { padding: var(--sp-1); display: flex; flex-direction: column; gap: 0; }
+  .switch-row {
+    position: relative; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 60px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
+  }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .switch-row:first-of-type { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:last-of-type { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:hover:not(:disabled) { background: var(--surface-row-hover); }
+  .switch-row:disabled { cursor: default; opacity: 1; }
+  .switch-row:disabled .toggle { opacity: 0.45; }
+  /* A straight line between rows: a shadow would follow the rounded corners. */
+  .switch-row + .switch-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .switch-row .toggle { pointer-events: none; }
+  .switch-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .switch-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+  .switch-sub { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-2); }
 
   .card.update-card { padding: var(--sp-1); gap: 0; }
   .update-head { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; min-height: 72px; padding: var(--sp-3) var(--sp-4); }
@@ -900,16 +944,33 @@
   .update-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .update-work { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-top: 1px solid var(--divider); }
   .update-work .muted { margin: 0; }
+  .update-note {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); font-size: var(--fs-sm); line-height: var(--lh-base);
+  }
+  .update-note { background: var(--surface-2); color: var(--text-2); }
+  .update-note :global(svg) { flex-shrink: 0; margin-top: 1px; }
+  .update-note-words { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
 
   .card.theme-card { padding: var(--sp-3); }
   .theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 
+  .theme-opt {
+    display: flex; align-items: center; gap: var(--sp-3);
+    min-height: 56px; padding: 0 var(--sp-4); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius-field);
+    color: var(--text-body); font-size: var(--fs-md); font-weight: var(--fw-semibold); cursor: pointer;
+    transition: all 0.15s;
+  }
+  .theme-opt:hover:not(:disabled) { border-color: var(--border-2); color: var(--text); }
+  .theme-opt.active { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
+  .theme-opt:disabled { opacity: 0.45; cursor: not-allowed; }
   /* The theme's icon on a tile of its own; the chosen one's is the accent's. */
   .theme-icon {
     flex: none; display: grid; place-items: center; width: var(--control-h-sm); height: var(--control-h-sm);
     border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2);
   }
-  .seg-btn-lg.active .theme-icon { background: transparent; color: var(--accent-text); }
+  .theme-opt.active .theme-icon { background: transparent; color: var(--accent-text); }
   .theme-name { flex: 1; text-align: left; }
   .theme-customize {
     margin-top: var(--sp-3);

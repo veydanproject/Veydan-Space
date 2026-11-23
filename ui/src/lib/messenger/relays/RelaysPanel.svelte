@@ -156,7 +156,7 @@
   <ul class="list">
     {#each messengerStore.relays as r (r.url)}
       <li class="row" class:off={!r.enabled}>
-        <span class="status-dot {r.state === 'connected' ? 'ok' : r.state === 'connecting' ? 'warn' : r.state === 'paused' ? 'bad' : 'off'}" title={$t(stateLabel[r.state] as 'msg_relay_state_connected')}></span>
+        <span class="dot {r.state}" title={$t(stateLabel[r.state] as 'msg_relay_state_connected')}></span>
         <div class="info">
           <code>{r.url}</code>
           <span class="meta">
@@ -207,6 +207,10 @@
   .row.off { opacity: 0.6; }
   .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); word-break: break-all; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--text-3); }
+  .dot.connected { background: var(--success-text); }
+  .dot.connecting { background: var(--color-warning); }
+  .dot.paused { background: var(--danger-text); }
   .icon-spacer { width: 32px; flex-shrink: 0; }
   .servers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); font-size: var(--fs-sm); }
   .servers-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

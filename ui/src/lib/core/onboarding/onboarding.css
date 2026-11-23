@@ -23,10 +23,9 @@
 }
 .ob.m {
   /* Under the sheets of the phone (50), over its screens and its bar. */
-  z-index: calc(var(--z-base) + 40);
+  z-index: 40;
   inset: 0;
-  /* The keyboard covers the bottom (--kb, the gesture stripe under it): the step's foot stands on it. */
-  padding: var(--sat, 0px) 0 max(var(--sab, 0px), var(--kb, 0px));
+  padding: var(--sat, 0px) 0 var(--sab, 0px);
   align-items: stretch;
   justify-content: stretch;
   flex-direction: column;
@@ -58,7 +57,7 @@
 }
 .ob-brand { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); font-weight: var(--fw-bold); font-size: var(--fs-md); }
 .ob-brand img { width: 32px; height: 32px; object-fit: contain; }
-.ob-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); flex: 1; min-height: 0; }
+.ob-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; }
 .ob-steps li { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--control-h); padding: 0 var(--sp-2); border-radius: var(--radius-sm); color: var(--text-3); font-weight: var(--fw-semibold); font-size: var(--fs-base); }
 .ob-steps .num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--border-2); font-size: var(--fs-xs); }
 .ob-steps li.done { color: var(--text-2); }
@@ -70,13 +69,12 @@
 .ob-win .ob-backrow { min-height: var(--control-h-lg); margin: calc(var(--sp-2) * -1) 0 var(--sp-2) calc(var(--sp-2) * -1); }
 
 /* ── A phone: the whole screen ── */
-/* The head is the phone's one head (mobile.css .m-header: 56, its .icon-btn 40, back 24): the way back, the steps' dots in
-   the middle, the language on the right. */
-.ob-top.m-header { display: grid; grid-template-columns: 40px 1fr auto; }
-.ob-back.text { display: inline-flex; align-items: center; border: 0; background: none; cursor: pointer; height: var(--control-h-lg); padding: 0 var(--sp-2); gap: var(--sp-1); border-radius: var(--radius-sm); color: var(--text-2); font: inherit; font-size: var(--fs-sm); }
+.ob-top { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-1) var(--sp-3) 0 var(--sp-1); flex-shrink: 0; }
+.ob-back { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--text); cursor: pointer; }
+.ob-back.text { width: auto; height: var(--control-h-lg); padding: 0 var(--sp-2); gap: 4px; border-radius: var(--radius-sm); color: var(--text-2); font: inherit; font-size: var(--fs-sm); }
 .ob-back.text:hover { color: var(--text); }
-.ob-dots { display: flex; gap: var(--sp-1-5); justify-content: center; }
-.ob-dots i { width: 22px; height: 4px; border-radius: var(--radius-pill); background: var(--border-2); }
+.ob-dots { display: flex; gap: 6px; justify-content: center; }
+.ob-dots i { width: 22px; height: 4px; border-radius: 2px; background: var(--border-2); }
 .ob-dots i.on { background: var(--accent); }
 .ob.m .ob-step { flex: 1; }
 
@@ -102,12 +100,12 @@
 }
 
 .ob-opts { display: flex; flex-direction: column; gap: var(--sp-3); }
-.ob-opt { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-3); border-radius: var(--radius-lg); border: 1.5px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ob-opt { display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: 14px; border-radius: var(--radius-lg); border: 1.5px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .ob-opt:disabled { cursor: default; opacity: 0.45; }
 .ob-opt.on { border-color: var(--accent); background: var(--accent-bg); }
 .ob-opt-ic { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex-shrink: 0; border-radius: var(--radius-field); background: var(--accent-tint); color: var(--accent-text); }
-.ob-opt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-0-5); }
-.ob-opt-t { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1-5); font-size: var(--fs-body); font-weight: var(--fw-bold); }
+.ob-opt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ob-opt-t { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: var(--fs-body); font-weight: var(--fw-bold); }
 .ob-opt-s { font-size: var(--fs-base); line-height: var(--lh-snug); color: var(--text-2); }
 .ob-radio { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--border-2); }
 .ob-opt.on .ob-radio { border: 6px solid var(--accent); }
@@ -141,7 +139,9 @@
 }
 .ob-win .ob-foot .ob-skip { margin-right: auto; margin-left: calc(var(--sp-3) * -1); }
 .ob-win .ob-foot .ob-foot-hint { order: 1; flex-basis: 100%; }
-/* A phone: the one foot of its pages and sheets (mobile.css .page-foot). */
+/* A phone: the verb on top, the whole width, over a line at the bottom of the screen. */
+.ob.m .ob-foot { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5) var(--sp-5); border-top: 1px solid var(--divider); }
+.ob.m .ob-foot .btn { min-height: 48px; justify-content: center; font-size: var(--fs-body); }
 .ob-skip { border: 0; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); min-height: var(--control-h-lg); padding: 0 var(--sp-3); cursor: pointer; }
 .ob-skip:hover { color: var(--text); }
 .ob-skip:disabled { opacity: 0.45; cursor: default; }

@@ -189,7 +189,7 @@
   .label { position: sticky; top: 0; background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-2); padding: var(--sp-2) var(--sp-1) var(--sp-1); }
   .inline .label, .docked .label { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
-  .grid button { border: none; background: none; font-size: var(--fs-xl); line-height: var(--lh-icon); padding: var(--sp-2) 0; border-radius: var(--radius); cursor: pointer; font-family: inherit; }
+  .grid button { border: none; background: none; font-size: 22px; line-height: var(--lh-icon); padding: 7px 0; border-radius: var(--radius); cursor: pointer; font-family: inherit; }
   .grid button:hover, .grid button:focus { background: var(--surface-3); outline: none; }
   .tabs button:focus-visible, .grid button:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); outline: none; }
   /* In the flow of a menu or a sheet: as wide as it, no shadow of its own. */
@@ -204,6 +204,6 @@
     .tabs { gap: 4px; }
     .tabs button { min-width: 40px; height: 40px; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); }
-    .grid button { font-size: var(--fs-2xl); padding: 8px 0; }
+    .grid button { font-size: 26px; padding: 8px 0; }
   }
 </style>

@@ -5,10 +5,8 @@
   import { onMount } from 'svelte';
   import { leave } from '$lib/core/ui/back';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
-  import Tabs from '$lib/core/ui/Tabs.svelte';
   import { api, formatError, type NoteSearchResult, type NoteTag } from '$lib/notes/mobile/api';
   import { locale, t } from '$lib/core/mobile/i18n';
   import NotesBurger from '$lib/notes/mobile/NotesBurger.svelte';
@@ -18,11 +16,6 @@
 
   let query = $state('');
   let scope = $state<Scope>('all');
-  const scopes = $derived<{ id: Scope; label: string }[]>([
-    { id: 'all', label: $t('search_all') },
-    { id: 'notes', label: $t('search_notes') },
-    { id: 'tags', label: $t('search_tags') },
-  ]);
   let result = $state<NoteSearchResult | null>(null);
   let tags = $state<NoteTag[]>([]);
   let showAll = $state(false);
@@ -93,28 +86,30 @@
     <NotesBurger />
     <h1 class="m-title">{$t('nav_search')}</h1>
   </div>
-  <div class="m-find-row">
-    <div class="search-field fill">
+  <div class="m-search">
+    <div class="field">
       <Icon name="search" size={16} />
       <input type="search" bind:value={query} oninput={onInput} placeholder={$t('search_placeholder')} />
       {#if query}
-        <button type="button" class="search-clear" onclick={(e) => { query = ''; onInput(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+        <button type="button" class="clear" onclick={() => { query = ''; onInput(); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
       {/if}
     </div>
-    <button type="button" class="m-link" onclick={cancel}>{$t('common_cancel')}</button>
+    <button type="button" class="cancel" onclick={cancel}>{$t('common_cancel')}</button>
   </div>
 
-  <div class="m-tabs">
-    <Tabs tabs={scopes} selected={scope} onpick={(id) => (scope = id)} label={$t('nav_search')} phone />
+  <div class="m-seg">
+    <button type="button" class="m-seg-btn" class:active={scope === 'all'} onclick={() => (scope = 'all')}>{$t('search_all')}</button>
+    <button type="button" class="m-seg-btn" class:active={scope === 'notes'} onclick={() => (scope = 'notes')}>{$t('search_notes')}</button>
+    <button type="button" class="m-seg-btn" class:active={scope === 'tags'} onclick={() => (scope = 'tags')}>{$t('search_tags')}</button>
   </div>
 
   <div class="m-body">
   {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
 
   {#if !q}
-    <div class="empty-state"><span class="empty-icon"><Icon name="search" size={22} /></span><p>{$t('search_hint')}</p></div>
+    <div class="m-empty"><Icon name="search" size={40} /><p>{$t('search_hint')}</p></div>
   {:else if empty}
-    <div class="empty-state"><span class="empty-icon"><Icon name="search" size={22} /></span><p>{$t('common_nothing_found')}</p></div>
+    <div class="m-empty"><Icon name="search" size={40} /><p>{$t('common_nothing_found')}</p></div>
   {:else}
     {#if scope !== 'tags' && notes.length}
       <div class="sec">
@@ -125,11 +120,11 @@
       </div>
       <div class="hits divided">
         {#each shownNotes as n (n.id)}
-          <a class="list-row hit" href="/notes/{n.id}">
-            <span class="list-row-body">
-              <span class="list-row-top">
-                <span class="list-row-name">{@render hl(n.title || $t('notes_untitled'))}</span>
-                <span class="list-row-time">{fmtListDate(n.updated_at, $locale)}</span>
+          <a class="m-note compact" href="/notes/{n.id}">
+            <span class="body">
+              <span class="top">
+                <span class="title">{@render hl(n.title || $t('notes_untitled'))}</span>
+                <span class="date">{fmtListDate(n.updated_at, $locale)}</span>
               </span>
               {#if n.preview}<span class="preview">{n.preview}</span>{/if}
             </span>
@@ -142,10 +137,10 @@
       <div class="sec"><h3>{$t('search_tags')} ({tagHits.length})</h3></div>
       <div class="m-list">
         {#each tagHits as tag (tag.id)}
-          <a class="list-row dense" href="/notes?kind=tag&id={encodeURIComponent(tag.name)}">
-            <span class="m-folder tinted-text" style:--chip={tag.color || undefined}><Icon name="tag" size={16} /></span>
-            <span class="list-row-label">{@render hl(tag.name)}</span>
-            <span class="count-pill lg quiet">{tag.count}</span>
+          <a class="m-row" href="/notes?kind=tag&id={encodeURIComponent(tag.name)}">
+            <span class="m-dot" style:background={tag.color}></span>
+            <span class="m-row-label">{@render hl(tag.name)}</span>
+            <span class="count">{tag.count}</span>
           </a>
         {/each}
       </div>
@@ -155,11 +150,11 @@
       <div class="sec"><h3>{$t('search_text_matches')}</h3></div>
       <div class="hits divided">
         {#each textHits as m (m.id)}
-          <a class="list-row hit" href="/notes/{m.id}">
-            <span class="list-row-body">
-              <span class="list-row-top">
-                <span class="list-row-name">{m.title || $t('notes_untitled')}</span>
-                <span class="list-row-time">{fmtListDate(m.updated_at, $locale)}</span>
+          <a class="m-note compact" href="/notes/{m.id}">
+            <span class="body">
+              <span class="top">
+                <span class="title">{m.title || $t('notes_untitled')}</span>
+                <span class="date">{fmtListDate(m.updated_at, $locale)}</span>
               </span>
               <span class="preview">{@render hl(m.snippet)}</span>
             </span>
@@ -188,12 +183,8 @@
     font-weight: var(--fw-semibold);
     padding: 0;
   }
-  /* Rows of the list as the notes' (NoteRow): the common row of a record (base.css .list-row, 64), flat on the
-     page with a hairline between them; the name, the date, the preview of two lines under them. */
+  /* Rows of the list, flat on the page with a hairline between them (design kit, notes-list). */
   .hits { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); }
-  .hit .list-row-body { gap: 4px; }
-  .preview {
-    font-size: var(--fs-sm); color: var(--text-2);
-    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
+  .compact { padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-lg); }
+  .compact:active { background: var(--surface-hover); }
 </style>

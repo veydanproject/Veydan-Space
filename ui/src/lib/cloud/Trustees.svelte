@@ -8,7 +8,6 @@
   «Проверить», «Выключить». The shares go in Rust (`cloud_trustees_setup`).
 -->
 <script lang="ts">
-  import { isMobile } from '$lib/core/platform';
   import { onDestroy, onMount } from 'svelte';
   import Pill from '$lib/core/ui/Pill.svelte';
   import { t, locale } from '$lib/core/i18n';
@@ -139,7 +138,7 @@
             {$t(healthKey(p.health))}{#if p.checked_at !== null} · {dateOf(p.checked_at, $locale)}{/if}
           </Pill>
         </div>
-        <button class="btn btn-ghost" class:btn-sm={!isMobile} type="button" disabled={store.busy} onclick={() => { store.replace(p.pubkey); picking = true; }}>
+        <button class="btn btn-ghost btn-sm" type="button" disabled={store.busy} onclick={() => { store.replace(p.pubkey); picking = true; }}>
           {$t('cloud_trustees_replace')}
         </button>
       </li>

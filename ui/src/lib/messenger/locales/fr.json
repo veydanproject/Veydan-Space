@@ -1256,6 +1256,8 @@
     "msg_profile_public_hint": "Le nom, la photo, « À propos », le site web et les liens sont publics : quiconque connaît votre clé peut les voir.",
     "msg_profile_saved": "Profil publié",
     "msg_profile_unsaved": "Modifications non enregistrées",
+    "msg_profile_discard_confirm": "Abandonner les modifications ?",
+    "msg_profile_discard": "Abandonner",
     "msg_profile_send_card": "Envoyer ma fiche",
     "msg_profile_send_card_hint": "Votre nom, votre photo, « À propos » et vos liens en un message, pour qu'on vous ajoute d'un seul geste.",
     "msg_profile_send_card_to": "Envoyer à",

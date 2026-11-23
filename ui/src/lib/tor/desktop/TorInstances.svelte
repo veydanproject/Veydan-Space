@@ -47,8 +47,8 @@
 
 <div class="tor-instances">
   {#if list.length === 0}
-    <div class="card empty-state">
-      <span class="empty-icon" aria-hidden="true"><Icon name="globe" size={22} /></span>
+    <div class="card empty">
+      <span class="tile" aria-hidden="true"><Icon name="globe" size={20} /></span>
       <p>{$t('tor_instances_empty')}</p>
     </div>
   {:else}
@@ -73,6 +73,12 @@
 
 <style>
   .tor-instances { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .empty { display: flex; align-items: flex-start; gap: var(--sp-4); padding: var(--sp-5); }
+  .empty p { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-2); }
+  .tile {
+    display: inline-flex; align-items: center; justify-content: center; width: var(--control-h); height: var(--control-h); flex-shrink: 0;
+    border-radius: var(--radius); background: var(--accent-tint); color: var(--accent-text);
+  }
   .start { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5); }
   .start label { font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .start-row { display: flex; gap: var(--sp-2); align-items: center; }

@@ -296,7 +296,7 @@
     justify-content: space-between;
     width: 100%;
     height: var(--control-h);
-    padding: 0 var(--sp-3);
+    padding: 0 0.75rem;
     background: var(--pane-strong);
     border: 1px solid var(--sel-border);
     border-radius: var(--radius);
@@ -307,21 +307,19 @@
     text-align: left;
     gap: var(--sp-2);
     outline: none;
-    transition: border-color var(--dur-fast);
+    transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
   }
   /* Rest < hover < error < focus: the first two weigh the same, the order decides. */
   .trigger:where(:hover:not(:disabled)) { --sel-border: var(--text-3); }
   .trigger[aria-invalid='true'] { --sel-border: var(--danger); }
-  /* Open or clicked: the border only, as a field's (no glow). The ring comes with the keyboard, and the list opens
+  /* Open or clicked: the border only. The ring comes with the keyboard (the one of base.css), and the list opens
      7 below (4 of it + 3). */
-  .trigger:focus, .trigger.open {
+  .trigger:focus-visible, .trigger.open {
     outline: none;
     --sel-border: var(--accent-border);
   }
   .trigger:focus-visible:not(.open) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .trigger:disabled { opacity: 0.45; cursor: not-allowed; }
-  /* In a window or a drawer as tall as its fields (base.css: 44). */
-  :global(:where(.dialog, .drawer)) .trigger { height: var(--control-h-lg); }
   .trigger.mobile { height: auto; min-height: var(--control-h-lg); font-size: var(--fs-md); }
   .trigger-label {
     flex: 1;
@@ -366,7 +364,7 @@
     max-height: min(calc(8 * 36px + 8px + 2px), var(--room, 100vh));
     overflow-y: auto;
     overflow-x: hidden;
-    padding: var(--sp-1);
+    padding: 4px;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
@@ -409,7 +407,7 @@
   }
   .option:hover:not(:disabled),
   .option:focus:not(:disabled) { background: var(--opt-hover); outline: none; }
-  .option:focus-visible:not(:disabled) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .option:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus-ring); }
   .option:disabled { color: var(--text-3); cursor: default; }
   .option.selected { font-weight: var(--fw-medium); }
   .option-check { display: flex; align-items: center; flex: 0 0 16px; width: 16px; height: 20px; }

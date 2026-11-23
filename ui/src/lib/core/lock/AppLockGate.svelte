@@ -11,7 +11,6 @@
   import LockRecoverFlow from '$lib/core/lock/LockRecoverFlow.svelte';
   import { gateScreen } from '$lib/core/lock/gate';
   import { confirmState } from '$lib/core/ui/confirm.svelte';
-  import { isMobile } from '$lib/core/platform';
 
   interface Props {
     children: Snippet;
@@ -77,9 +76,9 @@
 </script>
 
 {#if screen === 'blank'}
-  <div class="lock-screen" class:m={isMobile}></div>
+  <div class="lock-screen"></div>
 {:else if screen === 'error'}
-  <div class="lock-screen" class:m={isMobile}>
+  <div class="lock-screen">
     <div class="lock-card" role="alert">
       <span class="lock-tile"><Icon name="alert-triangle" size={24} /></span>
       <h3>{$t('lock_status_failed')}</h3>
@@ -87,13 +86,13 @@
     </div>
   </div>
 {:else if screen === 'recover'}
-  <div class="lock-screen" class:m={isMobile}>
+  <div class="lock-screen">
     <div class="lock-card wide">
       <LockRecoverFlow onback={() => (appLock.recovering = false)} ondone={() => appLock.finishRecovery()} />
     </div>
   </div>
 {:else if screen === 'lock'}
-  <div class="lock-screen" class:m={isMobile}>
+  <div class="lock-screen">
     <form class="lock-card" onsubmit={(e) => { e.preventDefault(); void submit(); }}>
       <span class="lock-tile"><Icon name="lock" size={24} /></span>
       <h3>{kind === 'pin' ? $t('lock_title_pin') : $t('lock_title_password')}</h3>
@@ -137,12 +136,6 @@
     overflow-y: auto;
     background: var(--bg-image), var(--bg);
   }
-  /* A phone: a page, not the computer's card. The keyboard (--kb) and the gesture stripe under it; with the
-     keyboard up the form goes near the top, «Разблокировать» and «Забыли» stay in sight. */
-  .lock-screen.m {
-    padding: max(var(--sp-4), var(--sat, 0px)) var(--sp-4) calc(var(--kb) + var(--sab) + var(--sp-4));
-  }
-  :global(.shell.kb-open) .lock-screen.m { align-items: flex-start; padding-top: calc(var(--sat, 0px) + var(--sp-8)); }
   .lock-card {
     display: flex;
     flex-direction: column;
@@ -163,23 +156,12 @@
     background: var(--accent-bg); color: var(--accent-text);
   }
   .lock-card.wide { width: 440px; align-items: stretch; }
-  /* The whole width (a column of 560 on a tablet), no frame, plate or shadow; the field 44 and 16, the button 48 (mobile.css). */
-  .m .lock-card, .m .lock-card.wide {
-    width: 100%;
-    max-width: 560px;
-    margin: auto 0;
-    padding: var(--sp-4) 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  :global(.shell.kb-open) .m .lock-card { margin: 0; }
   .lock-card h3 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-bold); color: var(--text); text-align: center; }
   .lock-card input {
     width: 100%;
-    min-height: var(--field-h);
-    padding: 0 var(--sp-2-5);
+    min-height: 40px;
+    padding: 0 10px;
+    font: inherit;
     text-align: center;
     border: 1px solid var(--control-border);
     border-radius: var(--radius);

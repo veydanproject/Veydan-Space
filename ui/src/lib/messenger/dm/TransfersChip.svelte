@@ -57,17 +57,17 @@
     color: var(--text-2); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums;
     transition: background var(--dur-fast), color var(--dur-fast);
   }
-  /* On a phone the name comes first: the chip is only its numbers, 40 high as the head's buttons (its zone 44). */
-  .xfer.phone { height: 40px; padding: 0 var(--sp-1); background: none; border-color: transparent; }
+  /* On a phone the name comes first: the chip is only its numbers, its tap area stays. */
+  .xfer.phone { height: 24px; padding: 0 var(--sp-1); background: none; border-color: transparent; }
   .xfer:hover { background: var(--surface-hover); color: var(--text); }
   .xfer:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .n { display: inline-flex; align-items: center; gap: 2px; }
   .n.failed { color: var(--danger-text); }
-  .wide { display: inline-flex; align-items: center; gap: var(--sp-1-5); }
+  .wide { display: inline-flex; align-items: center; gap: 6px; }
   .narrow { display: none; }
   @media (pointer: coarse) { .xfer:not(.phone) { height: 36px; } }
   @media (max-width: 520px) {
     .wide { display: none; }
-    .narrow { display: inline-flex; align-items: center; gap: var(--sp-1); }
+    .narrow { display: inline-flex; align-items: center; gap: 5px; }
   }
 </style>

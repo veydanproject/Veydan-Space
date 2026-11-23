@@ -3,18 +3,14 @@
 
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { leave } from '$lib/core/ui/back';
-  import { leaveGuard } from '$lib/pass/mobile/leaveGuard';
   import Icon from '$lib/core/Icon.svelte';
-  import Notice from '$lib/core/ui/Notice.svelte';
-  import PasswordForm, { fieldError } from '$lib/pass/mobile/PasswordForm.svelte';
+  import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
   import { api } from '$lib/pass/api';
   import { formatError } from '$lib/core/utils';
   import { t } from '$lib/core/mobile/i18n';
   import { passwordErrorKey } from '$lib/core/password-error';
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
   import type { TotpEntry } from '$lib/pass/types';
-  import { toast } from '$lib/core/ui/toast.svelte';
 
   let title = $state('');
   let username = $state('');
@@ -30,21 +26,6 @@
   let totp = $state<TotpEntry[]>([]);
   let error = $state('');
   let saving = $state(false);
-  let form = $state<PasswordForm>();
-
-  /** Anything typed: the way out asks before it is lost (design 16). */
-  const guard = leaveGuard(
-    () =>
-      !!(title.trim() || username.trim() || url.trim() || password || note.trim()) ||
-      totpIds.length > 0 ||
-      tags.length > 0 ||
-      (addTotp && !!(totpSecret.trim() || totpName.trim() || totpIssuer.trim())),
-  );
-
-  /** The arrow and «Отмена»: back to the list once the question allows it. */
-  async function cancel() {
-    if (await guard.mayLeave()) void leave('/passwords');
-  }
 
   $effect(() => {
     api.totp.list().then((list) => (totp = list)).catch(() => {});
@@ -52,9 +33,8 @@
 
   async function save() {
     error = '';
-    if (!title.trim()) error = $t('pw_err_title');
-    else if (!password) error = $t('pw_err_password');
-    if (error) return form?.revealError();
+    if (!title.trim()) return (error = $t('pw_err_title'));
+    if (!password) return (error = $t('pw_err_password'));
     saving = true;
     try {
       const linked = [...totpIds];
@@ -84,9 +64,7 @@
       });
       await passwordStore.refresh();
       await passwordStore.syncNoteBindings(created.id, tags);
-      guard.pass();
       goto(`/passwords/${created.id}`, { replaceState: true });
-      toast.success($t('common_saved'));
     } catch (e) {
       const key = passwordErrorKey(e);
       error = key ? $t(key) : formatError(e);
@@ -98,12 +76,11 @@
 
 <div class="m-page">
   <div class="m-header">
-    <button type="button" class="icon-btn" onclick={cancel} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+    <a class="m-ibtn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     <h1 class="m-title">{$t('cmd_passwords_create')}</h1>
   </div>
   <div class="m-body">
     <PasswordForm
-      bind:this={form}
       bind:title
       bind:username
       bind:url
@@ -117,15 +94,8 @@
       bind:tags
       bind:error
       {totp}
+      {saving}
+      onsave={save}
     />
-  </div>
-  <!-- «Отмена | Сохранить» in the page's foot, over the keyboard; the error that is not a field's over them. -->
-  <div class="page-foot">
-    {#if error && !fieldError(error, $t)}<Notice tone="danger">{error}</Notice>{/if}
-    <button type="button" class="btn btn-ghost" onclick={cancel} disabled={saving}>{$t('common_cancel')}</button>
-    <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
-      <Icon name={saving ? 'loader' : 'check'} size={18} class={saving ? 'spin' : ''} />
-      {saving ? $t('notes_saving') : $t('common_save')}
-    </button>
   </div>
 </div>

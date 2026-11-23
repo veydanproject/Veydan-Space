@@ -53,7 +53,7 @@
 </div>
 
 <style>
-  .tickets { display: flex; align-items: center; gap: var(--sp-1-5); padding: var(--sp-1-5) var(--sp-0-5) var(--sp-2-5); font-size: var(--fs-xs); color: var(--text-2); flex-wrap: wrap; }
+  .tickets { display: flex; align-items: center; gap: 6px; padding: 6px 2px 10px; font-size: var(--fs-xs); color: var(--text-2); flex-wrap: wrap; }
   .count { font-variant-numeric: tabular-nums; }
   .sep { color: var(--text-3); }
   .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }

@@ -105,7 +105,7 @@
     width: 90%;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-4);
+    gap: 0.875rem;
     -webkit-backdrop-filter: var(--glass-filter);
     backdrop-filter: var(--glass-filter);
   }
@@ -149,8 +149,8 @@
 
   .modal-footer {
     display: flex;
-    gap: var(--sp-2);
+    gap: 0.5rem;
     justify-content: flex-end;
-    padding-top: var(--sp-1);
+    padding-top: 0.25rem;
   }
 </style>

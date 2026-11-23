@@ -12,7 +12,6 @@
   import { t } from '$lib/core/i18n';
   import { saveAs as saveToPlace } from '$lib/core/ui/saveAs';
   import Icon from '$lib/core/Icon.svelte';
-  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import { portal } from '$lib/core/ui/portal';
   import { isTauriHost, messengerApi } from '../api';
   import { saveFilters } from '../shared/format';
@@ -33,32 +32,6 @@
   /** A button, a double tap or a level from the menu glides; fingers and the wheel do not. */
   let smooth = $state(false);
   let levels = $state(false);
-  let levelsAt = $state({ x: 0, y: 0 });
-  /**
-   * The press that closes the menu (its mousedown, outside it) neither closes the viewer nor opens the menu
-   * again, however long it is held: its click is spent here. The next press or key forgets it.
-   */
-  let closingPress = false;
-  function press(e: PointerEvent) {
-    closingPress = levels && !(e.target instanceof Element && e.target.closest('.context-menu'));
-  }
-  function spentOnClosing() {
-    const was = closingPress;
-    closingPress = false;
-    return was;
-  }
-  const levelItems = $derived<MenuEntry[]>(ZOOM_STEPS.map((s) => ({
-    label: percent(s),
-    icon: Math.abs(view.scale - s) < 0.01 ? 'check' : undefined,
-    onselect: () => zoomTo(s),
-  })));
-
-  function openLevels(e: MouseEvent) {
-    if (spentOnClosing() || levels) { levels = false; return; }
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    levelsAt = { x: r.left + r.width / 2 - 100, y: r.bottom + 4 };
-    levels = true;
-  }
   /** How far the picture follows a finger that pages. */
   let drag = $state(0);
 
@@ -224,7 +197,6 @@
   }
 
   function backdrop() {
-    if (spentOnClosing()) return;
     if (levels) levels = false;
     else viewer.dismiss();
   }
@@ -237,7 +209,7 @@
   }
 </script>
 
-<svelte:window onkeydown={key} onpointerdowncapture={press} onkeydowncapture={() => (closingPress = false)} />
+<svelte:window onkeydown={key} />
 
 {#if viewer.item}
   <!-- In the body, over everything: where it is mounted the chat's pane holds fixed layers to itself
@@ -253,13 +225,19 @@
           <button class="step" onclick={() => zoomStep(-1)} disabled={!zoomed} aria-label={$t('msg_media_zoom_out')} title={$t('msg_media_zoom_out')}>
             <Icon name="zoom-out" size={18} />
           </button>
-          <button class="level" onclick={openLevels} aria-haspopup="menu" aria-expanded={levels} title={$t('msg_media_zoom')}>
+          <button class="level" onclick={() => (levels = !levels)} aria-haspopup="menu" aria-expanded={levels} title={$t('msg_media_zoom')}>
             {percent(view.scale)}
           </button>
           <button class="step" onclick={() => zoomStep(1)} disabled={view.scale >= ZOOM_MAX} aria-label={$t('msg_media_zoom_in')} title={$t('msg_media_zoom_in')}>
             <Icon name="zoom-in" size={18} />
           </button>
-          <ContextMenu open={levels} x={levelsAt.x} y={levelsAt.y} items={levelItems} onclose={() => (levels = false)} />
+          {#if levels}
+            <div class="levels" role="menu">
+              {#each ZOOM_STEPS as s (s)}
+                <button role="menuitem" class:on={Math.abs(view.scale - s) < 0.01} onclick={() => { levels = false; zoomTo(s); }}>{percent(s)}</button>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
       <button onclick={saveAs} aria-label={$t('msg_media_save_as')} title={$t('msg_media_save_as')}><Icon name="download" size={18} /></button>
@@ -292,7 +270,7 @@
 {/if}
 
 <style>
-  .viewer { position: fixed; inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0); overflow: hidden; z-index: var(--z-modal); background: color-mix(in srgb, var(--on-media-ground) 95%, transparent); display: flex; flex-direction: column; }
+  .viewer { position: fixed; inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0); overflow: hidden; z-index: var(--z-modal, 1000); background: rgba(6, 6, 10, 0.95); display: flex; flex-direction: column; }
   header {
     position: relative; z-index: 1; display: flex; align-items: center; gap: var(--sp-2); padding: calc(var(--sp-2) + var(--sat, 0px)) var(--sp-3) var(--sp-2);
     color: #fff; flex-shrink: 0;
@@ -300,10 +278,16 @@
   .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); opacity: 0.85; }
   .count { flex-shrink: 0; font-size: var(--fs-sm); opacity: 0.85; font-variant-numeric: tabular-nums; }
   header button { width: 44px; height: 44px; border: none; border-radius: 50%; background: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-  header button:hover:not(:disabled) { background: var(--on-media-bg-hover); }
+  header button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
   header button:disabled { opacity: 0.45; cursor: default; }
   .zoom { position: relative; display: flex; align-items: center; flex-shrink: 0; }
   .zoom .level { width: auto; min-width: 60px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .levels {
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 4px; padding: 4px; display: flex; flex-direction: column;
+    background: rgba(30, 30, 36, 0.98); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+  .levels button { width: 88px; height: 36px; border-radius: var(--radius-badge); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .levels button.on { background: rgba(255, 255, 255, 0.16); }
   /* A phone zooms with two fingers: no buttons, the level only while zoomed. */
   @media (pointer: coarse) {
     .zoom .step { display: none; }
@@ -318,9 +302,9 @@
   video { max-width: 100%; max-height: 100%; background: #000; }
   .nav {
     position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border: none; border-radius: 50%;
-    background: var(--on-media-scrim); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    background: rgba(0, 0, 0, 0.45); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
   }
-  .nav:hover { background: var(--on-media-bg-hover); }
+  .nav:hover { background: rgba(255, 255, 255, 0.18); }
   .nav.prev { left: var(--sp-3); }
   .nav.next { right: var(--sp-3); }
 </style>

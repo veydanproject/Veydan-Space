@@ -7,7 +7,6 @@
   person into another app, ShareOutSheet), and the editor.
 -->
 <script lang="ts">
-  import { onPhone as isMobile } from '../phone';
   import { onMount } from 'svelte';
   import { pushState } from '$app/navigation';
   import Notice from '$lib/core/ui/Notice.svelte';
@@ -137,7 +136,7 @@
     {#if !editing}
       <span class="title-actions">
         <MyQrButton disabled={!canAct} />
-        <button class="btn btn-ghost" class:btn-sm={!isMobile} disabled={!canAct} onclick={startEdit}>
+        <button class="btn btn-ghost btn-sm" disabled={!canAct} onclick={startEdit}>
           <Icon name="pencil" size={12} />{$t('common_edit')}
         </button>
       </span>
@@ -225,7 +224,7 @@
   .link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
   .phone-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .private-note { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--success-text); }
-  .saved { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--success-text); }
+  .saved { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--success-text); }
   .send { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .hint { margin: 0; flex: 1; min-width: 200px; line-height: var(--lh-snug); }
   @media (pointer: coarse) {

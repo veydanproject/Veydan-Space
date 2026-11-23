@@ -21,10 +21,10 @@
 <BottomSheet {open} {title} {onclose}>
   <div class="m-list" role="radiogroup" aria-label={title}>
     {#each options as o (o.id)}
-      <button type="button" class="list-row dense" class:on={o.id === value} role="radio" aria-checked={o.id === value} lang={o.lang} onclick={() => { onpick(o.id); onclose(); }}>
+      <button type="button" class="m-row" class:on={o.id === value} role="radio" aria-checked={o.id === value} lang={o.lang} onclick={() => { onpick(o.id); onclose(); }}>
         {#if o.icon}<Icon name={o.icon} size={20} />{/if}
         {#if o.code}<span class="code">{o.code}</span>{/if}
-        <span class="list-row-label">{o.label}</span>
+        <span class="m-row-label">{o.label}</span>
         {#if o.id === value}<span class="tick"><Icon name="check" size={18} /></span>{/if}
       </button>
     {/each}
@@ -32,11 +32,11 @@
 </BottomSheet>
 
 <style>
-  .list-row.on { color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .m-row.on { color: var(--accent-text); font-weight: var(--fw-semibold); }
   .tick { color: var(--accent-text); display: inline-flex; }
   /* A language's code as a small chip, as the computer's settings show it. */
   .code {
-    flex-shrink: 0; min-width: 38px; padding: 1px var(--sp-1-5); border: 1px solid var(--border-2); border-radius: var(--radius-xs);
+    flex-shrink: 0; min-width: 38px; padding: 1px 6px; border: 1px solid var(--border-2); border-radius: var(--radius-xs);
     font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-bold); text-align: center;
     color: var(--text-2);
   }

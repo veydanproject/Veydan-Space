@@ -3,7 +3,7 @@
 
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
@@ -16,8 +16,6 @@
   import NavEditSheet from './NavEditSheet.svelte';
   import SmartViewSheet from './SmartViewSheet.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
-  import Drawer from '$lib/core/ui/Drawer.svelte';
-  import { afterBacks } from '$lib/core/ui/sheetBack';
 
   interface Props {
     open: boolean;
@@ -113,19 +111,9 @@
     return keys;
   }
 
-  // The drawer closes first and its place in the history is given back; only
-  // then the page goes on: a goto under that back was undone by it (home, or
-  // the screen before). A second tap while it closes does nothing.
-  async function leave(then: () => void) {
-    if (!open) return;
-    onclose();
-    await tick();
-    await afterBacks();
-    then();
-  }
-
   function pick(kind: string, id?: string) {
-    void leave(() => onselect({ kind, id }));
+    onselect({ kind, id });
+    onclose();
   }
 
   function active(kind: string, id?: string) {
@@ -192,184 +180,189 @@
   }
 </script>
 
-<Drawer {open} side="left" width="min(88vw, 340px)" title={$t('app_notes')} {onclose} bodyPadding="0 var(--sp-3) calc(var(--sab) + var(--sp-3))">
-  {#if error}
-    <div class="err"><Notice tone="danger">{error}</Notice></div>
-  {/if}
+{#if open}
+  <div class="m-dim" onclick={onclose} role="presentation"></div>
+  <div class="drawer" role="dialog" aria-modal="true" aria-label={$t('app_notes')}>
+    <div class="drawer-head">
+      <span class="drawer-title">{$t('app_notes')}</span>
+      <button class="m-ibtn" onclick={onclose} aria-label={$t('common_close')}>
+        <Icon name="x" size={22} />
+      </button>
+    </div>
 
-  {#if nav}
-    <nav>
-      <section>
-        <button class="item" class:on={active('all')} onclick={() => pick('all')}>
-          <Icon name="notes" size={18} />
-          <span class="name">{$t('notes_filter_all')}</span>
-          <span class="count-pill lg quiet">{nav.counts.all}</span>
-        </button>
-        {#if nav.counts.global > 0 && (hasBrowser || nav.counts.global !== nav.counts.all)}
-          <button class="item" class:on={active('global')} onclick={() => pick('global')}>
-            <Icon name="world" size={18} />
-            <span class="name">{$t('notes_filter_global')}</span>
-            <span class="count-pill lg quiet">{nav.counts.global}</span>
+    {#if error}
+      <div class="err pad"><Notice tone="danger">{error}</Notice></div>
+    {/if}
+
+    {#if nav}
+      <nav class="body">
+        <section>
+          <button class="item" class:on={active('all')} onclick={() => pick('all')}>
+            <Icon name="notes" size={18} />
+            <span class="name">{$t('notes_filter_all')}</span>
+            <span class="n">{nav.counts.all}</span>
           </button>
-        {/if}
-        <button class="item" class:on={active('pinned')} onclick={() => pick('pinned')}>
-          <Icon name="pin" size={18} />
-          <span class="name">{$t('notes_filter_pinned')}</span>
-          <span class="count-pill lg quiet">{nav.counts.pinned}</span>
-        </button>
-        <button class="item" class:on={active('archived')} onclick={() => pick('archived')}>
-          <Icon name="archive" size={18} />
-          <span class="name">{$t('notes_filter_archived')}</span>
-          <span class="count-pill lg quiet">{nav.counts.archived}</span>
-        </button>
-        <button class="item" class:on={active('trash')} onclick={() => pick('trash')}>
-          <Icon name="trash-2" size={18} />
-          <span class="name">{$t('notes_filter_trash')}</span>
-          <span class="count-pill lg quiet">{nav.counts.trash}</span>
-        </button>
-      </section>
+          {#if nav.counts.global > 0 && (hasBrowser || nav.counts.global !== nav.counts.all)}
+            <button class="item" class:on={active('global')} onclick={() => pick('global')}>
+              <Icon name="world" size={18} />
+              <span class="name">{$t('notes_filter_global')}</span>
+              <span class="n">{nav.counts.global}</span>
+            </button>
+          {/if}
+          <button class="item" class:on={active('pinned')} onclick={() => pick('pinned')}>
+            <Icon name="pin" size={18} />
+            <span class="name">{$t('notes_filter_pinned')}</span>
+            <span class="n">{nav.counts.pinned}</span>
+          </button>
+          <button class="item" class:on={active('archived')} onclick={() => pick('archived')}>
+            <Icon name="archive" size={18} />
+            <span class="name">{$t('notes_filter_archived')}</span>
+            <span class="n">{nav.counts.archived}</span>
+          </button>
+          <button class="item" class:on={active('trash')} onclick={() => pick('trash')}>
+            <Icon name="trash-2" size={18} />
+            <span class="name">{$t('notes_filter_trash')}</span>
+            <span class="n">{nav.counts.trash}</span>
+          </button>
+        </section>
 
-      {#if hasBrowser}
+        {#if hasBrowser}
+          <section>
+            <div class="label-row">
+              <span class="m-label">{$t('notes_browser_section')}</span>
+              <span class="head-actions">
+                {@render foldChevs('browser', () => workspaces.filter((ws) => (ws.profiles ?? []).length > 0).map((ws) => `ws:${ws.id}`))}
+                <span class="plus-slot"></span>
+              </span>
+            </div>
+            {#if !collapsed.has('browser')}
+              {#each workspaces as ws (ws.id)}
+                {@const profiles = (ws.profiles ?? []).toSorted((a, b) => compareLabel(a.name, b.name))}
+                <div class="ws-row">
+                  <button class="item" class:on={active('workspace', ws.id)} onclick={() => pick('workspace', ws.id)}>
+                    <span class="m-dot" style:background={swatch(ws.color)}></span>
+                    <span class="name">{ws.name}</span>
+                    {#if ws.count > 0}<span class="n">{ws.count}</span>{/if}
+                  </button>
+                  {#if profiles.length > 0}
+                    <button type="button" class="ws-chev" onclick={() => toggle(`ws:${ws.id}`)} aria-label={$t('notes_ws_fold_profiles')}>
+                      <Icon name={collapsed.has(`ws:${ws.id}`) ? 'chevron-right' : 'chevron-down'} size={16} />
+                    </button>
+                  {/if}
+                </div>
+                {#if !collapsed.has(`ws:${ws.id}`)}
+                  {#each profiles as p (p.id)}
+                    <button class="item child" class:on={active('profile', p.id)} onclick={() => pick('profile', p.id)}>
+                      <Icon name="browser" size={16} />
+                      <span class="name">{p.name}</span>
+                      <span class="n">{p.count}</span>
+                    </button>
+                  {/each}
+                {/if}
+              {/each}
+            {/if}
+          </section>
+        {/if}
+
         <section>
           <div class="label-row">
-            <span class="section-label">{$t('notes_browser_section')}</span>
+            <span class="m-label">{$t('notes_filter_folders')}</span>
             <span class="head-actions">
-              {@render foldChevs('browser', () => workspaces.filter((ws) => (ws.profiles ?? []).length > 0).map((ws) => `ws:${ws.id}`))}
-              <span class="plus-slot"></span>
+              {@render foldChevs('folders', folderChildKeys)}
+              <span class="plus-slot">
+                <button type="button" class="m-ibtn small" onclick={() => openNewFolder()} aria-label={$t('notes_create_folder')}>
+                  <Icon name="plus" size={16} />
+                </button>
+              </span>
             </span>
           </div>
-          {#if !collapsed.has('browser')}
-            {#each workspaces as ws (ws.id)}
-              {@const profiles = (ws.profiles ?? []).toSorted((a, b) => compareLabel(a.name, b.name))}
-              <div class="ws-row">
-                <button class="item" class:on={active('workspace', ws.id)} onclick={() => pick('workspace', ws.id)}>
-                  <span class="status-dot" style:background={swatch(ws.color)}></span>
-                  <span class="name">{ws.name}</span>
-                  {#if ws.count > 0}<span class="count-pill lg quiet">{ws.count}</span>{/if}
-                </button>
-                {#if profiles.length > 0}
-                  <button type="button" class="ws-chev" onclick={() => toggle(`ws:${ws.id}`)} aria-label={$t('notes_ws_fold_profiles')}>
-                    <Icon name={collapsed.has(`ws:${ws.id}`) ? 'chevron-right' : 'chevron-down'} size={16} />
-                  </button>
-                {/if}
-              </div>
-              {#if !collapsed.has(`ws:${ws.id}`)}
-                {#each profiles as p (p.id)}
-                  <button class="item child" class:on={active('profile', p.id)} onclick={() => pick('profile', p.id)}>
-                    <Icon name="browser" size={16} />
-                    <span class="name">{p.name}</span>
-                    <span class="count-pill lg quiet">{p.count}</span>
-                  </button>
-                {/each}
-              {/if}
-            {/each}
+          {#if !collapsed.has('folders')}
+          {#each spaces as node (node.item.id)}
+            {@render space(node)}
+          {/each}
+          {#if !spaces.length}
+            <span class="empty">{$t('notes_filter_folders_empty')}</span>
+          {/if}
           {/if}
         </section>
-      {/if}
 
-      <section>
-        <div class="label-row">
-          <span class="section-label">{$t('notes_filter_folders')}</span>
-          <span class="head-actions">
-            {@render foldChevs('folders', folderChildKeys)}
-            <span class="plus-slot">
-              <button type="button" class="icon-btn" onclick={() => openNewFolder()} aria-label={$t('notes_create_folder')}>
-                <Icon name="plus" size={22} />
-              </button>
+        <section>
+          <div class="label-row">
+            <span class="m-label">{$t('notes_smart_title')}</span>
+            <span class="head-actions">
+              {@render foldChevs('smart', () => [])}
+              <span class="plus-slot">
+                <button type="button" class="m-ibtn small" onclick={openNewSmart} aria-label={$t('notes_smart_new')}>
+                  <Icon name="plus" size={16} />
+                </button>
+              </span>
             </span>
-          </span>
-        </div>
-        {#if !collapsed.has('folders')}
-        {#each spaces as node (node.item.id)}
-          {@render space(node)}
-        {/each}
-        {#if !spaces.length}
-          <p class="empty-state sm">{$t('notes_filter_folders_empty')}</p>
-        {/if}
-        {/if}
-      </section>
-
-      <section>
-        <div class="label-row">
-          <span class="section-label">{$t('notes_smart_title')}</span>
-          <span class="head-actions">
-            {@render foldChevs('smart', () => [])}
-            <span class="plus-slot">
-              <button type="button" class="icon-btn" onclick={openNewSmart} aria-label={$t('notes_smart_new')}>
-                <Icon name="plus" size={22} />
-              </button>
-            </span>
-          </span>
-        </div>
-        {#if !collapsed.has('smart')}
-        {#each nav.smart as view (view.id)}
-          {@const open = () => (menu = { kind: 'smart', id: view.id, name: view.name, color: view.color })}
-          <div class="ws-row">
+          </div>
+          {#if !collapsed.has('smart')}
+          {#each nav.smart as view (view.id)}
             <button
               class="item"
               class:on={active('smart', view.id)}
               onclick={() => pick('smart', view.id)}
-              {@attach longpress(open)}
+              {@attach longpress(() => (menu = { kind: 'smart', id: view.id, name: view.name, color: view.color }))}
             >
               <span class="m-doc" style:--c={view.color}><Icon name="list" size={14} /></span>
               <span class="name">{view.name}</span>
             </button>
-            {@render more(open)}
-          </div>
-        {/each}
-        {#if !nav.smart.length}
-          <p class="empty-state sm">{$t('notes_smart_empty')}</p>
-        {/if}
-        {/if}
-      </section>
-
-      {#if nav.sites.length}
-        <section>
-          <div class="label-row">
-            <span class="section-label">{$t('notes_filter_sites')}</span>
-            <span class="head-actions">
-              {@render foldChevs('sites', () => [])}
-              <span class="plus-slot"></span>
-            </span>
-          </div>
-          {#if !collapsed.has('sites')}
-          {#each nav.sites as s (s.id)}
-            <button class="item" class:on={active('domain', s.id)} onclick={() => pick('domain', s.id)}>
-              <Icon name="world" size={18} />
-              <span class="name">{s.name}</span>
-              <span class="count-pill lg quiet">{s.count}</span>
-            </button>
           {/each}
+          {#if !nav.smart.length}
+            <span class="empty">{$t('notes_smart_empty')}</span>
+          {/if}
           {/if}
         </section>
-      {/if}
 
-      <section>
-        <button type="button" class="list-row dense tags-row" onclick={() => void leave(() => void goto('/notes/tags'))}>
-          <Icon name="tag" size={18} />
-          <span class="list-row-label">{$t('notes_tags')}</span>
-          <span class="chev"><Icon name="chevron-right" size={16} /></span>
-        </button>
-      </section>
+        {#if nav.sites.length}
+          <section>
+            <div class="label-row">
+              <span class="m-label">{$t('notes_filter_sites')}</span>
+              <span class="head-actions">
+                {@render foldChevs('sites', () => [])}
+                <span class="plus-slot"></span>
+              </span>
+            </div>
+            {#if !collapsed.has('sites')}
+            {#each nav.sites as s (s.id)}
+              <button class="item" class:on={active('domain', s.id)} onclick={() => pick('domain', s.id)}>
+                <Icon name="world" size={18} />
+                <span class="name">{s.name}</span>
+                <span class="n">{s.count}</span>
+              </button>
+            {/each}
+            {/if}
+          </section>
+        {/if}
 
-      <div class="brand">
-        <img src="/logo.png" alt="" />
-        <div class="brand-text">
-          <span class="brand-name">{$t('app_name')}</span>
-          {#if version}<span class="brand-ver">v{version}</span>{/if}
+        <section>
+          <button type="button" class="label-row" onclick={() => { onclose(); void goto('/notes/tags'); }}>
+            <span class="m-label">{$t('notes_tags')}</span>
+            <Icon name="chevron-right" size={16} />
+          </button>
+        </section>
+
+        <div class="brand">
+          <img src="/logo.png" alt="" />
+          <div class="brand-text">
+            <span class="brand-name">{$t('app_name')}</span>
+            {#if version}<span class="brand-ver">v{version}</span>{/if}
+          </div>
         </div>
-      </div>
-    </nav>
-  {/if}
-</Drawer>
+      </nav>
+    {/if}
+  </div>
+{/if}
 
 <BottomSheet open={!!menu} title={menu?.name ?? ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={startEditFromMenu}><Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span></button>
+    <button type="button" class="m-row" onclick={startEditFromMenu}><Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span></button>
     {#if menu?.kind === 'folder' && !nav?.folders.find((f) => f.id === menu?.id)?.parent_id}
-      <button type="button" class="list-row dense" onclick={() => { const id = menu!.id; menu = null; openNewFolder(id); }}><Icon name="folder-plus" size={20} /><span class="list-row-label">{$t('notes_folder_sub')}</span></button>
+      <button type="button" class="m-row" onclick={() => { const id = menu!.id; menu = null; openNewFolder(id); }}><Icon name="folder-plus" size={20} /><span class="m-row-label">{$t('notes_folder_sub')}</span></button>
     {/if}
-    <button type="button" class="list-row dense" onclick={removeCurrent}><Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span></button>
+    <button type="button" class="m-row" onclick={removeCurrent}><Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span></button>
   </div>
 </BottomSheet>
 
@@ -425,32 +418,25 @@
   </span>
 {/snippet}
 
-<!-- «⋮» of a folder's or a smart view's row: the sheet of its long press, in sight; the last of the row. -->
-{#snippet more(open: () => void)}
-  <button type="button" class="icon-btn" onclick={open} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-{/snippet}
-
 {#snippet space(node: FolderNode)}
   {@const f = node.item}
-  {@const open = () => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color })}
   <div class="space">
     <div class="ws-row">
       <button
         class="item space-row"
         class:on={active('folder', f.id)}
         onclick={() => pick('folder', f.id)}
-        {@attach longpress(open)}
+        {@attach longpress(() => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color }))}
       >
-        <span class="m-folder tinted-text" style:--chip={swatch(f.color)}><Icon name="folder" size={18} /></span>
+        <span class="m-dot" style:background={swatch(f.color)}></span>
         <span class="name">{f.name}</span>
-        <span class="count-pill lg quiet">{node.total}</span>
+        <span class="n">{node.total}</span>
       </button>
       {#if node.children.length > 0}
         <button type="button" class="ws-chev" onclick={() => toggle(`folder:${f.id}`)} aria-label={collapsed.has(`folder:${f.id}`) ? $t('notes_section_unfold') : $t('notes_section_fold')}>
           <Icon name={collapsed.has(`folder:${f.id}`) ? 'chevron-right' : 'chevron-down'} size={16} />
         </button>
       {/if}
-      {@render more(open)}
     </div>
     {#if !collapsed.has(`folder:${f.id}`)}
       {#each node.children as child (child.item.id)}
@@ -462,21 +448,17 @@
 
 {#snippet folderNode(node: FolderNode, depth: number, spaceColor: string)}
   {@const f = node.item}
-  {@const open = () => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color })}
-  <div class="ws-row">
-    <button
-      class="item folder-row"
-      class:on={active('folder', f.id)}
-      style:padding-left="{12 + depth * 20}px"
-      onclick={() => pick('folder', f.id)}
-      {@attach longpress(open)}
-    >
-      <span class="m-folder tinted-text" style:--chip={f.color || spaceColor}><Icon name="folder" size={18} /></span>
-      <span class="name">{f.name}</span>
-      <span class="count-pill lg quiet">{node.total}</span>
-    </button>
-    {@render more(open)}
-  </div>
+  <button
+    class="item folder-row"
+    class:on={active('folder', f.id)}
+    style:padding-left="{12 + depth * 20}px"
+    onclick={() => pick('folder', f.id)}
+    {@attach longpress(() => (menu = { kind: 'folder', id: f.id, name: f.name, color: f.color }))}
+  >
+    <span class="folder-ico" style:--c={f.color || spaceColor}><Icon name="folder" size={18} /></span>
+    <span class="name">{f.name}</span>
+    <span class="n">{node.total}</span>
+  </button>
   {#if !collapsed.has(`folder:${f.id}`)}
     {#each node.children as child (child.item.id)}
       {@render folderNode(child, depth + 1, spaceColor)}
@@ -485,14 +467,46 @@
 {/snippet}
 
 <style>
-  .err { padding-top: var(--sp-3); }
+  .err { margin-bottom: var(--sp-3); }
+  .drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(88vw, 340px);
+    background: var(--m-sheet);
+    z-index: 51;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--sat);
+    animation: slide var(--dur-drawer) var(--ease-drawer);
+    border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  }
+  @keyframes slide {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  .drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-3) var(--sp-2) var(--sp-2) var(--sp-4);
+    flex-shrink: 0;
+  }
+  .drawer-title { font-weight: var(--fw-bold); font-size: var(--fs-xl); letter-spacing: var(--ls-tight); line-height: var(--lh-tight); }
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 var(--sp-3) calc(var(--sab) + var(--sp-3));
+  }
   section { display: flex; flex-direction: column; }
-  section + section { margin-top: var(--sp-3); }
+  section + section { margin-top: var(--sp-2); }
   .item {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 56px; /* the phone's row of the drawer, as a dense row (base.css .list-row.dense) */
+    min-height: var(--touch);
     padding: 0 12px;
     border: 0;
     background: none;
@@ -511,6 +525,10 @@
   .item.child { padding-left: 40px; }
   .space-row { font-weight: var(--fw-bold); }
   .folder-row { font-weight: var(--fw-medium); }
+  .folder-ico {
+    display: inline-flex;
+    color: color-mix(in srgb, var(--c) 70%, var(--text-2));
+  }
   .name {
     flex: 1;
     min-width: 0;
@@ -518,9 +536,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* A row's count is the quiet .count-pill of 22 (base.css), grey in a chosen row too. */
-  .item .count-pill { margin-left: auto; }
+  .n {
+    margin-left: auto;
+    color: var(--text-3);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    flex-shrink: 0;
+  }
+  .item.on .n { color: inherit; }
   .space { display: flex; flex-direction: column; }
+  .empty {
+    padding: var(--sp-2) var(--sp-3);
+    color: var(--text-3);
+    font-size: var(--fs-sm);
+  }
   .plus-slot {
     width: 40px;
     height: 40px;
@@ -561,24 +590,20 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    /* The space around a group's .section-label is its row's: 40 high, the label in its middle, as its buttons. */
-    min-height: 40px;
     border: 0;
     background: none;
-    padding: 0 0 0 var(--sp-1);
+    padding: 0;
     text-align: left;
     cursor: pointer;
   }
-  .label-row .section-label { flex: 1; }
-  /* «Tags» is a row that leads to their page (.list-row.dense of 56, the tag icon, a chevron), not a group's head;
-     its text and icon as the drawer's other rows (.item). */
-  .tags-row { font-size: var(--fs-body); font-weight: var(--fw-medium); border-radius: var(--radius-md); }
-  .tags-row > :global(svg) { color: var(--text-2); }
+  .label-row .m-label { flex: 1; }
+  .label-row > :global(svg) { color: var(--text-3); flex-shrink: 0; margin-right: 10px; }
+  .m-ibtn.small { width: 36px; height: 36px; color: var(--text-3); }
   .brand {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--sp-2-5);
+    gap: 10px;
     margin-top: var(--sp-4);
     padding: var(--sp-3) var(--sp-2) 0;
     border-top: 1px solid var(--border);
@@ -600,5 +625,6 @@
     font-family: var(--font-mono);
     color: var(--text-3);
   }
+  .pad { padding: 0 var(--sp-3); }
   .danger { color: var(--danger-text); }
 </style>

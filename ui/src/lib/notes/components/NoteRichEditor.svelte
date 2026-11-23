@@ -406,9 +406,9 @@
         placeholder="https://"
         onkeydown={(e) => { if (e.key === 'Escape') { e.preventDefault(); closeLinkForm(); } }}
       />
-      <button type="submit" class="icon-btn" title={$t('note_tb_link')}><Icon name="check" size={13} /></button>
+      <button type="submit" class="lf-btn" title={$t('note_tb_link')}><Icon name="check" size={13} /></button>
       {#if hasLink}
-        <button type="button" class="icon-btn" title={$t('note_link_remove')} onclick={removeLink}><Icon name="x" size={13} /></button>
+        <button type="button" class="lf-btn" title={$t('note_link_remove')} onclick={removeLink}><Icon name="x" size={13} /></button>
       {/if}
     </form>
   {/if}
@@ -420,7 +420,7 @@
   {#if imgOpen}
     <div class="img-bar" style="left: {imgPos.x}px; top: {imgPos.y}px">
       <span class="img-name" title={imgName}>{imgName}</span>
-      <button type="button" class="icon-btn" title={$t('note_att_download')} onclick={downloadSelectedImage}>
+      <button type="button" class="lf-btn" title={$t('note_att_download')} onclick={downloadSelectedImage}>
         <Icon name="download" size={13} />
       </button>
     </div>
@@ -456,8 +456,8 @@
     z-index: 6;
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-1-5);
+    gap: 0.3rem;
+    padding: 0.25rem 0.4rem;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
@@ -470,7 +470,7 @@
   .link-form input {
     width: 240px;
     height: 24px;
-    padding: 0 var(--sp-1);
+    padding: 0 0.3rem;
     background: none;
     border: none;
     outline: none;
@@ -478,14 +478,25 @@
     color: var(--text);
   }
   .link-form input:focus { box-shadow: none; }
+  .lf-btn {
+    background: none;
+    border: none;
+    color: var(--text-2);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.3rem;
+  }
+  .lf-btn:hover { background: var(--surface-2); color: var(--text); }
 
   .img-bar {
     position: absolute;
     z-index: 6;
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-1-5);
+    gap: 0.3rem;
+    padding: 0.2rem 0.4rem;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
@@ -545,7 +556,7 @@
   }
   .host :global(code) {
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: 0.88em;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
@@ -560,7 +571,7 @@
     margin: 0 0 1em;
     font-family: var(--font-mono);
   }
-  .host :global(pre code) { background: none; border: none; padding: 0; font-size: var(--fs-sm); }
+  .host :global(pre code) { background: none; border: none; padding: 0; font-size: 0.85em; }
   .host :global(blockquote) {
     margin: 0 0 1em;
     padding: 0.2em 0 0.2em var(--sp-3);
@@ -591,7 +602,7 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     color: var(--text-3);
-    font-size: var(--fs-sm);
+    font-size: 0.9em;
     overflow-wrap: anywhere;
     vertical-align: middle;
     user-select: none;
@@ -620,7 +631,7 @@
   .host :global([data-resize-container].ProseMirror-selectednode) { outline: 2px solid var(--accent); border-radius: var(--radius-sm); }
   .host :global(.ProseMirror-selectednode) { outline: 2px solid var(--accent); border-radius: 3px; }
   .host :global(.tableWrapper) { overflow-x: auto; margin: 0 0 1em; }
-  .host :global(table) { border-collapse: collapse; font-size: var(--fs-sm); table-layout: fixed; width: 100%; }
+  .host :global(table) { border-collapse: collapse; font-size: 0.92em; table-layout: fixed; width: 100%; }
   .host :global(th), .host :global(td) {
     border: 1px solid var(--border);
     padding: 0.3em 0.6em;

@@ -24,7 +24,7 @@
 
 <BottomSheet {open} title={$t('notes_workspace_add')} {onclose}>
   {#if workspaces.length === 0}
-    <p class="empty-state sm">{$t('notes_workspace_empty')}</p>
+    <p class="empty">{$t('notes_workspace_empty')}</p>
   {:else}
     <div class="list">
       {#each workspaces as w (w.id)}
@@ -39,12 +39,13 @@
 </BottomSheet>
 
 <style>
+  .empty { margin: var(--sp-4); color: var(--text-3); text-align: center; }
   .list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .pick {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    min-height: 56px; /* a dense row of the phone (base.css .list-row.dense) */
+    min-height: 48px;
     padding: 0 var(--sp-2);
     border: 0;
     border-radius: var(--radius-md);

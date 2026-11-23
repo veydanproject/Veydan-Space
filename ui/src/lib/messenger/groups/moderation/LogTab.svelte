@@ -83,7 +83,7 @@
 {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
 {#if !items.length && !loading && !error}
-  <p class="empty-state sm">{$t('msg_mod_log_empty')}</p>
+  <p class="empty">{$t('msg_mod_log_empty')}</p>
 {:else}
   <ul class="log">
     {#each items as e, i (`${e.at}:${e.by}:${e.action}:${e.target}:${i}`)}
@@ -100,6 +100,7 @@
 {:else if next}<button class="btn btn-ghost btn-sm more" onclick={() => load(true)}>{$t('msg_mod_more')}</button>{/if}
 
 <style>
+  .empty { margin: 0; font-size: var(--fs-sm); color: var(--text-3); text-align: center; padding: var(--sp-4) 0; }
   /* The journal: one card of rows, a line between them (design book, «Модерация группы · журнал»). */
   .log {
     list-style: none; margin: 0; padding: var(--sp-1) var(--sp-3); display: flex; flex-direction: column;

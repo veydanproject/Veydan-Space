@@ -13,7 +13,6 @@
   import type { EditAction } from '$lib/notes/markdown-edit';
   import { portal } from '$lib/core/portal';
   import { t } from '$lib/core/mobile/i18n';
-  import Icon from '$lib/core/Icon.svelte';
 
   interface Props {
     content: string;
@@ -355,13 +354,9 @@
   {/if}
 </div>
 {#if lightboxSrc}
-  <!-- A tap anywhere closes it, as before; the × in the corner says so. -->
-  <div class="lightbox" use:portal onclick={() => (lightboxSrc = '')} role="presentation">
+  <button type="button" class="lightbox" use:portal onclick={() => (lightboxSrc = '')} aria-label={$t('common_close')}>
     <img src={lightboxSrc} alt="" />
-    <button type="button" class="icon-btn close" onclick={() => (lightboxSrc = '')} aria-label={$t('common_close')}>
-      <Icon name="x" size={22} />
-    </button>
-  </div>
+  </button>
 {/if}
 
 <style>
@@ -386,7 +381,7 @@
     overflow-y: auto;
     outline: none;
     padding: var(--sp-2) 0;
-    font-size: var(--fs-md);
+    font-size: var(--fs-body);
     line-height: var(--lh-base);
     word-wrap: break-word;
     white-space: pre-wrap;
@@ -414,7 +409,7 @@
   }
   .host :global(code) {
     font-family: var(--font-mono);
-    font-size: var(--fs-sm);
+    font-size: 0.88em;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-xs);
@@ -440,9 +435,7 @@
   .host :global(li > p) { margin: 0; }
   .host :global(ul[data-type="taskList"]) { list-style: none; padding-left: 0; }
   .host :global(ul[data-type="taskList"] > li) { display: flex; align-items: flex-start; gap: 0.5em; }
-  .host :global(ul[data-type="taskList"] > li > label) { position: relative; flex-shrink: 0; margin-top: 0.2em; display: flex; }
-  /* The box stays 20, a finger's zone of 44 around it: the label toggles it. */
-  .host :global(ul[data-type="taskList"] > li > label)::before { content: ''; position: absolute; inset: -12px; }
+  .host :global(ul[data-type="taskList"] > li > label) { flex-shrink: 0; margin-top: 0.2em; display: flex; }
   .host :global(ul[data-type="taskList"] > li > div) { flex: 1; min-width: 0; }
   .host :global(ul[data-type="taskList"] input[type="checkbox"]) {
     width: 20px;
@@ -472,7 +465,7 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     color: var(--text-3);
-    font-size: var(--fs-sm);
+    font-size: 0.9em;
     overflow-wrap: anywhere;
     vertical-align: middle;
     user-select: none;
@@ -488,8 +481,6 @@
     display: none;
     touch-action: none;
   }
-  /* The handle stays 22, its zone 44. */
-  .host :global([data-resize-handle])::before { content: ''; position: absolute; inset: -11px; }
   .host :global([data-resize-handle="bottom-right"]) { transform: translate(35%, 35%); }
   .host :global([data-resize-handle="bottom-left"]) { transform: translate(-35%, 35%); }
   .host :global([data-resize-handle="top-right"]) { transform: translate(35%, -35%); }
@@ -506,7 +497,7 @@
   .lightbox {
     position: fixed;
     inset: 0;
-    z-index: calc(var(--z-panel) + 30);
+    z-index: 80;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -520,12 +511,6 @@
     touch-action: none;
     transition: none;
   }
-  .lightbox .close {
-    position: absolute;
-    top: calc(var(--sat) + var(--sp-3));
-    right: calc(var(--sar) + var(--sp-3));
-    color: #fff;
-  }
   .lightbox img {
     max-width: 100%;
     max-height: 100%;
@@ -533,7 +518,7 @@
     border-radius: 0;
   }
   .host :global(.tableWrapper) { overflow-x: auto; margin: 0 0 1em; }
-  .host :global(table) { border-collapse: collapse; font-size: var(--fs-sm); }
+  .host :global(table) { border-collapse: collapse; font-size: 0.92em; }
   .host :global(th), .host :global(td) { border: 1px solid var(--border); padding: 4px 8px; vertical-align: top; }
   .host :global(th > p), .host :global(td > p) { margin: 0; }
   .host :global(th) { background: var(--surface-2); }

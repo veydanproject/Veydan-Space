@@ -35,45 +35,52 @@
 
 {#snippet group(label: string, items: NoteListItem[])}
   {#if items.length}
-    <section class="section">
-      <div class="section-label">{label}</div>
+    <div>
+      <div class="group">{label}</div>
       <div class="m-list">
         {#each items as n (n.id)}
-          <button type="button" class="list-row dense" onclick={() => onopen(n.id)}>
+          <button type="button" class="m-row" onclick={() => onopen(n.id)}>
             <Icon name="notes" size={16} />
-            <span class="list-row-label">{n.title || $t('notes_untitled')}</span>
+            <span class="m-row-label">{n.title || $t('notes_untitled')}</span>
             <Icon name="chevron-right" size={16} />
           </button>
         {/each}
       </div>
-    </section>
+    </div>
   {/if}
 {/snippet}
 
 <BottomSheet {open} title={$t('notes_links')} {onclose}>
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
   {#if isEmpty}
-    <p class="empty-state sm">{$t('notes_links_empty')}</p>
+    <p class="empty">{$t('notes_links_empty')}</p>
   {:else if links}
     {@render group($t('notes_links_outgoing'), links.outgoing)}
     {@render group($t('notes_links_backlinks'), links.backlinks)}
     {#if links.unresolved.length}
-      <section class="section">
-        <div class="section-label">{$t('notes_links_unresolved')}</div>
+      <div>
+        <div class="group">{$t('notes_links_unresolved')}</div>
         <div class="m-list">
           {#each links.unresolved as target (target)}
-            <button type="button" class="list-row dense" onclick={() => oncreate(target)}>
+            <button type="button" class="m-row" onclick={() => oncreate(target)}>
               <Icon name="plus" size={16} />
-              <span class="list-row-label">{target}</span>
+              <span class="m-row-label">{target}</span>
               <Icon name="chevron-right" size={16} />
             </button>
           {/each}
         </div>
-      </section>
+      </div>
     {/if}
   {/if}
 </BottomSheet>
 
 <style>
-  .list-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--text-3); text-align: center; padding: var(--sp-5) 0; }
+  .group {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--text-2);
+    margin-bottom: var(--sp-1);
+  }
+  .m-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

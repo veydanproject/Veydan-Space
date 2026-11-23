@@ -6,7 +6,6 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import type { TotpEntry, TotpCode } from '$lib/pass/types';
   import { api } from '$lib/pass/api';
@@ -16,10 +15,10 @@
   import { directory } from '$lib/core/directory';
   import { userLabels } from '$lib/pass/totp-tags';
   import { t } from '$lib/core/mobile/i18n';
+  import { AVATAR_COLORS } from '$lib/core/mobile/nav-colors';
+  import ChipMark from '$lib/core/ui/ChipMark.svelte';
+  import { longpress } from '$lib/core/mobile/longpress';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
-  import TotpRow from '$lib/pass/mobile/TotpRow.svelte';
-  import TotpKeyRows from '$lib/pass/mobile/TotpKeyRows.svelte';
-  import WorkspaceFilter, { inWorkspace } from '$lib/pass/mobile/WorkspaceFilter.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
 
   let entries = $state<TotpEntry[]>([]);
@@ -32,22 +31,42 @@
   let error = $state('');
   let menu = $state<TotpEntry | null>(null);
   let search = $state('');
-  /** «⋮» of the head: the filter by workspace (design 16); null shows every one. */
-  let filterOpen = $state(false);
-  let activeWorkspace = $state<string | null>(null);
 
-  /** The same search as the Passwords tab: name, issuer and the labels of the chips; within the chosen workspace. */
+  /** The same search as the Passwords tab: name, issuer and the labels of the chips. */
   const filtered = $derived.by(() => {
-    void workspaceNames;
-    const ws = activeWorkspace;
-    const shown = ws ? entries.filter((e) => inWorkspace(e.tags, ws)) : entries;
     const q = search.trim().toLowerCase();
-    if (!q) return shown;
-    return shown.filter((e) =>
+    if (!q) return entries;
+    return entries.filter((e) =>
       [e.name, e.issuer ?? '', ...entryChips(e).map((c) => c.label)].some((s) => s.toLowerCase().includes(q)),
     );
   });
   let tick: ReturnType<typeof setInterval>;
+
+  const RADIUS = 12;
+  const CIRC = 2 * Math.PI * RADIUS;
+
+  function offset(code: TotpCode | undefined, period: number): number {
+    if (!code) return CIRC;
+    return CIRC * (1 - Math.min(1, code.seconds_left / period));
+  }
+
+  function ringColor(code: TotpCode | undefined): string {
+    if (!code || code.seconds_left <= 5) return 'var(--danger-text)';
+    if (code.seconds_left <= 10) return 'var(--warn-text)';
+    return 'var(--accent)';
+  }
+
+  function formatCode(code: string): string {
+    const half = Math.ceil(code.length / 2);
+    return `${code.slice(0, half)} ${code.slice(half)}`;
+  }
+
+  /** Stable colour per issuer from a string hash. */
+  function avatarColor(s: string): string {
+    let h = 0;
+    for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return AVATAR_COLORS[h % AVATAR_COLORS.length];
+  }
 
   function label(entry: TotpEntry): string {
     return entry.issuer || entry.name;
@@ -141,22 +160,16 @@
 <div class="m-page totp">
   <div class="m-header">
     {#if hasHome()}
-      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{$t('app_totp')}</h1>
-    {#if workspaceNames.size}
-      <button type="button" class="icon-btn" class:on={!!activeWorkspace} onclick={() => (filterOpen = true)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-    {/if}
   </div>
 
   {#if entries.length > 0}
-    <div class="m-find-row">
-      <div class="search-field fill">
+    <div class="m-search">
+      <div class="field">
         <Icon name="search" size={16} />
-        <input type="search" bind:value={search} placeholder={$t('totp_search_placeholder')} aria-label={$t('totp_search_placeholder')} />
-        {#if search}
-          <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-        {/if}
+        <input type="search" bind:value={search} placeholder={$t('totp_search_placeholder')} />
       </div>
     </div>
   {/if}
@@ -169,72 +182,102 @@
   {#if entries.length === 0 && !loaded}
     <!-- Not answered yet: nothing rather than «no codes». -->
   {:else if entries.length === 0}
-    <div class="empty-state">
-      <span class="empty-icon"><Icon name="shield-lock" size={22} /></span>
+    <div class="m-empty">
+      <Icon name="shield-lock" size={40} />
       <p>{$t('totp_empty')}</p>
       <span>{$t('totp_empty_hint')}</span>
-      <a class="btn btn-primary cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
+      <a class="m-btn-grad cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
     </div>
   {:else if filtered.length === 0}
-    <div class="empty-state">
-      <span class="empty-icon"><Icon name="search" size={22} /></span>
+    <div class="m-empty">
+      <Icon name="search" size={40} />
       <p>{$t('common_nothing_found')}</p>
-      {#if search.trim()}<span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>{/if}
+      <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
     </div>
   {:else}
     <div class="m-cards divided">
       {#each filtered as entry (entry.id)}
-        <TotpRow
-          {entry}
-          code={codes.get(entry.id) ?? null}
-          chips={entryChips(entry)}
-          onopen={() => goto(`/totp/${entry.id}`)}
-          oncopy={() => copy(entry)}
-          onmenu={() => (menu = entry)}
-        />
+        {@const code = codes.get(entry.id)}
+        <button class="m-card item" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
+          <span class="m-avatar" style:--c={avatarColor(label(entry))}>{label(entry).charAt(0).toUpperCase()}</span>
+          <span class="meta">
+            <span class="name">{label(entry)}</span>
+            {#if entry.issuer}<span class="account">{entry.name}</span>{/if}
+            {#if entryChips(entry).length}
+              <span class="tagline">
+                {#each entryChips(entry) as chip (chip.key)}
+                  <span class="m-chip small tinted" style:--chip={chip.color || undefined}><ChipMark kind={chip.kind} />{chip.label}</span>
+                {/each}
+              </span>
+            {/if}
+          </span>
+          <span class="code">{code ? formatCode(code.code) : '••• •••'}</span>
+          <svg class="ring" viewBox="0 0 28 28" width="24" height="24">
+            <circle cx="14" cy="14" r={RADIUS} class="track" />
+            <circle
+              cx="14"
+              cy="14"
+              r={RADIUS}
+              class="progress"
+              style="stroke: {ringColor(code)}; stroke-dasharray: {CIRC}; stroke-dashoffset: {offset(code, entry.period)}"
+            />
+          </svg>
+        </button>
       {/each}
     </div>
   {/if}
 
   </div>
-  <!-- The empty list has its own add, in the middle: the + would be a second one. -->
-  {#if entries.length}
-    <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
-  {/if}
+  <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
 </div>
 
 <BottomSheet open={!!menu} title={menu ? label(menu) : ''} onclose={() => (menu = null)}>
   <div class="m-list">
-    <button type="button" class="list-row dense" onclick={() => { if (menu) copy(menu); menu = null; }}>
-      <Icon name="copy" size={20} /><span class="list-row-label">{$t('common_copy')}</span>
+    <button type="button" class="m-row" onclick={() => { if (menu) copy(menu); menu = null; }}>
+      <Icon name="copy" size={20} /><span class="m-row-label">{$t('common_copy')}</span>
     </button>
-    <button type="button" class="list-row dense" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
-      <Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span>
+    <button type="button" class="m-row" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
+      <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
     </button>
-    <button type="button" class="list-row dense" onclick={remove}>
-      <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
+    <button type="button" class="m-row" onclick={remove}>
+      <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
     </button>
   </div>
-  <!-- The key, the computer's TotpSecretField as rows; «Сменить ключ» opens the entry at its new key. -->
-  <!-- The id is taken before menu is emptied: {@const} of the block would read the null. -->
-  {#if menu}
-    <TotpKeyRows entryId={menu.id} onchange={() => { const id = menu?.id; menu = null; if (id) void goto(`/totp/${id}?key`); }} />
-  {/if}
 </BottomSheet>
-
-<WorkspaceFilter
-  open={filterOpen}
-  title={$t('app_totp')}
-  active={activeWorkspace}
-  onpick={(ws) => { activeWorkspace = ws; filterOpen = false; }}
-  onclose={() => (filterOpen = false)}
-/>
 
 <style>
   .err { margin-bottom: var(--sp-3); }
   .totp { display: flex; flex-direction: column; min-height: 100%; }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-height: 64px;
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    width: 100%;
+  }
+  .item { background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--radius-lg); }
+  .item:active { background: var(--surface-hover); }
+  .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .ring { transform: rotate(-90deg); flex-shrink: 0; }
+  .ring circle { fill: none; stroke-width: 3; }
+  .track { stroke: var(--border); }
+  .progress { transition: stroke-dashoffset 0.9s linear; }
   /* Room under the last row for the floating «+» (.m-fab). */
-  .m-cards { gap: var(--sp-0-5); --rows-gap: var(--sp-0-5); padding-bottom: var(--fab-room); }
+  .m-cards { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
   .danger { color: var(--danger-text); }
-  .cta { margin-top: var(--sp-2); }
+  .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
 </style>

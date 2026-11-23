@@ -15,7 +15,6 @@
   import { usageStore } from '../shared/emoji/usageStore.svelte';
   import { onKeyboard } from '../shared/keyboard';
   import { holdBack } from '$lib/core/ui/sheetBack';
-  import { scrollTabs } from '$lib/core/ui/scrollTabs';
   import RecorderBar from '../media/RecorderBar.svelte';
   import CircleRecorder from '../media/CircleRecorder.svelte';
   import TouchRecorder from '../media/TouchRecorder.svelte';
@@ -285,9 +284,8 @@
   // On a phone Enter is a new line; sending is the button.
   const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
-  // The phone has one record button (record-gesture.ts): a tap starts a recording that goes on by itself
-  // («Stop» beside it, as a locked one), a hold records while held; the button beside it in the field
-  // switches voice and circle (design 15). A computer's tap switches them.
+  // The phone has one record button: a tap switches between voice and circle,
+  // a hold records (record-gesture.ts).
   const MODE_KEY = 'veydan.msg.rec.mode';
   function savedMode(): "voice" | "circle" {
     let saved: string | null = null;
@@ -305,10 +303,6 @@
   let hint = $state("");
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
   let hintTimer: ReturnType<typeof setTimeout> | null = null;
-  // The phone's hint over the button stays until the first recording on this device.
-  const RECORDED_KEY = 'veydan.msg.rec.done';
-  let recordedOnce = $state((() => { try { return localStorage.getItem(RECORDED_KEY) === '1'; } catch { return true; } })());
-  const hintNow = $derived(hint || (touch && !recordedOnce ? mode : ''));
 
   function endHeld() {
     held = null;
@@ -319,43 +313,29 @@
   function showHint() {
     hint = mode;
     if (hintTimer) clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => { hint = ""; }, 3500);
-  }
-
-  function toggleMode() {
-    if (voiceOk && circleOk) {
-      mode = mode === "voice" ? "circle" : "voice";
-      try { localStorage.setItem(MODE_KEY, mode); } catch { /* the choice is not kept */ }
-    }
-    showHint();
-  }
-
-  /** The phone: the button records `mode`, held (`locked` false) or on its own after a tap (`locked`). */
-  function startHeld(locked: boolean) {
-    hint = "";
-    recError = "";
-    emojiOpen = false;
-    closeDock();
-    heldLocked = locked;
-    heldPhase = "recording";
-    held = mode;
-    if (!recordedOnce) {
-      recordedOnce = true;
-      try { localStorage.setItem(RECORDED_KEY, '1'); } catch { /* shown again next time */ }
-    }
-    navigator.vibrate?.(12);
+    hintTimer = setTimeout(() => { hint = ""; }, 1800);
   }
 
   function act(e: GestureEvent) {
     const r = step(gesture, e);
     gesture = r.g;
-    if (r.action === "tap") {
-      if (touch) startHeld(true); else toggleMode();
+    if (r.action === "toggle") {
+      if (voiceOk && circleOk) {
+        mode = mode === "voice" ? "circle" : "voice";
+        try { localStorage.setItem(MODE_KEY, mode); } catch { /* the choice is not kept */ }
+      }
+      showHint();
     } else if (r.action === "start") {
       hint = "";
       // A computer records in its own windows (RecorderBar, CircleRecorder); the button leaves with the row.
       if (!touch) { gesture = IDLE; startRecording(mode); return; }
-      startHeld(false);
+      recError = "";
+      emojiOpen = false;
+      closeDock();
+      heldLocked = false;
+      heldPhase = "recording";
+      held = mode;
+      navigator.vibrate?.(12);
     } else if (r.action === "discard") {
       navigator.vibrate?.(20);
       if (heldEl) heldEl.cancel(); else endHeld();
@@ -379,7 +359,7 @@
     holdTimer = setTimeout(() => { holdTimer = null; act({ type: "hold" }); }, HOLD_MS);
   }
   function recMove(e: PointerEvent) {
-    if (gesture.phase === "pressed" || gesture.phase === "holding") act({ type: "move", x: e.clientX, y: e.clientY });
+    if (gesture.phase === "holding") act({ type: "move", x: e.clientX, y: e.clientY });
   }
   function recUp() {
     if (holdTimer) clearTimeout(holdTimer);
@@ -568,7 +548,7 @@
     return () => { ro.disconnect(); window.removeEventListener('resize', place); };
   });
 
-  /** The phone's chip of Markdown stands under the head of the chat: its bottom edge, read when the chip comes up. */
+  /** The phone's format menu stands under the head of the chat: its bottom edge, read when the menu comes up. */
   function barTop(): string {
     const head = root?.closest('.window')?.querySelector('.head');
     const bottom = head?.getBoundingClientRect().bottom;
@@ -668,13 +648,8 @@
     else if (take.kind === 'native') { e.preventDefault(); onpasteclipboard?.(); }
   }
 
-  let fieldFocus = $state(false);
-  /** The phone, the keyboard up for the field (design 15): the format strip stands on the keyboard under the field, as a note's (design 12). */
-  const strip = $derived(touch && fieldFocus && kbNow > 0 && !held && !dock);
-
   // The phone: pictures a keyboard inserts (Gboard) come while the field is focused.
   function focused(on: boolean) {
-    fieldFocus = on;
     if (touch && onpastefiles) takePictures(on && canattach && !editing);
   }
   $effect(() => () => focused(false));
@@ -748,7 +723,7 @@
 {#snippet mdChip()}
   <span class="mdchip" title={$t('msg_fmt_md_on')}>
     <Icon name="file-code" size={13} /><span>Markdown</span>
-    <button class="md-off" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
+    <button class="icon" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => (md = false)} title={$t('msg_fmt_md_off')} aria-label={$t('msg_fmt_md_off')}>
       <Icon name="x" size={12} />
     </button>
   </span>
@@ -768,22 +743,6 @@
   </button>
 {/snippet}
 
-{#snippet formatStrip()}
-  <!-- One row of 48 on the keyboard: the common .icon-btn (40, its zone 44), the row scrolls, a clipped edge fades. -->
-  <div class="strip" role="toolbar" aria-label={$t('msg_fmt_menu')}>
-    <div class="strip-row hit-row" use:scrollTabs={{ fadeStart: true }}>
-      {#each MARKS as m (m.mark)}
-        <button type="button" class="icon-btn" tabindex="-1" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={() => format(m.mark)} aria-label={$t(m.label)}>
-          <Icon name={m.icon} size={22} />
-        </button>
-      {/each}
-      <span class="sep" aria-hidden="true"></span>
-      <button type="button" class="word" class:on={md} tabindex="-1" aria-pressed={md} onpointerdown={keepFocus} onmousedown={keepFocus}
-        onclick={() => (md = !md)} aria-label={$t(md ? 'msg_fmt_md_off' : 'msg_fmt_md_on')}>Markdown</button>
-    </div>
-  </div>
-{/snippet}
-
 {#snippet formatBar()}
   <div class="fmt" role="toolbar" aria-label={$t('msg_fmt_menu')}>
     {#each MARKS as m (m.mark)}
@@ -799,12 +758,11 @@
 {/snippet}
 
 {#snippet mainButton()}
-  <!-- One button right of the field on every device (ui-unify 02): with nothing to send a hold records the chosen one,
-       a tap records it on its own on a phone (design 15) and switches voice and circle on a computer; words or a file
-       make it the send. A computer reaches it with Tab. -->
+  <!-- One button right of the field on every device (ui-unify 02): with nothing to send a tap switches voice and circle,
+       a hold records the chosen one; words or a file make it the send. A computer reaches it with Tab. -->
   {#if canRecordNow}
     {@const sends = !!held && (heldLocked || heldPhase === "preview")}
-    {#if hintNow && !held}<div class="hint" role="status">{$t(`msg_rec_hint_${hintNow}` as "msg_rec_hint_voice")}</div>{/if}
+    {#if hint && !held}<div class="hint" role="status">{$t(`msg_rec_hint_${hint}` as "msg_rec_hint_voice")}</div>{/if}
     <button class="send record" use:edgeHold class:holding={gesture.phase === "holding"} tabindex={touch ? -1 : undefined}
       style:transform={gesture.phase === "holding" ? `translate(${gesture.dx}px, ${gesture.dy}px) scale(1.45)` : undefined}
       onpointerdown={recDown} onpointermove={recMove} onpointerup={recUp} onpointercancel={recLost}
@@ -825,7 +783,7 @@
   {/if}
 {/snippet}
 
-<div class="composer" class:docked={touch && !!dock} class:stripped={strip} bind:this={root}>
+<div class="composer" class:docked={touch && !!dock} bind:this={root}>
   {#if editing || replyTo}
     <div class="context">
       <Icon name={editing ? 'pencil' : 'reply'} size={14} />
@@ -837,7 +795,7 @@
         <span class="ctx-title">{editing ? $t('msg_composer_editing') : $t('msg_composer_reply_to', { name: replyTo!.direction === 'out' ? $t('msg_you') : peerTitle })}</span>
         <span class="ctx-text">{editing ? (editing.text ?? '') : replyLine({ text: readingOf(replyTo!), deleted: replyTo!.deleted, media: { ...mediaOf(replyTo!) } }, replyTo!.card?.label ?? null, $t)}</span>
       </span>
-      <button class="icon-btn" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('common_back')}><Icon name="x" size={18} /></button>
+      <button class="icon" onpointerdown={keepFocus} onmousedown={keepFocus} onclick={oncancel} title={$t('common_back')}><Icon name="x" size={18} /></button>
     </div>
   {/if}
   {#if attachments}{@render attachments()}{/if}
@@ -882,14 +840,6 @@
           {#if commands.length}{@render slashButton()}{/if}
           {#if onexpand}{@render expandButton()}{/if}
           {#if tools && !held}<div class="side-tools">{@render tools()}</div>{/if}
-          {#if canRecordNow && !held && voiceOk && circleOk}
-            <!-- What the button beside records: shows the other kind, a tap switches to it. -->
-            {@const other = mode === "voice" ? "circle" : "voice"}
-            <button class="tool mode" tabindex="-1" {disabled} onpointerdown={keepFocus} onmousedown={keepFocus} onclick={toggleMode}
-              aria-label={$t(other === "circle" ? "msg_rec_circle" : "msg_rec_voice")}>
-              <Icon name={other === "circle" ? "circle-video" : "mic"} size={18} />
-            </button>
-          {/if}
         </div>
       {@render mainButton()}
     {:else if recording === "voice"}
@@ -921,15 +871,16 @@
     {@render mainButton()}
     {/if}
   </div>
-  {#if tooLong}<div class="error-msg">{$t('msg_composer_too_long')}</div>{/if}
-  {#if recError}<div class="error-msg">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
-  {#if strip}{@render formatStrip()}{/if}
-  <!-- The phone, the keyboard down: the chip of Markdown at the top of the chat, under its head (the strip has the switch while it is up). -->
-  {#if touch && !held && !strip && chip}
+  <!-- The phone: the menu and the chip at the top of the chat, under its head, over the conversation: clear of the
+       system's own menu over the selection and of the keyboard, and the field does not move when they come or go. -->
+  {#if touch && !held && (sel || chip)}
     <div class="fmt-top" use:toBody style:top={barTop()}>
-      {@render mdChip()}
+      {#if sel}{@render formatBar()}{/if}
+      {#if chip}{@render mdChip()}{/if}
     </div>
   {/if}
+  {#if tooLong}<div class="error-msg">{$t('msg_composer_too_long')}</div>{/if}
+  {#if recError}<div class="error-msg">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
   {#if touch && dock}
     <div class="dock" class:glide style:height={dockCss}>
       <div class="dock-panel">
@@ -959,7 +910,7 @@
   /* The field under the conversation's column: as wide (720) and in the middle; 52 high, its buttons 40 with icons 18. */
   .composer { position: relative; background: transparent; padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; max-width: calc(720px + 2 * var(--sp-3)); margin-inline: auto; box-sizing: border-box; }
   .row {
-    padding: var(--sp-1-5); border-radius: var(--radius-bar);
+    padding: 6px; border-radius: var(--radius-bar);
     background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .row:focus-within { border-color: var(--accent-border); }
@@ -986,7 +937,7 @@
      begins on one line. The bar is the app's own (base.css). */
   .cmd-list {
     display: grid; grid-template-columns: max-content minmax(0, 1fr); align-content: start; gap: 1px var(--sp-3);
-    max-height: calc(6 * 44px + 5px + 8px); overflow-y: auto; padding: var(--sp-1);
+    max-height: calc(6 * 44px + 5px + 8px); overflow-y: auto; padding: 4px;
     border-radius: calc(var(--radius-md) - 1px);
   }
   /* A row as the row of a menu (.menu-item): grey under the pointer; the one chosen by the arrows (Enter's) grey with the keyboard's ring too — the pointer does not move it. */
@@ -1003,7 +954,7 @@
   @keyframes menu-in { from { opacity: 0; transform: translateY(4px); } }
   @media (prefers-reduced-motion: reduce) { .cmds { animation: none; } }
   /* «MD» beside the field where Markdown is the rule: lit while the words are Markdown. */
-  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 var(--sp-2); border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); border: 1px solid var(--border-2); }
+  .tool.mdtag { width: auto; min-width: 34px; height: 24px; margin-bottom: 8px; padding: 0 7px; border-radius: var(--radius-pill); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-3); border: 1px solid var(--border-2); }
   .tool.mdtag.on { color: var(--accent-text-2); background: var(--accent-tint); border-color: transparent; }
   .context { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 8px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: var(--radius-xs); color: var(--accent-text-2); }
   .ctx-thumb { flex: 0 0 auto; width: 32px; height: 32px; object-fit: cover; border-radius: var(--radius-xs); background: var(--surface-3); }
@@ -1035,7 +986,7 @@
   /* Its right edge on the button's: the row has no padding on the right. */
   .hint {
     position: absolute; right: 0; bottom: calc(100% + var(--sp-2)); z-index: 2; max-width: calc(100% - var(--sp-4));
-    padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
+    padding: 7px 12px; border-radius: var(--radius); background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-lg);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
@@ -1043,24 +994,21 @@
   .tool:hover:not(:disabled) { color: var(--text); background: var(--surface-hover); }
   .tool.on { color: var(--accent-text-2); background: var(--accent-tint); }
   .tool:disabled { opacity: 0.45; cursor: default; }
+  .icon { border: none; background: none; color: var(--text-3); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  .icon:hover { color: var(--text); background: var(--surface-3); }
   /* Over the field: the chip of Markdown, and on a computer the format menu of a selection. */
   .above { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-height: 28px; }
   .mdchip {
-    display: inline-flex; align-items: center; gap: var(--sp-1); height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 2px 0 9px; border-radius: var(--radius-pill);
     background: var(--accent-tint); color: var(--accent-text-2); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
-  /* The × of the chip: a part of it, round 18 in its ink. */
-  .md-off {
-    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0;
-    border: none; border-radius: 50%; background: none; color: inherit; cursor: pointer;
-  }
-  .md-off:hover { color: var(--text); background: var(--surface-3); }
+  .mdchip .icon { width: 18px; height: 18px; border-radius: 50%; color: inherit; }
   .fmt {
     display: inline-flex; align-items: center; gap: 2px; padding: 3px; align-self: flex-start;
     border-radius: var(--radius); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
   }
   .fb {
-    height: 30px; min-width: 32px; padding: 0 var(--sp-2); border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
+    height: 30px; min-width: 32px; padding: 0 7px; border: none; border-radius: var(--radius-sm); background: none; cursor: pointer;
     color: var(--text-soft); display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   }
   .fb:hover { color: var(--text); background: var(--surface-hover); }
@@ -1072,7 +1020,7 @@
     display: flex; flex-direction: column;
     /* Under the row without the column's gap, edge to edge. */
     margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)) 0;
-    padding-top: var(--sp-2-5);
+    padding-top: 10px;
     overflow: hidden;
   }
   /* The panel itself, 10 under the row like the keyboard. */
@@ -1095,12 +1043,12 @@
   @media (prefers-reduced-motion: reduce) { .dock.glide { transition: none; } }
   /* The phone: a glass bar over the conversation; the field holds its own buttons and stays one line high until the text needs more. */
   @media (pointer: coarse) {
-    .composer { padding: var(--sp-1) var(--sp-2) calc(var(--sp-2-5) + var(--sab, 0px)); }
+    .composer { padding: var(--sp-1) var(--sp-2) calc(10px + var(--sab, 0px)); }
     .row {
       border-radius: var(--radius-bar);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: var(--sp-1-5) var(--sp-2); }
+    .context { background: color-mix(in srgb, var(--m-field, var(--surface-2)) 65%, transparent); border-radius: var(--radius-sm); padding: 6px 8px; }
     .field {
       flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 40px; border-radius: var(--radius-pill);
       background: none;
@@ -1119,57 +1067,31 @@
     .field .tool { width: 40px; height: 40px; margin-left: 2px; }
     .field .tool[data-emoji-toggle] { margin-left: 0; margin-right: 2px; }
     /* A finger's rows, the width of the bar: five of them, no higher than 45% of the screen over the keyboard. */
-    .cmds { position: absolute; z-index: calc(var(--z-base) + 20); left: var(--sp-2); right: var(--sp-2); bottom: calc(100% + 8px); }
+    .cmds { position: absolute; z-index: 20; left: var(--sp-2); right: var(--sp-2); bottom: calc(100% + 8px); }
     .cmd-list { max-height: min(calc(5 * 52px + 4px + 8px), calc(45vh - 2px)); }
     .cmd { min-height: 52px; }
     /* Over the conversation, under its head; in the body of the page, so no glass of the composer holds it. */
     .fmt-top {
-      position: fixed; left: 50%; z-index: calc(var(--z-base) + 30); transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
-      display: flex; flex-direction: column; align-items: center; gap: var(--sp-1-5);
+      position: fixed; left: 50%; z-index: 30; transform: translateX(-50%); max-width: calc(100vw - 2 * var(--sp-2));
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
       animation: drop var(--dur-fast) var(--ease);
     }
     /* Over the conversation: glass like the head, so it reads over any bubble. */
     .fmt-top .mdchip {
-      height: 32px; padding-left: 11px; border: 1px solid var(--pane-strong-border);
+      height: 30px; padding-left: 11px; border: 1px solid var(--pane-strong-border);
       background: color-mix(in srgb, var(--accent-tint) 55%, var(--pane-strong)); box-shadow: var(--pane-highlight), var(--pane-shadow);
       -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     }
-    /* The chip on a phone is a chip's 32 (design 03); its × a part of it, as a label chip's: 28 round in the chip's ink,
-       its zone 44 (mobile.css). */
-    .mdchip .md-off { width: 28px; height: 28px; }
-    .mdchip .md-off :global(svg) { width: 16px; height: 16px; }
-    .mdchip .md-off:hover { background: none; }
-    .mdchip .md-off:active { background: var(--surface-hover); }
-    /* The keyboard up: the strip under the field, on the keyboard's top edge, the screen's whole width (as a note's, design 12). */
-    .composer.stripped { padding-bottom: 0; }
-    .strip {
-      display: flex; align-items: center; height: 48px; margin: calc(var(--sp-2-5) - var(--sp-2)) calc(-1 * var(--sp-2)) 0;
-      padding: 0 var(--sp-4); background: var(--surface-drawer); border-top: 1px solid var(--border);
-    }
-    .strip-row {
-      flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 4px;
-      overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--sp-4)); padding-inline: var(--sp-4); --hit-row: 2px;
-    }
-    .strip-row::-webkit-scrollbar { display: none; }
-    .strip-row:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
-    .strip-row:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }
-    .strip-row:global(.fade-start.fade-end) {
-      -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-      mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
-    }
-    .strip .icon-btn { flex-shrink: 0; }
-    .strip .sep { flex-shrink: 0; margin: 0 4px; background: var(--border); }
-    /* «Markdown»: a word as high as the buttons, lit while the words are Markdown. */
-    .strip .word {
-      flex-shrink: 0; height: 40px; padding: 0 var(--sp-3); border: none; border-radius: var(--radius-sm); background: none;
-      color: var(--text-soft); font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); cursor: pointer;
-    }
-    .strip .word:active { color: var(--text); background: var(--surface-hover); }
-    .strip .word.on { color: var(--accent-text-2); background: var(--accent-tint); }
+    .fmt-top .mdchip .icon { width: 24px; height: 24px; }
+    .fmt { align-self: center; border-radius: var(--radius-bar); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+    .fb { height: 36px; min-width: 40px; }
+    .fb:hover { color: var(--text-soft); background: none; }
+    .fb:active { color: var(--text); background: var(--surface-hover); }
+    .fb.on, .fb.on:hover { color: var(--accent-text-2); background: var(--accent-tint); }
     .send { width: 40px; height: 40px; }
   }
   @keyframes halo { 50% { transform: scale(1.18); opacity: 0.1; } }
-  @keyframes drop { from { opacity: 0; margin-top: calc(-1 * var(--sp-1-5)); } }
+  @keyframes drop { from { opacity: 0; margin-top: -6px; } }
   @keyframes swap { from { transform: rotate(-70deg) scale(0.4); opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .glyph, .record.holding::after, .fmt-top { animation: none; } }
   /*

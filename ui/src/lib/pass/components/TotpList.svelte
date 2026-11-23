@@ -4,7 +4,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import Pill from '$lib/core/ui/Pill.svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
   import { totpStore } from '$lib/pass/store/totp.svelte';
@@ -42,11 +41,6 @@
     if (secondsLeft <= 5) return 'var(--danger-text)';
     if (secondsLeft <= 10) return 'var(--warn-text)';
     return 'var(--accent)';
-  }
-
-  /** The digits are text: --accent-text (4.5:1 in either theme) where the ring is --accent. */
-  function codeColor(secondsLeft: number): string {
-    return secondsLeft <= 10 ? ringColor(secondsLeft) : 'var(--accent-text)';
   }
 
   async function loadCodes() {
@@ -127,12 +121,12 @@
   </div>
 {:else}
   <!-- A container: a row lays itself out by the width of its list (a 300px pane or a 440px drawer). -->
-  <ul class="list-rows list">
+  <div class="list divided">
     {#each entries as entry (entry.id)}
       {@const code = codes.get(entry.id)}
       {@const pname = showProfileBadge ? profileName(entry.tags) : null}
       {@const labels = userLabels(entry.tags)}
-      <li><div class="list-row entry">
+      <div class="entry">
         <div class="entry-info">
           <div class="entry-name" title={entry.name}>{entry.name}</div>
           {#if entry.issuer}
@@ -140,9 +134,9 @@
           {/if}
           {#if pname || labels.length > 0}
             <div class="entry-labels">
-              {#if pname}<Pill tone="accent" text={pname} />{/if}
+              {#if pname}<span class="profile-badge">{pname}</span>{/if}
               {#each labels as label (label)}
-                <Pill text={label} />
+                <span class="label-badge">{label}</span>
               {/each}
             </div>
           {/if}
@@ -167,7 +161,7 @@
           </svg>
           <span
             class="code-value"
-            style:color={code ? codeColor(code.seconds_left) : undefined}
+            style:color={code ? ringColor(code.seconds_left) : undefined}
           >
             {code ? formatCode(code.code) : '••• •••'}
           </span>
@@ -195,19 +189,33 @@
             <Icon name="trash-2" size={13} />
           </button>
         </div>
-      </div></li>
+      </div>
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style>
-  /* The rows of base.css (64, no avatar: the hairline from the text); the row is not a button, its own are. */
   .list {
-    --list-line: var(--sp-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    --rows-gap: 2px;
     container-type: inline-size;
   }
 
-  .entry { cursor: default; }
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3);
+    min-height: 64px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    transition: background var(--dur-fast);
+  }
+
+  .entry:hover { background: var(--surface-hover); }
 
   .entry-info {
     flex: 1;
@@ -227,7 +235,7 @@
   .entry-issuer {
     font-size: var(--fs-xs);
     color: var(--text-2);
-    margin-top: var(--sp-0-5);
+    margin-top: 0.1rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -236,8 +244,26 @@
   .entry-labels {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-1);
-    margin-top: var(--sp-1);
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+
+  .label-badge {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    color: var(--text-2);
+    font-size: var(--fs-xs);
+    padding: 0.05rem 0.35rem;
+  }
+
+  .profile-badge {
+    background: var(--accent-tint);
+    border: 1px solid var(--accent-tint-border);
+    color: var(--accent-text-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    padding: 0.1rem 0.4rem;
+    font-weight: var(--fw-medium);
   }
 
   .entry-code {

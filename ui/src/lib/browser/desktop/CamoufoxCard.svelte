@@ -10,7 +10,6 @@
   import type { CamoufoxStatus } from '$lib/browser/types';
   import { formatError } from '$lib/core/utils';
   import Icon from '$lib/core/Icon.svelte';
-  import Notice from '$lib/core/ui/Notice.svelte';
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -138,7 +137,10 @@
 </script>
 
 {#snippet note(tone: 'ok' | 'warn' | 'danger' | 'info' | 'quiet', icon: string, text: string)}
-  <Notice tone={tone === 'quiet' ? 'info' : tone} {icon} role={tone === 'danger' ? 'alert' : tone === 'quiet' ? undefined : 'status'}>{text}</Notice>
+  <div class="note {tone}" role={tone === 'danger' ? 'alert' : tone === 'quiet' ? undefined : 'status'}>
+    <Icon name={icon} size={18} />
+    <span>{text}</span>
+  </div>
 {/snippet}
 
 <div class="card cf">
@@ -188,7 +190,7 @@
   <!-- The work and its outcome show whatever the status says, even when it could not be read. -->
   <div class="notes">
     {#if extracting}
-      <Notice wait>{$t('settings_camoufox_extracting')}</Notice>
+      <div class="note quiet" role="status"><span class="spinner" aria-hidden="true"></span><span>{$t('settings_camoufox_extracting')}</span></div>
     {/if}
     {#if camoufox !== null}
       {#if camoufox.installed}
@@ -274,7 +276,21 @@
   .label { font-size: var(--fs-xs); color: var(--text-2); }
 
   .notes { display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 var(--sp-6); }
-  .notes > :global(:last-child) { margin-bottom: var(--sp-4); }
+  .notes > :last-child { margin-bottom: var(--sp-4); }
+  .note {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); font-size: var(--fs-base); line-height: var(--lh-base); color: var(--text);
+  }
+  .note :global(svg), .note .spinner { flex-shrink: 0; margin-top: 2px; }
+  .note.ok { background: var(--success-bg); }
+  .note.ok :global(svg) { color: var(--success-text); }
+  .note.warn { background: var(--warn-bg); }
+  .note.warn :global(svg) { color: var(--warn-text); }
+  .note.danger { background: var(--danger-bg); }
+  .note.danger :global(svg) { color: var(--danger-text); }
+  .note.info { background: var(--accent-tint); }
+  .note.info :global(svg) { color: var(--accent-text); }
+  .note.quiet { background: var(--surface-2); color: var(--text-2); }
 
   .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-4) var(--sp-6) var(--sp-5); border-top: 1px solid var(--divider); }
   @container (max-width: 560px) { .actions .btn { flex: 1; justify-content: center; } }

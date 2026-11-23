@@ -89,7 +89,7 @@
   const relative = (iso: string) => relativeTime(iso, $t);
 </script>
 
-<div class="notes-list">
+<div class="notes-list divided">
   {#if notes.length === 0}
     <div class="empty-state">
       {#if search?.trim()}
@@ -107,12 +107,10 @@
       {/if}
     </div>
   {:else}
-    <ul class="list-rows">
     {#each notes as note (note.id)}
-      <li>
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
       <div
-        class="list-row note-card"
+        class="note-card"
         class:active={note.id === activeId}
         onclick={() => onselect(note.id)}
         role="button"
@@ -128,7 +126,7 @@
           </span>
           <span class="note-meta">
             {#if note.has_draft}
-              <span class="status-dot warn" title={$t('notes_unsaved_draft')}></span>
+              <span class="draft-dot" title={$t('notes_unsaved_draft')}></span>
             {/if}
             <span class="note-format">{note.format}</span>
           </span>
@@ -158,9 +156,7 @@
           </div>
         {/if}
       </div>
-      </li>
     {/each}
-    </ul>
   {/if}
 </div>
 
@@ -168,23 +164,35 @@
   .notes-list {
     display: flex;
     flex-direction: column;
+    gap: 10px;
+    --rows-gap: 10px;
   }
 
-  /* A row of base.css (64 at least, its hover and its chosen look, the hairline from the text); a note's lines
-     stand one under another, a preview makes it higher. */
-  .list-rows { --list-line: var(--sp-3); }
   .note-card {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-lg);
+    padding: var(--sp-4);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    display: flex;
     flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    gap: var(--sp-1);
+    gap: 0.5rem;
+  }
+
+  .note-card:hover { background: var(--surface-hover); }
+  /* Active card per design: raised surface + accent ring + soft glow */
+  .note-card.active {
+    border-color: var(--accent-border);
+    background: var(--accent-bg);
+    box-shadow: none;
   }
 
   .card-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
 
   .note-title {
@@ -196,7 +204,7 @@
     text-overflow: ellipsis;
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     flex: 1;
     min-width: 0;
   }
@@ -204,7 +212,7 @@
   .note-meta {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.3rem;
     flex-shrink: 0;
   }
 
@@ -214,15 +222,23 @@
     color: var(--text-faint);
     font-family: var(--font-mono);
     background: var(--border);
-    padding: var(--sp-0-5) var(--sp-1-5);
+    padding: 2px 6px;
     border-radius: var(--radius-badge);
+  }
+
+  .draft-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warn-text);
+    flex-shrink: 0;
   }
 
   .card-mid {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
   }
 
   .scope-badge {
@@ -283,6 +299,6 @@
   .tag-more {
     font-size: var(--fs-xs);
     color: var(--text-2);
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.1rem 0.2rem;
   }
 </style>

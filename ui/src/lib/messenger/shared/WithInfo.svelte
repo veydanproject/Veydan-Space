@@ -69,7 +69,7 @@
   @media (max-width: 1100px) {
     .wrap.with-info, .wrap.with-info.phone { grid-template-columns: minmax(0, 1fr); }
     /* No room for two columns: the panel lies over the conversation, as wide as on a wide window. */
-    .side { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--side-w, 340px), 100%); z-index: 5; box-shadow: var(--shadow-drawer); }
+    .side { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--side-w, 340px), 100%); z-index: 5; box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18); }
     .edge { position: absolute; top: 0; bottom: 0; right: min(var(--side-w, 340px), 100%); z-index: 6; }
     /* On a phone the panel is a screen of its own and paints no fill (the design system: the panel about a
        chat has none): the shell's glow is behind it, up under the status bar as on every screen. A fill of

@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "Aparat jest niedostępny. Zezwól na dostęp do aparatu w ustawieniach systemu lub dodaj kod przez link.",
     "pwgen_history_off_hint": "Nowe hasła nie są zapisywane.",
     "pwgen_history_off_kept": "Hasła zapisane wcześniej pozostają na tym urządzeniu: {n}.",
-    "pwgen_history_empty_hint": "Tu pojawią się wygenerowane hasła. Dotknij hasła, aby je skopiować.",
-    "pw_locked_notice": "Hasła są zablokowane. Odblokuj, aby wprowadzać zmiany."
+    "pwgen_history_empty_hint": "Tu pojawią się wygenerowane hasła. Dotknij hasła, aby je skopiować."
   }
 }

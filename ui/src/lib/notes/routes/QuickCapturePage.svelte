@@ -128,16 +128,16 @@
   .quick {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-2);
+    gap: 0.5rem;
     height: 100%;
-    padding: var(--sp-3);
+    padding: 0.75rem;
     box-sizing: border-box;
   }
   .text {
     flex: 1;
     min-height: 120px;
     resize: none;
-    padding: var(--sp-2-5);
+    padding: 0.6rem;
     font: inherit;
     font-size: var(--fs-sm);
     line-height: var(--lh-base);
@@ -147,10 +147,10 @@
     color: var(--text);
   }
   .text:focus { outline: none; border-color: var(--accent-border); }
-  .meta { display: grid; grid-template-columns: 1fr 1.4fr; gap: var(--sp-1-5); }
+  .meta { display: grid; grid-template-columns: 1fr 1.4fr; gap: 0.4rem; }
   .field {
     min-width: 0;
-    padding: var(--sp-1-5) var(--sp-2);
+    padding: 0.35rem 0.5rem;
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
@@ -158,6 +158,6 @@
     color: var(--text);
   }
   .pick { min-width: 0; }
-  .footer { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
-  .actions { display: flex; gap: var(--sp-1-5); }
+  .footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .actions { display: flex; gap: 0.4rem; }
 </style>

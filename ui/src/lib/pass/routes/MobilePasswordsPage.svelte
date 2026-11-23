@@ -11,14 +11,11 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import PasswordRow from '$lib/pass/mobile/PasswordRow.svelte';
   import PasswordLockBadge from '$lib/pass/components/PasswordLockBadge.svelte';
-  import VaultLockNotice, { vaultWritable } from '$lib/pass/mobile/VaultLockNotice.svelte';
-  import WorkspaceFilter, { inWorkspace } from '$lib/pass/mobile/WorkspaceFilter.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import { api } from '$lib/pass/api';
   import { copySecret } from '$lib/pass/clipboard';
@@ -42,12 +39,7 @@
   let unlockOpen = $state(false);
   let pendingCopy = $state<PasswordEntry | null>(null);
 
-  /** «⋮» of the head: the filter by workspace (design 16); null shows every one. */
-  let filterOpen = $state(false);
-  let activeWorkspace = $state<string | null>(null);
-
-  // One condition with the card: a vault that takes no change has no «+», «Изменить», «Удалить», and says so.
-  const canAdd = $derived(vaultWritable());
+  const canAdd = $derived(!appLock.locked && appLock.status.vault !== 'mismatch');
 
   async function load() {
     try {
@@ -78,11 +70,9 @@
   const chipsOf = (entry: PasswordEntry) => chipItemsOf(entry).map((c) => c.label);
 
   const filtered = $derived.by(() => {
-    const ws = activeWorkspace;
-    const shown = ws ? entries.filter((entry) => inWorkspace(entry.tags, ws)) : entries;
     const q = search.trim().toLowerCase();
-    if (!q) return shown;
-    return shown.filter((entry) =>
+    if (!q) return entries;
+    return entries.filter((entry) =>
       `${entry.title} ${entry.username ?? ''} ${entry.url ?? ''} ${chipsOf(entry).join(' ')}`.toLowerCase().includes(q),
     );
   });
@@ -150,7 +140,6 @@
     void appLock.listen();
     void totpStore.ensureLoaded();
     void directory.get('profile')?.ensureLoaded();
-    void directory.get('workspace')?.ensureLoaded();
     // The colours of the labels (only the tags, not the whole notes store).
     void directory.get('note_tag')?.ensureLoaded();
     void load();
@@ -164,43 +153,34 @@
 <div class="m-page">
   <div class="m-header">
     {#if hasHome()}
-      <a class="icon-btn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
-    <h1 class="m-title">{$t('pw_title')}</h1>
-    <PasswordLockBadge iconBtn size={22} />
-    {#if directory.list('workspace').length}
-      <span class="spacer"></span>
-      <button type="button" class="icon-btn" class:on={!!activeWorkspace} onclick={() => (filterOpen = true)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-    {/if}
+    <h1 class="m-title title-with-badge">{$t('pw_title')}<PasswordLockBadge size={11} /></h1>
   </div>
-  <div class="m-find-row">
-    <div class="search-field fill">
+  <div class="m-search">
+    <div class="field">
       <Icon name="search" size={16} />
-      <input type="search" bind:value={search} placeholder={$t('pw_search')} aria-label={$t('pw_search')} />
-      {#if search}
-        <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-      {/if}
+      <input type="search" bind:value={search} placeholder={$t('pw_search')} />
     </div>
   </div>
   <div class="m-body">
-    <VaultLockNotice />
     {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
     {#if !loaded}
       <!-- The shape of the rows, no empty-state flash before the list arrives. -->
       <Skeleton height={56} avatar="square" />
     {:else if entries.length === 0}
-      <div class="empty-state">
-        <span class="empty-icon"><Icon name="lock-password" size={22} /></span>
+      <div class="m-empty">
+        <Icon name="lock-password" size={40} />
         <p>{$t('pw_empty')}</p>
         {#if canAdd}
-          <a class="btn btn-primary cta" href="/passwords/add"><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
+          <a class="m-btn-grad cta" href="/passwords/add"><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
         {/if}
       </div>
     {:else if filtered.length === 0}
-      <div class="empty-state">
-        <span class="empty-icon"><Icon name="search" size={22} /></span>
+      <div class="m-empty">
+        <Icon name="search" size={40} />
         <p>{$t('common_nothing_found')}</p>
-        {#if search.trim()}<span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>{/if}
+        <span>{$t('pass_nothing_found_hint', { q: search.trim() })}</span>
       </div>
     {:else}
       <div class="m-cards list divided">
@@ -216,8 +196,7 @@
       </div>
     {/if}
   </div>
-  <!-- The empty list has its own add, in the middle: the + would be a second one. -->
-  {#if canAdd && !(loaded && entries.length === 0)}
+  {#if canAdd}
     <a class="m-fab" href="/passwords/add" aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={22} /></a>
   {/if}
 </div>
@@ -227,32 +206,24 @@
     {@const entry = menu}
     <div class="m-list">
       {#if entry.username}
-        <button type="button" class="list-row dense" onclick={() => copyUsername(entry)}>
-          <Icon name="id" size={20} /><span class="list-row-label">{$t('ctx_action_copy_username')}</span>
+        <button type="button" class="m-row" onclick={() => copyUsername(entry)}>
+          <Icon name="id" size={20} /><span class="m-row-label">{$t('ctx_action_copy_username')}</span>
         </button>
       {/if}
-      <button type="button" class="list-row dense" onclick={() => copyPassword(entry)}>
-        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="list-row-label">{$t('ctx_action_copy_password')}</span>
+      <button type="button" class="m-row" onclick={() => copyPassword(entry)}>
+        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
       </button>
       {#if canAdd}
-        <button type="button" class="list-row dense" onclick={() => { const id = entry.id; menu = null; void goto(`/passwords/${id}?edit`); }}>
-          <Icon name="pencil" size={20} /><span class="list-row-label">{$t('common_edit')}</span>
+        <button type="button" class="m-row" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
+          <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
         </button>
-        <button type="button" class="list-row dense" onclick={() => remove(entry)}>
-          <Icon name="trash-2" size={20} /><span class="list-row-label danger">{$t('common_delete')}</span>
+        <button type="button" class="m-row" onclick={() => remove(entry)}>
+          <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
         </button>
       {/if}
     </div>
   {/if}
 </BottomSheet>
-
-<WorkspaceFilter
-  open={filterOpen}
-  title={$t('pw_title')}
-  active={activeWorkspace}
-  onpick={(ws) => { activeWorkspace = ws; filterOpen = false; }}
-  onclose={() => (filterOpen = false)}
-/>
 
 <VaultUnlock
   bind:open={unlockOpen}
@@ -265,10 +236,9 @@
 
 <style>
   .err { margin-bottom: var(--sp-3); }
-  /* The lock is an .icon-btn right beside the title, not at the head's far end. */
-  .m-header > .m-title { flex: 0 1 auto; }
+  .title-with-badge { display: flex; align-items: center; gap: 2px; }
   /* Room under the last row for the floating «+» (.m-fab). */
-  .list { gap: 2px; --rows-gap: 2px; padding-bottom: var(--fab-room); }
-  .cta { margin-top: var(--sp-2); }
+  .list { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
+  .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
   .danger { color: var(--danger-text); }
 </style>

@@ -270,6 +270,8 @@
     "notes_tag_hint": "サブグループには「/」を使います：",
     "notes_tag_hint_example": "グループ/タグ",
     "notes_tag_name_ph": "タグ名",
+    "notes_color": "色{c}",
+    "notes_color_custom": "カスタムカラー",
     "notes_section_fold": "折りたたむ",
     "notes_section_unfold": "展開",
     "notes_section_fold_all": "すべて折りたたむ",

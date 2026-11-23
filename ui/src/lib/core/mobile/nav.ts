@@ -6,7 +6,6 @@
 
 import type { NavItem } from '$lib/core/module';
 import { loadDefaultApp, registry } from '$lib/core/registry';
-import { updateOffered } from '$lib/core/store/update-check.svelte';
 
 export type { NavItem };
 
@@ -22,7 +21,7 @@ export type { NavItem };
 export function rootNav(): NavItem[] | null {
   const only = registry.only;
   if (!only) return null;
-  const settings: NavItem = { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings', dot: updateOffered };
+  const settings: NavItem = { id: 'settings', title: 'app_settings', icon: 'settings', href: '/settings' };
   const home = registry.homeRoute(only);
   const own = home ? only.bar?.(new URL(home, 'http://app')) : undefined;
   if (own) return own;

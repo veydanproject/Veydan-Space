@@ -82,7 +82,7 @@
   .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); }
   .m .actions { align-self: stretch; flex-direction: column; }
   .m .actions .btn { min-height: 48px; font-size: var(--fs-body); }
-  .work { align-self: stretch; display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--text-2); }
+  .work { align-self: stretch; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
   .bar { height: 4px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
   .fill { display: block; height: 100%; background: var(--accent); transition: width 0.4s ease-out; }
 </style>

@@ -174,7 +174,7 @@
   .line.first { margin-top: calc(var(--sp-4) - 2px); }
   .line.highlighted { background: var(--accent-tint); }
   .bubble {
-    position: relative; max-width: min(620px, 86%); padding: var(--sp-1-5) var(--sp-3);
+    position: relative; max-width: min(620px, 86%); padding: 6px var(--sp-3);
     background: var(--bubble-in-bg); color: var(--text); border: 1px solid var(--bubble-in-border);
     --r: var(--radius-bubble); --r-joined: var(--radius-badge); --r-tail: var(--radius-badge);
     border-radius: var(--r); display: flex; flex-direction: column; gap: 2px; min-width: 64px;
@@ -223,7 +223,7 @@
   .line.out .meta { color: var(--bubble-out-meta); }
   .status { display: inline-flex; }
   .pending {
-    display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 var(--sp-1-5); border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px; border-radius: var(--radius-pill);
     background: var(--warn-bg); color: var(--warn-text); font-weight: var(--fw-semibold);
   }
   .pending.rejected { background: var(--danger-bg); color: var(--danger-text); }

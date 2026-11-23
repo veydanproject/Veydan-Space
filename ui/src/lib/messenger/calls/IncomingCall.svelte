@@ -100,7 +100,7 @@
 
 <style>
   .backdrop {
-    position: fixed; inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0); z-index: calc(var(--z-panel) + 30); display: flex; align-items: center; justify-content: center;
+    position: fixed; inset: var(--overlay-inset, 0); border-radius: var(--overlay-radius, 0); z-index: 80; display: flex; align-items: center; justify-content: center;
     background: var(--backdrop); animation: fade 180ms ease-out;
   }
   .card {
@@ -113,9 +113,9 @@
   .card:focus { outline: none; }
   .face { margin-bottom: var(--sp-3); }
   .name { font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: var(--ls-tight); text-align: center; overflow-wrap: anywhere; }
-  .what { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-sm); color: var(--text-2); }
+  .what { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
   .busy {
-    display: inline-flex; align-items: center; gap: var(--sp-1-5); margin-top: var(--sp-1); padding: 4px 12px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 6px; margin-top: var(--sp-1); padding: 4px 12px; border-radius: var(--radius-pill);
     font-size: var(--fs-xs); background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); text-align: center;
   }
   .error { text-align: center; }
@@ -127,7 +127,7 @@
     transition: transform var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
   }
   .voice {
-    margin-top: var(--sp-3); display: inline-flex; align-items: center; gap: var(--sp-1-5); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-pill);
+    margin-top: var(--sp-3); display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius-pill);
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: var(--fs-xs); cursor: pointer;
   }
   @media (hover: hover) { .voice:hover:not(:disabled) { background: var(--surface-3); } }

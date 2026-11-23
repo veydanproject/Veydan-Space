@@ -4,7 +4,6 @@
 <!-- The space of the account by its pools (vcloud-plan.md 4.5, 4.7): the files of the vault first and large, since that is the pool that fills; the text of the vault and the media of chats under it; what takes the room by category when the storage tells. A pool nearly full says so and leads to more room. A plan with a shared storage (`storage.total_bytes`) leads with it instead: one large line for everything, the files, the text and the media under it as figures, with a line of their own only where the plan holds a category to less than the whole. -->
 <script lang="ts">
   import { t } from '$lib/core/i18n';
-  import Notice from '$lib/core/ui/Notice.svelte';
   import { FULL_PERCENT, NOTICE_PERCENT, WARN_PERCENT } from '$lib/core/sync/cloud';
   import { formatBytes, poolsOf, totalPool, type PoolView, type ShownAccount } from '$lib/cloud/account';
   import type { CloudCategory } from '$lib/cloud/usage';
@@ -77,14 +76,14 @@
       {/if}
       <span class="caption">{$t(titles[main.id])}</span>
       {#if tone(main.percent) === 'full' && onMore}
-        <Notice tone="danger">
-          {#if (main.percent ?? 0) < FULL_PERCENT}{$t('cloud_usage_almost_full')}
-          {:else if main.id === 'total'}{$t('cloud_quota_full_total')}
-          {:else}{$t('cloud_quota_full_files')}{/if}
-          {#snippet action()}
-            <button class="btn btn-primary btn-sm" type="button" onclick={onMore}>{$t('cloud_quota_more')}</button>
-          {/snippet}
-        </Notice>
+        <div class="more">
+          <span>
+            {#if (main.percent ?? 0) < FULL_PERCENT}{$t('cloud_usage_almost_full')}
+            {:else if main.id === 'total'}{$t('cloud_quota_full_total')}
+            {:else}{$t('cloud_quota_full_files')}{/if}
+          </span>
+          <button class="btn btn-primary btn-sm" type="button" onclick={onMore}>{$t('cloud_quota_more')}</button>
+        </div>
       {:else if main.id === 'total' && (main.percent ?? 0) >= FULL_PERCENT}
         <!-- A full shared storage stops the text too: said in words, as the full text below is. -->
         <span class="stopped">{$t('cloud_quota_full_total')}</span>
@@ -137,12 +136,17 @@
   .warn .fill { background: var(--warn); }
   .full .fill { background: var(--danger); }
   .full .percent { color: var(--danger-text); }
+  .more {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--sp-3); border-radius: var(--radius-md); background: var(--danger-bg); border: 1px solid var(--danger-border);
+    font-size: var(--fs-sm); color: var(--danger-text);
+  }
   .pools { list-style: none; margin: 0; padding: var(--sp-4) 0 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
-  .pools li { display: flex; flex-direction: column; gap: var(--sp-1-5); }
+  .pools li { display: flex; flex-direction: column; gap: 6px; }
   .row { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-base); color: var(--text-body); }
   .amount { color: var(--text-2); white-space: nowrap; font-size: var(--fs-sm); }
   .stopped { font-size: var(--fs-sm); color: var(--danger-text); line-height: var(--lh-snug); }
   .what { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
-  .what ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1-5); }
+  .what ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   .what li { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-base); color: var(--text-body); }
 </style>

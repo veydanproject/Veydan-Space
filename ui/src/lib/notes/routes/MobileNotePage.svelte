@@ -23,7 +23,6 @@
   import { leave } from '$lib/core/ui/back';
   import NoteRichEditor from '$lib/notes/mobile/NoteRichEditor.svelte';
   import NoteFormatBar from '$lib/notes/mobile/NoteFormatBar.svelte';
-  import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { applyAction, type EditAction } from '$lib/notes/markdown-edit';
   import WikiLinkSheet from '$lib/notes/mobile/WikiLinkSheet.svelte';
   import NoteActionsSheet from '$lib/notes/mobile/NoteActionsSheet.svelte';
@@ -146,8 +145,6 @@
     },
   });
   const CARET_GAP = 16;
-  /** The format strip over the keyboard: one row of 48. */
-  const FORMAT_STRIP_H = 48;
 
   /** Keep the caret line inside the area above the keyboard. */
   function revealCaret() {
@@ -631,7 +628,8 @@
     tick().then(() => linkInput?.focus());
   }
 
-  function applyLink() {
+  function applyLink(e: SubmitEvent) {
+    e.preventDefault();
     rich?.setLink(linkHref.trim());
     linkOpen = false;
   }
@@ -730,11 +728,13 @@
 
   // ── Tags, folders, workspaces ──
 
-  // The label sheet stays open after a tag, a folder or a binding: several are added, «Готово» closes it.
   async function addTag(name: string, color?: string) {
     // "Работа" is the tag "работа": the new tag and the note get one name.
     const choice = tagChoice(name.trim().replace(/^#/, ''), allTags, tags);
-    if (!choice) return;
+    if (!choice) {
+      sheet = 'none';
+      return;
+    }
     try {
       if (!choice.existing && color) {
         const created = await api.notes.tagCreate(choice.name, color);
@@ -742,6 +742,7 @@
       }
       tags = [...tags, choice.name];
       onEdit();
+      sheet = 'none';
     } catch (e) {
       error = formatError(e);
     }
@@ -753,18 +754,23 @@
   }
 
   async function addFolder(folderId: string) {
-    if (folderIds.includes(folderId)) return;
+    if (folderIds.includes(folderId)) {
+      sheet = 'none';
+      return;
+    }
     if (id === 'new') {
       droppedFolders = droppedFolders.filter((x) => x !== folderId);
       if (folderId !== inheritedFolderId && !extraFolders.includes(folderId)) {
         extraFolders = [...extraFolders, folderId];
       }
+      sheet = 'none';
       return;
     }
     busy = true;
     try {
       await api.notes.addFolder(id, folderId);
       await refreshMeta();
+      sheet = 'none';
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -807,11 +813,10 @@
     return api.notes.removeBinding(id, binding);
   }
 
-  /** `close` is the context sheet's: its «Bind» closes it; the label sheet stays open. */
-  async function addBinding(binding: string, close = true) {
+  async function addBinding(binding: string) {
     if (binding.startsWith('workspace:')) {
       await setWorkspace(binding.slice('workspace:'.length), true);
-      if (close) sheet = 'none';
+      sheet = 'none';
       return;
     }
     if (id === 'new') {
@@ -819,14 +824,14 @@
       if (!extraBindings.includes(binding) && !inheritedBindings.includes(binding)) {
         extraBindings = [...extraBindings, binding];
       }
-      if (close) sheet = 'none';
+      sheet = 'none';
       return;
     }
     busy = true;
     try {
       await bindEntity(binding);
       await refreshMeta();
-      if (close) sheet = 'none';
+      sheet = 'none';
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -1060,16 +1065,15 @@
 
 <!-- A tag or folder chip: a tap opens the labels sheet; only its × removes it. -->
 {#snippet removable(kind: string, label: string, color: string | undefined, onremove: () => void)}
-  <span class="chip removable tinted" style:--chip={color}>
+  <span class="m-chip removable tinted" style:--chip={color}>
     <button type="button" class="chip-body" onclick={() => (sheet = 'labels')}><ChipMark {kind} />{label}</button>
     <button type="button" class="chip-x" onclick={onremove} aria-label={$t('notes_label_remove', { name: label })}><Icon name="x" size={14} /></button>
   </span>
 {/snippet}
 
-<!-- The keyboard up: the format strip stands on it (48), the actions' bar is hidden under it. -->
-<div class="editor" style:padding-bottom={kb > 0 ? `${kb + FORMAT_STRIP_H}px` : undefined}>
+<div class="editor" style:padding-bottom={kb > 0 ? `max(${kb}px, calc(72px + var(--sab)))` : undefined}>
   <div class="m-header">
-    <button class="icon-btn" onclick={back} aria-label={$t('common_back')}>
+    <button class="m-ibtn" onclick={back} aria-label={$t('common_back')}>
       <Icon name="chevron-left" size={24} />
     </button>
     {#if editingTitle}
@@ -1101,74 +1105,91 @@
         <Icon name={status === 'saved' ? 'check' : status === 'failed' ? 'alert-triangle' : status === 'saving' ? 'loader' : 'circle'} size={16} />
       </span>
     {/if}
-    <button type="button" class="icon-btn" class:on={pinned} disabled={isNew} onclick={() => setFlags({ pinned: !pinned })} aria-label={pinned ? $t('notes_unpin') : $t('notes_pin')}>
-      <Icon name="pin" size={22} />
+    <button type="button" class="m-ibtn" class:on={pinned} disabled={isNew} onclick={() => setFlags({ pinned: !pinned })} aria-label={pinned ? $t('notes_unpin') : $t('notes_pin')}>
+      <Icon name="pin" size={20} />
     </button>
-    <button type="button" class="icon-btn" onclick={() => (sheet = 'actions')} aria-label={$t('notes_actions')}>
+    <button type="button" class="m-ibtn" onclick={() => (sheet = 'actions')} aria-label={$t('notes_actions')}>
       <Icon name="more-vertical" size={22} />
     </button>
   </div>
-  <div class="scroll" bind:this={scrollEl}>
-    <!-- Over the text and scrolling with it: the head keeps only its buttons and the name. -->
-    <div class="meta">
-      <!-- Held empty until the first save, so the line coming in does not move the text being typed -->
-      <p class="when" aria-hidden={!updatedAt}>
-        {#if updatedAt}{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}{:else}&nbsp;{/if}
-      </p>
-      {#if error}
-        <div class="m-error">{error}</div>
-      {/if}
-      <div class="chip-row tags">
-        {#each shownChips as c (c.kind + c.id)}
-          {#if c.kind === 'folder'}
-            {@render removable('folder', c.label, c.color, () => removeFolder(c.id))}
-          {:else if c.kind === 'proxy' || c.kind === 'ssh' || c.kind === 'totp' || c.kind === 'password'}
-            <!-- An entity: neutral, its kind told by the mark. -->
-            <button type="button" class="chip tinted" onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
-          {:else}
-            <span class="chip tinted" style:--chip={c.color || undefined}><ChipMark kind={c.kind} />{c.label}</span>
-          {/if}
-        {/each}
-        {#each tags as name (name)}
-          {@render removable('tag', name, findTag(allTags, name)?.color, () => removeTag(name))}
-        {/each}
-        <button type="button" class="icon-btn" onclick={() => (sheet = 'labels')} aria-label={$t('notes_tags_add')}>
-          <Icon name="plus" size={18} />
-        </button>
-      </div>
-      <!-- The plates of the page, as on a computer (NoteEditor): the same tone, the main button last. -->
-      {#if externalChange}
-        <div class="plate">
-          <Notice tone="info">
-            {$t('note_external_change')}
-            {#snippet action()}
-              <button type="button" class="btn btn-ghost btn-sm" onclick={keepMine}>{$t('note_external_keep')}</button>
-              <button type="button" class="btn btn-ghost btn-sm" onclick={acceptExternal}>{$t('note_external_accept')}</button>
-            {/snippet}
-          </Notice>
-        </div>
-      {/if}
-      {#if hasConflict}
-        <div class="plate">
-          <Notice tone="warn">
-            {$t('note_sync_conflict')}
-            {#snippet action()}
-              <button type="button" class="btn btn-ghost btn-sm" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
-            {/snippet}
-          </Notice>
-        </div>
-      {/if}
-      {#if fetchOffer.length}
-        <div class="fetch-card">
-          <span class="m-doc"><Icon name="download" size={16} /></span>
-          <span class="fetch-text">{$t('note_att_fetch_prompt', { n: String(fetchOffer.length), size: fmtSize(fetchOfferBytes) })}</span>
-          <div class="fetch-actions">
-            <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('common_later')}</button>
-            <button type="button" class="btn btn-primary" onclick={fetchOffered}>{$t('note_att_fetch_yes')}</button>
-          </div>
-        </div>
-      {/if}
+  <div class="meta">
+    <!-- Held empty until the first save, so the line coming in does not move the text being typed -->
+    <p class="when" aria-hidden={!updatedAt}>
+      {#if updatedAt}{$t('notes_meta_updated')} · {fmtDateTime(updatedAt, $locale)}{:else}&nbsp;{/if}
+    </p>
+    {#if error}
+      <div class="m-error">{error}</div>
+    {/if}
+    <div class="m-chips tags">
+      {#each shownChips as c (c.kind + c.id)}
+        {#if c.kind === 'folder'}
+          {@render removable('folder', c.label, c.color, () => removeFolder(c.id))}
+        {:else if c.kind === 'proxy' || c.kind === 'ssh' || c.kind === 'totp' || c.kind === 'password'}
+          <!-- An entity: neutral, its kind told by the mark. -->
+          <button type="button" class="m-chip tinted" onclick={() => openContext(`${c.kind}:${c.id}`)}><ChipMark kind={c.kind} />{c.label}</button>
+        {:else}
+          <span class="m-chip tinted" style:--chip={c.color || undefined}><ChipMark kind={c.kind} />{c.label}</span>
+        {/if}
+      {/each}
+      {#each tags as name (name)}
+        {@render removable('tag', name, findTag(allTags, name)?.color, () => removeTag(name))}
+      {/each}
+      <button class="m-chip add" onclick={() => (sheet = 'labels')} aria-label={$t('notes_tags_add')}>
+        <Icon name="plus" size={14} />
+      </button>
     </div>
+    <NoteFormatBar {mode} disabled={!ready} onaction={runAction} onmode={setMode} />
+    {#if linkOpen}
+      <form class="link-form" onsubmit={applyLink}>
+        <input
+          bind:this={linkInput}
+          bind:value={linkHref}
+          type="text"
+          inputmode="url"
+          autocapitalize="off"
+          autocomplete="off"
+          placeholder="https://"
+          aria-label={$t('note_tb_link')}
+        />
+        <button type="submit" class="btn btn-primary">{$t('common_done')}</button>
+        <button type="button" class="btn btn-ghost" onclick={closeLink}>{$t('common_cancel')}</button>
+      </form>
+    {/if}
+    <!-- The plates of the page, as on a computer (NoteEditor): the same tone, the main button last. -->
+    {#if externalChange}
+      <div class="plate">
+        <Notice tone="info">
+          {$t('note_external_change')}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" onclick={keepMine}>{$t('note_external_keep')}</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick={acceptExternal}>{$t('note_external_accept')}</button>
+          {/snippet}
+        </Notice>
+      </div>
+    {/if}
+    {#if hasConflict}
+      <div class="plate">
+        <Notice tone="warn">
+          {$t('note_sync_conflict')}
+          {#snippet action()}
+            <button type="button" class="btn btn-ghost btn-sm" onclick={openConflict}>{$t('note_sync_conflict_resolve')}</button>
+          {/snippet}
+        </Notice>
+      </div>
+    {/if}
+    {#if fetchOffer.length}
+      <div class="fetch-card">
+        <span class="m-doc"><Icon name="download" size={16} /></span>
+        <span class="fetch-text">{$t('note_att_fetch_prompt', { n: String(fetchOffer.length), size: fmtSize(fetchOfferBytes) })}</span>
+        <div class="fetch-actions">
+          <button type="button" class="btn btn-ghost" onclick={() => (fetchOffer = [])}>{$t('common_later')}</button>
+          <button type="button" class="btn btn-primary" onclick={fetchOffered}>{$t('note_att_fetch_yes')}</button>
+        </div>
+      </div>
+    {/if}
+  </div>
+
+  <div class="scroll" bind:this={scrollEl}>
   {#if !ready}
     <div class="body"></div>
   {:else if mode === 'rich'}
@@ -1200,14 +1221,8 @@
 
 </div>
 
-{#if kb > 0 && !wikiOpen && !tplOpen}
-  <div class="format-strip" style:bottom="{kb}px">
-    <NoteFormatBar {mode} disabled={!ready} onaction={runAction} onmode={setMode} />
-  </div>
-{/if}
-
-<div class="toolbar" class:hide={kb > 0 || wikiOpen || tplOpen}>
-  <button type="button" class="icon-btn" onclick={() => (sheet = 'attach')} aria-label={$t('notes_attach')}>
+<div class="toolbar" class:hide={wikiOpen || tplOpen}>
+  <button type="button" onclick={() => (sheet = 'attach')} aria-label={$t('notes_attach')}>
     <Icon name="paperclip" size={22} />
   </button>
   <MediaCapture
@@ -1220,35 +1235,17 @@
     onsave={(i) => { const a = attachmentOf(i); if (a) saveAttachment(a); }}
     resolveSrc={(i) => urls.get(i.name)}
   />
-  <button type="button" class="icon-btn" disabled={isNew} onclick={() => (sheet = 'links')} aria-label={$t('notes_links')}>
+  <button type="button" disabled={isNew} onclick={() => (sheet = 'links')} aria-label={$t('notes_links')}>
     <Icon name="link" size={22} />
   </button>
   {#if showContext}
-    <button type="button" class="icon-btn ctx-btn" onclick={() => openContext()} aria-label={$t('notes_context')}>
+    <button type="button" class="ctx-btn" onclick={() => openContext()} aria-label={$t('notes_context')}>
       <Icon name="layers" size={22} />
-      {#if contextCount > 0}<span class="count-pill sm">{contextCount}</span>{/if}
+      {#if contextCount > 0}<span class="ctx-count">{contextCount}</span>{/if}
     </button>
   {/if}
 </div>
 
-<BottomSheet open={linkOpen} title={$t('note_tb_link')} onclose={closeLink}>
-  <input
-    class="link-field"
-    bind:this={linkInput}
-    bind:value={linkHref}
-    type="text"
-    inputmode="url"
-    autocapitalize="off"
-    autocomplete="off"
-    placeholder="https://"
-    aria-label={$t('note_tb_link')}
-    onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } }}
-  />
-  {#snippet footer()}
-    <button type="button" class="btn btn-ghost" onclick={closeLink}>{$t('common_cancel')}</button>
-    <button type="button" class="btn btn-primary" onclick={applyLink}>{$t('common_done')}</button>
-  {/snippet}
-</BottomSheet>
 <NoteActionsSheet
   open={sheet === 'actions'}
   noteId={id}
@@ -1317,7 +1314,7 @@
   onclose={() => (sheet = 'none')}
   onaddTag={addTag}
   onaddFolder={addFolder}
-  onaddBinding={(b) => addBinding(b, false)}
+  onaddBinding={addBinding}
 />
 <NoteAttachSheet
   open={sheet === 'attach'}
@@ -1327,7 +1324,6 @@
   {updatedAt}
   folderLabel={folderChip?.label ?? ''}
   {tags}
-  tagColor={(name) => findTag(allTags, name)?.color}
   onclose={() => (sheet = 'none')}
   onfile={() => attach(false)}
   onimage={() => attach(true)}
@@ -1367,7 +1363,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    padding: 0 0 calc(var(--bar-plate-h) + var(--sab));
+    padding: 0 0 calc(72px + var(--sab));
     background: transparent;
     /* No vfade: a note faded in from nothing, a blink at every open (the owner's iPhone, 2026-11-21). */
   }
@@ -1377,18 +1373,18 @@
     top: auto;
     margin: 0;
   }
-  /* The first of the scrolling part: the date, the error, the chips and the plates, 8 apart, 12 to the text. */
   .meta {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-2);
-    padding-bottom: var(--sp-3);
+    flex-shrink: 0;
+    padding: var(--sp-2) var(--sp-4) var(--sp-2);
+    background: transparent;
   }
+  .plate { margin-top: var(--sp-2); }
   .fetch-card {
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: center;
     gap: var(--sp-2) var(--sp-3);
+    margin-top: var(--sp-2);
     padding: var(--sp-3);
     border: 1px solid var(--accent-border, var(--m-card-border));
     border-radius: var(--radius-lg);
@@ -1399,21 +1395,20 @@
   .fetch-card .m-doc { color: var(--accent-text); }
   .fetch-text { min-width: 0; line-height: var(--lh-snug); }
   .fetch-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: var(--sp-2); }
-  /* The card's buttons are the common .btn of 40, not the page's 44 and 48 (mobile.css); the zone stays 44. */
-  .fetch-actions .btn { min-height: var(--control-h); }
+  .fetch-actions .btn { min-height: 36px; padding: 0 var(--sp-3); }
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: var(--sp-2) var(--sp-4) var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
   }
   .crumb {
     flex: 1;
     min-width: 0;
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 6px;
     padding: 0;
     border: 0;
     background: none;
@@ -1421,8 +1416,7 @@
     font: inherit;
     text-align: left;
   }
-  /* The note's name is the head's title (.m-header .m-title): 20 bold, in the field that renames it too. */
-  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xl); font-weight: var(--fw-bold); letter-spacing: var(--ls-tight); }
+  .crumb .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-bold); }
   .crumb :global(svg) { flex-shrink: 0; color: var(--text-3); }
   .crumb-edit {
     flex: 1;
@@ -1432,41 +1426,34 @@
     border: 0;
     border-radius: var(--radius-sm);
     background: var(--m-field);
-    font-size: var(--fs-xl);
+    font-size: var(--fs-md);
     font-weight: var(--fw-bold);
-    letter-spacing: var(--ls-tight);
   }
   .crumb-edit:focus { box-shadow: none; }
+  .m-header .m-ibtn { flex-shrink: 0; }
+  .m-header .m-ibtn:disabled { opacity: 0.45; }
   .save { display: inline-flex; align-items: center; flex-shrink: 0; padding: 0 var(--sp-1); color: var(--text-3); }
   .save.ok { color: var(--success-text); }
   .save.busy { color: var(--warn-text); }
   .save.bad { color: var(--danger-text); }
   .save.spin :global(svg) { animation: spin 1s linear infinite; }
-  .when { margin: 0; font-size: var(--fs-xs); color: var(--text-3); }
-  /* A chip of 32; its × is a square button of 32 at its end, 8 after the text. Its zone of 44 (the hit area
-     rule) stands out of the square by 6: with 12 between chips and rows two zones never overlap. */
-  .removable { gap: 0; padding: 0 0 0 var(--sp-3); }
+  .when { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-3); }
+  .removable { gap: 0; padding: 0 0 0 12px; }
   .chip-body, .chip-x {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-height: 30px;
+    min-height: 28px;
     padding: 0;
     border: 0;
     background: none;
     color: inherit;
     font: inherit;
   }
-  .chip-body { padding-right: var(--sp-2); }
-  .chip-x { justify-content: center; width: 32px; opacity: var(--chip-fade); }
-  /* The sheet «Ссылка»: one field of 44, 16 high letters (mobile.css), as every field of a sheet. */
-  .link-field {
-    height: var(--touch);
-    padding: 0 var(--sp-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface-3);
-  }
+  .chip-x { justify-content: center; width: 30px; opacity: var(--chip-fade); }
+  .link-form { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .link-form input { flex: 1; min-width: 0; min-height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-field); background: var(--m-field); }
+  .link-form .btn { min-height: 36px; padding: 0 var(--sp-3); flex-shrink: 0; }
   .body {
     border: 0;
     background: transparent;
@@ -1475,45 +1462,51 @@
     min-height: 200px;
     field-sizing: content;
     font-family: var(--font-mono);
+    font-size: var(--fs-body);
     line-height: var(--lh-base);
   }
   .body:focus { box-shadow: none; }
   .editor :global(.rich) { flex: none; }
-  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; line-height: var(--lh-base); }
+  .editor :global(.ProseMirror) { overflow: visible; min-height: 200px; font-size: var(--fs-md); line-height: var(--lh-base); }
 
-  .tags { gap: var(--sp-3); }
+  .tags { margin-bottom: var(--sp-2); }
 
   .toolbar {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: calc(var(--z-base) + 20);
+    z-index: 20;
     display: flex;
     justify-content: space-around;
     align-items: center;
-    height: calc(var(--bar-plate-h) + var(--sab));
+    height: calc(56px + var(--sab));
     padding-bottom: var(--sab);
     background: var(--m-nav);
     border-top: 1px solid var(--border);
   }
-  /* Its buttons are the common .icon-btn (40, its zone 44, mobile.css), MediaCapture's too. */
-  .toolbar.hide { display: none; }
-  /* The keyboard up: one row of formatting on its top edge, 48 high; the row scrolls under the finger. */
-  .format-strip {
-    position: fixed;
-    left: 0;
-    right: 0;
-    z-index: calc(var(--z-base) + 20);
-    display: flex;
-    align-items: center;
+  .toolbar button {
+    width: 48px;
     height: 48px;
-    padding: 0 var(--sp-4);
-    background: var(--surface-drawer);
-    border-top: 1px solid var(--border);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  .format-strip > :global(.bar) { flex: 1; min-width: 0; height: 100%; }
+  .toolbar button.on { color: var(--accent-text); }
+  .toolbar button:active { background: var(--m-seg); }
+  .toolbar button:disabled { opacity: 0.45; }
+  .toolbar.hide { display: none; }
   .ctx-btn { position: relative; }
-  /* The count of the context: the .count-pill of 18 on the button's corner (40), as on the computer. */
-  .ctx-btn .count-pill { position: absolute; top: 0; right: 0; pointer-events: none; }
+  .ctx-count {
+    position: absolute; top: 6px; right: 6px;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: var(--radius-pill); background: var(--accent); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon);
+  }
 </style>

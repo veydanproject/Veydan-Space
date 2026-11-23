@@ -270,6 +270,8 @@
     "notes_tag_hint": "Використовуйте «/» для підгруп:",
     "notes_tag_hint_example": "Група/тег",
     "notes_tag_name_ph": "назва тегу",
+    "notes_color": "Колір {c}",
+    "notes_color_custom": "Власний колір",
     "notes_section_fold": "Згорнути",
     "notes_section_unfold": "Розгорнути",
     "notes_section_fold_all": "Згорнути все",

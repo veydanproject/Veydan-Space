@@ -1256,6 +1256,8 @@
     "msg_profile_public_hint": "Ad, fotoğraf, “Hakkımda”, web sitesi ve bağlantılar herkese açıktır: anahtarınızı bilen herkes görebilir.",
     "msg_profile_saved": "Profil yayımlandı",
     "msg_profile_unsaved": "Kaydedilmemiş değişiklikler",
+    "msg_profile_discard_confirm": "Değişiklikler atılsın mı?",
+    "msg_profile_discard": "At",
     "msg_profile_send_card": "Kartımı gönder",
     "msg_profile_send_card_hint": "Adınız, fotoğrafınız, “Hakkımda” ve bağlantılarınız tek mesajda; böylece sizi tek dokunuşla eklerler.",
     "msg_profile_send_card_to": "Alıcı",

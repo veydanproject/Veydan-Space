@@ -29,10 +29,8 @@
 
   /** `key`: the form of an existing key (nsec, ncryptsec, the seed phrase). */
   type Phase = 'intro' | 'have' | 'create' | 'key';
-  // Asked for from outside: the ways in (`have`), the password of a new key (`create`) or the form of a key (`key`;
-  // the card «Create your identity» of a phone's chats, design 15).
   // svelte-ignore state_referenced_locally
-  let phase = $state<Phase>(intent === 'have' || intent === 'create' || intent === 'key' ? intent : 'intro');
+  let phase = $state<Phase>(intent === 'have' ? 'have' : 'intro');
   let loaded = $state(false);
   let busy = $state(false);
   let error = $state('');
@@ -241,12 +239,12 @@
   /* The password and its repeat side by side in the window of a computer, one under the other on a phone. */
   .pw { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-4); margin-bottom: var(--sp-3); }
   :global(.ob.m) .pw { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-base); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-base); }
   .field span { color: var(--text-2); font-size: var(--fs-base); font-weight: var(--fw-semibold); }
   .field input {
-    color: var(--text); min-height: var(--control-h-lg);
+    font: inherit; color: var(--text); min-height: var(--control-h-lg);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: var(--sp-2) var(--sp-2-5);
+    padding: 8px 10px;
   }
   :global(.ob.m) .field input { min-height: var(--sp-12); font-size: var(--fs-md); }
   .field input:focus { outline: none; border-color: var(--accent-border); }

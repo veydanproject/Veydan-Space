@@ -15,13 +15,15 @@
     <h1 class="m-title">{$t('settings_lock_section')}</h1>
   </div>
 
-  <!-- The form brings the body and the foot: «Включить» stands over the keyboard. -->
-  <LockSetupForm page>
-    {#snippet lead()}<p class="m-hint lead">{$t('settings_lock_hint')}</p>{/snippet}
-  </LockSetupForm>
+  <div class="m-body">
+    <p class="m-hint lead">{$t('settings_lock_hint')}</p>
+    <LockSetupForm />
+  </div>
 </div>
 
 <style>
   /* The first paragraph keeps a line's distance from the header. */
   .lead { margin-top: var(--sp-2); }
+  /* A tablet: one column of 560, as the sheets (mobile.css). */
+  @media (min-width: 640px) { .m-body { width: 100%; max-width: 560px; margin: 0 auto; } }
 </style>

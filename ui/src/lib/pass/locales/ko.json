@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "카메라를 사용할 수 없습니다. 시스템 설정에서 카메라 접근을 허용하거나, 링크로 코드를 추가하세요.",
     "pwgen_history_off_hint": "새 비밀번호는 기록에 저장되지 않습니다.",
     "pwgen_history_off_kept": "이전에 저장된 비밀번호는 이 기기에 남아 있습니다: {n}개.",
-    "pwgen_history_empty_hint": "생성한 비밀번호가 여기에 표시됩니다. 비밀번호를 탭하면 복사됩니다.",
-    "pw_locked_notice": "비밀번호가 잠겨 있습니다. 변경하려면 잠금을 해제하세요."
+    "pwgen_history_empty_hint": "생성한 비밀번호가 여기에 표시됩니다. 비밀번호를 탭하면 복사됩니다."
   }
 }

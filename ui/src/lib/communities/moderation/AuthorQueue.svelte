@@ -16,7 +16,7 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { Avatar, MessageContent, listStamp, myKey, onPhone, stamp } from '$lib/messenger/seams/shared';
+  import { Avatar, MessageContent, listStamp, myKey, stamp } from '$lib/messenger/seams/shared';
   import { nameStore } from '../names.svelte';
   import { channelStore } from '../channelStore.svelte';
   import { canBan } from '../permissions';
@@ -30,9 +30,6 @@
     onback: () => void;
   }
   let { detail, author, onback }: Props = $props();
-
-  /** A phone: the rows of people are the common row of 64 with the avatar of 48 (design 07). */
-  const phone = onPhone();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   /** Rows drawn at a time: a flood of hundreds is not one long page. */
@@ -93,11 +90,11 @@
 </script>
 
 <!-- The panel's head has the one back arrow (to the channel): the way to the whole queue is a word. -->
-<div class="list-row still who" class:dense={!phone}>
-  <Avatar url={nameStore.picture(author)} label={name} seed={author} size={phone ? 48 : 36} />
-  <div class="list-row-body">
-    <span class="list-row-name">{name}</span>
-    {#if loaded}<span class="list-row-line">{$t('chan_mod_queue_total', { n: String(items.length) })}</span>{/if}
+<div class="who">
+  <Avatar url={nameStore.picture(author)} label={name} seed={author} size={36} />
+  <div class="who-text">
+    <span class="name">{name}</span>
+    {#if loaded}<span class="count">{$t('chan_mod_queue_total', { n: String(items.length) })}</span>{/if}
   </div>
   <button class="btn btn-ghost btn-sm" onclick={onback}><Icon name="list" size={13} />{$t('chan_mod_queue_all')}</button>
 </div>
@@ -115,10 +112,7 @@
   <div class="acts-box"><div class="acts">
     <!-- The order of every tab: the danger first, the yes last, on the right. -->
     {#if spamOk}
-      <!-- A phone has no tooltip: there the mark says its word (design 17). -->
-      <button class="btn btn-ghost spam" disabled={busy} title={phone ? undefined : $t('chan_mod_spam')} aria-label={phone ? undefined : $t('chan_mod_spam')} onclick={() => decide(items, 'spam')}>
-        <Icon name="ban" size={16} />{#if phone}{$t('chan_mod_spam')}{/if}
-      </button>
+      <button class="btn btn-ghost spam" disabled={busy} title={$t('chan_mod_spam')} aria-label={$t('chan_mod_spam')} onclick={() => decide(items, 'spam')}><Icon name="ban" size={16} /></button>
     {/if}
     {#if ticked.length}
       <button class="btn btn-ghost" disabled={busy} onclick={() => decide(ticked, 'reject')}><Icon name="x" size={16} />{$t('chan_mod_reject')}</button>
@@ -132,14 +126,14 @@
   <ul class="list divided">
     {#each items.slice(0, shown) as row (row.message_id)}
       <li class="msg">
-        <label class="tick-zone"><input class="tick" type="checkbox" checked={selected.includes(row.message_id)} onchange={() => tick(row.message_id)} aria-label={stamp(row.at)} /></label>
+        <input class="tick" type="checkbox" checked={selected.includes(row.message_id)} onchange={() => tick(row.message_id)} aria-label={stamp(row.at)} />
         <div class="body">
           <span class="when" title={stamp(row.at)}>{listStamp(row.at)}</span>
           <div class="text">{#if row.text}<MessageContent text={row.text} cards={false} />{:else}{$t('chan_post_file')}{/if}</div>
         </div>
         <div class="row-acts">
-          <button class="icon-btn ok" disabled={busy} title={$t('chan_mod_approve')} aria-label={$t('chan_mod_approve')} onclick={() => decide([row], 'approve')}><Icon name="check" size={18} /></button>
-          <button class="icon-btn" disabled={busy} title={$t('chan_mod_reject')} aria-label={$t('chan_mod_reject')} onclick={() => decide([row], 'reject')}><Icon name="x" size={18} /></button>
+          <button class="icon ok" disabled={busy} title={$t('chan_mod_approve')} aria-label={$t('chan_mod_approve')} onclick={() => decide([row], 'approve')}><Icon name="check" size={18} /></button>
+          <button class="icon" disabled={busy} title={$t('chan_mod_reject')} aria-label={$t('chan_mod_reject')} onclick={() => decide([row], 'reject')}><Icon name="x" size={18} /></button>
         </div>
       </li>
     {/each}
@@ -150,28 +144,31 @@
 {/if}
 
 <style>
-  /* The author: the dense row of base.css (a phone's: the row of 64), its text on the panel's edge. */
-  .who { margin: 0 calc(-1 * var(--sp-3)); width: auto; }
+  .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .who-text { display: flex; flex-direction: column; min-width: 0; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .count { font-size: var(--fs-xs); color: var(--text-3); }
   .bulk { padding: 0 4px; }
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); color: var(--text-2); cursor: pointer; user-select: none; }
   .acts { display: flex; gap: var(--sp-2); }
-  .acts .btn { flex: 1 1 0; min-width: 0; justify-content: center; gap: var(--sp-1-5); min-height: 40px; }
+  .acts .btn { flex: 1 1 0; min-width: 0; justify-content: center; gap: 6px; min-height: 40px; }
   .acts-box { container-type: inline-size; }
   .acts .spam { flex: 0 0 auto; color: var(--danger-text); padding-inline: var(--sp-3); }
   @container (max-width: 360px) {
-    .acts { gap: var(--sp-1-5); }
+    .acts { gap: 6px; }
     .acts .btn { padding-inline: var(--sp-3); font-size: var(--fs-sm); white-space: normal; text-wrap: balance; line-height: var(--lh-tight); }
     .acts .btn:not(.spam) > :global(svg) { display: none; }
   }
   .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-  .msg { display: flex; gap: var(--sp-2); padding: var(--sp-2-5) var(--sp-1); align-items: flex-start; }
+  .msg { display: flex; gap: var(--sp-2); padding: 10px 4px; align-items: flex-start; }
   .tick { margin-top: 3px; flex-shrink: 0; }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .when { font-size: var(--fs-xs); color: var(--text-3); }
   .text { font-size: var(--fs-sm); color: var(--text-body); overflow-wrap: anywhere; }
-  /* ✓ and ✕ apart by --sp-2: a tap meant for one does not land on the other (design 17). */
-  .row-acts { display: flex; gap: var(--sp-2); flex-shrink: 0; }
-  .icon-btn.ok { color: var(--success-text, var(--success)); }
+  .row-acts { display: flex; gap: 2px; flex-shrink: 0; }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  .icon:hover:not(:disabled) { color: var(--text); background: var(--surface-3); }
+  .icon.ok { color: var(--success-text, var(--success)); }
   .loading { display: flex; justify-content: center; color: var(--text-3); padding: var(--sp-2); }
   .more { align-self: center; }
   @media (pointer: coarse) {

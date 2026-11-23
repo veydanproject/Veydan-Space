@@ -12,7 +12,6 @@
   import Drawer from '$lib/core/ui/Drawer.svelte';
   import Pane from '$lib/core/ui/Pane.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import PasswordList from './PasswordList.svelte';
   import PasswordCard from './PasswordCard.svelte';
   import PasswordEditModal from './PasswordEditModal.svelte';
@@ -147,7 +146,7 @@
 
   {#snippet actions()}
     {#if !inPlace}
-      <span class="count-pill quiet">{filtered.length}</span>
+      <span class="count">{filtered.length}</span>
       {#if canWrite}
         <button class="icon-btn create" title={$t('common_add')} aria-label={$t('common_add')} onclick={() => (creating = true)}>
           <Icon name="plus" size={18} />
@@ -165,12 +164,9 @@
       </div>
     {:else}
       <div class="panel-search">
-        <div class="search-field fill">
-          <Icon name="search" size={16} />
-          <input bind:value={search} placeholder={$t('pw_search')} />
-          {#if search}
-            <button type="button" class="search-clear" onclick={(e) => { search = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-          {/if}
+        <div class="search-wrap">
+          <span class="search-icon"><Icon name="search" size={13} /></span>
+          <input class="search-input" bind:value={search} placeholder={$t('pw_search')} />
         </div>
       </div>
       {#if directory.list('workspace').length}
@@ -182,7 +178,7 @@
           {/if}
           {#each directory.list('workspace') as ws (ws.id)}
             <button type="button" class="chip-btn" class:active={activeWorkspace === ws.id} onclick={() => toggleWorkspace(ws.id)}>
-              <span class="status-dot" style:background={ws.color}></span>
+              <span class="ws-dot" style:background={ws.color}></span>
               {ws.name}
             </button>
           {/each}
@@ -248,19 +244,52 @@
 {/snippet}
 
 <style>
+  .count {
+    background: var(--accent-tint);
+    color: var(--accent-text-2);
+    border: 1px solid var(--accent-tint-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
+    font-family: var(--font-mono);
+    padding: 0.05rem 0.4rem;
+    font-weight: var(--fw-semibold);
+  }
   .panel-search { padding: var(--sp-3) var(--sp-4) 0; }
+  .search-wrap { position: relative; }
+  .search-icon {
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-2);
+    display: flex;
+    pointer-events: none;
+  }
+  .search-input {
+    width: 100%;
+    box-sizing: border-box;
+    height: var(--control-h);
+    padding: 0 10px 0 2.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-3);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-sm);
+  }
+  .search-input:focus { outline: none; border-color: var(--accent-border); }
   .ws-chips {
     display: flex;
-    gap: var(--sp-1-5);
-    padding: var(--sp-2-5) var(--sp-4);
+    gap: 0.35rem;
+    padding: 0.6rem var(--sp-4);
     flex-wrap: wrap;
     border-bottom: 1px solid var(--border);
   }
   .chip-btn {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1);
-    padding: var(--sp-1) var(--sp-2-5);
+    gap: 0.3rem;
+    padding: var(--sp-1) 0.6rem;
     font-size: var(--fs-xs);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -273,6 +302,7 @@
     border-color: var(--accent-tint-border);
     color: var(--accent-text);
   }
+  .ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .muted { color: var(--text-2); font-size: var(--fs-base); }
   .panel-back { padding: var(--sp-3) var(--sp-4) 0; }
 </style>

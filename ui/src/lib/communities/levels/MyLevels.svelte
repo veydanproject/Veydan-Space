@@ -12,7 +12,6 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import Notice from '$lib/core/ui/Notice.svelte';
   import { channelStore } from '../channelStore.svelte';
   import type { ChannelDetail } from '../api';
   import { BASE_LEVEL, EVERYONE, levelsOf } from './sections';
@@ -59,10 +58,11 @@
       {#if closed.length}{$t('chan_levels_closed', { list: closed.join(', ') })}{/if}
     </p>
     {#if asked.length}
-      <Notice tone="info" icon="clock" role="status">{$t('chan_level_request_sent_text', { name: asked.join('», «') })}</Notice>
+      <p class="sent" role="status"><Icon name="clock" size={14} />{$t('chan_level_request_sent_text', { name: asked.join('», «') })}</p>
     {/if}
     {#each refused as r (r.level)}
-      <Notice tone="warn" icon="x" role="status">{$t('chan_level_refused_text', { name: r.name })}{#if r.reason}<br />{$t('chan_level_refused_reason', { reason: r.reason })}{/if}</Notice>
+      <p class="refused" role="status"><Icon name="x" size={14} />
+        <span>{$t('chan_level_refused_text', { name: r.name })}{#if r.reason}<br />{$t('chan_level_refused_reason', { reason: r.reason })}{/if}</span></p>
     {/each}
     {#if options.length}
       <button class="btn btn-ghost btn-sm" onclick={() => (asking = true)}><Icon name="layers" size={18} />{$t('chan_level_request')}</button>
@@ -82,5 +82,14 @@
   }
   .lvl.base { color: var(--text-2); background: var(--surface-3); border-color: var(--border); }
   .hint { margin: 0; }
+  .sent {
+    margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--accent-text-2); background: var(--accent-bg); border: 1px solid var(--accent-border);
+  }
+  .refused {
+    margin: 0; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-md);
+    font-size: var(--fs-xs); line-height: var(--lh-snug); color: var(--text); background: var(--warn-bg); border: 1px solid var(--warn-border); overflow-wrap: anywhere;
+  }
+  .sent :global(svg), .refused :global(svg) { flex-shrink: 0; margin-top: 2px; }
   @media (pointer: coarse) { .btn { min-height: var(--control-h-lg); } }
 </style>

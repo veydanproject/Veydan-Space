@@ -8,7 +8,6 @@
   back; a phone screen brings its own bar.
 -->
 <script lang="ts">
-  import { onPhone as isMobile } from '../phone';
   import { onMount } from 'svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
@@ -52,8 +51,8 @@
     {#if !requestStore.loaded && !error}
       <p class="note">{$t('loading')}</p>
     {:else if requestStore.items.length === 0 && !error}
-      <div class="empty-state">
-        <span class="empty-icon"><Icon name="user-question" size={22} /></span>
+      <div class="empty">
+        <Icon name="user-question" size={28} />
         <p>{$t('msg_req_empty')}</p>
         <span>{$t('msg_req_empty_hint')}</span>
       </div>
@@ -78,7 +77,7 @@
         {/each}
       </ul>
       {#if requestStore.nextBefore !== null}
-        <button class="btn btn-ghost more" class:btn-sm={!isMobile} disabled={requestStore.loadingMore} onclick={more}>{$t('msg_req_more')}</button>
+        <button class="btn btn-ghost btn-sm more" disabled={requestStore.loadingMore} onclick={more}>{$t('msg_req_more')}</button>
       {/if}
     {/if}
 
@@ -93,6 +92,12 @@
   .note { margin: 0; padding: var(--sp-6) var(--sp-4); text-align: center; font-size: var(--fs-sm); color: var(--text-2); }
   /* The rows are the .list-row of base.css, as the chats: 64, an avatar of 48, a hairline between two rows. */
   /* The count held behind the request is the .count-pill of base.css, .quiet: not an unread one. */
+  .empty {
+    display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center;
+    padding: var(--sp-8) var(--sp-4); color: var(--text-3);
+  }
+  .empty p { margin: 0; color: var(--text-body); font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
+  .empty span { font-size: var(--fs-xs); line-height: var(--lh-base); }
   .more { align-self: center; margin: var(--sp-2) 0; }
   .err { margin: var(--sp-2) var(--sp-3); }
 </style>

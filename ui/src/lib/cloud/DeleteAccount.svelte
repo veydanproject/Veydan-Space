@@ -3,9 +3,8 @@
 
 <!-- «Delete account» (vcloud-plan.md 4.6): always in sight, what goes away said first, then the lock, the word DELETE and the choice of the identity and data of this device; the shares of the trusted people once they exist (stage C5, `SHARES_REVOCABLE`). -->
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { t } from '$lib/core/i18n';
-  import LockSecretInput from '$lib/core/lock/LockSecretInput.svelte';
   import { api } from '$lib/core/api';
   import { deleteReady, emptyDeleteForm, errorKeyOf, SHARES_REVOCABLE, type DeleteForm } from '$lib/cloud/account';
   import { cloudPage } from '$lib/cloud/status.svelte';
@@ -23,7 +22,6 @@
   /** The deletion itself is under way: other commands of the page do not relabel the button, and it is not sent twice. */
   let deleting = $state(false);
   const ready = $derived(deleteReady(form));
-  let formEl = $state<HTMLFormElement>();
 
   onMount(() => {
     if (startOpen) void show();
@@ -39,11 +37,6 @@
     form = emptyDeleteForm(lockOn);
     error = '';
     open = true;
-    // A phone: the five points above are long; the form and its button come into sight.
-    if (isMobile) {
-      await tick();
-      formEl?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    }
   }
 
   async function confirm() {
@@ -87,9 +80,12 @@
         <p>{$t('cloud_delete_relays')}</p>
         <p>{$t('cloud_delete_payments')}</p>
       </div>
-      <form class="form" bind:this={formEl} onsubmit={(e) => { e.preventDefault(); if (ready) void confirm(); }}>
+      <form class="form" onsubmit={(e) => { e.preventDefault(); if (ready) void confirm(); }}>
         {#if form.lockOn}
-          <LockSecretInput id="cloud-delete-lock" label={$t('cloud_delete_lock')} bind:value={form.secret} />
+          <div class="form-group">
+            <label for="cloud-delete-lock">{$t('cloud_delete_lock')}</label>
+            <input id="cloud-delete-lock" type="password" bind:value={form.secret} autocomplete="current-password" />
+          </div>
         {/if}
         <div class="form-group">
           <label for="cloud-delete-word">{$t('cloud_delete_word')}</label>
@@ -106,20 +102,14 @@
           </label>
         {/if}
         {#if error}<Notice tone="danger">{error}</Notice>{/if}
-        {#snippet buttons()}
+        <Actions>
           <button class="btn btn-ghost" type="button" disabled={deleting} onclick={() => (open = false)}>
             {$t('common_cancel')}
           </button>
           <button class="btn btn-danger" type="submit" disabled={!ready || deleting || cloudPage.busy}>
             {deleting ? $t('cloud_delete_running') : $t('cloud_delete_confirm')}
           </button>
-        {/snippet}
-        {#if isMobile}
-          <!-- A phone: the common foot, pinned to the bottom of the screen while the form is in sight. -->
-          <div class="page-foot">{@render buttons()}</div>
-        {:else}
-          <Actions>{@render buttons()}</Actions>
-        {/if}
+        </Actions>
       </form>
     </div>
   {/if}
@@ -136,13 +126,4 @@
   .form { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .check { display: flex; align-items: flex-start; gap: var(--sp-3); font-size: var(--fs-base); line-height: var(--lh-snug); cursor: pointer; color: var(--text-body); }
   .check input { margin-top: 1px; }
-  /* The foot spans the card and sticks to the screen's bottom while the zone scrolls; the list clips
-     without being a scroller, so the sticking holds. */
-  :global(.m-list:has(> .zone.m)) { overflow: clip; }
-  .zone.m .page-foot {
-    position: sticky;
-    bottom: 0;
-    margin: 0 calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4));
-    padding-bottom: var(--sp-3);
-  }
 </style>

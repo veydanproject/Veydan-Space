@@ -12,7 +12,6 @@
   import TemplateSelect from '$lib/notes/components/TemplateSelect.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import NotesList from '$lib/notes/components/NotesList.svelte';
   import NotesTable from '$lib/notes/components/NotesTable.svelte';
   import { paletteStore } from '$lib/core/store/palette.svelte';
@@ -314,19 +313,18 @@
   <div class="page-body" bind:this={pageBodyEl} class:is-dragging={dragging !== null}>
     {#if sidebarVisible}
       <div class="on-glass sidebar" style="width: {colWidths.sidebar}%">
-        <div class="search-field fill">
-          <Icon name="search" size={16} />
+        <div class="search-wrap">
+          <Icon name="search" size={15} />
           <input
             type="text"
             bind:this={searchInputEl}
             bind:value={searchQuery}
             oninput={onSearchInput}
             placeholder={$t('notes_search_placeholder')}
+            class="search-input"
           />
           {#if searching}
-            <span class="search-spin"><Icon name="loader" size={12} /></span>
-          {:else if searchQuery}
-            <button type="button" class="search-clear" onclick={(e) => { searchQuery = ''; onSearchInput(); refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
+            <span class="search-spinner"><Icon name="loader" size={12} /></span>
           {/if}
         </div>
         <NoteFilters
@@ -367,7 +365,7 @@
           </div>
           <div class="list-head-actions">
             {#if !sidebarVisible}
-              <button class="icon-btn lg" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
+              <button class="icon-btn" onclick={() => { sidebarVisible = true; }} title={$t('notes_btn_show_sidebar')} aria-label={$t('notes_btn_show_sidebar')}>
                 <Icon name="sidebar" size={18} />
               </button>
             {/if}
@@ -405,7 +403,7 @@
             </button>
           </div>
           <button
-            class="icon-btn lg"
+            class="icon-btn"
             onclick={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
             title={viewMode === 'list' ? $t('notes_view_table') : $t('notes_view_list')}
           >
@@ -485,14 +483,46 @@
 <style>
   .notes-page {
     overflow: hidden;
-    gap: var(--sp-4);
+    gap: 0.875rem;
     max-width: none;
   }
 
-  /* Search lives at the top of the sidebar */
-  .sidebar > .search-field {
-    width: auto;
+  /* Search now lives at the top of the sidebar (per redesign) */
+  .search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
     margin: var(--sp-4) var(--sp-3) var(--sp-2);
+    flex-shrink: 0;
+  }
+
+  .search-wrap :global(svg) {
+    position: absolute;
+    left: 0.75rem;
+    color: var(--text-3);
+    pointer-events: none;
+  }
+
+  .search-input {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    width: 100%;
+    padding: 0 1.75rem 0 var(--sp-8);
+    font-size: var(--fs-base);
+    height: var(--control-h);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .search-input:focus { border-color: var(--accent-border); }
+
+  .search-spinner {
+    position: absolute;
+    right: 0.5rem;
+    color: var(--accent-text);
+    display: flex;
+    animation: spin 1s linear infinite;
   }
 
   /* Three floating panes; the resize handles are the 12px gaps between them. */
@@ -573,7 +603,8 @@
     flex-shrink: 0;
   }
   .list-head-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
-  .list-head-actions { display: flex; align-items: center; gap: var(--sp-1-5); flex-shrink: 0; margin-left: auto; }
+  .list-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+  .list-head-actions .icon-btn { width: 36px; height: 36px; }
 
   .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
   .list-title {
@@ -586,7 +617,7 @@
   .list-sub { font-size: var(--fs-xs); color: var(--text-2); }
 
   /* The palette field takes the rest; the controls after it keep their size */
-  .list-actions { display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0; }
+  .list-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
   /* One group like .palette-field: its fill and frame, 36 high; the select and the arrow inside are
      bare, a line between them. Focus inside and the open list frame the whole group; the keyboard rings it. */
   .sort-ctl {
@@ -618,8 +649,8 @@
     height: 36px;
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1-5);
-    padding: 0 var(--sp-2-5);
+    gap: 0.4rem;
+    padding: 0 0.6rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface-3);
@@ -632,8 +663,9 @@
   .palette-placeholder { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .palette-field kbd {
     font-size: var(--fs-xs); color: var(--text-3);
-    border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 var(--sp-1); flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: var(--radius-xs); padding: 0 0.3rem; flex-shrink: 0;
   }
+  .list-actions .icon-btn { width: 36px; height: 36px; }
 
   /* Narrow list column: the field shrinks to an icon */
   @container (max-width: 500px) {

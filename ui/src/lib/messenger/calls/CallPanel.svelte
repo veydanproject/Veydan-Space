@@ -104,7 +104,7 @@
 
 {#if shown && peer}
   <div
-    class="call-bar on-glass" class:ended={!call} bind:this={card} style:translate="{dx}px {dy}px"
+    class="card" class:ended={!call} bind:this={card} style:translate="{dx}px {dy}px"
     role="group" aria-label={peer.name} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}
   >
     <span class="sr" aria-live="polite">{live}</span>
@@ -156,23 +156,22 @@
 {/if}
 
 <style>
-  /* The floating bar of a call: not the page's .card (design 09); .on-glass keeps the glass's tokens for what sits on it. */
-  .call-bar {
-    position: fixed; top: calc(var(--overlay-inset, 0px) + 5px); left: 50%; z-index: calc(var(--z-panel) + 22); transform: translateX(-50%);
+  .card {
+    position: fixed; top: calc(var(--overlay-inset, 0px) + 5px); left: 50%; z-index: 72; transform: translateX(-50%);
     width: max-content; max-width: min(620px, calc(100vw - 24px));
     display: flex; align-items: center; gap: var(--sp-2);
-    padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-1); border-radius: var(--radius-pill);
+    padding: 4px 4px 4px 5px; border-radius: var(--radius-pill);
     background: var(--glass-bg-raised); color: var(--text); border: 1px solid var(--border-strong);
     -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
     box-shadow: var(--shadow-lg); cursor: grab; touch-action: none; user-select: none;
     animation: drop 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }
-  .call-bar:active { cursor: grabbing; }
+  .card:active { cursor: grabbing; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .call-bar.ended { opacity: 0.92; }
+  .card.ended { opacity: 0.92; }
   .who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; flex: 1; padding: 0 var(--sp-1); white-space: nowrap; }
   .name { font-weight: var(--fw-bold); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-  .status { display: inline-flex; align-items: center; gap: var(--sp-1-5); font-size: var(--fs-xs); color: var(--text-2); }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-2); }
   .phase.clock { font-variant-numeric: tabular-nums; color: var(--success-text); font-weight: var(--fw-semibold); }
   .ended .phase { color: var(--text-2); }
   .via, .muted-mark {
@@ -180,11 +179,11 @@
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); cursor: help;
   }
   .via.relay { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }
-  .muted-mark { padding: var(--sp-0-5) var(--sp-1); background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); cursor: default; }
+  .muted-mark { padding: 2px 5px; background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn-text); cursor: default; }
   .rtt { color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
   .error {
     position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 360px;
-    padding: var(--sp-1-5) var(--sp-2-5); border-radius: var(--radius-md);
+    padding: 6px 10px; border-radius: var(--radius-md);
     background: var(--danger-bg); border: 1px solid var(--danger-border); box-shadow: var(--shadow);
   }
   .controls { display: flex; gap: 4px; flex-shrink: 0; }

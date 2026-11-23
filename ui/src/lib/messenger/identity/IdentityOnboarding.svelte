@@ -4,8 +4,6 @@
 <script lang="ts">
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { onPhone } from '../phone';
-  import Chev from '$lib/core/ui/Chev.svelte';
   import { messengerStore } from '../store.svelte';
   import { messengerError, type IdentityImportKind } from '../api';
   import BackupReveal from './BackupReveal.svelte';
@@ -15,14 +13,11 @@
   let {
     importing = false,
     onback,
-    onwizard,
   }: {
     /** The card opens at the form of an existing key (the wizard of the first start asks for that form alone). */
     importing?: boolean;
     /** Back leaves the card instead of returning to its choice. */
     onback?: () => void;
-    /** The forms are the wizard's (a phone, design 15): the choice opens it at a new key or at an existing one. */
-    onwizard?: (intent: 'create' | 'key') => void;
   } = $props();
 
   const existing: Mode = 'import';
@@ -69,11 +64,6 @@
     finally { busy = false; }
   }
 
-  function choose(to: 'create' | 'import') {
-    if (onwizard) onwizard(to === 'create' ? 'create' : 'key');
-    else mode = to;
-  }
-
   function back() {
     error = '';
     if (onback) onback();
@@ -94,31 +84,20 @@
   {:else if mode === 'choose'}
     <div class="card-title">{$t('msg_id_welcome_title')}</div>
     <p class="muted">{$t('msg_id_welcome_text')}</p>
-    <!-- A phone (design 15): the two buttons the card's width, one under the other; the other ways rows of 44. -->
-    <div class="choice-row" class:m={onPhone}>
-      <button class="btn btn-primary" disabled={locked} onclick={() => choose('create')}>
+    <div class="choice-row">
+      <button class="btn btn-primary" disabled={locked} onclick={() => (mode = 'create')}>
         <Icon name="key" size={14} />{$t('msg_id_create_btn')}
       </button>
-      <button class="btn btn-ghost" disabled={locked} onclick={() => choose('import')}>
+      <button class="btn btn-ghost" disabled={locked} onclick={() => (mode = 'import')}>
         <Icon name="file-import" size={14} />{$t('msg_id_import_btn')}
       </button>
     </div>
-    {#if !locked}
-      <!-- The account from another device of mine, over the relays (module cloud, /cloud/link).
-           Lost every device, kept the 12 words: the escrow of the module cloud (cloud-recovery.md §7, /cloud/restore).
-           Lost everything, no words: the trusted people of the module cloud (cloud-recovery.md §8.5, /cloud/recover). -->
-      {#if onPhone}
-        <div class="ways">
-          <a class="way" href="/cloud/link"><Icon name="smartphone" size={20} /><span>{$t('msg_id_link_device')}</span><Chev /></a>
-          <a class="way" href="/cloud/restore"><Icon name="list" size={20} /><span>{$t('msg_id_restore_account')}</span><Chev /></a>
-          <a class="way" href="/cloud/recover"><Icon name="users" size={20} /><span>{$t('cloud_recover_entry')}</span><Chev /></a>
-        </div>
-      {:else}
-        <a class="link-device" href="/cloud/link">{$t('msg_id_link_device')}</a>
-        <a class="link-device" href="/cloud/restore">{$t('msg_id_restore_account')}</a>
-        <a class="link-device" href="/cloud/recover">{$t('cloud_recover_entry')}</a>
-      {/if}
-    {/if}
+    <!-- The account from another device of mine, over the relays (module cloud, /cloud/link). -->
+    {#if !locked}<a class="link-device" href="/cloud/link">{$t('msg_id_link_device')}</a>{/if}
+    <!-- Lost every device, kept the 12 words: the escrow of the module cloud (cloud-recovery.md §7, /cloud/restore). -->
+    {#if !locked}<a class="link-device" href="/cloud/restore">{$t('msg_id_restore_account')}</a>{/if}
+    <!-- Lost everything, no words: the trusted people of the module cloud (cloud-recovery.md §8.5, /cloud/recover). -->
+    {#if !locked}<a class="link-device" href="/cloud/recover">{$t('cloud_recover_entry')}</a>{/if}
   {:else if mode === 'create'}
     <div class="card-title">{$t('msg_id_create_title')}</div>
     <p class="muted">{$t('msg_id_create_text')}</p>
@@ -178,28 +157,19 @@
   .choice-row, .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .link-device { align-self: flex-start; font-size: var(--fs-sm); color: var(--accent-text); }
   .actions { justify-content: flex-end; }
-  .choice-row.m { flex-direction: column; }
-  .choice-row.m .btn { width: 100%; min-height: 48px; }
-  .ways { display: flex; flex-direction: column; }
-  .way {
-    display: flex; align-items: center; gap: var(--sp-3); min-height: 44px;
-    color: var(--text); font-size: var(--fs-sm); text-decoration: none;
-  }
-  .way > :global(svg) { flex: none; color: var(--text-2); }
-  .way > span { flex: 1; min-width: 0; }
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); font-size: var(--fs-sm); }
+  .field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
   .field span { color: var(--text-3); font-size: var(--fs-xs); }
   .field input, .field textarea {
-    color: var(--text);
+    font: inherit; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-field);
-    padding: var(--sp-2) var(--sp-2-5);
+    padding: 8px 10px;
   }
-  .field textarea { resize: vertical; }
+  .field textarea { font-size: var(--fs-xs); resize: vertical; }
   .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent-border); }
   .kind-tabs { display: flex; gap: var(--sp-1); }
   .kind-tab {
     background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2);
-    border-radius: var(--radius-sm); padding: var(--sp-1-5) var(--sp-3); font-size: var(--fs-sm); cursor: pointer;
+    border-radius: var(--radius-sm); padding: 6px 12px; font-size: var(--fs-sm); cursor: pointer;
   }
   .kind-tab.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
 </style>

@@ -42,21 +42,21 @@
   .custom-grid-panel {
     display: flex;
     align-items: center;
-    gap: var(--sp-2);
+    gap: 0.5rem;
     pointer-events: auto;
   }
 
   label {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0.25rem;
     font-size: var(--fs-xs);
     color: var(--color-text-muted);
   }
 
   input {
     width: 3.5rem;
-    padding: var(--sp-0-5) var(--sp-1);
+    padding: 0.15rem 0.3rem;
     background: var(--color-bg-soft);
     border: 1px solid var(--color-border-soft);
     border-radius: var(--radius-xs);

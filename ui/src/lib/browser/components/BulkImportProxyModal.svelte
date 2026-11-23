@@ -193,7 +193,7 @@
               <div class="line-row">
                 <span class="line-num">{line.lineNumber}</span>
                 <code class="line-raw">{line.raw}</code>
-                <span class="badge badge-danger line-state">{$t(line.errorKey)}</span>
+                <span class="status-badge status-failed">{$t(line.errorKey)}</span>
               </div>
             {/each}
             {#if invalidLines.length > MAX_RENDERED_ROWS}
@@ -242,18 +242,18 @@
             <code class="line-raw">{row.raw}</code>
             {#if row.status === 'imported'}
               {#if row.check === 'ok'}
-                <span class="badge badge-ok line-state">{$t('proxy_import_check_ok')}</span>
+                <span class="status-badge status-active">{$t('proxy_import_check_ok')}</span>
               {:else if row.check === 'failed'}
-                <span class="badge badge-danger line-state">{$t('proxy_import_check_failed')}</span>
+                <span class="status-badge status-failed">{$t('proxy_import_check_failed')}</span>
               {:else if row.check === 'pending'}
-                <span class="badge line-state">{$t('proxy_import_check_pending')}</span>
+                <span class="status-badge status-unknown">{$t('proxy_import_check_pending')}</span>
               {:else}
-                <span class="badge badge-ok line-state">{$t('proxy_import_status_imported')}</span>
+                <span class="status-badge status-active">{$t('proxy_import_status_imported')}</span>
               {/if}
             {:else if row.status === 'duplicate'}
-              <span class="badge line-state">{$t('proxy_import_status_duplicate')}</span>
+              <span class="status-badge status-unknown">{$t('proxy_import_status_duplicate')}</span>
             {:else}
-              <span class="badge badge-danger line-state" title={row.message}>{row.message ?? $t('proxy_import_status_error')}</span>
+              <span class="status-badge status-failed" title={row.message}>{row.message ?? $t('proxy_import_status_error')}</span>
             {/if}
           </div>
         {/each}
@@ -293,7 +293,7 @@
     border-radius: var(--radius);
     color: var(--text);
     font-size: var(--fs-sm);
-    padding: var(--sp-2-5) var(--sp-3);
+    padding: 0.6rem var(--sp-3);
     resize: vertical;
     box-sizing: border-box;
   }
@@ -328,7 +328,7 @@
   .check-progress {
     display: flex;
     align-items: center;
-    gap: var(--sp-1-5);
+    gap: 0.4rem;
     font-size: var(--fs-sm);
     color: var(--text-2);
   }
@@ -346,7 +346,7 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-1-5) var(--sp-3);
+    padding: 0.35rem var(--sp-3);
     border-bottom: 1px solid var(--divider);
     min-width: 0;
   }
@@ -371,16 +371,27 @@
     white-space: nowrap;
   }
 
-  /* A line's state is the common .badge (ok / danger / neutral); here it only keeps to its share of the row. */
-  .line-state {
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
     flex-shrink: 0;
     max-width: 45%;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
+  .status-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .status-active { background: var(--success-bg); color: var(--success-text); }
+  .status-failed { background: var(--danger-bg); color: var(--danger-text); }
+  .status-unknown { background: var(--surface-3); color: var(--text-2); }
 
   .more-lines {
-    padding: var(--sp-1-5) var(--sp-3);
+    padding: 0.35rem var(--sp-3);
     font-size: var(--fs-xs);
     color: var(--text-3);
   }

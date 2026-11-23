@@ -102,6 +102,6 @@
 </Suggest>
 
 <style>
-  .hints { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: var(--sp-1); margin-top: 4px; padding: var(--sp-1) var(--sp-2) var(--sp-0-5); border-top: 1px solid var(--border); }
-  .hint { display: inline-flex; align-items: center; gap: var(--sp-1); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+  .hints { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 0.3rem; margin-top: 4px; padding: 0.3rem 0.5rem 0.15rem; border-top: 1px solid var(--border); }
+  .hint { display: inline-flex; align-items: center; gap: 0.2rem; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
 </style>

@@ -47,6 +47,7 @@
   import NavRow from '$lib/core/ui/NavRow.svelte';
   import Box from './info/Box.svelte';
   import Tile from '$lib/core/ui/Tile.svelte';
+  import Chev from '$lib/core/ui/Chev.svelte';
   import Pill from '$lib/core/ui/Pill.svelte';
   import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
 
@@ -99,17 +100,14 @@
   /** The names of a person's levels besides the base one, as chips of their row. */
   const levelChips = (pubkey: string) => levelNames(lv.levels, levelsOfPerson(detail, pubkey));
 
-  /** Where the error stands: over the danger zone's buttons when one of them failed, else at the top. */
-  let errorAt = $state<'top' | 'zone'>('top');
-
-  async function run(fn: () => Promise<unknown>, at: 'top' | 'zone' = 'top'): Promise<boolean> {
-    error = ''; errorAt = at; busy = true;
+  async function run(fn: () => Promise<unknown>): Promise<boolean> {
+    error = ''; busy = true;
     try { await fn(); return true; }
     catch (e) { error = channelError(e, tr); return false; }
     finally { busy = false; }
   }
 
-  const act = (a: ChannelAction, at: 'top' | 'zone' = 'top') => run(() => channelStore.act(cid, a), at);
+  const act = (a: ChannelAction) => run(() => channelStore.act(cid, a));
 
   async function sure(text: string, cta: string, a: ChannelAction, icon?: string): Promise<boolean> {
     return (await confirmStore.ask(text, cta, true, icon)) && (await act(a));
@@ -327,16 +325,16 @@
   const rules = $derived.by(() => { void $locale; return rulesLines(detail, tr, days); });
 
   async function leave() {
-    if (await confirmStore.ask($t('chan_leave_confirm', { name: view.name }), $t('chan_leave'), true, 'logout')) await act({ op: 'leave' }, 'zone');
+    if (await confirmStore.ask($t('chan_leave_confirm', { name: view.name }), $t('chan_leave'), true, 'logout')) await act({ op: 'leave' });
   }
 
   async function disband() {
-    if (await confirmStore.ask($t('chan_disband_confirm', { name: view.name }), $t('chan_disband'), true, 'trash-2')) await act({ op: 'disband' }, 'zone');
+    if (await confirmStore.ask($t('chan_disband_confirm', { name: view.name }), $t('chan_disband'), true, 'trash-2')) await act({ op: 'disband' });
   }
 
   async function forget() {
     if (!(await confirmStore.ask($t('chan_forget_confirm', { name: view.name }), $t('chan_forget'), true, 'trash-2'))) return;
-    if (await run(() => channelStore.forget(cid), 'zone')) onforgotten?.();
+    if (await run(() => channelStore.forget(cid))) onforgotten?.();
   }
 
   /** The channel itself: its owner answers for it, the context names it. */
@@ -346,7 +344,7 @@
 
   async function cancelJoin() {
     if (!(await confirmStore.ask($t('chan_cancel_join_confirm', { name: view.name }), $t('chan_cancel_join'), true, 'x'))) return;
-    if (await run(() => channelStore.cancelJoin(cid), 'zone')) onforgotten?.();
+    if (await run(() => channelStore.cancelJoin(cid))) onforgotten?.();
   }
 
   const fmt = (n: number) => new Intl.NumberFormat(localeTag($locale)).format(n);
@@ -500,40 +498,30 @@
       </p>
     {/if}
     {#if team.length}
-      <ul class="card list-rows people">
+      <Box tag="ul">
         {#each team as s (s.pubkey)}
           {@const nm = nameStore.label(s.pubkey)}
           <li>
-            <!-- A phone's row with acts has «⋮» at its end (design 13), beside its main button; a computer's stays one button. -->
-            {#if phone && entriesFor(s).length}
-              <div class="list-row dense">
-                <button class="list-row-main" oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
-                  use:longpress={{ onpress: (p) => openMenu(p, s) }}>{@render staffBody(s, nm)}</button>
-                <button type="button" class="icon-btn row-more" onclick={(e) => openMenu(e, s)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-              </div>
-            {:else}
-              <button class="list-row dense" class:still={!entriesFor(s).length} oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
-                use:longpress={{ onpress: (p) => openMenu(p, s) }}>{@render staffBody(s, nm)}</button>
-            {/if}
+            <button class="person as-button" class:still={!entriesFor(s).length} oncontextmenu={(e) => openMenu(e, s)} onclick={(e) => openMenu(e, s)}
+              use:longpress={{ onpress: (p) => openMenu(p, s) }}>
+              <Avatar url={nameStore.picture(s.pubkey)} label={nm} seed={s.pubkey} size={36} />
+              <span class="who">
+                <span class="who-name">{nm}{#if s.pubkey === me} <span class="me">({$t('chan_you')})</span>{/if}</span>
+                <code>{shortKey(s.pubkey)}</code>
+                {#if levelChips(s.pubkey).length}
+                  <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="star" size={14} />{n}</span>{/each}</span>
+                {/if}
+              </span>
+              {#if s.trusted && checksMessages(detail)}<span class="dim" title={$t('chan_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
+              {#if mutedNow(s)}
+                <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>
+              {/if}
+              {#if staffOf(detail, s.pubkey).role !== 'member'}<span class="role {s.role}">{$t(`chan_role_${s.role}` as 'chan_role_admin')}</span>{/if}
+            </button>
           </li>
         {/each}
-      </ul>
+      </Box>
     {/if}
-    {#snippet staffBody(s: StaffView, nm: string)}
-      <Avatar url={nameStore.picture(s.pubkey)} label={nm} seed={s.pubkey} size={36} />
-      <span class="list-row-body">
-        <span class="list-row-name">{nm}{#if s.pubkey === me} <span class="me">({$t('chan_you')})</span>{/if}</span>
-        <code class="list-row-line">{shortKey(s.pubkey)}</code>
-        {#if levelChips(s.pubkey).length}
-          <span class="lvls" title={$t('chan_levels')}>{#each levelChips(s.pubkey) as n (n)}<span class="lvl"><Icon name="star" size={14} />{n}</span>{/each}</span>
-        {/if}
-      </span>
-      {#if s.trusted && checksMessages(detail)}<span class="dim" title={$t('chan_member_trusted')}><Icon name="shield-check" size={16} /></span>{/if}
-      {#if mutedNow(s)}
-        <span class="dim" title={s.muted_until ? $t('chan_member_muted_until', { time: untilText(s.muted_until) }) : $t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>
-      {/if}
-      {#if staffOf(detail, s.pubkey).role !== 'member'}<span class="role {s.role}">{$t(`chan_role_${s.role}` as 'chan_role_admin')}</span>{/if}
-    {/snippet}
     {#if !isModerator(detail)}<p class="hint">{$t('chan_readers_hint')}</p>{/if}
   </section>
 
@@ -546,15 +534,15 @@
 {#snippet bannedBody(heading: boolean)}
   <section class="block" aria-label={$t('chan_banned')}>
     {#if heading}<div class="block-head"><span class="cap">{$t('chan_banned')}<b class="count-pill quiet">{banned.length}</b></span></div>{/if}
-    <ul class="card list-rows people">
+    <Box tag="ul">
       {#each banned as b (b)}
-        <li><div class="list-row dense still">
+        <li class="person">
           <Avatar url={nameStore.picture(b)} label={nameStore.label(b)} seed={b} size={36} />
-          <span class="list-row-body"><span class="list-row-name">{nameStore.label(b)}</span><code class="list-row-line">{shortKey(b)}</code></span>
+          <span class="who"><span class="who-name">{nameStore.label(b)}</span><code>{shortKey(b)}</code></span>
           <button class="btn btn-ghost btn-sm" disabled={busy} onclick={() => unban(b)}>{$t('chan_unban')}</button>
-        </div></li>
+        </li>
       {/each}
-    </ul>
+    </Box>
   </section>
 {/snippet}
 
@@ -599,11 +587,9 @@
         </div>
         <div class="choice">
           <span class="cap">{$t('chan_rule_history')}</span>
-          <!-- One value of a few: the rows of the join rule above (ChoiceRow). -->
-          <div class="kinds" role="radiogroup" aria-label={$t('chan_rule_history')}>
+          <div class="chips" role="radiogroup" aria-label={$t('chan_rule_history')}>
             {#each histories as v (v)}
-              <ChoiceRow surface="panel" icon={v === 'open' ? 'eye' : 'calendar'} title={$t(`chan_history_${v}` as 'chan_history_open')}
-                checked={history === v} disabled={busy} onclick={() => (history = v)} />
+              <button type="button" class="chip" class:active={history === v} role="radio" aria-checked={history === v} disabled={busy} onclick={() => (history = v)}>{$t(`chan_history_${v}` as 'chan_history_open')}</button>
             {/each}
           </div>
           {#if histories.length === 1}<span class="hint">{$t('chan_history_needs_storage')}</span>{/if}
@@ -629,23 +615,28 @@
             {#if view.kept_here}<span class="here" title={$t('chan_keeper_here_hint')}><Icon name="key" size={14} />{$t('chan_keeper_here')}</span>{/if}
           </div>
           {#if isManager(detail)}
-            <button type="button" class="icon-btn lg edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
+            <button type="button" class="edit-btn" onclick={startEdit} aria-label={$t('common_edit')} title={$t('common_edit')}><Icon name="pencil" size={18} /></button>
           {/if}
         </div>
         {#if view.about}<div class="about"><MessageContent text={view.about} cards={false} /></div>{/if}
         <ul class="facts-list">{#each ruleFacts as f, i (i)}<li class="fact"><Icon name={f.icon} size={14} /><span>{f.text}</span></li>{/each}</ul>
       </section>
 
-      {#if error && errorAt === 'top'}<Notice tone="danger">{error}</Notice>{/if}
+      {#if error}<Notice tone="danger">{error}</Notice>{/if}
 
       {#if !joined(detail)}
-        <Notice icon="clock">{view.membership === 'out' ? $t(outKey(view, 'chan_out_text') as 'chan_out_text') : $t(`chan_state_${view.membership}` as 'chan_state_out')}</Notice>
+        <div class="state"><Icon name="clock" size={16} />{view.membership === 'out' ? $t(outKey(view, 'chan_out_text') as 'chan_out_text') : $t(`chan_state_${view.membership}` as 'chan_state_out')}</div>
       {/if}
 
       {#if isModerator(detail)}
-        <Box>
-          <NavRow icon="shield-check" tone={waiting ? 'accent' : 'plain'} title={$t('chan_mod_title')} sub={waiting || $t('chan_mod_row_hint')} onclick={openModeration} />
-        </Box>
+        <button class="mod-row" class:waits={!!waiting} onclick={openModeration}>
+          <Tile icon="shield-check" tone={waiting ? 'accent' : 'plain'} />
+          <span class="mod-text">
+            <span class="mod-name">{$t('chan_mod_title')}</span>
+            {#if waiting}<span class="mod-waiting">{waiting}</span>{:else}<span class="mod-hint">{$t('chan_mod_row_hint')}</span>{/if}
+          </span>
+          <Chev />
+        </button>
       {/if}
 
       {#if hub}
@@ -700,16 +691,8 @@
         {#if banned.length}{@render bannedBody(true)}{/if}
       {/if}
 
-      <!-- A phone's «Пожаловаться» is a plain row over the zone: the red ones of the zone stand apart (design 03). -->
-      {#if phone}
-        <ul class="card list-rows people">
-          <li><button type="button" class="list-row dense" onclick={reportChannel}><Icon name="alert-triangle" size={18} /><span class="list-row-label">{$t('chan_report_channel')}</span></button></li>
-        </ul>
-      {/if}
       <section class="zone">
         {#if isOwner(detail)}<p class="hint">{$t('chan_owner_hint')}</p>{/if}
-        <!-- A failed leave, disband or forget is told over its buttons, not at the top of a long panel. -->
-        {#if error && errorAt === 'zone'}<Notice tone="danger">{error}</Notice>{/if}
         <div class="zone-btns">
           {#if joined(detail) && detail.has_key && !isOwner(detail)}
             <button class="btn btn-danger-soft" disabled={busy} onclick={leave}><Icon name="x" size={18} />{$t('chan_leave')}</button>
@@ -723,7 +706,7 @@
             <button class="btn btn-danger-soft" disabled={busy} onclick={forget}><Icon name="trash-2" size={18} />{$t('chan_forget')}</button>
           {/if}
           <!-- Anyone reports a channel, its owner and team too (Play, 2026-10-22; channelMenu.ts). -->
-          {#if !phone}<button class="btn btn-danger-soft" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>{/if}
+          <button class="btn btn-danger-soft" onclick={reportChannel}><Icon name="alert-triangle" size={18} />{$t('chan_report_channel')}</button>
         </div>
         <span class="since">{$t('chan_created', { date: stamp(view.created_at) })}</span>
       </section>
@@ -731,14 +714,12 @@
   </div>
   {#if editing}
     <!-- The verbs of the form stay at the foot of the panel, the form scrolls above them (the owner's rule of 2026-10-25). -->
-    {#snippet editVerbs()}
-      <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('common_cancel')}</button>
-      <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('common_save')}</button>
-    {/snippet}
-    <!-- A phone's: the one foot of its pages (mobile.css .page-foot), the stripe under it. -->
-    <footer class:foot={!phone} class:page-foot={phone}>
+    <footer class="foot">
       {#if error}<Notice tone="danger">{error}</Notice>{/if}
-      {#if phone}{@render editVerbs()}{:else}<div class="two">{@render editVerbs()}</div>{/if}
+      <div class="two">
+        <button class="btn btn-ghost" disabled={busy} onclick={stopEdit}>{$t('common_cancel')}</button>
+        <button class="btn btn-primary" disabled={busy || !name.trim()} onclick={save}>{$t('common_save')}</button>
+      </div>
     </footer>
   {/if}
   {/if}
@@ -747,15 +728,13 @@
 <InvitePicker bind:open={inviting} {detail} />
 <InvitePicker bind:open={addingAuthor} {detail} purpose="author" />
 <ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
-<PersonActions bind:this={acts} {detail} onerror={(e) => { error = e; errorAt = 'top'; }} />
+<PersonActions bind:this={acts} {detail} onerror={(e) => (error = e)} />
 {#if levelsFor.who}<MemberLevelsDialog bind:open={levelsFor.open} {detail} who={levelsFor.who} />{/if}
 
 <style>
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   /* The ends stop the finger dead: Android's webview stretches an inner scroller (and the one it passes the rest to) past its end and back, which shook the panel at its bottom. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: none; padding: var(--sp-4) var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
-  /* The end of the panel over the gesture stripe of a phone screen without the bar (a foot under it keeps the stripe itself). */
-  .scroll:last-child { padding-bottom: calc(var(--sp-6) + var(--page-sab, 0px)); }
   /* A tablet or a wide window: the column stays readable in the middle. */
   .scroll > :global(*), .foot > * { width: 100%; max-width: 560px; align-self: center; flex-shrink: 0; }
   .cap { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
@@ -786,7 +765,13 @@
   .hero-text { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
   .name { font-size: var(--fs-md); font-weight: var(--fw-bold); line-height: var(--lh-tight); overflow-wrap: anywhere; word-break: break-word; }
   .kind-line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1); font-size: var(--fs-sm); color: var(--text-3); }
-  .edit-btn { align-self: flex-start; }
+  /* The pencil of the mockup (ci.js, heroC): a square of the surface, no border. */
+  .edit-btn {
+    align-self: flex-start; flex: none; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: none; border-radius: var(--radius);
+    background: var(--surface-2); color: var(--text); cursor: pointer; transition: background var(--dur-fast) var(--ease);
+  }
+  .edit-btn:hover { background: var(--surface-hover); }
+  .edit-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .here {
     display: inline-flex; align-items: center; gap: var(--sp-1); height: 22px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
     background: var(--success-bg); color: var(--success-text, var(--success)); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
@@ -808,11 +793,30 @@
   .field:focus { outline: none; border-color: var(--accent-border); }
   .choice { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); text-align: left; }
   .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   /* The bar of the form's verbs (STYLEGUIDE, «Unsaved form»): out of the scroll, always in sight. */
   .foot {
     flex: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--sab, 0px));
     border-top: 1px solid var(--border); background: var(--glass-bar); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter);
   }
+
+  .state {
+    display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md);
+    background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: var(--fs-base); font-weight: var(--fw-semibold); line-height: var(--lh-snug);
+  }
+  .state :global(svg) { flex: none; }
+
+  /* The moderation: first of the contents. */
+  .mod-row {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; padding: var(--sp-3); text-align: left; cursor: pointer; font: inherit; color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); transition: background var(--dur-fast) var(--ease);
+  }
+  .mod-row:hover { background: var(--surface-row-hover); }
+  .mod-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mod-name { font-size: var(--fs-body); font-weight: var(--fw-bold); }
+  .mod-hint { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
+  .mod-row.waits { border-color: var(--accent-border); background: var(--accent-bg); }
+  .mod-waiting { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--accent-text); line-height: var(--lh-snug); }
 
   /* The contents: what stands in its rows. */
   .key { font-size: var(--fs-xs); color: var(--text-3); }
@@ -852,8 +856,14 @@
   .block-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 24px; }
   .hint.transfer { display: flex; align-items: center; gap: var(--sp-1); }
   .hint.warn { color: var(--warn-text); }
-  /* The people: the dense rows of base.css in a card. */
-  .people { padding: var(--sp-1); border-radius: var(--radius-lg); }
+  .person { display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-md); min-width: 0; }
+  .as-button { width: 100%; border: none; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
+  .as-button:hover { background: var(--surface-row-hover); }
+  .as-button.still { cursor: default; }
+  .as-button.still:hover { background: none; }
+  .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who code { font-size: var(--fs-xs); color: var(--text-3); }
   .me { color: var(--text-3); font-weight: var(--fw-medium); }
   .lvls { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: 2px; }
   .lvl {
@@ -876,7 +886,10 @@
   .since { font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
 
   @media (pointer: coarse) {
+    .person { min-height: 56px; }
     .field { font-size: var(--fs-md); }
     .two .btn, .zone-btns .btn { min-height: var(--control-h-lg); }
+    /* The history's choices under a finger. */
+    .chips .chip { min-height: var(--control-h); padding-inline: var(--sp-3); }
   }
 </style>

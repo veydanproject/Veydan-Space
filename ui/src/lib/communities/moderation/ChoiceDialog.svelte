@@ -12,14 +12,12 @@
   import { t } from '$lib/core/i18n';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import ChoiceRow from '$lib/core/ui/ChoiceRow.svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
 
   interface Props {
     open: boolean;
     title: string;
     text?: string;
-    /** Rows of a choice, one of which is `value`; none: no choice of span. */
+    /** Chips, one of which is `value`; none: no choice of span. */
     options?: { value: string; label: string }[];
     value?: string;
     /** The label of a box to tick; absent: no box. */
@@ -40,20 +38,23 @@
 <Dialog bind:open {title} width="min(400px, calc(100vw - 24px))">
   <div class="body">
     {#if text}<p class="text">{text}</p>{/if}
-    <!-- One value of a few: ChoiceRow; the box to tick: ToggleRow. -->
     {#if options.length}
-      <div class="kinds" role="radiogroup" aria-label={title}>
+      <div class="chips" role="radiogroup" aria-label={title}>
         {#each options as o (o.value)}
-          <ChoiceRow icon="clock" title={o.label} checked={value === o.value} disabled={busy} onclick={() => (value = o.value)} />
+          <button type="button" class="chip" class:active={value === o.value} role="radio" aria-checked={value === o.value}
+            disabled={busy} onclick={() => (value = o.value)}>{o.label}</button>
         {/each}
       </div>
     {/if}
     {#if check}
-      <ToggleRow title={check} bind:on={checked} disabled={busy} />
+      <label class="check">
+        <input type="checkbox" bind:checked disabled={busy} />
+        <span>{check}</span>
+      </label>
     {/if}
+    {#if error}<Notice tone="danger">{error}</Notice>{/if}
   </div>
   {#snippet footer()}
-    {#if error}<Notice tone="danger">{error}</Notice>{/if}
     <button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (open = false)}>{$t('common_cancel')}</button>
     <button type="button" class="btn {danger ? 'btn-danger' : 'btn-primary'}" disabled={busy || (options.length > 0 && !value)} onclick={onconfirm}>{cta}</button>
   {/snippet}
@@ -62,5 +63,7 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .text { margin: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); }
-  .kinds { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text-body); cursor: pointer; user-select: none; }
+  @media (pointer: coarse) { .chip { min-height: 40px; padding-inline: 14px; } }
 </style>

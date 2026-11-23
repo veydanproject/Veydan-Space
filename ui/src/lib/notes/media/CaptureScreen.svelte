@@ -227,7 +227,7 @@
     justify-content: center;
     border: 0;
     border-radius: 50%;
-    background: var(--on-media-bg);
+    background: rgba(255, 255, 255, 0.12);
     color: #fff;
   }
   span.ctl { background: transparent; }
@@ -236,7 +236,7 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: blink 1s steps(2) infinite; }
   @keyframes blink { to { opacity: 0.2; } }
   .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3); }
-  .media { width: 100%; max-height: 100%; border-radius: var(--radius-lg); background: var(--on-media-ground); object-fit: contain; }
+  .media { width: 100%; max-height: 100%; border-radius: var(--radius-lg); background: #111; object-fit: contain; }
   .media.mirror { transform: scaleX(-1); }
   .player { width: 100%; }
   .meter { position: relative; width: 160px; height: 160px; display: flex; align-items: center; justify-content: center; }
@@ -244,12 +244,12 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--danger) 35%, transparent);
+    background: rgba(255, 82, 82, 0.35);
     transform: scale(calc(0.6 + var(--lvl, 0) * 0.6));
     transition: transform 80ms linear;
   }
   .hint, .err { margin: 0; text-align: center; }
-  .hint { font-size: var(--fs-base); color: var(--on-media-text-2); }
+  .hint { font-size: var(--fs-base); color: rgba(255, 255, 255, 0.7); }
   .err { padding: 0 var(--sp-4); }
   .bottom { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-shrink: 0; min-height: 88px; }
   .rec {
@@ -278,6 +278,6 @@
     font-size: var(--fs-body);
     font-weight: var(--fw-semibold);
   }
-  .btn.ghost { background: var(--on-media-bg); color: #fff; }
+  .btn.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
   .btn.primary { background: var(--accent); color: #fff; }
 </style>

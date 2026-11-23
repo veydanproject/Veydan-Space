@@ -112,7 +112,7 @@
       {@const action = view.action}
       {@const danger = action.id === 'cancel' || action.id === 'web_deny' || action.id === 'web_end'}
       <div class="row">
-        <button class="btn" class:btn-danger-soft={danger} class:btn-primary={action.id === 'web_confirm'} class:btn-ghost={!danger && action.id !== 'web_confirm'} type="button" disabled={(action.id === 'cancel' && alertsStore.busy) || ((action.id === 'web_deny' || action.id === 'web_end') && webStore.busy)} onclick={() => run(action)}>
+        <button class="act" class:danger class:main={action.id === 'web_confirm'} type="button" disabled={(action.id === 'cancel' && alertsStore.busy) || ((action.id === 'web_deny' || action.id === 'web_end') && webStore.busy)} onclick={() => run(action)}>
           {action.label}
         </button>
       </div>
@@ -138,5 +138,12 @@
   .note { margin: 0; padding-left: calc(20px + var(--sp-2)); font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
   /* One quiet action under the words, every one the same width: from their edge to the time of the message (MessageBubble). */
   .row { display: flex; margin-top: var(--sp-2); padding-left: calc(20px + var(--sp-2)); padding-right: var(--file-meta); }
-  .row > .btn { flex: 1; min-width: 0; }
+  .act {
+    flex: 1; min-width: 0; min-height: var(--control-h); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); cursor: pointer;
+    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text-2);
+  }
+  .act:disabled { opacity: 0.45; cursor: default; }
+  .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .act.danger { background: var(--danger-bg); color: var(--danger-text); }
+  .act.main { background: var(--accent); color: #fff; }
 </style>

@@ -32,7 +32,7 @@
 </script>
 
 {#if icon}
-  <button class="icon-btn lg" {disabled} onclick={go} aria-label={$t('msg_inv_my_qr')} title={$t('msg_inv_my_qr')}><Icon name="qr-code" size={phone ? 22 : 18} /></button>
+  <button class="ibtn" {disabled} onclick={go} aria-label={$t('msg_inv_my_qr')} title={$t('msg_inv_my_qr')}><Icon name="qr-code" size={phone ? 21 : 16} /></button>
 {:else}
   <button class="btn btn-ghost btn-sm" {disabled} onclick={go}><Icon name="qr-code" size={13} />{$t('msg_inv_my_qr')}</button>
 {/if}

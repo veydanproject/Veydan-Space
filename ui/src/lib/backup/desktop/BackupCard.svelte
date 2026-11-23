@@ -9,8 +9,6 @@
   import { formatDateTime, formatError, formatBytes } from '$lib/core/utils';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import Dialog from '$lib/core/ui/Dialog.svelte';
-  import Notice from '$lib/core/ui/Notice.svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
   import { api, olderBackup } from '$lib/backup/api';
   import type { BackupConfig, BackupFileInfo, RestoreOutcome } from '$lib/backup/types';
@@ -243,7 +241,19 @@
   </div>
 
   <div class="card schedule">
-    <ToggleRow surface="row" title={$t('settings_backup_schedule')} hint={$t('settings_backup_schedule_hint')} bind:on={backupCfg.schedule_enabled} />
+    <button
+      type="button"
+      class="switch-row"
+      role="switch"
+      aria-checked={backupCfg.schedule_enabled}
+      onclick={() => { backupCfg.schedule_enabled = !backupCfg.schedule_enabled; }}
+    >
+      <span class="words">
+        <span class="title">{$t('settings_backup_schedule')}</span>
+        <span class="note">{$t('settings_backup_schedule_hint')}</span>
+      </span>
+      <span class="toggle" class:on={backupCfg.schedule_enabled} aria-hidden="true"></span>
+    </button>
 
     {#if backupCfg.schedule_enabled}
       <div class="sched-grid">
@@ -294,9 +304,9 @@
       <span class="progress-label">{backupPhase} · {backupProgress}%</span>
     </div>
   {/if}
-  {#if backupDone}<Notice tone="ok" role="status">{backupDone}</Notice>{/if}
+  {#if backupDone}<div class="done" role="status">{backupDone}</div>{/if}
   {#if backupError}
-    <Notice tone="danger">{backupError}</Notice>
+    <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{backupError}</span></div>
   {/if}
 
   <div class="foot">
@@ -356,15 +366,18 @@
   <Dialog open={true} onclose={closeRestore} title={$t('settings_backup_restore_title')}>
     <div class="restore-body">
       <span class="backup-name file-chip">{restoreTarget.name}</span>
-      <Notice tone="warn">{$t('settings_backup_restore_warn')}</Notice>
-      {#if restoreJoined}<Notice tone="warn">{$t('settings_backup_restore_sync')}</Notice>{/if}
+      <div class="caution"><Icon name="alert-triangle" size={18} /><span>{$t('settings_backup_restore_warn')}</span></div>
+      {#if restoreJoined}<div class="caution"><Icon name="alert-triangle" size={18} /><span>{$t('settings_backup_restore_sync')}</span></div>{/if}
       {#if restoreOlder}
-        <Notice tone="warn">
-          {$t('settings_backup_restore_older', {
-            created: formatDateTime(restoreOlder.created, $locale),
-            newest: formatDateTime(restoreOlder.newest, $locale),
-          })}
-        </Notice>
+        <div class="caution">
+          <Icon name="alert-triangle" size={18} />
+          <span>
+            {$t('settings_backup_restore_older', {
+              created: formatDateTime(restoreOlder.created, $locale),
+              newest: formatDateTime(restoreOlder.newest, $locale),
+            })}
+          </span>
+        </div>
       {/if}
       <input
         class="field-input"
@@ -384,7 +397,7 @@
         </div>
       {/if}
       {#if restoreError}
-        <Notice tone="danger">{restoreError}</Notice>
+        <div class="fail" role="alert"><Icon name="alert-triangle" size={18} /><span>{restoreError}</span></div>
       {/if}
     </div>
     {#snippet footer()}
@@ -410,23 +423,43 @@
   .field-input { height: var(--control-h-lg); }
   .note { margin: 0; font-size: var(--fs-sm); line-height: var(--lh-snug); color: var(--text-2); }
   .link-btn {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-1-5);
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 0.4rem;
     background: none; border: none; padding: 0; cursor: pointer;
     color: var(--accent-text-3); font-size: var(--fs-sm); font-weight: var(--fw-medium); text-decoration: underline;
   }
   .link-btn:hover { color: var(--accent-text); }
 
-  /* The row reaches past the card's padding by --sp-3 (ToggleRow `row`): its hover stays --sp-1 inside the card. */
-  .card.schedule { padding: var(--sp-1) var(--sp-4); }
+  .card.schedule { padding: var(--sp-1); }
+  .switch-row {
+    display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
+  }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .switch-row:first-child { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:last-child { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:hover { background: var(--surface-row-hover); }
+  .switch-row .toggle { pointer-events: none; }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
   .sched-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: var(--sp-4);
-    margin: 0 calc(-1 * var(--sp-4));
     padding: var(--sp-3) var(--sp-4) var(--sp-4);
     border-top: 1px solid var(--divider);
   }
 
+  .done {
+    padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md);
+    background: var(--success-bg); color: var(--success-text); font-size: var(--fs-base);
+  }
+  .fail {
+    display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); background: var(--danger-bg); color: var(--text); font-size: var(--fs-base); line-height: var(--lh-base);
+    overflow-wrap: anywhere;
+  }
+  .fail :global(svg) { flex-shrink: 0; margin-top: 2px; color: var(--danger-text); }
   .foot { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
 
   .group { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -447,6 +480,12 @@
 
   .restore-body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .file-chip { align-self: flex-start; max-width: 100%; padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .caution {
+    display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--radius-md); background: var(--warn-bg); color: var(--warn-text);
+    font-size: var(--fs-sm); line-height: var(--lh-base);
+  }
+  .caution :global(svg) { flex-shrink: 0; margin-top: 1px; }
 
   /* A narrow window: a fact's name over its value. */
   @container (max-width: 560px) {

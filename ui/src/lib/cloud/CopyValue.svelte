@@ -24,7 +24,7 @@
 <div class="value">
   <span class="text" class:large>{text}</span>
   {#if copy}
-    <button class="btn btn-ghost copy" type="button" onclick={put} aria-label={$t('common_copy')} title={$t('common_copy')}>
+    <button class="copy" type="button" onclick={put} aria-label={$t('common_copy')} title={$t('common_copy')}>
       <Icon name="copy" size={18} />
     </button>
   {/if}
@@ -37,7 +37,10 @@
     color: var(--text); overflow-wrap: anywhere; user-select: all;
   }
   .text.large { font-size: var(--fs-2xl); }
-  /* The quiet button as a square of 40, as high as the value beside it; its zone 44. */
-  .copy { position: relative; flex-shrink: 0; min-width: var(--control-h); padding: 0; }
+  .copy {
+    position: relative; flex-shrink: 0; width: 40px; height: 40px; border: none; padding: 0; border-radius: var(--radius); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text-2);
+  }
   .copy::before { content: ''; position: absolute; inset: -2px; }
+  .copy:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 </style>

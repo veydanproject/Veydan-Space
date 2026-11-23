@@ -14,9 +14,8 @@
   import { untrack } from 'svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import Notice from '$lib/core/ui/Notice.svelte';
-  import { Avatar, fold, longpress, matchesQuery, onPhone, stamp } from '$lib/messenger/seams/shared';
+  import { Avatar, fold, longpress, matchesQuery, stamp } from '$lib/messenger/seams/shared';
   import { channelStore } from './channelStore.svelte';
   import { channelError } from './errors';
   import { nameStore, shortKey } from './names.svelte';
@@ -33,8 +32,6 @@
     hasMenu: (s: StaffView) => boolean;
   }
   let { detail, onmenu, hasMenu }: Props = $props();
-
-  const phone = onPhone();
 
   const tr = (key: string, params?: Record<string, string>) => get(t)(key as 'chan_title', params);
   const cid = $derived(detail.channel.id);
@@ -125,27 +122,12 @@
 <section class="readers" aria-label={$t('chan_readers')}>
   <div class="block-head"><span class="cap">{$t('chan_readers')}<b class="count-pill quiet">{total}</b></span></div>
   {#if total > 0 || searching}
-    <div class="search-field fill">
+    <label class="search">
       <Icon name="search" size={16} />
       <input type="search" bind:value={query} placeholder={$t('chan_readers_search')} aria-label={$t('chan_readers_search')} spellcheck="false" autocomplete="off" />
-      {#if query}
-        <button type="button" class="search-clear" onclick={(e) => { query = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-      {/if}
-    </div>
+    </label>
   {/if}
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
-
-  {#snippet reader(r: ReaderView, s: StaffView, nm: string)}
-    <Avatar url={nameStore.picture(r.pubkey)} label={nm} seed={r.pubkey} size={36} />
-    <span class="list-row-body">
-      <span class="list-row-name">{nm}</span>
-      <code class="list-row-line">{shortKey(r.pubkey)}</code>
-      {#if chips(r).length}
-        <span class="lvls" title={$t('chan_levels')}>{#each chips(r) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
-      {/if}
-    </span>
-    {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>{/if}
-  {/snippet}
 
   {#snippet moreButton()}
     <button class="more" disabled={loading} aria-busy={loading} onclick={more}>
@@ -156,22 +138,23 @@
   <!-- The rows are the team's, in one card: on a computer the list scrolls inside it, «Показать ещё» its foot. -->
   {#if shown.length}
     <div class="rows-card">
-      <ul class="list-rows list">
+      <ul class="list">
         {#each shown as r (r.pubkey)}
           {@const s = staffOf(detail, r.pubkey)}
           {@const nm = nameStore.label(r.pubkey)}
           <li>
-            <!-- A phone's row with acts has «⋮» at its end (design 13), beside its main button; a computer's stays one button. -->
-            {#if phone && hasMenu(s)}
-              <div class="list-row dense">
-                <button class="list-row-main" title={$t('chan_readers_since', { date: stamp(r.since) })}
-                  oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>{@render reader(r, s, nm)}</button>
-                <button type="button" class="icon-btn row-more" onclick={(e) => onmenu(e, s)} aria-label={$t('nav_more')}><Icon name="more-vertical" size={22} /></button>
-              </div>
-            {:else}
-              <button class="list-row dense" class:still={!hasMenu(s)} title={$t('chan_readers_since', { date: stamp(r.since) })}
-                oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>{@render reader(r, s, nm)}</button>
-            {/if}
+            <button class="person" class:still={!hasMenu(s)} title={$t('chan_readers_since', { date: stamp(r.since) })}
+              oncontextmenu={(e) => onmenu(e, s)} onclick={(e) => onmenu(e, s)} use:longpress={{ onpress: (p) => onmenu(p, s) }}>
+              <Avatar url={nameStore.picture(r.pubkey)} label={nm} seed={r.pubkey} size={36} />
+              <span class="who">
+                <span class="who-name">{nm}</span>
+                <code>{shortKey(r.pubkey)}</code>
+                {#if chips(r).length}
+                  <span class="lvls" title={$t('chan_levels')}>{#each chips(r) as n (n)}<span class="lvl"><Icon name="layers" size={14} />{n}</span>{/each}</span>
+                {/if}
+              </span>
+              {#if mutedNow(s)}<span class="dim" title={$t('chan_member_muted')}><Icon name="message-circle-off" size={16} /></span>{/if}
+            </button>
           </li>
         {/each}
       </ul>
@@ -193,10 +176,29 @@
   .readers { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .block-head { display: flex; align-items: center; min-height: 24px; margin-bottom: 2px; }
   .cap { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }
+  .search { position: relative; display: flex; align-items: center; color: var(--text-3); }
+  .search :global(svg) { position: absolute; left: var(--sp-3); pointer-events: none; }
+  .search input { height: var(--control-h); padding: 0 var(--sp-3) 0 36px; font-size: var(--fs-base); }
   .rows-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--surface-2); }
-  /* The rows are the dense ones of base.css (52, the avatar 36, the hairline from the text). */
-  .list { padding: var(--sp-1); min-width: 0; }
-  .list-row-line { font-family: var(--font-mono); }
+  .list { list-style: none; margin: 0; padding: var(--sp-1); display: flex; flex-direction: column; min-width: 0; }
+  /* A hairline between two rows, as in the team's box; hidden around a hovered row. */
+  .list > li { position: relative; }
+  .list > li + li::before {
+    content: ''; position: absolute; top: 0; left: var(--sp-3); right: var(--sp-3); height: 1px; background: var(--border-2);
+    pointer-events: none; transition: opacity var(--dur-fast) var(--ease);
+  }
+  .list > li:has(> .person:not(.still):hover)::before, .list > li:has(> .person:not(.still):hover) + li::before { opacity: 0; }
+  .person {
+    display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-md); min-width: 0; width: 100%; border: none; background: none; color: inherit; font: inherit;
+    text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease);
+  }
+  .person:hover { background: var(--surface-row-hover); }
+  .person.still { cursor: default; }
+  .person.still:hover { background: none; }
+  .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .who-name { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
   .lvls { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: 2px; }
   .lvl {
     display: inline-flex; align-items: center; gap: var(--sp-1); max-width: 100%; height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
@@ -221,6 +223,8 @@
     .list { max-height: 420px; overflow-y: auto; }
   }
   @media (pointer: coarse) {
+    .search input { height: var(--control-h-lg); font-size: var(--fs-md); }
+    .person { min-height: 56px; }
     .more { min-height: 48px; }
   }
 </style>

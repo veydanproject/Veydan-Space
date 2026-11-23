@@ -14,7 +14,6 @@
   import { get } from 'svelte/store';
   import { countKey, locale, localeTag, t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import Pill from '$lib/core/ui/Pill.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import { confirmStore } from '$lib/messenger/seams/shared';
   import { channelStore } from '../channelStore.svelte';
@@ -79,13 +78,13 @@
 
 {#if part !== 'sections'}
 <section class="block" aria-label={$t('chan_levels')}>
-  <ul class="card list-rows levels">
+  <Box tag="ul">
     {#each levels as l (l.id)}
       <li>
-        <button class="list-row dense" onclick={() => (editing = { open: true, level: l })}>
+        <button class="row as-button" onclick={() => (editing = { open: true, level: l })}>
           <Tile icon={l.id === BASE_LEVEL ? 'users' : 'layers'} tone={l.id === BASE_LEVEL ? 'accent' : 'plain'} />
-          <span class="list-row-body">
-            <span class="list-row-name row-name"><span class="lvl-name">{l.name}</span>{#if l.id === BASE_LEVEL}<Pill tone="accent" text={$t('chan_level_base')} />{/if}</span>
+          <span class="row-text">
+            <span class="row-name">{l.name}{#if l.id === BASE_LEVEL}<span class="tag">{$t('chan_level_base')}</span>{/if}</span>
             <span class="row-sub"><Icon name="folder" size={14} />{opens(l)}</span>
             {#if rights(l).length}<span class="row-sub"><Icon name="pencil" size={14} />{rights(l).join(' · ')}</span>{/if}
           </span>
@@ -95,9 +94,9 @@
       </li>
     {/each}
     {#if levels.length < MAX_LEVELS}
-      <li><button class="list-row dense add" disabled={busy} onclick={() => (editing = { open: true, level: null })}><Tile icon="plus" tone="dashed" />{$t('chan_level_add')}</button></li>
+      <li><button class="add" disabled={busy} onclick={() => (editing = { open: true, level: null })}><Tile icon="plus" tone="dashed" />{$t('chan_level_add')}</button></li>
     {/if}
-  </ul>
+  </Box>
   <p class="hint">{$t('chan_levels_hint')}</p>
 </section>
 {/if}
@@ -105,7 +104,7 @@
 {#snippet scopeRow(s: ScopeView, n: number)}
   <SectionBadge scope={s} communityId={cid} size={36} noPhoto />
   <span class="row-text">
-    <span class="row-name wrap"><span class="nm">{titleOf(s)}</span>{#if s.hidden}<Pill tone="bad"><Icon name="eye-off" size={14} />{$t('chan_scope_hidden_mark')}</Pill>{/if}{#if s.scheme === 'flat-v1'}<Pill text={$t('chan_scope_scheme_flat')} />{/if}</span>
+    <span class="row-name wrap"><span class="nm">{titleOf(s)}</span>{#if s.hidden}<span class="tag hidden-tag"><Icon name="eye-off" size={14} />{$t('chan_scope_hidden_mark')}</span>{/if}{#if s.scheme === 'flat-v1'}<span class="tag">{$t('chan_scope_scheme_flat')}</span>{/if}</span>
     {#if s.note}<span class="row-sub">{s.note}</span>{/if}
     <span class="row-sub dim">
       {#if s.scope_id === EVERYONE}{$t('chan_scope_everyone_line')}
@@ -148,11 +147,7 @@
 
 <style>
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
-  /* The levels: the dense rows of base.css in a card, the tile in place of the avatar. */
-  .levels { padding: var(--sp-1); border-radius: var(--radius-lg); }
-  .levels .row-name { font-weight: var(--fw-semibold); }
-  .list-row.add { color: var(--accent-text); font-size: var(--fs-base); font-weight: var(--fw-bold); }
-  /* A row of the sections' box (the hairline between two is the box's). */
+  /* A row of the box (the hairline between two is the box's). */
   .row {
     display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
     border-radius: var(--radius-md); min-width: 0; color: var(--text-2);
@@ -161,9 +156,6 @@
   .row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); color: inherit; border-radius: var(--radius-md); }
   .row-name.wrap { flex-wrap: wrap; row-gap: var(--sp-1); }
   .nm { min-width: 0; }
-  /* A level's name beside its mark: the name gives way and ends in an ellipsis, the mark stays whole. */
-  .lvl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .row-name :global(.badge) { flex-shrink: 0; }
   .as-button { width: 100%; border: none; background: none; font: inherit; text-align: left; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
   .as-button:hover { background: var(--surface-row-hover); }
   .row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -171,6 +163,11 @@
   .row-sub { display: flex; align-items: flex-start; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); min-width: 0; }
   .row-sub.dim { color: var(--text-3); }
   .row-sub :global(svg) { flex-shrink: 0; margin-top: 1px; color: var(--text-3); }
+  .tag {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: var(--sp-1); height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
+    font-size: var(--fs-xs); font-weight: var(--fw-semibold); background: var(--surface-3); color: var(--text-2);
+  }
+  .hidden-tag { background: var(--danger-bg); color: var(--danger-text); }
   .members { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); font-variant-numeric: tabular-nums; flex-shrink: 0; }
   .add {
     display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 52px; padding: var(--sp-2) var(--sp-3); border: none; background: none;

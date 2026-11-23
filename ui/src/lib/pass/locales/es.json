@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "La cámara no está disponible. Permite el acceso a la cámara en la configuración del sistema o agrega el código con su enlace.",
     "pwgen_history_off_hint": "Las contraseñas nuevas no se guardan.",
     "pwgen_history_off_kept": "Las contraseñas guardadas antes siguen en este dispositivo: {n}.",
-    "pwgen_history_empty_hint": "Aquí aparecen las contraseñas que generes. Toca una para copiarla.",
-    "pw_locked_notice": "Las contraseñas están bloqueadas. Desbloquea para hacer cambios."
+    "pwgen_history_empty_hint": "Aquí aparecen las contraseñas que generes. Toca una para copiarla."
   }
 }

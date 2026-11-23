@@ -110,7 +110,7 @@
     <div class="body">
       <div class="head">
         <p class="text">{text}</p>
-        <button class={isMobile ? 'icon-btn' : 'close'} type="button" aria-label={$t('common_close')} onclick={() => (closedAt = usage?.level ?? 0)}><Icon name="x" size={isMobile ? 22 : 14} /></button>
+        <button class="close" type="button" aria-label={$t('common_close')} onclick={() => (closedAt = usage?.level ?? 0)}><Icon name="x" size={14} /></button>
       </div>
       <div class="buttons">
         <!-- Secondary buttons, the main one («More room») last. -->
@@ -150,7 +150,6 @@
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
   .head { display: flex; align-items: flex-start; gap: var(--sp-2); }
   .text { flex: 1; margin: 0; line-height: var(--lh-snug); }
-  /* The ×: 28 on a computer; on a phone the common .icon-btn (40, its zone 44, mobile.css). */
   .close {
     display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0;
     border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-3); cursor: pointer;

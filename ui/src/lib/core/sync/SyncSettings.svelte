@@ -18,7 +18,6 @@
   import { goto } from '$app/navigation';
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { toast } from '$lib/core/ui/toast.svelte';
-  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
   import { storageOf } from '$lib/core/sync/storage';
   import { CLOUD_BACKEND, asksForProfileFiles, filesLimit, fullestPool, loadCloud, usageTone, type CloudView } from '$lib/core/sync/cloud';
 
@@ -565,7 +564,7 @@
         <div class="presets">
           <span class="hint">{$t('settings_sync_interval_presets')}</span>
           {#each presets as sec (sec)}
-            <button type="button" class="chip" class:active={cfg.interval_sec === sec} onclick={() => applyPreset(sec)}>{presetLabel(sec)}</button>
+            <button type="button" class="chip" class:on={cfg.interval_sec === sec} onclick={() => applyPreset(sec)}>{presetLabel(sec)}</button>
           {/each}
         </div>
         {#if remoteFastWarn}
@@ -614,8 +613,8 @@
         </div>
         {@render switchRow(cfg.large_files.resume, $t('settings_sync_lf_resume'), $t('settings_sync_lf_resume_hint'), () => (cfg.large_files.resume = !cfg.large_files.resume))}
         <div class="pad notes">
-          <Notice tone="info">{$t('settings_sync_lf_ram', { mib: String(peakMib) })}</Notice>
-          <Notice tone="warn">{$t('settings_sync_lf_chunk_warn')}</Notice>
+          <p class="note"><Icon name="info" size={18} /><span>{$t('settings_sync_lf_ram', { mib: String(peakMib) })}</span></p>
+          <p class="note warn"><Icon name="alert-triangle" size={18} /><span>{$t('settings_sync_lf_chunk_warn')}</span></p>
         </div>
       </div>
     </section>
@@ -650,7 +649,13 @@
 </div>
 
 {#snippet switchRow(on: boolean, title: string, hint: string, flip: () => void)}
-  <div class="switch"><ToggleRow surface="row" {title} {hint} {on} onclick={flip} /></div>
+  <button type="button" class="switch-row" role="switch" aria-checked={on} onclick={flip}>
+    <span class="words">
+      <span class="switch-title">{title}</span>
+      <span class="hint">{hint}</span>
+    </span>
+    <span class="toggle" class:on aria-hidden="true"></span>
+  </button>
 {/snippet}
 
 <style>
@@ -674,6 +679,12 @@
   .unit { flex: 0 0 180px; }
   .browse { height: var(--control-h-lg); flex-shrink: 0; }
   .presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+  .chip {
+    font-size: var(--fs-sm); height: var(--control-h-sm); padding: 0 var(--sp-3); border-radius: var(--radius-pill);
+    border: 1px solid var(--border); background: var(--surface-3); color: var(--text-dim); cursor: pointer;
+  }
+  .chip:hover { color: var(--text); border-color: var(--border-2); }
+  .chip.on { color: var(--accent-text); background: var(--accent-bg); border-color: var(--accent-border); }
   .warn { font-size: var(--fs-sm); color: var(--warn-text); margin: 0; }
   .input:focus { border-color: var(--accent-border); outline: none; }
   .hint { line-height: var(--lh-snug); margin: 0; }
@@ -686,10 +697,23 @@
   .join { border-top: 1px solid var(--divider); }
   .btns { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
   .notes { gap: var(--sp-2); border-top: 1px solid var(--divider); }
+  .note { display: flex; gap: var(--sp-3); align-items: flex-start; margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+  .note :global(svg) { flex-shrink: 0; color: var(--text-dim); }
+  .note.warn, .note.warn :global(svg) { color: var(--warn-text); }
 
-  /* A switch of the card (ToggleRow `row`, reaching past this padding by --sp-3), a line over it. */
-  .switch { position: relative; padding: 0 var(--sp-3); }
-  .switch::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .switch-row {
+    position: relative; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 64px; padding: var(--sp-2) var(--sp-4);
+    border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    transition: background var(--dur-fast);
+  }
+  /* The hover of a row: square between lines, the first and the last row take the card's corners (its radius less its padding). */
+  .switch-row:first-child { border-top-left-radius: calc(var(--radius-card) - var(--sp-1)); border-top-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  .switch-row:last-child { border-bottom-left-radius: calc(var(--radius-card) - var(--sp-1)); border-bottom-right-radius: calc(var(--radius-card) - var(--sp-1)); }
+  /* A straight line over each switch: a shadow would follow the rounded corners. */
+  .switch-row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
+  .switch-row:hover { background: var(--surface-row-hover); }
+  .switch-row .toggle { pointer-events: none; }
+  .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .switch-title { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--text); }
 
   .card.status { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -699,13 +723,13 @@
   .acts { display: flex; gap: var(--sp-2); }
   .acts .btn { display: inline-flex; align-items: center; gap: var(--sp-2); }
   .leave { color: var(--danger-text); }
-  .progress-wrap { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .progress-wrap { display: flex; flex-direction: column; gap: 0.3rem; }
   .progress-bar { height: 6px; background: var(--surface-3); border-radius: var(--radius-pill); overflow: hidden; }
   .progress-fill { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.2s ease; }
   .progress-label { font-size: var(--fs-sm); color: var(--text-body); }
   .progress-detail { display: block; font-family: var(--font-mono); color: var(--text-dim); word-break: break-all; }
   .facts { margin: 0 calc(-1 * var(--sp-4)); padding: var(--sp-1); border-top: 1px solid var(--divider); display: flex; flex-direction: column; }
-  .fact { position: relative; display: flex; align-items: baseline; gap: var(--sp-4); min-height: 40px; padding: var(--sp-2-5) var(--sp-4); }
+  .fact { position: relative; display: flex; align-items: baseline; gap: var(--sp-4); min-height: 40px; padding: 10px var(--sp-4); }
   .fact-key { flex: 0 0 220px; font-size: var(--fs-sm); color: var(--text-dim); }
   .fact-value { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-body); word-break: break-word; }
   .device-toggle { width: 100%; align-items: center; background: none; border: 0; cursor: pointer; text-align: left; color: inherit; font: inherit; border-radius: var(--radius-md); }

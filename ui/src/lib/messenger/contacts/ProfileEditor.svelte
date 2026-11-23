@@ -144,7 +144,7 @@
   async function cancel() {
     if (busy) return;
     if (dirty) {
-      const yes = await ask({ title: $t('common_discard_confirm'), confirmLabel: $t('common_discard') });
+      const yes = await ask({ title: $t('msg_profile_discard_confirm'), confirmLabel: $t('msg_profile_discard') });
       if (!yes) return;
     }
     done(false);
@@ -202,7 +202,7 @@
     <p class="hint public"><Icon name="world" size={12} />{$t('msg_profile_public_hint')}</p>
     <!-- The design kit's action bar: it stays at the foot of the pane while the form scrolls under it. -->
     <div class="actions" class:dirty role="region" aria-label={$t('msg_own_publish')}>
-      {#if dirty}<p class="unsaved" role="status"><span class="status-dot warn" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>{/if}
+      {#if dirty}<p class="unsaved" role="status"><span class="dot" aria-hidden="true"></span>{$t('msg_profile_unsaved')}</p>{/if}
       <button type="button" class="btn btn-ghost" disabled={busy} onclick={cancel}>{$t('common_cancel')}</button>
       <button type="submit" class="btn btn-primary" disabled={busy || !dirty || bioOver || !canAct}>
         {#if busy}<span class="spinner"></span>{/if}{$t('msg_own_publish')}
@@ -217,14 +217,14 @@
   .block + .block { padding-top: var(--sp-4); border-top: 1px solid var(--border); }
   .fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   @media (max-width: 560px) { .fields { grid-template-columns: 1fr; } }
-  .field { display: flex; flex-direction: column; gap: var(--sp-1-5); min-width: 0; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .field > label, .label { font-size: var(--fs-xs); color: var(--text-3); }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .bad { border-color: var(--danger); }
   .footer {
     display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border);
   }
-  .public { display: flex; gap: var(--sp-1-5); align-items: flex-start; }
+  .public { display: flex; gap: 6px; align-items: flex-start; }
   .public :global(svg) { margin-top: 2px; flex-shrink: 0; }
   .actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); flex-wrap: wrap; }
   .actions.dirty {
@@ -236,7 +236,8 @@
     flex: 1; min-width: 0; margin: 0 auto 0 0; display: flex; align-items: center; gap: var(--sp-2);
     font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2);
   }
-  .actions .spinner { margin-right: var(--sp-1-5); border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
+  .dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--warn-text); }
+  .actions .spinner { margin-right: 6px; border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
   @media (pointer: coarse) {
     .actions .btn { flex: 1; }
     .unsaved { flex-basis: 100%; }

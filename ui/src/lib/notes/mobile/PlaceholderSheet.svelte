@@ -64,9 +64,9 @@
     <button type="button" class="label" onclick={() => (expanded = true)}>
       <Icon name="code" size={16} />
     </button>
-    <div class="strip hit-row">
+    <div class="strip">
       {#each rows.slice(0, 6) as name (name)}
-        <button type="button" class="chip" onclick={() => pick(name)}>{name}</button>
+        <button type="button" class="pill" onclick={() => pick(name)}>{name}</button>
       {/each}
       {#if rows.length === 0}<span class="muted">{$t('notes_placeholder_none')}</span>{/if}
     </div>
@@ -77,16 +77,16 @@
   {#if error}<Notice tone="danger">{error}</Notice>{/if}
   <div class="m-list">
     {#each rows as name (name)}
-      <button type="button" class="list-row dense" onclick={() => pick(name)}>
+      <button type="button" class="m-row" onclick={() => pick(name)}>
         <Icon name="code" size={18} />
-        <span class="list-row-label mono">{placeholderMarkup(name)}</span>
+        <span class="m-row-label mono">{placeholderMarkup(name)}</span>
         {#if !isTemplate}
-          <span class="list-row-value" class:muted={!values[name]}>{values[name] || '—'}</span>
+          <span class="m-row-value" class:muted={!values[name]}>{values[name] || '—'}</span>
         {/if}
       </button>
     {/each}
     {#if rows.length === 0}
-      <div class="list-row dense still"><span class="list-row-label muted">{$t('notes_placeholder_none')}</span></div>
+      <div class="m-row"><span class="m-row-label muted">{$t('notes_placeholder_none')}</span></div>
     {/if}
   </div>
 </BottomSheet>
@@ -97,7 +97,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: calc(var(--z-base) + 21);
+    z-index: 21;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -110,10 +110,13 @@
     width: 40px; height: 40px; flex-shrink: 0;
     border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text-2);
   }
-  /* Its chips (.chip 32) keep their zones of 44 above and below while the row scrolls sideways (mobile.css .hit-row). */
-  .strip { flex: 1; display: flex; align-items: center; gap: 8px; overflow-x: auto; scrollbar-width: none; --hit-row: 6px; }
+  .strip { flex: 1; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
   .strip::-webkit-scrollbar { display: none; }
-  .strip .chip { flex-shrink: 0; }
+  .pill {
+    flex-shrink: 0; min-height: 40px; padding: 0 14px;
+    border: 0; border-radius: var(--radius-md); background: var(--m-field); color: var(--text);
+    font: inherit; font-size: var(--fs-base); font-family: var(--font-mono);
+  }
   .muted { color: var(--text-3); }
-  .list-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-row-value { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

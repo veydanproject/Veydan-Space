@@ -8,9 +8,8 @@
   of Tor; the page /tor leads here.
 -->
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import Pill from '$lib/core/ui/Pill.svelte';
-  import Tabs from '$lib/core/ui/Tabs.svelte';
   import { t, type TranslationKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { watchInstances } from '$lib/tor/instances';
@@ -31,6 +30,7 @@
   let running = $state(0);
   let status = $state<TorStatus | null>(null);
   let tab = $state<Tab>('state');
+  let tabsEl = $state<HTMLElement | null>(null);
   /** The tab of the settings has been opened once. */
   let formSeen = $state(false);
   $effect(() => {
@@ -42,6 +42,15 @@
     stopWatching = watchInstances((list) => (running = runningCount(list)));
   });
   onDestroy(() => stopWatching?.());
+
+  /** The arrows move along the tabs (the keyboard's way through a tablist). */
+  function tabKey(e: KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const i = TABS.findIndex((x) => x.id === tab);
+    tab = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id;
+    void tick().then(() => tabsEl?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+  }
 </script>
 
 <div class="tor">
@@ -65,7 +74,20 @@
     {/if}
   </div>
 
-  <Tabs tabs={TABS.map((x) => ({ id: x.id, label: $t(x.label) }))} selected={tab} onpick={(id) => (tab = id)} label={$t('settings_tor_title')} idPrefix="tor" />
+  <div class="tabs" role="tablist" aria-label={$t('settings_tor_title')} tabindex="-1" bind:this={tabsEl} onkeydown={tabKey}>
+    {#each TABS as x (x.id)}
+      <button
+        type="button"
+        role="tab"
+        class="ctab"
+        id="tor-tab-{x.id}"
+        aria-selected={tab === x.id}
+        aria-controls="tor-panel-{x.id}"
+        tabindex={tab === x.id ? 0 : -1}
+        onclick={() => (tab = x.id)}
+      >{$t(x.label)}</button>
+    {/each}
+  </div>
 
   <!-- Every panel stays mounted (a running download, an unsaved form keep their state); only the chosen one shows. -->
   <div class="panel" role="tabpanel" id="tor-panel-state" aria-labelledby="tor-tab-state" hidden={tab !== 'state'}><TorInstances /></div>
@@ -84,5 +106,14 @@
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .who strong { font-size: var(--fs-lg); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .sub { font-size: var(--fs-sm); color: var(--text-2); }
+  .tabs { display: flex; gap: var(--sp-1); border-bottom: 1px solid var(--divider); overflow-x: auto; scrollbar-width: none; }
+  .ctab {
+    flex-shrink: 0; min-height: var(--control-h-lg); padding: 0 var(--sp-3); margin-bottom: -1px;
+    border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+    color: var(--text-2); font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); white-space: nowrap; cursor: pointer;
+    transition: color var(--dur-fast), border-color var(--dur-fast);
+  }
+  .ctab:hover { color: var(--text); }
+  .ctab[aria-selected='true'] { color: var(--accent-text); border-bottom-color: var(--accent); }
   .panel[hidden] { display: none; }
 </style>

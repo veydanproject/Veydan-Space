@@ -6,7 +6,6 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { t, locale, localeTag, countKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
-  import { refocusSearch } from '$lib/core/ui/searchField';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import MessageBubble from './MessageBubble.svelte';
@@ -55,7 +54,6 @@
   import { archiveStore } from '../archive/archiveStore.svelte';
   import { scopeOfChat } from '../archive/archive';
   import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
-  import CallReturn from '../calls/CallReturn.svelte';
 
   interface Props {
     chat: MessengerChat;
@@ -326,9 +324,6 @@
     if (query) { searchText = query; asked = query.trim(); }
     tick().then(() => searchField?.focus());
   }
-
-  /** The chat's menu on a phone: «Search in chat» is its entry there (design 15), not a button of the head. */
-  export function search() { openSearch(); }
 
   /** `restore`: the view goes back where it was before the search. */
   function closeSearch(restore = true) {
@@ -1393,15 +1388,15 @@
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
   <header class="head" class:phone class:on-glass={phone} class:veiled={!!selecting} bind:this={headEl}>
     {#if choosing}
-      <button class="icon-btn lg" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={18} /></button>
+      <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={18} /></button>
       <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
-      <button class="icon-btn lg" disabled={!chosenWords} onclick={copyChosen} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
-      <button class="icon-btn lg" disabled={!chosen.length} onclick={deleteChosen} title={$t('common_delete')} aria-label={$t('common_delete')}><Icon name="trash-2" size={18} /></button>
-      <button class="icon-btn lg go" disabled={!chosen.length} onclick={() => openForward(chosen)} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={18} /></button>
+      <button class="icon" disabled={!chosenWords} onclick={copyChosen} title={$t('common_copy')} aria-label={$t('common_copy')}><Icon name="copy" size={18} /></button>
+      <button class="icon" disabled={!chosen.length} onclick={deleteChosen} title={$t('common_delete')} aria-label={$t('common_delete')}><Icon name="trash-2" size={18} /></button>
+      <button class="icon go" disabled={!chosen.length} onclick={() => openForward(chosen)} title={$t('msg_fwd_forward')} aria-label={$t('msg_fwd_forward')}><Icon name="forward" size={18} /></button>
     {:else}
     {#if onback}
-      {#if phone}<button class="icon-btn lg back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
-      {:else}<button class="icon-btn lg back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
+      {#if phone}<button class="icon back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+      {:else}<button class="icon back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
     {/if}
     {#snippet identity()}
       <Avatar url={chat.picture} label={chat.title} seed={chat.peer_pubkey ?? chat.id} size={40} online={presence === 'online'} />
@@ -1431,29 +1426,21 @@
     {/if}
     <span class="chip-slot"><TransfersChip {phone} /></span>
     {#if actions}{@render actions()}{/if}
-    {#if !phone}<button class="icon-btn lg search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>{/if}
-    <button class="icon-btn lg menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
+    <button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>
+    <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
       {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
     {/if}
   </header>
 
-  <!-- A phone: «Return to the call» under the head, the conversation under it (design 15). -->
-  {#if phone}<CallReturn />{/if}
-
   {#if searching}
-    <div class="search-bar" class:phone role="search">
-      <div class="search-field fill">
-        <Icon name="search" size={16} />
-        <input bind:this={searchField} bind:value={searchText} type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" maxlength={64}
-          placeholder={$t('msg_search_placeholder')} aria-label={$t('msg_search_placeholder')}
-          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchField?.blur(); } }} />
-        {#if searchText}
-          <button type="button" class="search-clear" onclick={(e) => { searchText = ''; refocusSearch(e); }} aria-label={$t('common_clear')}><Icon name="x" size={16} /></button>
-        {/if}
-      </div>
+    <div class="search" class:phone role="search">
+      <Icon name="search" size={16} />
+      <input bind:this={searchField} bind:value={searchText} type="search" enterkeyhint="search" autocomplete="off" spellcheck="false" maxlength={64}
+        placeholder={$t('msg_search_placeholder')} aria-label={$t('msg_search_placeholder')}
+        onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchField?.blur(); } }} />
       {#if filtering && found}<span class="search-count" aria-hidden="true">{found.total}</span>{/if}
-      <button class="icon-btn" onclick={() => closeSearch()} title={$t('msg_search_close')} aria-label={$t('msg_search_close')}><Icon name="x" size={16} /></button>
+      <button class="icon" onclick={() => closeSearch()} title={$t('msg_search_close')} aria-label={$t('msg_search_close')}><Icon name="x" size={16} /></button>
     </div>
   {/if}
 
@@ -1557,7 +1544,7 @@
   .window { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: transparent; }
   /* Files over the chat: the whole of it takes them. */
   .drop {
-    position: absolute; inset: var(--sp-2); z-index: calc(var(--z-base) + 40); pointer-events: none;
+    position: absolute; inset: var(--sp-2); z-index: 40; pointer-events: none;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2);
     border: 2px dashed var(--accent-border); border-radius: var(--radius-card);
     background: color-mix(in srgb, var(--accent-tint) 70%, transparent); color: var(--accent-text-2);
@@ -1586,7 +1573,7 @@
   .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
   .ident.clickable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-  .title { display: flex; align-items: center; gap: var(--sp-1-5); font-weight: var(--fw-bold); font-size: var(--fs-md); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-bold); font-size: var(--fs-md); line-height: var(--lh-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .t-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .dim { color: var(--text-3); display: inline-flex; }
   /* One line that ellipsizes before what stands right of it (the chip of transfers, ⋮): an npub does not wrap under it at 440 px.
@@ -1596,7 +1583,10 @@
   .sub code { font-family: var(--font-mono); }
   .offline { color: var(--warn-text); }
   .sub .online { color: var(--success-text); }
-  .icon-btn.go:not(:disabled) { color: var(--accent-text); }
+  .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  .icon:hover { color: var(--text); background: var(--surface-3); }
+  .icon:disabled { opacity: 0.45; cursor: default; background: none; }
+  .icon.go:not(:disabled) { color: var(--accent-text); }
   /* The header while choosing: how many, and what to do with them. */
   .chosen { flex: 1; min-width: 0; font-weight: var(--fw-bold); font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* A row while choosing: its tick before it, the whole row takes the tap. */
@@ -1612,6 +1602,9 @@
   .pick-tick.on { background: var(--accent); border-color: var(--accent); }
   .pick-tick.dim { opacity: 0.3; }
   .pick-tick.none { visibility: hidden; }
+  .icon:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+  .head .icon { flex-shrink: 0; width: 36px; height: 36px; padding: 0; align-items: center; justify-content: center; border-radius: var(--radius); }
+  .head.phone .icon, .head.phone :global(.wrap > .icon) { width: 40px; height: 40px; border-radius: var(--radius-md); }
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
@@ -1665,35 +1658,37 @@
   .pick img { width: 100%; height: 100%; object-fit: cover; }
   .pick-name { max-width: 100%; font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick-size {
-    position: absolute; left: var(--sp-0-5); bottom: var(--sp-0-5); max-width: calc(100% - 2 * var(--sp-0-5)); padding: 0 var(--sp-1); border-radius: var(--radius-pill);
+    position: absolute; left: 3px; bottom: 3px; max-width: calc(100% - 6px); padding: 0 4px; border-radius: var(--radius-pill);
     font-size: var(--fs-xs); line-height: var(--lh-snug); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    background: var(--on-media-scrim); color: var(--on-media-text); pointer-events: none;
+    background: rgba(0, 0, 0, 0.55); color: #fff; pointer-events: none;
   }
-  .pick:not(.picture) .pick-name { margin-bottom: var(--sp-3); }
+  .pick:not(.picture) .pick-name { margin-bottom: 12px; }
   .error-line { white-space: pre-line; }
   .unpick {
-    position: absolute; top: var(--sp-1); right: var(--sp-1); width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; background: var(--on-media-scrim); color: var(--on-media-text);
+    position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; border: none; border-radius: 50%; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); color: #fff;
   }
   .unpick::before { content: ''; position: absolute; inset: -10px; }
-  .error-line { padding: var(--sp-1-5) var(--sp-4); font-size: var(--fs-xs); color: var(--danger-text); background: var(--danger-bg); border-top: 1px solid var(--danger-border); }
+  .error-line { padding: 6px var(--sp-4); font-size: var(--fs-xs); color: var(--danger-text); background: var(--danger-bg); border-top: 1px solid var(--danger-border); }
   .readers { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 50vh; overflow-y: auto; }
   .reader { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text); font-size: var(--fs-sm); }
   .reader span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* The bar of the search under the head (the field, its count, the close beside it); on a phone a bar of glass as the head. */
-  .search-bar { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; padding: var(--sp-2); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); }
-  .search-bar.phone {
-    position: relative; z-index: calc(var(--z-base) + 2); margin: var(--sp-2) var(--sp-2) 0; padding-inline: var(--sp-2) var(--sp-1);
+  /* The field of the search under the head; on a phone a bar of glass as the head. */
+  .search { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); color: var(--text-3); }
+  .search.phone {
+    position: relative; z-index: calc(var(--z-base) + 2); margin: var(--sp-2) var(--sp-2) 0; padding-inline: var(--sp-3) var(--sp-1);
     border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
     box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
+  .search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 6px 0; }
+  .search input::-webkit-search-cancel-button { display: none; }
   .search-count { flex-shrink: 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--text-3); }
-  .search-bar .icon-btn { flex-shrink: 0; }
+  .search .icon { flex-shrink: 0; }
   .search-btn.on { color: var(--accent-text); }
   /* A found message: the whole row takes the tap. */
   .found-row { cursor: pointer; border-radius: var(--radius-sm); }
   .found-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .found-line { display: flex; align-items: center; justify-content: center; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
   .bottom.float .found-line { margin: 0 var(--sp-2) var(--sp-2); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
-  .no-composer { display: flex; align-items: center; justify-content: center; gap: var(--sp-1-5); padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
+  .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
 </style>

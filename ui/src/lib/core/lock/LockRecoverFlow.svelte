@@ -190,15 +190,16 @@
   .sub.none { color: var(--warn-text); }
   .field {
     width: 100%;
-    min-height: var(--field-h);
-    padding: var(--sp-1-5) var(--sp-2-5);
+    min-height: 40px;
+    padding: 6px 10px;
+    font: inherit;
     border: 1px solid var(--border);
     border-radius: var(--radius-field);
     background: var(--bg-2);
     color: var(--text);
   }
   .field.code { text-align: center; }
-  .field.words { line-height: var(--lh-base); }
+  .field.words { resize: vertical; line-height: var(--lh-base); }
   .row { display: flex; gap: var(--sp-2); }
   .grow { flex: 1; justify-content: center; }
   .wide { width: 100%; justify-content: center; }

@@ -1256,6 +1256,8 @@
     "msg_profile_public_hint": "Nome, foto, “Su di me”, sito web e link sono pubblici: chiunque conosca la tua chiave può vederli.",
     "msg_profile_saved": "Profilo pubblicato",
     "msg_profile_unsaved": "Modifiche non salvate",
+    "msg_profile_discard_confirm": "Scartare le modifiche?",
+    "msg_profile_discard": "Scarta",
     "msg_profile_send_card": "Invia la mia scheda",
     "msg_profile_send_card_hint": "Nome, foto, “Su di me” e link in un messaggio, così ti aggiungono con un tocco.",
     "msg_profile_send_card_to": "Invia a",

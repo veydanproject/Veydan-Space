@@ -133,7 +133,6 @@
     "totp_scan_unavailable": "La fotocamera non è disponibile. Consenti l’accesso alla fotocamera nelle impostazioni di sistema o aggiungi il codice tramite il suo link.",
     "pwgen_history_off_hint": "Le nuove password non vengono salvate.",
     "pwgen_history_off_kept": "Le password salvate in precedenza restano su questo dispositivo: {n}.",
-    "pwgen_history_empty_hint": "Qui compaiono le password che generi. Toccane una per copiarla.",
-    "pw_locked_notice": "Le password sono bloccate. Sblocca per apportare modifiche."
+    "pwgen_history_empty_hint": "Qui compaiono le password che generi. Toccane una per copiarla."
   }
 }

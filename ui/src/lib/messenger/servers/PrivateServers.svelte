@@ -184,7 +184,7 @@
   code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-body); overflow-wrap: anywhere; }
   .facts { display: flex; flex-wrap: wrap; gap: 4px; }
   .fact {
-    display: inline-flex; align-items: center; gap: 3px; min-height: 20px; padding: 0 var(--sp-1-5); border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 3px; min-height: 20px; padding: 0 6px; border-radius: var(--radius-pill);
     border: 1px solid var(--border); background: var(--surface-3); color: var(--text-2); font-size: var(--fs-xs); line-height: var(--lh-snug); white-space: nowrap;
   }
   .fact.off { color: var(--text-3); border-style: dashed; background: none; }
@@ -192,15 +192,15 @@
   .denied { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-xs); color: var(--danger, var(--text-2)); }
   .enter { min-height: 32px; padding: 0 var(--sp-2); }
   .code {
-    min-height: 44px; font-family: var(--font-mono); color: var(--text);
+    min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .code:focus { outline: none; border-color: var(--accent-border); }
-  .add { display: flex; flex-direction: column; gap: var(--sp-1-5); margin-top: var(--sp-1); }
+  .add { display: flex; flex-direction: column; gap: 6px; margin-top: var(--sp-1); }
   .add-label { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-2); }
   .add-row { display: flex; gap: var(--sp-2); align-items: center; }
   .add-row input {
-    flex: 1; min-width: 0; min-height: 44px; font-family: var(--font-mono); color: var(--text);
+    flex: 1; min-width: 0; min-height: 44px; font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0 var(--sp-3);
   }
   .add-row input:focus { outline: none; border-color: var(--accent-border); }

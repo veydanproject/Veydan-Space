@@ -102,15 +102,15 @@
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
-  .status { display: flex; align-items: flex-start; gap: var(--sp-1); font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
+  .status { display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .status.closed { color: var(--warn-text); }
   .status :global(svg) { flex-shrink: 0; margin-top: 2px; }
   .note {
     width: 100%; font: inherit; font-size: var(--fs-sm); color: var(--text); background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius-field); padding: var(--sp-2) var(--sp-2-5);
+    border: 1px solid var(--border); border-radius: var(--radius-field); padding: 7px 10px;
   }
   .note:focus { outline: none; border-color: var(--accent-border); }
-  .row { display: flex; gap: var(--sp-1-5); flex-wrap: wrap; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .row .btn-primary, .box > .btn { flex: 1; justify-content: center; }
   @media (pointer: coarse) { .note { font-size: var(--fs-md); } }
 </style>
