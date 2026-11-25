@@ -36,6 +36,8 @@ pub mod calls;
 pub mod moderation;
 // A report of a person to the moderators of the project, and its way to the server.
 pub mod report;
+// A report of a bug to the project, the diagnosis of the network it may carry.
+pub mod bug;
 /// The calls log of a computer (`calls.log` in the messenger's data folder).
 #[cfg(desktop)]
 pub mod calls_log;
@@ -395,6 +397,8 @@ fn serve(
     tasks.push(crate::cloud_notes::spawn_forwarder(app.clone(), rt.clone()));
     // Reports that did not reach the moderators are tried again (report.rs).
     tasks.push(report::spawn_retry(app.clone(), rt.clone()));
+    // Reports of a bug that did not reach the project are tried again (bug.rs).
+    tasks.push(bug::spawn_retry(app.clone(), rt.clone()));
     tasks.push(spawn_ui_event_forwarder(
         app.clone(),
         rt.clone(),

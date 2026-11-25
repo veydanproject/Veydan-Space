@@ -553,10 +553,11 @@ impl Device {
     /// went through; with the warnings of the cycle.
     async fn collect(&self, engine: &Engine) -> (Vec<Op>, Vec<String>) {
         let (out, _) = self.collect_only(engine).await;
-        let Collected { ops, commit, warnings, .. } = out;
+        let Collected { ops, commit, mut warnings, local, .. } = out;
         if let Some(commit) = commit {
             commit(self.core.db.clone()).await.unwrap();
         }
+        warnings.extend(local);
         (ops, warnings)
     }
 
@@ -1389,11 +1390,104 @@ async fn between_sessions_a_segment_stays_pending() {
     assert!(b.replayed().is_empty());
     assert_eq!(b.store.statuses("pending"), [eid("dm/2026-10")]);
     assert_eq!(b.runtime.restored.load(Ordering::SeqCst), 0);
+    assert!(archive::first_restore(&b.core.db).await, "a device new to the storage takes its history");
 
     b.runtime.replayer.logged_out.store(false, Ordering::SeqCst);
     b.drain(engine).await;
     assert_eq!(b.replayed(), [id(1)]);
     assert_eq!(b.runtime.restored.load(Ordering::SeqCst), 1);
+    assert!(!archive::first_restore(&b.core.db).await, "over: what comes later comes in the background");
+
+    // The other device writes more: followed, not a restore of a new device.
+    a.store.hold(&seg(ArchiveScope::Dm, 2026, 10), &[&id(2)]);
+    let (more, _) = a.collect(engine).await;
+    b.runtime.replayer.logged_out.store(true, Ordering::SeqCst);
+    b.apply(engine, &more).await;
+    assert!(!archive::first_restore(&b.core.db).await);
+}
+
+/// A file the disk of this device refuses (Windows did, os error 5) is not
+/// asked for by every cycle and every restore: the next try waits, longer
+/// each time, the cycle still says why, and after a second failure the
+/// restore no longer waits for it. The user asking (the app leaves the
+/// screen) or a new session tries at once.
+#[tokio::test]
+async fn a_file_that_does_not_come_down_waits_longer_each_time_and_does_not_hold_the_restore() {
+    let v = vault().await;
+    let engine = &v.engine;
+    let a = Device::new("dev-a").await;
+    a.store.hold(&seg(ArchiveScope::Dm, 2026, 10), &[&id(1)]);
+    let (ops, _) = a.collect(engine).await;
+
+    let b = Device::new("dev-b").await;
+    // A file where the staging folder goes: no download can be staged.
+    let staging = b.core.app_data_dir.join(crate::commands::DATA_SUBDIR).join(archive::STAGING);
+    std::fs::create_dir_all(staging.parent().unwrap()).unwrap();
+    std::fs::write(&staging, b"in the way").unwrap();
+    b.apply(engine, &ops).await;
+    let entity = eid("dm/2026-10");
+    let hash = archive::load(&b.core.db, &entity).await.unwrap().unwrap().hash;
+    assert!(b.replayed().is_empty());
+    assert!(b.arch.download_waits(&entity, &hash).is_some_and(|e| e.starts_with("disk:")));
+    assert_eq!(b.runtime.restored.load(Ordering::SeqCst), 0, "one failure: the restore still waits");
+
+    // The disk is well again, the wait is not over: neither the restore
+    // nor the collect asks for the file, and the collect says why.
+    std::fs::remove_file(&staging).unwrap();
+    b.drain(engine).await;
+    assert!(b.replayed().is_empty());
+    b.store.hold(&seg(ArchiveScope::Dm, 2026, 10), &[&id(2)]);
+    let (ops_b, warnings) = b.collect(engine).await;
+    assert!(ops_b.is_empty(), "{ops_b:?}");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("disk:"), "{warnings:?}");
+    assert!(b.replayed().is_empty());
+    // A warning of this device's disk alone: the cycle stays clean for
+    // the collection of garbage.
+    let (out, _) = b.collect_only(engine).await;
+    assert!(out.warnings.is_empty() && out.local.len() == 1, "{:?} {:?}", out.warnings, out.local);
+
+    // A second failure in a row: the restore is told over, the file waits.
+    b.arch.download_failed(&entity, &hash, "disk: still");
+    b.drain(engine).await;
+    assert!(b.replayed().is_empty());
+    assert_eq!(b.runtime.restored.load(Ordering::SeqCst), 1);
+
+    // The user asks: tried at once.
+    b.arch.resume();
+    b.drain(engine).await;
+    assert!(b.replayed().contains(&id(1)), "{:?}", b.replayed());
+    assert!(b.arch.download_waits(&entity, &hash).is_none());
+}
+
+/// The warnings the settings show name a segment by scope and month, and
+/// the segments that failed the same way share a line; the rest is as it
+/// was.
+#[test]
+fn the_warnings_of_segments_that_failed_alike_are_one_short_line() {
+    let line = |s: &str, why: &str| format!("messenger archive: {}: {why}", eid(s));
+    let group = "group:8204b020aee8cd6414e8e4e5145b142a48aa91811c4429ef54efd2487dca42c6/2026-11";
+    let brief = archive::brief_warnings(vec![
+        line("dm/2026-11", "disk: denied"),
+        "messenger archive: storage: gone".into(),
+        line(group, "disk: denied"),
+        line("meta/2026-11", "merge: bad"),
+        line("meta/2026-11", "disk: denied"),
+    ]);
+    assert_eq!(
+        brief,
+        [
+            "messenger archive: dm 2026-11, group:8204b020… 2026-11, meta 2026-11: disk: denied",
+            "messenger archive: storage: gone",
+            "messenger archive: meta 2026-11: merge: bad",
+        ]
+    );
+}
+
+#[test]
+fn the_wait_after_a_failed_download_doubles_up_to_an_hour() {
+    let mins = |times| download_retry_after(times).as_secs() / 60;
+    assert_eq!([mins(1), mins(2), mins(3), mins(4), mins(7), mins(8), mins(40)], [1, 2, 4, 8, 60, 60, 60]);
 }
 
 /// The runtime goes between sessions in the middle of a segment (the
@@ -1613,6 +1707,7 @@ async fn the_status_has_the_shape_the_ui_reads() {
             "to_month": null,
             "paused": { "why": "no_storage" },
             "restoring_scopes": [],
+            "first_restore": false,
             "too_large": [],
             "not_backed_up": [],
         })

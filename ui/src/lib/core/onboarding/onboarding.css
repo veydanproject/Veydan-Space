@@ -63,7 +63,7 @@
 .ob-steps li.done { color: var(--text-2); }
 .ob-steps li.done .num { background: var(--accent-tint); border-color: transparent; color: var(--accent-text); }
 .ob-steps li.on { background: var(--accent-bg); color: var(--text); }
-.ob-steps li.on .num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ob-steps li.on .num { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .ob-step { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .ob-win .ob-step { padding: var(--sp-6) var(--sp-8) var(--sp-6); }
 .ob-win .ob-backrow { min-height: var(--control-h-lg); margin: calc(var(--sp-2) * -1) 0 var(--sp-2) calc(var(--sp-2) * -1); }
@@ -109,7 +109,7 @@
 .ob-opt-s { font-size: var(--fs-base); line-height: var(--lh-snug); color: var(--text-2); }
 .ob-radio { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%; border: 2px solid var(--border-2); }
 .ob-opt.on .ob-radio { border: 6px solid var(--accent); }
-.ob-check { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--radius-sm); border: 1.5px solid var(--border-2); color: #fff; }
+.ob-check { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: var(--radius-sm); border: 1.5px solid var(--border-2); color: var(--on-accent); }
 .ob-opt.on .ob-check { background: var(--accent); border-color: var(--accent); }
 
 .ob-rows { display: flex; flex-direction: column; border-radius: var(--radius-lg); border: 1px solid var(--m-card-border, var(--border)); background: var(--m-card, var(--surface-2)); overflow: hidden; }

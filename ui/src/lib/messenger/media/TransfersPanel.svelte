@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  Every transfer under way, paused or failed, newest first: the file, its
-  chat, where it is and its buttons. A row opens its chat at its message.
+  Every transfer of a chat under way, paused or failed, newest first: the
+  file, its chat, where it is and its buttons. A row opens its chat at its message.
   A sheet on the phone, a panel under the header's chip on a desk. It
   closes by itself when nothing is left in it.
 -->
@@ -27,12 +27,14 @@
     anchor?: DOMRect | null;
     /** A sheet from the bottom instead of a panel. */
     sheet?: boolean;
+    /** The chat whose transfers are listed. */
+    chatId: string;
   }
-  let { open = $bindable(), anchor = null, sheet = false }: Props = $props();
+  let { open = $bindable(), anchor = null, sheet = false, chatId }: Props = $props();
 
-  const list = $derived(transferStore.list);
+  const list = $derived(transferStore.listOf(chatId));
   /** "Retry all" has something to take up: failed, waiting, or paused by the closing of the app. */
-  const retryable = $derived(transferStore.counts.retriable > 0);
+  const retryable = $derived(transferStore.countsOf(chatId).retriable > 0);
   let error = $state('');
   let retrying = $state(false);
 

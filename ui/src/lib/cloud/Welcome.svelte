@@ -72,7 +72,7 @@
   .welcome { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); }
   .tile {
     display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px;
-    border-radius: var(--radius-md); background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent);
+    border-radius: var(--radius-md); background: var(--accent-grad); color: var(--on-accent); box-shadow: var(--shadow-accent);
   }
   h2 { margin: 0; font-size: var(--fs-xl); font-weight: var(--fw-extrabold); letter-spacing: var(--ls-tight); color: var(--text); }
   .text { margin: 0; font-size: var(--fs-base); color: var(--text-2); line-height: var(--lh-base); max-width: 520px; }

@@ -224,7 +224,7 @@
   .row.busy .size { color: var(--accent-text); }
   .row.error .dot { background: var(--danger-text); }
   .row.error .size { color: var(--danger-text); }
-  .x.primary { background: var(--accent); color: #fff; }
+  .x.primary { background: var(--accent); color: var(--on-accent); }
   .danger { color: var(--danger-text); }
   .x {
     flex-shrink: 0;

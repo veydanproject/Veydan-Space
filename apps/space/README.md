@@ -6,12 +6,12 @@
 
 <p align="center">
   <b>One workspace for many accounts.</b><br>
-  Isolated browser profiles, proxies, SSH, notes, passwords and chat — in one local-first app.
+  Isolated browser profiles, proxies, SSH, notes, passwords, chat and calls — in one local-first app.
 </p>
 
 <p align="center">
   <a href="https://github.com/veydanproject/Veydan-Space/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/veydanproject/Veydan-Space?style=flat-square&color=1e9bff&label=release"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux%20·%20Android-0b0d14?style=flat-square">
+  <img alt="Platforms" src="https://img.shields.io/badge/Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20iOS-0b0d14?style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-PolyForm%20Perimeter-0b0d14?style=flat-square"></a>
 </p>
 
@@ -32,11 +32,6 @@
   <img alt="Veydan Space: a workspace board on the computer and the home screen on a phone" src="docs/images/hero-light.jpg">
 </picture>
 
-> [!IMPORTANT]
-> **Upgrading from Veydan Space 4?** Read the
-> [v4 → v5 migration guide](docs/MIGRATION-V4-V5.md) before installing
-> (English · Русский).
-
 ## Why Veydan Space
 
 If you run many accounts, proxies and servers at once, your day is spread
@@ -49,10 +44,10 @@ it.
   notes, passwords and 2FA, grouped into workspaces.
 - **Accounts that never touch each other** — each browser profile is a
   separate identity with its own fingerprint, cookies and proxy.
-- **Local-first** — your data lives on your computer. No account with us,
-  no telemetry.
-- **Your own sync** — through your folder, S3 bucket or WebDAV, end-to-end
-  encrypted. We never see your data, because it never comes to us.
+- **Local-first** — your data lives on your computer. No account is
+  needed, and there is no telemetry.
+- **Sync your way** — through your folder, S3 bucket or WebDAV, or the free
+  Veydan Cloud. Everything is encrypted on the device before it leaves.
 
 ## Features
 
@@ -162,26 +157,34 @@ workspace or a profile. The same vault is in [Veydan Pass](https://github.com/ve
 ### Chat
 
 End-to-end encrypted chat on the Nostr protocol, built in: direct messages,
-groups, photos, files and voice messages. No phone number — your identity is
-a key only you hold. Add the server of your team and talk with its people in
-private chats and groups that live on that server alone. Also available on its own as
+groups, channels, photos, files, voice and video messages, and voice and
+video calls, one to one or in a group, with screen sharing from a computer.
+No phone number — your identity is a key only you hold. Add the server of
+your team and talk with its people in private chats and groups that live
+on that server alone. Also available on its own as
 [Veydan Chat](https://github.com/veydanproject/Veydan-Chat).
 
 ### Sync, lock and the rest
 
-- **Your own sync (beta)** — no Veydan cloud and no account. Point the app
-  at a folder your cloud client already mirrors (Dropbox, Seafile…), an
-  S3-compatible bucket (MinIO, R2…) or a WebDAV share. Everything is
-  encrypted on the device before it leaves; one passphrase joins your other
-  devices.
+- **Sync (beta)** — point the app at a folder your cloud client already
+  mirrors (Dropbox, Seafile…), an S3-compatible bucket (MinIO, R2…) or a
+  WebDAV share. Everything is encrypted on the device before it leaves; one
+  passphrase joins your other devices.
+- **Veydan account and Cloud (optional)** — the account is a key, with no
+  e-mail and no phone number. It comes with a free Veydan Cloud: 2 GB, sync
+  between your devices, and a way back into your data with 12 recovery
+  words or through people you trust. A larger plan is turned on with an
+  activation key.
+- **Backup** — full encrypted backups of all app data on a computer, by
+  hand or on a schedule, and restore from them.
 - **App lock** — PIN or password, auto-lock when you step away.
 - **Automatic, signed updates.**
 - **15 languages**, the language of the system on the first start; light and dark themes.
 
 ## On your phone
 
-Veydan Space for Android carries your notes, passwords, one-time codes, the
-password generator and chat, synced with your computer.
+Veydan Space for Android and iPhone carries your notes, passwords, one-time
+codes, the password generator, chat and calls, synced with your computer.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/phones-dark.png">
@@ -200,6 +203,7 @@ Get the latest version from the
 | **macOS** — Intel | the `.dmg` marked `x64` |
 | **Linux** (x64) | `.AppImage`, or `.deb` / `.rpm` for your distribution |
 | **Android** 8.0 and newer (64-bit ARM) | the `.apk` |
+| **iPhone** — iOS 15 and newer | through TestFlight: the `.ipa` of a release is signed for Apple's App Store |
 
 If macOS refuses to open the app on the first launch, right-click it and
 choose **Open**.
@@ -217,7 +221,7 @@ each protection does.
 
 - **Sync storage only ever sees ciphertext.** Everything is encrypted on the
   device (XChaCha20-Poly1305, key from your passphrase via Argon2id) before
-  it reaches your folder, bucket or WebDAV share.
+  it reaches your folder, bucket, WebDAV share or Veydan Cloud.
 - **Passwords are encrypted at rest** and decrypted only while the vault is
   open.
 - **The rest of the local database is not encrypted at rest** — SSH

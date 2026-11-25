@@ -168,7 +168,7 @@
   .line.fresh { animation: msg-in var(--dur-base) var(--ease); }
   @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } }
   @media (prefers-reduced-motion: reduce) { .line.fresh { animation: none; } }
-  .line { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 1px var(--sp-4); border-radius: var(--radius-sm); transition: background 0.6s var(--ease); }
+  .line { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 1px 0; border-radius: var(--radius-bar); transition: background 0.6s var(--ease); }
   .line.out { align-items: flex-end; }
   /* Runs of one author are groups (mockups c7.js): 2 between the bubbles of a run (the lines' own padding), 16 between runs. */
   .line.first { margin-top: calc(var(--sp-4) - 2px); }
@@ -188,7 +188,7 @@
   .line.out .bubble { border-bottom-right-radius: var(--r-tail); }
   .bubble.failed { border-color: var(--danger-border); }
   /* A contact's card: the bubble itself is the card, with the card's padding. */
-  .bubble.file-only, .bubble:has(:global(.file-line)) { width: min(400px, 86%); box-sizing: border-box; padding: var(--sp-3); }
+  .bubble.file-only, .bubble:has(:global(.file-line)) { width: min(420px, 86%); box-sizing: border-box; padding: var(--sp-3); }
   .bubble.file-only { --file-meta: 60px; }
   .bubble.file-only > .meta { position: absolute; right: var(--sp-3); bottom: var(--sp-3); }
   /* Words under the file's line take the width: the time goes under them. */
@@ -199,11 +199,13 @@
   .bubble.bot:has(:global(.act)) > .meta { position: absolute; right: var(--sp-3); bottom: calc(var(--sp-3) + (var(--control-h) - var(--fs-xs)) / 2); }
   .bubble.contact { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .bubble.contact > .meta { margin-top: var(--sp-1); }
+  /* A card's min-width: min(320px, 100%) is 0 while the bubble sizes to its content: the bubble holds 320 + its padding itself. */
+  .bubble.contact, .bubble:has(:global(.cards)) { min-width: min(calc(320px + 2 * var(--sp-3) + 2px), 86%); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
   @media (pointer: coarse) {
     .bubble { max-width: 86%; -webkit-touch-callout: none; }
-    .line { padding-inline: var(--sp-3); touch-action: pan-y; }
+    .line { touch-action: pan-y; }
   }
   /* Forwarded: whose it was, over what it says. */
   .fwd { font-size: var(--fs-xs); font-style: italic; color: var(--text-2); line-height: var(--lh-snug); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }

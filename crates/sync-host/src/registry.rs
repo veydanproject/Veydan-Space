@@ -213,6 +213,11 @@ pub struct Collected {
     pub errors: Vec<String>,
     /// The same failures as the warnings of the cycle.
     pub warnings: Vec<String>,
+    /// Warnings of this device alone — a file it could not take down to
+    /// its disk: shown with the others, but they say nothing of what the
+    /// vault holds or of what this device knows of it, so the cycle counts
+    /// as clean and the garbage collection is not put off for them.
+    pub local: Vec<String>,
 }
 
 pub type Commit = Box<dyn FnOnce(Pool<Sqlite>) -> BoxFuture<'static, CmdResult<()>> + Send>;

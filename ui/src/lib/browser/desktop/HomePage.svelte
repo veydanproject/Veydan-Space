@@ -539,11 +539,11 @@
   .workspace-card:hover .drag-handle { opacity: 1; }
   .drag-handle:active { cursor: grabbing; }
 
-  /* The workspace's colour: a line along the top edge of the card (design kit, ws-card). */
+  /* The workspace's colour: the whole top edge of the card, cut by its radius (design kit, ws-card). */
   .card-accent {
-    height: 3px;
-    margin: 0 var(--sp-5);
-    border-radius: 0 0 3px 3px;
+    height: 4px;
+    margin: 0;
+    border-radius: 0;
     background: var(--ws-color, var(--accent));
     flex-shrink: 0;
   }
@@ -579,7 +579,7 @@
   .card-desc { font-size: var(--fs-sm); color: var(--text-faint); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .card-menu {
-    position: absolute; top: 10px; right: 12px;
+    position: absolute; top: 10px; right: 12px; z-index: 1;
     display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s;
   }
   .workspace-card:hover .card-menu,

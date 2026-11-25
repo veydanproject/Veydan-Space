@@ -478,7 +478,7 @@
   {/if}
 
   <div class="content-wrap">
-    <main class="content" class:content--full={fullWidth}>
+    <main class="content" class:content--full={fullWidth} class:content--page={!fullWidth}>
       {@render children()}
     </main>
     {#if !standaloneNotes}
@@ -539,7 +539,7 @@
     margin: var(--sp-3) var(--sp-3) 0;
     padding: 0 var(--sp-3) 0 var(--sp-4);
     border-radius: var(--radius-head);
-    background: var(--pane);
+    background: var(--pane-top, var(--pane-chrome, var(--pane)));
     -webkit-backdrop-filter: var(--pane-filter);
     backdrop-filter: var(--pane-filter);
     border: 1px solid var(--pane-border);
@@ -694,6 +694,12 @@
   .content--full {
     padding: var(--sp-3);
     scrollbar-gutter: auto;
+  }
+  /* A page with no columns is one island: the panes' radius, 12 from the frame. */
+  .content--page {
+    margin: var(--sp-3);
+    border-radius: var(--radius-pane);
+    background: var(--pane-island, var(--pane));
   }
 
   /* The page and, over it, the modules' content overlays (the terminal drawers end where the bottom bars begin). */

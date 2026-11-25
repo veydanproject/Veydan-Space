@@ -29,7 +29,7 @@ export function sectionColor(index: number | null | undefined): string | null {
 /** A glyph drawn on that fill; on no colour, the accent's. */
 export function sectionInk(index: number | null | undefined): string {
   const name = colorName(index);
-  return name ? `var(--sec-${name}-on)` : '#fff';
+  return name ? `var(--sec-${name}-on)` : 'var(--on-accent)';
 }
 
 /**

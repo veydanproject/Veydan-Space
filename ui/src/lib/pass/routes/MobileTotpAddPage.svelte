@@ -14,6 +14,7 @@
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import TotpNoteLinks from '$lib/pass/components/TotpNoteLinks.svelte';
   import { syncTotpNotes } from '$lib/pass/totp-notes';
+  import { totpStore } from '$lib/pass/store/totp.svelte';
   import CustomSelect from '$lib/core/ui/CustomSelect.svelte';
   import { onMount } from 'svelte';
 
@@ -78,6 +79,8 @@
           : { name: name.trim(), issuer: issuer.trim() || null, uri: uri.trim(), tags },
       );
       await syncTotpNotes(created.id, noteIds, []);
+      // The list beside the form shows the new code at once.
+      await totpStore.refresh().catch(() => {});
       goto('/totp', { replaceState: true });
     } catch (e) {
       error = formatError(e);
@@ -96,16 +99,16 @@
   </div>
 
   <div class="m-body">
-  <div class="seg mode">
-    <button class="seg-btn" class:active={mode === 'manual'} onclick={() => (mode = 'manual')}>
+  <div class="tab-bar plain mode">
+    <button class="tab" class:active={mode === 'manual'} onclick={() => (mode = 'manual')}>
       <Icon name="pencil" size={14} />
       {$t('totp_tab_manual')}
     </button>
-    <button class="seg-btn" class:active={mode === 'uri'} onclick={() => (mode = 'uri')}>
+    <button class="tab" class:active={mode === 'uri'} onclick={() => (mode = 'uri')}>
       <Icon name="link" size={14} />
       {$t('totp_tab_uri')}
     </button>
-    <a class="seg-btn" href="/totp/scan">
+    <a class="tab" href="/totp/scan">
       <Icon name="scan" size={14} />
       {$t('totp_tab_scan')}
     </a>
@@ -211,7 +214,7 @@
     width: 100%;
     margin-bottom: var(--sp-4);
   }
-  .mode .seg-btn { flex: 1; justify-content: center; text-decoration: none; }
+  .mode { overflow-x: auto; scrollbar-width: none; }
   textarea {
     width: 100%;
     resize: none;

@@ -321,11 +321,16 @@
   /* Inline, not a flex box: in a narrow head (a phone) the line ellipsizes instead of turning into «…». */
   .sub-line :global(svg) { vertical-align: middle; }
   /* The plates over the feed (core/ui/Notice), as in a chat (RelationBanner). */
-  .strip { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
+  .strip { width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; flex-shrink: 0; }
+  .strip :global(.notice) { border-radius: var(--radius-bar); }
   .closed {
-    display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; padding: var(--sp-3);
-    border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-2);
+    /* A plate in the field's place, as ChatWindow's .no-composer: its height 52, shape and fill. */
+    display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; box-sizing: border-box; width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); min-height: 52px; margin: 0 auto var(--sp-3); padding: var(--sp-2) var(--sp-4);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: var(--pane-strong);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); font-size: var(--fs-xs); color: var(--text-2);
   }
+  /* A computer's button 32 (--control-h-sm) does not grow the plate past 52; a phone's stays 44 for the touch. */
+  @media (pointer: fine) { .closed .btn { min-height: var(--control-h-sm); flex-shrink: 0; } }
   .closed span { display: inline-flex; align-items: center; gap: 6px; }
   /* What I wrote with my request: one line here, the whole of it on hover. */
   .closed .mine { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

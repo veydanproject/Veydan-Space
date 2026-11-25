@@ -66,10 +66,15 @@ const PARALLELISM: usize = 3;
 const WRITTEN_TO_KEY: &str = "messenger_archive_vault";
 /// The folder of the messenger's data where a download is staged; a
 /// download stopped half way goes on from there (large files v2 resume).
-const STAGING: &str = "archive-staging";
+pub(crate) const STAGING: &str = "archive-staging";
 /// The app setting holding when the closed segments were last compacted
 /// (D5), unix seconds.
 const COMPACTED_AT_KEY: &str = "messenger_archive_compacted_at";
+/// `1` from the binding of a storage or an identity until the first
+/// restore after it is over: the device takes its history back, and the
+/// screens say so. After it the device only follows what the others
+/// write, in the background, without a word in the chats.
+const FIRST_RESTORE_KEY: &str = "messenger_archive_first_restore";
 /// The closed segments are compacted this often.
 const COMPACT_EVERY_SECS: i64 = 30 * 86400;
 /// What one collect moves of the archive at most: segments, and bytes up
@@ -572,6 +577,53 @@ pub(crate) fn warn(out: &mut Collected, line: String) {
     out.errors.push(line);
 }
 
+const WARNING_PREFIX: &str = "messenger archive: ";
+
+/// A segment as a warning names it: the scope and the month, without the
+/// owner's key, and a long id of a group or a server cut short.
+fn short_name(seg: &SegmentId) -> String {
+    let scope = seg.scope.as_key();
+    match scope.char_indices().nth(14) {
+        Some((cut, _)) => format!("{}… {}", &scope[..cut], seg.month),
+        None => format!("{scope} {}", seg.month),
+    }
+}
+
+/// The warnings of the archive as the settings show them: the segments
+/// that failed the same way in one line, named by scope and month. The
+/// lines of the developer log keep the whole ids.
+pub(crate) fn brief_warnings(warnings: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    // The reason, the segments that share it, where their line stands.
+    let mut groups: Vec<(String, Vec<String>, usize)> = Vec::new();
+    for line in warnings {
+        let named = line.strip_prefix(WARNING_PREFIX).and_then(|rest| rest.split_once(": ")).and_then(|(id, why)| Some((SegmentId::parse(id)?, why)));
+        let Some((seg, why)) = named else {
+            out.push(line);
+            continue;
+        };
+        match groups.iter_mut().find(|(reason, _, _)| reason == why) {
+            Some((_, names, _)) => names.push(short_name(&seg)),
+            None => {
+                groups.push((why.to_string(), vec![short_name(&seg)], out.len()));
+                out.push(String::new());
+            }
+        }
+    }
+    for (why, names, at) in groups {
+        out[at] = format!("{WARNING_PREFIX}{}: {why}", names.join(", "));
+    }
+    out
+}
+
+/// A file of the storage this device could not take down: the developer
+/// log, and a warning that does not hold the collection of garbage back
+/// (`Collected::local`) — it says nothing of what the vault holds.
+fn warn_local(out: &mut Collected, line: String) {
+    out.local.push(format!("{WARNING_PREFIX}{line}"));
+    out.errors.push(line);
+}
+
 /// What one collect may still move of the archive.
 struct Budget {
     segments: u32,
@@ -614,7 +666,14 @@ async fn check_vault(db: &Pool<Sqlite>, store: &dyn ArchiveStore, vault_id: &str
     }
     store.forget_written().await.map_err(|e| AppError::other(e.to_string()))?;
     reset_positions(db).await?;
+    settings::set(db, FIRST_RESTORE_KEY, "1").await?;
     settings::set(db, WRITTEN_TO_KEY, &mark).await
+}
+
+/// Whether the restore that runs, or the next one, is the first of this
+/// binding: the history of a new device, not the news of another one.
+pub(crate) async fn first_restore(db: &Pool<Sqlite>) -> bool {
+    settings::get(db, FIRST_RESTORE_KEY).await.as_deref() == Some("1")
 }
 
 /// The monthly pass of compaction (plan §4.2, D5): every closed segment this
@@ -763,6 +822,13 @@ pub(crate) async fn collect_segments(cx: &mut Cycle<'_>, arch: &ArchiveSync, sav
                 let merged = match held {
                     Some(merged) => merged,
                     None => {
+                        if let Some(e) = arch.download_waits(&id, &st.hash) {
+                            // It failed not long ago for a reason of this
+                            // device or of the file: not asked for by every
+                            // cycle, and the status still says why.
+                            out.local.push(format!("{WARNING_PREFIX}{id}: {e}"));
+                            continue;
+                        }
                         if !budget.take(lf.size) {
                             break;
                         }
@@ -773,12 +839,20 @@ pub(crate) async fn collect_segments(cx: &mut Cycle<'_>, arch: &ArchiveSync, sav
                         };
                         let bytes = download(&lfs, cx.sync, &staging, Who::Collect, (&id, &st.hash), lf, &progress).await;
                         let bytes = match bytes {
-                            Ok(bytes) => bytes,
+                            Ok(bytes) => {
+                                arch.download_settled(&id);
+                                bytes
+                            }
                             Err(e) => {
-                                warn(out, format!("{id}: {e}"));
                                 if matches!(pause_reason(&e), Some(PauseReason::Offline)) {
+                                    warn(out, format!("{id}: {e}"));
                                     paused = Some(PauseReason::Offline);
                                     break;
+                                }
+                                // The disk, or the file of one segment.
+                                warn_local(out, format!("{id}: {e}"));
+                                if !matches!(e, SyncError::Cancelled) {
+                                    arch.download_failed(&id, &st.hash, &e.to_string());
                                 }
                                 continue;
                             }
@@ -1081,6 +1155,14 @@ pub(crate) async fn drain(arch: &ArchiveSync, engine: &Engine, core: &Core, sync
                         continue;
                     }
                 }
+                if let Some(e) = arch.download_waits(&item.entity_id, &item.hash) {
+                    if !store.holds(&item.segment, &item.hash).await.map_err(err)? {
+                        // Its file failed not long ago: out of this round,
+                        // back with the next one after the wait.
+                        store.failed(&item.entity_id, &item.hash, &e).await.map_err(err)?;
+                        continue;
+                    }
+                }
                 let month = item.segment.month.to_string();
                 let restoring = ArchiveProgress { phase: ArchivePhase::Restoring, month: Some(month.clone()), ..idle() };
                 let base = super::counts(store.progress().await.map_err(err)?, restoring);
@@ -1096,6 +1178,7 @@ pub(crate) async fn drain(arch: &ArchiveSync, engine: &Engine, core: &Core, sync
                 let tried_item = replay_item(&*store, &*replayer, &lfs, sync, &staging, &item, &lf, &st.hash, &progress).await;
                 match tried_item {
                     Tried::Replayed => {
+                        arch.download_settled(&item.entity_id);
                         store.done(&item.entity_id, &item.hash).await.map_err(err)?;
                         mark(db, &item.entity_id, &st.hash, "replayed_hash").await?;
                         replayed = true;
@@ -1106,6 +1189,7 @@ pub(crate) async fn drain(arch: &ArchiveSync, engine: &Engine, core: &Core, sync
                         if matches!(e, SyncError::Cancelled) || matches!(pause_reason(&e), Some(PauseReason::Offline)) {
                             break 'passes;
                         }
+                        arch.download_failed(&item.entity_id, &item.hash, &e.to_string());
                     }
                     // Between sessions: the segment stays pending, as it is.
                     Tried::Replay(MessengerError::NotLoggedIn) => break 'passes,
@@ -1126,10 +1210,16 @@ pub(crate) async fn drain(arch: &ArchiveSync, engine: &Engine, core: &Core, sync
             }
         }
     }
-    let blocked: HashSet<String> = store.blocked().await.map_err(err)?.into_iter().collect();
+    // Parked and refused segments do not hold the restore up, nor does a
+    // file that failed again and again: it is tried in the background.
+    let mut blocked: HashSet<String> = store.blocked().await.map_err(err)?.into_iter().collect();
+    blocked.extend(arch.downloads_given_up());
     let left = load_of(db, &owner).await?.iter().any(|st| st.unreplayed().is_some() && !blocked.contains(&st.entity_id));
     arch.tell(app, idle());
     if !left {
+        if first_restore(db).await {
+            settings::set(db, FIRST_RESTORE_KEY, "").await?;
+        }
         sweep_staging(core, Who::Drain);
         if replayed {
             // The next restore counts from zero.
@@ -1198,6 +1288,8 @@ impl Handler for MessengerArchive {
         let mut saves = Saves::default();
         secrets::collect(cx, arch, &mut saves, &mut out).await?;
         collect_segments(cx, arch, &mut saves, &mut out).await?;
+        out.warnings = brief_warnings(std::mem::take(&mut out.warnings));
+        out.local = brief_warnings(std::mem::take(&mut out.local));
         if !saves.segments.is_empty() || !saves.secrets.is_empty() {
             let store = arch.store();
             out.commit = Some(Box::new(move |db| Box::pin(commit_owned(db, store, saves))));

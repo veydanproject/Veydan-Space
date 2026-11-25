@@ -243,7 +243,7 @@
   .round:active:not(:disabled) { transform: scale(0.94); }
   .round:disabled { opacity: 0.45; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
-  .answer { background: var(--success); animation: nudge 1.6s ease-in-out infinite; }
+  .answer { background: var(--success-grad); animation: nudge 1.6s ease-in-out infinite; }
   .soft { background: var(--surface-3); color: var(--text); border: 1px solid var(--border-strong); }
   .soft.on { background: var(--text); color: var(--bg); }
   .soft.lit { background: var(--accent-tint); border-color: var(--accent-tint-border); color: var(--accent-text-2); }

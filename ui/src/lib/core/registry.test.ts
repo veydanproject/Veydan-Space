@@ -238,6 +238,23 @@ describe('the registry', () => {
     expect(rootNav()).toBeNull();
   });
 
+  it('pairs a path with the list of the module that owns it, for a wide window (11.7)', () => {
+    const list = {} as Component;
+    const paired: ModuleDef = {
+      ...notes,
+      split: (url) => (url.pathname === '/notes' || url.pathname.startsWith('/notes/') ? { list, home: '/notes' } : undefined),
+    };
+    use(chat, paired);
+    expect(registry.split(new URL('http://app/notes/n-1'))).toEqual({ list, home: '/notes' });
+    expect(registry.split(new URL('http://app/notes'))?.home).toBe('/notes');
+    // A screen no module pairs is shown as on a phone; a module without `split` pairs none.
+    expect(registry.split(new URL('http://app/search'))).toBeUndefined();
+    expect(registry.split(new URL('http://app/messenger'))).toBeUndefined();
+    // A product without the module pairs nothing.
+    use(chat);
+    expect(registry.split(new URL('http://app/notes/n-1'))).toBeUndefined();
+  });
+
   it('leaves out quick access to a module where the module is the whole product (Pass)', () => {
     const pass: ModuleDef = {
       ...chat,

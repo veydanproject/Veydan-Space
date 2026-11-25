@@ -83,5 +83,7 @@
 {/if}
 
 <style>
-  .rel { padding: var(--sp-2) var(--sp-4) 0; flex-shrink: 0; }
+  /* In the conversation's column, under its head (ChatWindow .head). */
+  .rel { width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; flex-shrink: 0; }
+  .rel :global(.notice) { border-radius: var(--radius-bar); }
 </style>

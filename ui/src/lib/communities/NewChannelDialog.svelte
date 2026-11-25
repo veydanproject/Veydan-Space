@@ -186,9 +186,9 @@
 <Dialog bind:open title={tab === 'join' ? $t('chan_join_title') : $t('chan_new_title')} width="min(520px, calc(100vw - 24px))">
   <div class="body">
     {#if !fromCard}
-    <div class="seg tabs" role="tablist">
-      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
-      <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('chan_new_join')}</button>
+    <div class="tab-bar plain" role="tablist">
+      <button role="tab" class="tab" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
+      <button role="tab" class="tab" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('chan_new_join')}</button>
     </div>
     {/if}
 
@@ -300,11 +300,9 @@
 
 <style>
   /* The spinner of a primary button, on its fill. */
-  .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+  .spinner.light { border-color: color-mix(in srgb, var(--on-accent) 35%, transparent); border-top-color: var(--on-accent); }
   .body { display: flex; flex-direction: column; gap: var(--sp-4); }
   .body > :global(*) { flex-shrink: 0; min-width: 0; }
-  .tabs { display: flex; width: 100%; }
-  .tabs .seg-btn { flex: 1; justify-content: center; height: 36px; font-size: var(--fs-base); }
   /* Only the button under the line: the whole width, 48 high. */
   .go { flex: 1; justify-content: center; min-height: 48px; font-size: var(--fs-body); }
 
@@ -313,7 +311,7 @@
     width: 64px; height: 64px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--accent-border); background: var(--accent-bg);
     color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
-  .cover.picked { border-style: solid; background: var(--accent-grad); color: #fff; }
+  .cover.picked { border-style: solid; background: var(--accent-grad); color: var(--on-accent); }
   .names { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 
   .sec { display: flex; flex-direction: column; gap: var(--sp-2); }

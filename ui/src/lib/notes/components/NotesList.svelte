@@ -146,13 +146,19 @@
         {/if}
 
         {#if cardChips(note).length > 0}
+          {@const shown = cardChips(note).slice(-3)}
+          {@const last = shown[shown.length - 1]}
           <div class="card-tags">
-            {#each cardChips(note).slice(-3) as chip, i (i)}
+            {#each shown.slice(0, -1) as chip, i (i)}
               <span class="tag-chip tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} />{chip.label}</span>
             {/each}
-            {#if cardChips(note).length > 3}
-              <span class="tag-more">+{cardChips(note).length - 3}</span>
-            {/if}
+            <!-- The last chip and +N go together: +N never wraps onto a line of its own. -->
+            <span class="tag-tail">
+              <span class="tag-chip tinted" style:--chip={last.color}><ChipMark kind={last.kind} />{last.label}</span>
+              {#if cardChips(note).length > 3}
+                <span class="tag-chip tag-more">+{cardChips(note).length - 3}</span>
+              {/if}
+            </span>
           </div>
         {/if}
       </div>
@@ -296,9 +302,7 @@
     white-space: nowrap;
   }
 
-  .tag-more {
-    font-size: var(--fs-xs);
-    color: var(--text-2);
-    padding: 0.1rem 0.2rem;
-  }
+  .tag-tail { display: inline-flex; gap: var(--sp-1); min-width: 0; }
+  /* +N is a chip of the tags' height, on the quiet surface */
+  .tag-more { background: var(--surface-2); border-color: var(--border); color: var(--text-2); }
 </style>

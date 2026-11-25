@@ -129,7 +129,7 @@
   .app-frame {
     position: fixed;
     inset: 0;
-    background: var(--bg-image), var(--bg);
+    background: var(--bg-image), var(--gap, var(--bg));
   }
   /* CSD (Linux): rounded, shadowed panel with a gutter for the drop shadow. */
   .app-frame.csd {

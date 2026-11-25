@@ -110,9 +110,13 @@
   title={inPlace ? $t(editing ? 'totp_edit_title' : 'totp_add_title') : $t('totp_title')}
   footer={inPlace ? formActions : undefined}
 >
+  {#snippet subtitle()}
+    {#if !inPlace}{filteredEntries.length}{/if}
+  {/snippet}
+
   {#snippet actions()}
     {#if !inPlace}
-      <span class="count-badge">{filteredEntries.length}</span>
+      {#if as !== 'pane'}<span class="count-badge">{filteredEntries.length}</span>{/if}
       <button class="icon-btn create" onclick={() => (showAdd = true)} title={$t('totp_btn_add')} aria-label={$t('totp_btn_add')}>
         <Icon name="plus" size={18} />
       </button>
@@ -207,7 +211,7 @@
   .panel-back { padding: var(--sp-3) var(--sp-4) 0; }
 
   .panel-search {
-    padding: var(--sp-3) var(--sp-4) 0;
+    padding: var(--sp-4) var(--sp-4) 0;
     flex-shrink: 0;
   }
 

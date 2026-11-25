@@ -1230,9 +1230,11 @@
   }
 
   .title-input {
+    height: auto;
     background: none;
     border: none;
     outline: none;
+    box-shadow: none;
     font-size: var(--fs-lg);
     font-weight: var(--fw-extrabold);
     letter-spacing: var(--ls-tight);

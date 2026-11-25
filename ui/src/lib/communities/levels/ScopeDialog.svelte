@@ -332,7 +332,7 @@
 
 <style>
   /* The spinner of a primary button, on its fill. */
-  .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+  .spinner.light { border-color: color-mix(in srgb, var(--on-accent) 35%, transparent); border-top-color: var(--on-accent); }
   /*
     A computer: what it looks like and the order on the left, the form on the right.
     A narrow window, a tablet and a phone: one column — what it looks like first, the form, the order last.

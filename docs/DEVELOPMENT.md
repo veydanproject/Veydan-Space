@@ -21,8 +21,8 @@ builds, tests and packages the app on its own.
 | Tool | Version |
 |---|---|
 | Rust | the one pinned in `rust-toolchain.toml` (`rustup` installs it on first use) |
-| Node.js | 22 or newer |
-| pnpm | 11 |
+| Node.js | 24, the version in `ui/.node-version` |
+| pnpm | 12, the version `packageManager` names in `ui/package.json` |
 | Linux only | WebKitGTK 4.1, GTK 3, libsoup 3, librsvg, libayatana-appindicator, OpenSSL |
 
 On Debian or Ubuntu the Linux libraries are:
@@ -84,9 +84,21 @@ it with `adb install -r <file>`. `scripts/android/apk.sh space release`
 makes a release-signed one when the signing key is configured. Run one
 Android build at a time.
 
+## iOS
+
+On a Mac with Xcode, Homebrew's bash, Node, pnpm and rustup:
+
+```bash
+scripts/ios/build.sh space simulator         # a debug .app for the simulator of Apple silicon
+scripts/ios/build.sh space device-unsigned   # a release .ipa for the phone, not signed
+```
+
+What is built lands in `release-assets/ios/`. `scripts/ios/env.sh` names
+what is missing and adds the Rust targets of the phone and the simulator.
+
 ## Checks and tests
 
-These are the commands CI runs on every push:
+Run these before you send a patch:
 
 ```bash
 node scripts/ui.mjs space svelte-check     # type check of the UI
@@ -101,7 +113,7 @@ bash scripts/boundaries.sh                 # which crate and UI folder may depen
 ## Repository layout
 
 ```
-apps/space/       The app crate: Tauri config, icons, the Android project, the list of modules
+apps/space/       The app crate: Tauri config, icons, the Android and Xcode projects, the list of modules
 crates/           The platform (core, lock, sync, shell) and the modules of the app
 ui/               The SvelteKit frontend: src/lib/core and one folder per module
 products.json     The product: its modules, their UI folders, routes and crates

@@ -116,7 +116,7 @@
 </div>
 
 <style>
-  .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 820px; width: 100%; }
+  .settings { display: flex; flex-direction: column; gap: var(--sp-4); max-width: none; width: 100%; }
   @media (min-width: 861px) { .narrow-only { display: none; } }
   /* Every section's cards alike: the glass card of base.css (radius of a card), padding 16/20, a title of the card's own
      size without an icon. */

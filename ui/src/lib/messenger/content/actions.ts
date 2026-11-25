@@ -19,10 +19,20 @@ import type { ExternalUrl } from './types';
 type GroupView = Extract<LinkView, { kind: 'group' }>;
 type ContactView = Extract<LinkView, { kind: 'contact' }>;
 
-/** How a chat is shown once it is open. A phone goes to its page; a desk has it in place. */
-let show: (chatId: string) => void | Promise<void> = () => {};
+/**
+ * How a chat is shown: `stack` keeps the page it was opened from behind it
+ * (a phone's back returns there, as from a group to the private chat with
+ * one of its members); otherwise a phone's chat takes the place of the chat
+ * it was opened from, and a back from any chat leads to the list.
+ */
+export interface ShowOpts { stack?: boolean }
 
-export function onChatOpened(fn: (chatId: string) => void | Promise<void>): () => void {
+type Show = (chatId: string, opts: ShowOpts) => void | Promise<void>;
+
+/** How a chat is shown once it is open. A phone goes to its page; a desk has it in place. */
+let show: Show = () => {};
+
+export function onChatOpened(fn: Show): () => void {
   const before = show;
   show = fn;
   return () => { if (show === fn) show = before; };
@@ -33,12 +43,18 @@ export function onChatOpened(fn: (chatId: string) => void | Promise<void>): () =
  * of a section a module gives (`channel:…`, seams/sections) is the module's
  * to show: the messenger only goes to it.
  */
-export async function openChat(chatId: string) {
+export async function openChat(chatId: string, opts: ShowOpts = {}) {
   if (!chatSections.ofChat(chatId)) {
     await chatStore.loadChats();
     await chatStore.open(chatId);
   }
-  await show(chatId);
+  await show(chatId, opts);
+}
+
+/** The private chat with `pubkey`, opened and shown. */
+export async function writeTo(pubkey: string, opts: ShowOpts = {}) {
+  const chat = await chatStore.openPeer(pubkey);
+  await show(chat.id, opts);
 }
 
 export const linkActions = {
@@ -80,8 +96,7 @@ export const linkActions = {
       await linkActions.writePrivate(view);
       return;
     }
-    const chat = await chatStore.openPeer(view.pubkey);
-    await show(chat.id);
+    await writeTo(view.pubkey);
   },
 
   /**
@@ -115,10 +130,7 @@ export const cardActions = {
     return m;
   },
 
-  async write(pubkey: string) {
-    const chat = await chatStore.openPeer(pubkey);
-    await show(chat.id);
-  },
+  write: (pubkey: string) => writeTo(pubkey),
 
   /**
    * The private chat the card offers, on the server of its sender: what the

@@ -333,7 +333,7 @@
 
 {#snippet form()}
   {#if !editing}
-  <div class="tab-bar">
+  <div class="tab-bar plain">
     <button class="tab" class:active={tab === 'manual'} onclick={() => { tab = 'manual'; qrPreview = null; qrUri = ''; qrError = ''; }}>
       <Icon name="keyboard" size={13} /> {$t('totp_tab_manual')}
     </button>
@@ -514,8 +514,7 @@
 
 <style>
   /* .tab-bar / .tab styling is global (base.css); only local deltas kept below */
-  .tab-bar { padding-top: 0.3rem; margin-bottom: var(--sp-4); }
-  .tab { justify-content: center; }
+  .tab-bar { margin-bottom: var(--sp-2); }
 
   .end { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 

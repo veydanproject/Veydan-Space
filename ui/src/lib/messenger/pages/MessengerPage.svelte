@@ -7,6 +7,7 @@
   import Notice from '$lib/core/ui/Notice.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
+  import ListSearch from './ListSearch.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import Avatar from '../contacts/Avatar.svelte';
   import { messengerStore } from '../store.svelte';
@@ -110,8 +111,16 @@
     if (listKey) uiPrefs.set(listKey, px == null ? null : keepListWidth(px));
   }
 
+  /** The search of a list: open by its lens (or while it holds words); another section closes it, its words gone. */
+  let searchOpen = $state(false);
+  $effect(() => {
+    void view;
+    untrack(() => { searchOpen = false; query = ''; contactQuery = ''; });
+  });
+
   /** The search of the covers: the column takes its usual width, the field the focus. */
   async function openSearch() {
+    searchOpen = true;
     commitList(null);
     await tick();
     col?.querySelector<HTMLInputElement>('.search input')?.focus();
@@ -220,6 +229,11 @@
   </div>
 {/snippet}
 
+<!-- The lens of a column's head, before its new: it opens the search under the head. -->
+{#snippet lens(label: string, searching: boolean)}
+  <button class="icon-btn lupa" class:active={searchOpen || searching} onclick={() => (searchOpen = !searchOpen)} title={label} aria-label={label}><Icon name="search" size={18} /></button>
+{/snippet}
+
 <!-- A banner over the list, in the covers: its icon; a press widens the column to its usual width. -->
 {#snippet coverBanner(icon: string, words: string)}
   <button class="list-cover banner" onclick={() => commitList(null)} title={words} aria-label={words}>
@@ -304,13 +318,10 @@
           <span class="spacer"></span>
           <ScanQrButton icon disabled={!s.runtime?.session_active} />
           <MyQrButton icon disabled={!s.runtime?.session_active} />
+          {@render lens($t('msg_contacts_search'), !!contactQuery)}
           <button class="icon-btn create" onclick={() => (addingContact = true)} title={$t('msg_contacts_new')}><Icon name="user-plus" size={18} /></button>
         </div>
-        <div class="search">
-          <Icon name="search" size={16} />
-          <input type="text" bind:value={contactQuery} placeholder={$t('msg_contacts_search')} spellcheck="false" />
-          {#if contactQuery}<button class="icon sm" onclick={() => (contactQuery = '')}><Icon name="x" size={12} /></button>{/if}
-        </div>
+        {#if searchOpen || contactQuery}<ListSearch bind:value={contactQuery} placeholder={$t('msg_contacts_search')} onclose={() => (searchOpen = false)} />{/if}
         {/if}
         <ContactList query={contactQuery} selected={contactKey} onselect={(c) => (contactKey = c.pubkey)} {covers} />
       </aside>
@@ -340,13 +351,10 @@
         <div class="rail-head">
           <span class="rail-title">{$t(host.title)}</span>
           <span class="spacer"></span>
+          {@render lens($t('msg_chats_search'), !!query)}
           <button class="icon-btn create" onclick={() => (creating[host.id] = true)} title={$t(host.newTitle)}><Icon name={host.newIcon} size={18} /></button>
         </div>
-        <div class="search">
-          <Icon name="search" size={16} />
-          <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
-          {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
-        </div>
+        {#if searchOpen || query}<ListSearch bind:value={query} placeholder={$t('msg_chats_search')} onclose={() => (searchOpen = false)} />{/if}
         {#if host.above}{@const Above = host.above}<Above />{/if}
         {/if}
         <ChatList {query} kind={host.id} selected={sectionChat} onopen={openChat} onopenrow={(id) => (sectionChat = id)} {covers} />
@@ -366,6 +374,7 @@
         <div class="rail-head">
           <span class="rail-title">{view === 'groups' ? $t('msg_nav_groups') : $t('msg_nav_chats')}</span>
           <span class="spacer"></span>
+          {#if !requestsUi.shown}{@render lens($t('msg_chats_search'), !!query)}{/if}
           {#if view === 'groups'}
             <button class="icon-btn create" onclick={() => (newGroup = true)} title={$t('msg_groups_new')} aria-label={$t('msg_groups_new')}><Icon name="users-plus" size={18} /></button>
           {:else}
@@ -375,11 +384,7 @@
         {#if requestsUi.shown}
           <RequestsList onopen={(r) => (requestStore.selected = r.peer)} onback={() => requestsUi.close()} />
         {:else}
-          <div class="search">
-            <Icon name="search" size={16} />
-            <input type="text" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" />
-            {#if query}<button class="icon sm" onclick={() => (query = '')}><Icon name="x" size={12} /></button>{/if}
-          </div>
+          {#if searchOpen || query}<ListSearch bind:value={query} placeholder={$t('msg_chats_search')} onclose={() => (searchOpen = false)} />{/if}
           {#if view === 'groups'}<InvitesBar />{:else}<BridgeOffer />{/if}
           <ChatList {query} kind={view === 'groups' ? 'group' : 'dm'} onopen={openChat} />
         {/if}
@@ -509,7 +514,7 @@
   .col > .rail { flex: 1; min-width: 0; }
   .col-edge { position: absolute; top: 0; bottom: 0; left: 100%; display: flex; }
   /* The column of covers: the head's new and the search over them. */
-  .covers-top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); align-self: center; padding: var(--sp-3) 0 var(--sp-2); margin-bottom: var(--sp-2); border-bottom: 1px solid var(--divider); }
+  .covers-top { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); align-self: center; padding: var(--sp-3) 0 var(--sp-2); margin-bottom: var(--sp-2); border-bottom: 1px solid var(--divider); }
   /* The banners over the list as covers: a round tile in the banner's tint, its icon in the accent. */
   .covers-banners { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); flex-shrink: 0; padding-bottom: var(--sp-1); }
   .banner-icon {
@@ -518,7 +523,7 @@
   }
   .sections {
     display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-height: 0; padding: var(--sp-3) 0;
-    border-radius: var(--radius-pane); background: var(--pane); border: 1px solid var(--pane-border);
+    border-radius: var(--radius-pane); background: var(--pane-top, var(--pane)); border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
   .sec {
@@ -534,11 +539,20 @@
   .sec.me.active { box-shadow: 0 0 0 2px var(--accent); background: none; }
   .sec-net { display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .sec-net .net { margin-left: 0; }
-  .rail { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
-  .rail-head { display: flex; align-items: center; gap: 2px; padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-4); min-height: 64px; }
+  .rail { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane-list, var(--pane)); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+  /* The column's head: a line of 36, 16 from the top and 16 to the first item, its buttons 36 with 8 between. */
+  .rail-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-4) var(--sp-3) var(--sp-4) var(--sp-4); min-height: 36px; box-sizing: content-box; }
+  .rail-head .create { width: 36px; height: 36px; flex-shrink: 0; }
+  .rail :global(.list-rows) { padding-top: 0; }
   /* One line in every language: the badge stays beside the name. */
-  .rail-title { display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0; font-weight: var(--fw-bold); font-size: var(--fs-xl); }
+  .rail-title { display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0; font-weight: var(--fw-semibold); font-size: var(--fs-lg); line-height: var(--lh-tight); }
   .spacer { flex: 1; }
+  /* The lens of the head: neutral, on the grey fill, of the new's size; marked while the search is open. */
+  .rail-head .lupa {
+    width: 36px; height: 36px; flex-shrink: 0; border: 0; border-radius: var(--radius); background: var(--surface-2); color: var(--text);
+    display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .rail-head .lupa:hover, .rail-head .lupa.active { background: var(--surface-hover); }
   .net { width: 8px; height: 8px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
   .net.on { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
   .net.connecting { background: var(--warn-text); animation: pulse 1.4s ease-in-out infinite; }
@@ -550,19 +564,11 @@
   .icon:hover { color: var(--text); background: var(--surface-hover); }
   .icon.active { color: var(--accent-text-2); background: var(--accent-tint); }
   .icon.accent { color: var(--accent-text-2); }
-  .icon.sm { width: 24px; height: 24px; }
-  /* The QR buttons of the contacts (their own components) look like the head's icons. */
-  .rail-head :global(.ibtn) { border: none; background: none; color: var(--text-soft); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
+  /* The QR buttons of the contacts (their own components) lie on the same fill as the search lens. */
+  .rail-head :global(.ibtn) { border: none; background: var(--surface-2); color: var(--text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .rail-head :global(.ibtn:hover:not(:disabled)) { color: var(--text); background: var(--surface-hover); }
   .rail-head :global(.ibtn:disabled) { opacity: 0.45; cursor: default; }
-  .search {
-    display: flex; align-items: center; gap: 8px; min-height: 40px; margin: 0 var(--sp-3) var(--sp-2); padding: 0 var(--sp-4);
-    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
-  }
-  .search:focus-within { border-color: var(--accent-border); }
-  /* The pill is the field: its border is the one focus mark. */
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-base); color: var(--text); padding: 7px 0; }
-  .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+  .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane-chat, var(--pane)); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
   .setnav { padding: var(--sp-5) var(--sp-2) var(--sp-3); gap: var(--sp-3); overflow-y: auto; }
   .setnav-title { padding: 0 var(--sp-3); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
   .setnav-list { display: flex; flex-direction: column; gap: 2px; }

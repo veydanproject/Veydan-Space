@@ -3,11 +3,13 @@
 
 <!--
   The phone's password list: one finger-size row per password (mobile/PasswordRow),
-  a tap opens it, a long press offers copy, edit and delete in a sheet.
+  a tap opens it, a long press offers copy, edit and delete in a sheet. In a
+  wide window it is the column beside the open password (core/ui/split).
 -->
 <script lang="ts">
   import { toast } from '$lib/core/ui/toast.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
+  import { split } from '$lib/core/ui/split.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Icon from '$lib/core/Icon.svelte';
@@ -15,6 +17,7 @@
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import PasswordRow from '$lib/pass/mobile/PasswordRow.svelte';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import PasswordLockBadge from '$lib/pass/components/PasswordLockBadge.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import { api } from '$lib/pass/api';
@@ -31,11 +34,19 @@
   import { passwordStore } from '$lib/pass/store/passwords.svelte';
   import type { PasswordEntry } from '$lib/pass/types';
 
-  let entries = $state<PasswordEntry[]>([]);
-  let loaded = $state(false);
+  // The store's list: what the open password beside it saves or deletes shows here at once.
+  const entries = $derived(passwordStore.list);
+  let loaded = $state(passwordStore.loaded);
   let search = $state('');
   let error = $state('');
   let menu = $state<PasswordEntry | null>(null);
+
+  // The id is read before the sheet closes: «menu = null» re-runs {@const entry = menu}.
+  function edit(entry: PasswordEntry) {
+    const id = entry.id;
+    menu = null;
+    void split.open(`/passwords/${id}?edit`);
+  }
   let unlockOpen = $state(false);
   let pendingCopy = $state<PasswordEntry | null>(null);
 
@@ -43,7 +54,7 @@
 
   async function load() {
     try {
-      entries = await api.passwords.list();
+      await passwordStore.refresh();
     } catch (e) {
       error = formatError(e);
     } finally {
@@ -128,7 +139,8 @@
     if (!(await ask({ title: $t('pw_delete_confirm', { name: entry.title }) }))) return;
     try {
       await api.passwords.delete(entry.id);
-      await passwordStore.refresh().catch(() => {});
+      // The password open beside the list goes with it.
+      if (split.shows(`/passwords/${entry.id}`)) void goto('/passwords', { replaceState: true });
       await load();
     } catch (e) {
       error = formatError(e);
@@ -153,9 +165,10 @@
 <div class="m-page">
   <div class="m-header">
     {#if hasHome()}
-      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <HubButton />
     {/if}
-    <h1 class="m-title title-with-badge">{$t('pw_title')}<PasswordLockBadge size={11} /></h1>
+    <h1 class="m-title">{$t('pw_title')}</h1>
+    <PasswordLockBadge size={20} />
   </div>
   <div class="m-search">
     <div class="field">
@@ -173,7 +186,7 @@
         <Icon name="lock-password" size={40} />
         <p>{$t('pw_empty')}</p>
         {#if canAdd}
-          <a class="m-btn-grad cta" href="/passwords/add"><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
+          <a class="m-btn-grad cta" href="/passwords/add" onclick={split.follow}><Icon name="plus" size={18} />{$t('cmd_passwords_create')}</a>
         {/if}
       </div>
     {:else if filtered.length === 0}
@@ -189,7 +202,8 @@
             {entry}
             chips={chipItemsOf(entry)}
             period={period(entry)}
-            onopen={() => goto(`/passwords/${entry.id}`)}
+            active={split.shows(`/passwords/${entry.id}`)}
+            onopen={() => split.open(`/passwords/${entry.id}`)}
             onmenu={() => (menu = entry)}
           />
         {/each}
@@ -197,7 +211,7 @@
     {/if}
   </div>
   {#if canAdd}
-    <a class="m-fab" href="/passwords/add" aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={22} /></a>
+    <a class="m-fab" href="/passwords/add" onclick={split.follow} aria-label={$t('cmd_passwords_create')}><Icon name="plus" size={22} /></a>
   {/if}
 </div>
 
@@ -214,7 +228,7 @@
         <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
       </button>
       {#if canAdd}
-        <button type="button" class="m-row" onclick={() => { menu = null; void goto(`/passwords/${entry.id}?edit`); }}>
+        <button type="button" class="m-row" onclick={() => edit(entry)}>
           <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
         </button>
         <button type="button" class="m-row" onclick={() => remove(entry)}>
@@ -235,8 +249,9 @@
 />
 
 <style>
+  /* The lock is a touch target of 40 at the head's right edge, its icon 20. */
+  .m-header :global(.badge) { width: 40px; height: 40px; padding: 0; margin-left: auto; flex-shrink: 0; }
   .err { margin-bottom: var(--sp-3); }
-  .title-with-badge { display: flex; align-items: center; gap: 2px; }
   /* Room under the last row for the floating «+» (.m-fab). */
   .list { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }

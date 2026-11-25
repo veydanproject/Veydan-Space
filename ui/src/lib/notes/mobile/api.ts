@@ -283,6 +283,21 @@ export function onNoteRemote(cb: (id: string) => void): Promise<UnlistenFn> {
   return listen<string>('notes://external-change', (e) => cb(e.payload));
 }
 
+// ── Writes ───────────────────────────────────────────────────────────────────
+
+const writtenListeners = new Set<() => void>();
+
+/** Called after each write of a note through this API: a list beside an open note shows it (core/ui/split). */
+export function onNotesWritten(cb: () => void): () => void {
+  writtenListeners.add(cb);
+  return () => writtenListeners.delete(cb);
+}
+
+/** `fn` writes a note: the listeners hear of it once it is done, whatever its end. */
+function wrote<F extends (...args: never[]) => Promise<unknown>>(fn: F): F {
+  return ((...args: Parameters<F>) => fn(...args).finally(() => writtenListeners.forEach((cb) => cb()))) as F;
+}
+
 // ── API ──────────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -290,8 +305,8 @@ export const api = {
   sync: {
     ...core.sync,
     conflictGet: (noteId: string) => shared.sync.conflictGet(noteId),
-    conflictResolve: (noteId: string, token: string, content: string) =>
-      shared.sync.conflictResolve(noteId, token, content),
+    conflictResolve: wrote((noteId: string, token: string, content: string) =>
+      shared.sync.conflictResolve(noteId, token, content)),
     attachmentCancel: (noteId: string, name: string) => shared.sync.attachmentCancel(noteId, name),
   },
   notes: {
@@ -309,15 +324,15 @@ export const api = {
       const nav = await shapeContext([n]);
       return toNote(n, nav);
     },
-    create: async (title: string, content = '', tags: string[] = [], bindings: string[] = []): Promise<Note> => {
+    create: wrote(async (title: string, content = '', tags: string[] = [], bindings: string[] = []): Promise<Note> => {
       const n = await shared.notes.create({ title, content, tag_names: tags, bindings });
       return toNote(n, await shapeContext([n]));
-    },
+    }),
     /**
      * The returned hash is the one of the body this call wrote, not of a later read:
      * a write that lands in between must fail the next `base_hash` check.
      */
-    update: async (id: string, input: NoteUpdateInput): Promise<Note> => {
+    update: wrote(async (id: string, input: NoteUpdateInput): Promise<Note> => {
       let written: SharedNote | null = null;
       if (input.title !== undefined || input.content !== undefined || input.pinned !== undefined) {
         written = await shared.notes.update(id, {
@@ -341,21 +356,21 @@ export const api = {
         out.contentHash = written.content_hash;
       }
       return out;
-    },
-    delete: (id: string) => shared.notes.delete(id),
-    restore: async (id: string): Promise<Note> => {
+    }),
+    delete: wrote((id: string) => shared.notes.delete(id)),
+    restore: wrote(async (id: string): Promise<Note> => {
       await shared.notes.restore(id);
       const n = await shared.notes.get(id);
       const nav = await shapeContext([n]);
       return toNote(n, nav);
-    },
-    purge: (id: string) => shared.notes.delete(id, true),
+    }),
+    purge: wrote((id: string) => shared.notes.delete(id, true)),
     emptyTrash: () => shared.notes.emptyTrash(),
-    setFolder: (noteId: string, folderId: string | null) => shared.notes.noteSetFolder(noteId, folderId),
-    addFolder: (noteId: string, folderId: string) => shared.notes.noteAddFolder(noteId, folderId),
-    removeFolder: (noteId: string, folderId: string) => shared.notes.noteRemoveFolder(noteId, folderId),
-    addBinding: (noteId: string, binding: string) => shared.notes.noteAddBinding(noteId, binding),
-    removeBinding: (noteId: string, binding: string) => shared.notes.noteRemoveBinding(noteId, binding),
+    setFolder: wrote((noteId: string, folderId: string | null) => shared.notes.noteSetFolder(noteId, folderId)),
+    addFolder: wrote((noteId: string, folderId: string) => shared.notes.noteAddFolder(noteId, folderId)),
+    removeFolder: wrote((noteId: string, folderId: string) => shared.notes.noteRemoveFolder(noteId, folderId)),
+    addBinding: wrote((noteId: string, binding: string) => shared.notes.noteAddBinding(noteId, binding)),
+    removeBinding: wrote((noteId: string, binding: string) => shared.notes.noteRemoveBinding(noteId, binding)),
     /** Title hits first, body-only hits with an excerpt after. */
     search: async (query: string): Promise<NoteSearchResult> => {
       const q = query.trim().toLowerCase();
@@ -398,10 +413,10 @@ export const api = {
     smartViewDelete: (id: string) => shared.notes.smartViewDelete(id),
     historyList: (noteId: string) => shared.notes.historyList(noteId),
     historyGet: (id: string) => shared.notes.historyGet(id),
-    historyRestore: async (noteId: string, historyId: string): Promise<Note> => {
+    historyRestore: wrote(async (noteId: string, historyId: string): Promise<Note> => {
       const n = await shared.notes.historyRestore(noteId, historyId);
       return toNote(n, await shapeContext([n]));
-    },
+    }),
     links: async (id: string): Promise<NoteLinks> => {
       const l: SharedNoteLinks = await shared.notes.links(id);
       const nav = await shapeContext([...l.outgoing, ...l.backlinks]);

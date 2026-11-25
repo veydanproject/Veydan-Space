@@ -570,7 +570,7 @@
     overflow-y: auto;
     min-width: 200px;
     border-radius: var(--radius-pane);
-    background: var(--pane);
+    background: var(--pane-top, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     -webkit-backdrop-filter: var(--pane-filter);
@@ -586,7 +586,7 @@
     min-width: 280px;
     container-type: inline-size;
     border-radius: var(--radius-pane);
-    background: var(--pane);
+    background: var(--pane-list, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     -webkit-backdrop-filter: var(--pane-filter);
@@ -596,25 +596,25 @@
   /* Always two rows: the title with its buttons (back the sidebar, create or the trash's), then the
      field, the sort and the view on one line that never wraps. */
   .list-header {
-    padding: var(--sp-5) var(--sp-4) var(--sp-3);
+    padding: var(--sp-4) var(--sp-4) var(--sp-3);
     display: flex;
     flex-direction: column;
-    gap: var(--sp-3);
+    gap: var(--sp-4);
     flex-shrink: 0;
   }
-  .list-head-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
-  .list-head-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+  .list-head-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; height: 36px; }
+  .list-head-actions { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; margin-left: auto; }
   .list-head-actions .icon-btn { width: 36px; height: 36px; }
 
-  .list-title-group { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+  .list-title-group { display: flex; flex-direction: row; align-items: baseline; gap: var(--sp-2); min-width: 0; flex: 1 1 auto; }
   .list-title {
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-bold);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
     letter-spacing: var(--ls-tight);
     line-height: var(--lh-tight);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .list-sub { font-size: var(--fs-xs); color: var(--text-2); }
+  .list-sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-tight); }
 
   /* The palette field takes the rest; the controls after it keep their size */
   .list-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -698,7 +698,7 @@
     overflow: hidden;
     min-width: 360px;
     border-radius: var(--radius-pane);
-    background: var(--pane);
+    background: var(--pane-chat, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     -webkit-backdrop-filter: var(--pane-filter);

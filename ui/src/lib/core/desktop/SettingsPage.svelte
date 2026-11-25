@@ -154,7 +154,7 @@
     `<style>.settings-main > [id]:not([id="${CSS.escape(activeSection)}"]) { display: none !important; }</style>`,
   );
 
-  const ACCENT_PRESETS = ['#7066c6', '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6', '#34d399'];
+  const ACCENT_PRESETS = ['#685dde', '#8b7bff', '#60a5fa', '#2dd4bf', '#f472b6', '#34d399'];
 
   /** The user's choice: shown here, remembered by this device and saved for the extension and the other computers (it syncs). */
   function chooseLanguage(code: Locale) {
@@ -784,27 +784,38 @@
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     overflow: hidden;
   }
-  .settings-side { padding: var(--sp-5) var(--sp-3) var(--sp-3); gap: var(--sp-4); }
+  .settings-side { padding: 0 var(--sp-3) var(--sp-3); gap: var(--sp-4); background: var(--pane-side, var(--pane)); }
   /* The title stays in place, as the pane's does: only the list of the sections scrolls. */
   .settings-side :global(.settings-nav) { flex: 1; min-height: 0; overflow-y: auto; }
-  .side-title { padding: 0 var(--sp-2); font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
+  /* Scrolled, the list fades under the title: no label is cut on its edge. */
+  .settings-side :global(.settings-nav.scrolled) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 4px, #000 28px);
+    mask-image: linear-gradient(to bottom, transparent 4px, #000 28px);
+  }
+  /* Both heads are the column's line of 36, 16 from the top: «Настройки» and the section's title on one line. */
+  .side-title {
+    height: 36px; margin-top: var(--sp-4); display: flex; align-items: center; flex-shrink: 0;
+    padding-inline: var(--sp-1); font-size: var(--fs-lg); font-weight: var(--fw-semibold);
+  }
   .pane-head {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
     flex-shrink: 0;
-    min-height: 64px;
-    padding: var(--sp-4) var(--sp-6) 0;
+    height: 36px;
+    min-height: 36px;
+    margin-top: var(--sp-4);
+    padding: 0 var(--sp-6);
   }
-  .pane-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); }
+  .pane-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); line-height: var(--lh-snug); white-space: nowrap; }
   .pane-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
   .settings-main {
     display: flex;
     flex-direction: column;
     gap: var(--sp-4);
-    max-width: calc(var(--page-max-narrow) + var(--sp-6) * 2);
+    max-width: none;
     min-width: 0;
-    padding: var(--sp-6) var(--sp-6) var(--sp-8);
+    padding: var(--sp-4) var(--sp-6) var(--sp-8);
   }
   .off { display: none !important; }
   /* The section's name is the pane's title: its card does not repeat it. */

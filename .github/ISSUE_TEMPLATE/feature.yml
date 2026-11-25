@@ -1,6 +1,5 @@
-# The feature request of every public repository of Veydan: the products take
-# it from publish.shared, services/link and services/push carry copies equal
-# to it (internal/platform-spec.md 14.4). Written for any of them: no product named.
+# The feature request of every public repository of Veydan: written for any
+# of them, no product named.
 name: Feature request
 description: An idea for something new or for something to work differently.
 labels: ["enhancement"]

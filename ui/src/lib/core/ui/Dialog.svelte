@@ -188,7 +188,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
     padding: var(--sp-5) var(--sp-6);
   }
 
@@ -214,7 +214,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-5);
+    padding: var(--sp-3) var(--sp-6);
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }

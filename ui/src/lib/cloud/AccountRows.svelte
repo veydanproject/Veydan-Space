@@ -86,7 +86,7 @@
   .sync .m-row-label { flex: none; font-weight: var(--fw-medium); }
   .ava {
     display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
-    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
+    background: var(--accent-grad); color: var(--on-accent); font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
   }
   .ava.ghost { background: var(--accent-tint); color: var(--accent-text); }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

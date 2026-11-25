@@ -254,13 +254,13 @@
   .badge-cam {
     position: absolute; right: -2px; bottom: -2px; width: 32px; height: 32px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent-grad); color: #fff; border: 2px solid var(--surface); box-shadow: var(--shadow);
+    background: var(--accent-grad); color: var(--on-accent); border: 2px solid var(--surface); box-shadow: var(--shadow);
   }
-  .badge-cam .spinner { border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
+  .badge-cam .spinner { border-color: color-mix(in srgb, var(--on-accent) 35%, transparent); border-top-color: var(--on-accent); }
   .drop {
     position: absolute; inset: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center;
     padding: 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); line-height: var(--lh-tight);
-    background: color-mix(in srgb, var(--accent) 78%, transparent); color: #fff; pointer-events: none;
+    background: color-mix(in srgb, var(--accent) 78%, transparent); color: var(--on-accent); pointer-events: none;
   }
   .side { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
   .buttons { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

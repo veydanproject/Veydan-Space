@@ -257,7 +257,7 @@
   .pw-field {
     font-size: var(--fs-md);
     font-weight: var(--fw-semibold);
-    height: var(--control-h-lg);
+    height: var(--control-h);
     background: var(--pane-strong);
     border-color: var(--border);
     border-radius: var(--radius-field);
@@ -267,7 +267,7 @@
   .pw-value {
     width: 100%;
     height: auto;
-    min-height: var(--control-h-lg);
+    min-height: var(--control-h);
     display: flex;
     align-items: center;
     padding: 0.55rem 0.75rem;
@@ -289,7 +289,7 @@
 
   .pw-eye {
     position: absolute;
-    top: calc((var(--control-h-lg) - 32px) / 2);
+    top: calc((var(--control-h) - 32px) / 2);
     right: 2.25rem;
     background: transparent;
     border: none;
@@ -297,7 +297,7 @@
 
   .pw-copy {
     position: absolute;
-    top: calc((var(--control-h-lg) - 32px) / 2);
+    top: calc((var(--control-h) - 32px) / 2);
     right: var(--sp-1);
     background: transparent;
     border: none;

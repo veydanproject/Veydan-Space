@@ -45,11 +45,13 @@
     header?: Snippet;
     /** 'point': its corner at (x, y), the default; 'above': centred over (x, y), 8 above it (below when there is no room). */
     place?: 'point' | 'above';
+    /** 'point' under a message: its top; with no room under y the menu goes 4 above it, not over it. */
+    over?: number;
     /** A roomier menu of a computer: rows 40 high, icons 18, this width (a channel’s ⋮). */
     width?: string;
   }
 
-  let { open = $bindable(), x, y, items, onclose, header, place = 'point', width }: Props = $props();
+  let { open = $bindable(), x, y, items, onclose, header, place = 'point', width, over }: Props = $props();
   const uid = $props.id();
 
   type Shown = { entry: MenuEntry; id?: string; labelledby?: string };
@@ -93,7 +95,7 @@
     let top = place === 'above' ? (y - h - 8 >= 4 ? y - h - 8 : y + 8) : y;
     if (left < 4) left = 4;
     if (left + w > vw - 4) left = vw - w - 4;
-    if (top + h > vh - 4) top = Math.max(4, vh - h - 4);
+    if (top + h > vh - 4) top = over !== undefined && over - h - 4 >= 4 ? over - h - 4 : Math.max(4, vh - h - 4);
     style = `left:${left}px;top:${top}px`;
     origin = `${Math.round(x - left)}px ${Math.round(y - top)}px`;
   }
@@ -276,12 +278,12 @@
     min-width: 200px;
     max-width: 320px;
     padding: 4px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    background: var(--glass-menu-bg, color-mix(in srgb, var(--glass-bar) 60%, transparent));
+    border: 1px solid var(--pane-strong-border);
     border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter);
-    backdrop-filter: var(--glass-filter);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
+    backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
     outline: none;
     animation: menu-in var(--dur-fast) var(--ease) both;
   }
@@ -375,8 +377,8 @@
     border: 1px solid var(--border-2); background: var(--surface-3); font-weight: var(--fw-semibold);
   }
   .menu-item.pair-btn .menu-label { flex: 0 1 auto; }
-  .menu-item.pair-btn.primary { border-color: transparent; background: var(--accent-grad); color: #fff; }
-  .menu-item.pair-btn.primary :global(svg) { color: #fff; }
+  .menu-item.pair-btn.primary { border-color: transparent; background: var(--accent-grad); color: var(--on-accent); }
+  .menu-item.pair-btn.primary :global(svg) { color: var(--on-accent); }
   .menu-item.pair-btn:hover:not(:disabled), .menu-item.pair-btn:focus:not(:disabled) { background: var(--surface-hover); }
   .menu-item.pair-btn.primary:hover:not(:disabled), .menu-item.pair-btn.primary:focus:not(:disabled) { background: var(--accent-grad); filter: brightness(1.1); }
   .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--focus-ring); outline-offset: 2px; }

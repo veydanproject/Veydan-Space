@@ -1,0 +1,367 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* ============================================================================
+ * Palette «Барвинок и индиго» (РД-DS1-01) — the colours of the interface over
+ * quiet.css. Imported by tokens.css right after quiet.css, with the same
+ * [data-theme] selectors: it wins by its order. Colour only: the shadows, the
+ * geometry and the call's windows stay in quiet.css, the glass of what floats
+ * (--glass-bg, --glass-menu-bg, --glass-float*) too (РД-DS2-05).
+ *
+ * Light: the window's frame #BBBEE2, panes plain white, the accent #685DDE
+ * with white on it. Dark: the frame #080A15, panes #191B23 / #15171D, the
+ * accent a light #ACAEFF with deep indigo #24234A on it. Text 4.5:1 or more,
+ * edges 3:1 or more, in both themes.
+ * ========================================================================== */
+
+/* ── Colours: DARK ── */
+[data-theme='dark'] {
+  --bg:          #11131B;
+  --bg-2:        #2E3449;
+  --chrome:      #2E3449;
+  --gap:         #080A15;  /* the window's frame, around the panes */
+  --surface:     #191B23;
+  --surface-2:   #2A2D38;
+  --surface-3:   #20222B;
+  --surface-hover: #262935;
+  --surface-row-hover: rgba(240, 242, 247, 0.05);
+  --surface-drawer: #191B23;
+  --surface-drawer-footer: #15171D;
+  --toggle-off:  #6A6F84;
+  --border:      rgba(240, 242, 247, 0.1);
+  --border-2:    rgba(240, 242, 247, 0.2);
+  --divider:     rgba(240, 242, 247, 0.07);
+  --scroll-thumb:        rgba(240, 242, 247, 0.26);
+  --scroll-thumb-hover:  rgba(240, 242, 247, 0.45);
+  --scroll-thumb-active: #ACAEFF;
+  --text:        #F0F2F7;
+  --text-2:      #A8ABB1;
+  --text-3:      #A0A4AE;
+  --text-body:   #DDE0E8;
+  --text-soft:   #A8ABB1;
+  --text-faint:  #A0A4AE;
+  --text-dim:    #A0A4AE;
+  --control-border: #8E929C;
+  --chrome-text:  #F1F3FA;  /* text on --chrome / --pane-top */
+  --chrome-muted: #A8B0CA;
+
+  --accent:        #ACAEFF;
+  --accent-grad:   #ACAEFF;
+  --accent-hover:  #C0C2FF;
+  --accent-active: #9A9DF2;
+  --on-accent:     #24234A;  /* text and glyphs on an accent fill */
+  --accent-bg:     #2E3449;  /* the selected row */
+  --accent-border: rgba(172, 174, 255, 0.4);
+  --accent-text:   #ACAEFF;
+  --accent-text-2: #ACAEFF;
+  --accent-text-3: #ACAEFF;
+  --focus-ring:    #ACAEFF;
+  --accent-tint:        rgba(172, 174, 255, 0.16);
+  --accent-tint-border: rgba(172, 174, 255, 0.3);
+
+  --success:        #5CCB8A;
+  --success-text:   #5CCB8A;
+  --success-grad:   #1D7448;
+  --success-hover:  #19663F;
+  --success-active: #155837;
+  --success-bg:     rgba(92, 203, 138, 0.14);
+  --success-bg-hover: rgba(92, 203, 138, 0.22);
+  --success-border: rgba(92, 203, 138, 0.3);
+  --danger:         #D63640;
+  --danger-text:    #FF6A5C;
+  --danger-hover:   #C1313A;
+  --danger-active:  #AB2B33;
+  --danger-bg:      rgba(255, 106, 92, 0.14);
+  --danger-bg-hover: rgba(255, 106, 92, 0.22);
+  --danger-border:  rgba(255, 106, 92, 0.32);
+  --warn-bg:        rgba(237, 181, 74, 0.13);
+  --warn-text:      #EDB54A;
+  --warn-border:    rgba(237, 181, 74, 0.4);
+
+  --cat-purple: #ACAEFF;
+  --sec-violet: #685DDE;  --sec-violet-on: #FFFFFF;
+
+  --backdrop: rgba(8, 10, 21, 0.62);
+  --graph-edge: rgba(168, 171, 177, 0.25);
+
+  /* The window is even: its frame is --gap, no glow under the panes. */
+  --glow-1: transparent;
+  --glow-2: transparent;
+  --glow-3: transparent;
+  --pane:               rgba(25, 27, 35, 0.9);
+  --pane-top:           #2E3449;  /* the window's head */
+  --pane-side:          #2E3449;  /* the column of Settings' sections */
+  --pane-chrome:        #2E3449;
+  --pane-list:          #191B23;  /* a column of a list */
+  --pane-island:        #11131B;  /* a page with no columns */
+  --pane-chat:          #15171D;  /* a conversation, a note */
+  --pane-head:          rgba(240, 242, 247, 0.03);
+  --pane-border:        rgba(240, 242, 247, 0.07);
+  --pane-strong:        rgba(42, 45, 56, 0.92);
+  --pane-strong-border: rgba(240, 242, 247, 0.1);
+  --glass-bg:           rgba(25, 27, 35, 0.9);      /* windows, dialogs: 90 % #191B23 */
+  --glass-bg-raised:    rgba(42, 45, 56, 0.96);
+  --glass-menu-bg:      rgba(46, 52, 73, 0.8);      /* menus, lists, sheets: 80 % #2E3449 */
+  --glass-float:        rgba(58, 58, 60, 0.55);     /* over a conversation */
+  --glass-float-blur:   blur(2px);
+  --glass-float-edge:   inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.45);
+  --glass-float-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  --glass-bar:          rgba(46, 52, 73, 0.92);
+  --glass-border:       rgba(240, 242, 247, 0.1);
+  --glass-highlight:    inset 0 1px 0 rgba(240, 242, 247, 0.06);
+  /* A muted count (a chat with no sound). */
+  --count-quiet-bg:     rgba(240, 242, 247, 0.16);
+  --count-quiet-text:   #D5D9E8;
+  /* Chat bubbles: an outgoing one is filled with the accent. */
+  --bubble-in-bg:       #2E3449;
+  --bubble-in-border:   rgba(240, 242, 247, 0.07);
+  --bubble-out-bg:      #ACAEFF;
+  --bubble-out-border:  #ACAEFF;
+  --bubble-out-text:    #24234A;
+  --bubble-out-meta:    rgba(36, 35, 74, 0.8);
+  --bubble-out-well:    rgba(255, 255, 255, 0.24);  /* a quote, a quiet button inside it */
+  --bubble-out-well-2:  rgba(255, 255, 255, 0.4);   /* their hover */
+  --press-tint:         rgba(172, 174, 255, 0.14);
+  --tint-l:             75%;  /* the lightness of a sender's name (messenger/shared/tint.ts) */
+  --term-bg:            #11131B;
+  --term-cursor:        #ACAEFF;
+}
+
+/* ── Colours: LIGHT ── */
+[data-theme='light'] {
+  --bg:          #F6F6FA;
+  --bg-2:        #D7D9FA;
+  --chrome:      #D7D9FA;
+  --gap:         #BBBEE2;
+  --surface:     #FFFFFF;
+  --surface-2:   #F4F4F6;
+  --surface-3:   #F4F4F6;
+  --surface-hover: #EEEEF1;
+  --surface-row-hover: rgba(20, 21, 31, 0.05);
+  --surface-drawer: #FFFFFF;
+  --surface-drawer-footer: #FAFAFB;
+  --toggle-off:  #8A8CA0;
+  --border:      rgba(20, 21, 31, 0.11);
+  --border-2:    rgba(20, 21, 31, 0.2);
+  --divider:     rgba(20, 21, 31, 0.09);
+  --scroll-thumb:        rgba(20, 21, 31, 0.3);
+  --scroll-thumb-hover:  rgba(20, 21, 31, 0.5);
+  --scroll-thumb-active: #685DDE;
+  --text:        #14151F;
+  --text-2:      #5B5C69;
+  --text-3:      #5E5F6C;
+  --text-body:   #2A2B38;
+  --text-soft:   #5B5C69;
+  --text-faint:  #5E5F6C;
+  --text-dim:    #5E5F6C;
+  --control-border: #7B7D8C;
+  --chrome-text:  #14151F;
+  --chrome-muted: #5B5C69;
+
+  --accent:        #685DDE;
+  --accent-grad:   #685DDE;
+  --accent-hover:  #5B50CC;
+  --accent-active: #4F44B8;
+  --on-accent:     #FFFFFF;
+  --accent-bg:     #D7D9FA;
+  --accent-border: rgba(104, 93, 222, 0.35);
+  --accent-text:   #5247C9;
+  --accent-text-2: #5247C9;
+  --accent-text-3: #5247C9;
+  --focus-ring:    #5247C9;
+  --accent-tint:        rgba(104, 93, 222, 0.12);
+  --accent-tint-border: rgba(104, 93, 222, 0.3);
+
+  --success:        #1D7448;
+  --success-text:   #1D7448;
+  --success-grad:   #1D7448;
+  --success-hover:  #19663F;
+  --success-active: #155837;
+  --success-bg:     rgba(29, 116, 72, 0.1);
+  --success-bg-hover: rgba(29, 116, 72, 0.16);
+  --success-border: rgba(29, 116, 72, 0.24);
+  --danger:         #BE3329;
+  --danger-text:    #BE3329;
+  --danger-hover:   #A92D24;
+  --danger-active:  #94261E;
+  --danger-bg:      rgba(190, 51, 41, 0.12);
+  --danger-bg-hover: rgba(190, 51, 41, 0.2);
+  --danger-border:  rgba(190, 51, 41, 0.3);
+  --warn-bg:        rgba(148, 96, 10, 0.12);
+  --warn-text:      #94600A;
+  --warn-border:    rgba(148, 96, 10, 0.4);
+
+  --cat-purple: #685DDE;
+  --bio-purple: #5B3FB8;
+  --sec-violet: #685DDE;  --sec-violet-on: #FFFFFF;
+
+  --backdrop: rgba(20, 21, 31, 0.3);
+  --graph-edge: rgba(91, 92, 105, 0.3);
+
+  --glow-1: transparent;
+  --glow-2: transparent;
+  --glow-3: transparent;
+  --pane:               #FFFFFF;
+  --pane-top:           #FFFFFF;
+  --pane-side:          #FFFFFF;
+  --pane-chrome:        #D7D9FA;
+  --pane-list:          #FFFFFF;
+  --pane-island:        #FFFFFF;
+  --pane-chat:          #FFFFFF;
+  --pane-head:          rgba(20, 21, 31, 0.03);
+  --pane-border:        rgba(20, 21, 31, 0.08);
+  --pane-strong:        #FFFFFF;
+  --pane-strong-border: rgba(20, 21, 31, 0.1);
+  --glass-bg:           rgba(255, 255, 255, 0.9);   /* windows, dialogs: 90 % white */
+  --glass-bg-raised:    rgba(255, 255, 255, 0.96);
+  --glass-menu-bg:      rgba(255, 255, 255, 0.8);   /* menus, lists, sheets: 80 % white */
+  --glass-float:        rgba(255, 255, 255, 0.55);  /* over a conversation */
+  --glass-float-blur:   blur(2px);
+  --glass-float-edge:   inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 0.5px rgba(20, 21, 31, 0.1);
+  --glass-float-shadow: 0 8px 24px -10px rgba(20, 21, 31, 0.3);
+  --glass-bar:          rgba(255, 255, 255, 0.92);
+  --glass-border:       rgba(20, 21, 31, 0.1);
+  --glass-highlight:    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --count-quiet-bg:     #E4E5EC;
+  --count-quiet-text:   #3F4252;
+  --bubble-in-bg:       #D7D9FA;
+  --bubble-in-border:   rgba(20, 21, 31, 0.06);
+  --bubble-out-bg:      #685DDE;
+  --bubble-out-border:  #685DDE;
+  --bubble-out-text:    #FFFFFF;
+  --bubble-out-meta:    rgba(255, 255, 255, 0.82);
+  --bubble-out-well:    rgba(20, 21, 31, 0.16);
+  --bubble-out-well-2:  rgba(20, 21, 31, 0.26);
+  --press-tint:         rgba(104, 93, 222, 0.12);
+  --tint-l:             25%;
+  --term-bg:            #11131B;
+  --term-cursor:        #ACAEFF;
+}
+
+/* What lies in a bubble or a channel's post (a file's and a call's circle, a
+   link card's tiles, a quiet button) takes the bubble's tone: its text 14 %
+   over its fill, 22 % on hover, not the page's panel, a light hole in it. */
+[data-theme] :is(.line .bubble, .post.card) {
+  --bubble-tone: color-mix(in srgb, var(--text) 14%, transparent);
+  --bubble-tone-hover: color-mix(in srgb, var(--text) 22%, transparent);
+  --bubble-edge: color-mix(in srgb, var(--text) 26%, transparent);
+  --accent-bg: var(--bubble-tone);
+  --warn-bg: var(--bubble-tone);
+  --surface-2: var(--bubble-tone);
+  --surface-3: var(--bubble-tone);
+}
+[data-theme] :is(.line .bubble, .post.card) .btn-ghost {
+  background: var(--bubble-tone);
+  border-color: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+[data-theme] :is(.line .bubble, .post.card) .btn-ghost:hover:not(:disabled) { background: var(--bubble-tone-hover); }
+
+/* Inside an outgoing bubble the accent is the ground: what stands on it takes
+   the bubble's own text and meta colours, or it would be accent on accent. */
+[data-theme] .line.out .bubble {
+  --text: var(--bubble-out-text);
+  --text-body: var(--bubble-out-text);
+  --accent: var(--bubble-out-text);
+  --accent-text: var(--bubble-out-text);
+  --accent-text-2: var(--bubble-out-text);
+  --accent-text-3: var(--bubble-out-text);
+  --success-text: var(--bubble-out-text);
+  --text-2: var(--bubble-out-meta);
+  --text-3: var(--bubble-out-meta);
+  --text-soft: var(--bubble-out-meta);
+  --text-faint: var(--bubble-out-meta);
+  --text-dim: var(--bubble-out-meta);
+  --accent-border: var(--bubble-out-meta);
+  --border: var(--bubble-out-meta);
+  --on-accent: var(--bubble-out-bg);
+  /* The fills match: an accent button (a contact card's «Написать») is the
+     bubble's text with the bubble's colour on it, hover and press a step
+     toward the bubble (4.5:1 or more); a quiet one, a voice's speed and a
+     hovered row lie in the bubble's tone, its text over its fill, so the
+     bubble's text and meta read on them. */
+  --accent-grad: var(--bubble-out-text);
+  --accent-hover: color-mix(in srgb, var(--bubble-out-text) 96%, var(--bubble-out-bg));
+  --accent-active: color-mix(in srgb, var(--bubble-out-text) 93%, var(--bubble-out-bg));
+  --shadow-accent: none;
+  --pane-strong: var(--bubble-tone);
+  --pane-strong-border: var(--bubble-out-meta);
+  --surface-hover: var(--bubble-tone-hover);
+  --surface-row-hover: var(--bubble-tone);
+  --border-2: var(--bubble-out-text);
+}
+/* A quote inside it (.bubble: one class over MessageBubble's own rule). */
+[data-theme] .line.out .bubble .reply { background: var(--bubble-out-well); }
+/* A warning and an error on the accent: dark in the dark theme's light
+   bubble, light in the light theme's dark one, on the bubble's tone; the
+   light's error is the bubble's text, so it is semibold. */
+[data-theme='dark'] .line.out .bubble {
+  --warn-text: #6B4400;
+  --danger-text: #8A1F17;
+  --danger-bg: var(--bubble-tone);
+}
+[data-theme='light'] .line.out .bubble {
+  --warn-text: #FFE08A;
+  --danger-text: var(--bubble-out-text);
+  --danger-bg: var(--bubble-tone);
+}
+[data-theme='light'] .line.out .bubble :is(.failed .sub, .card-fail, .fail) { font-weight: var(--fw-semibold); }
+
+/* Inside a white pane of the light theme the second surface is darker than
+   the pane, so that chips, row lines, tracks and muted counts show. */
+[data-theme='light'] :is(.card, .data-table, .on-glass) {
+  --surface-2: #F4F4F6;
+  --surface-3: #F4F4F6;
+  --m-field: #F4F4F6;
+  --m-seg: #F4F4F6;
+  --surface-hover: #EEEEF1;
+}
+
+/* The head of a phone's screen is white in the light, as the window's head. */
+[data-theme='light'] :is(.m-header, .msg-m header.bar) { background: var(--pane-top); }
+
+/* A conversation's glass head in the dark is dense, its lines light: «в сети»
+   and the rest keep 4.5:1 over any picture under it (.window: one class over
+   ChatWindow's and ChannelFeed's own rule). */
+[data-theme='dark'] .window > :is(.head.glassfloat, .head.phone) {
+  background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
+  --text-2: #CBD0E2;
+  --text-3: #CBD0E2;
+}
+
+/* The columns of navigation (Chat's rail, Notes' and Settings' sections, the
+   phone's ☰ of Notes) are the window's head, #2E3449 in the dark: what is
+   chosen and the search a step lighter than it, the text light. */
+[data-theme='dark'] :is(.sections, .sidebar, .settings-side) {
+  --accent-bg: #3A4260;
+  --surface-3: #353C55;
+  --surface-hover: #3A4260;
+  --surface-2: #3A4260;
+  --text: #F1F3FA;
+  --text-2: #A8B0CA;
+  --text-soft: #A8B0CA;
+  --text-3: #A8B0CA;
+  --text-faint: #A8B0CA;
+  --text-dim: #A8B0CA;
+}
+
+/* A phone's search field in the light is a step darker than the page, in a thin frame (its edge over 3:1);
+   in focus the accent's frame (.search doubled: the :is above weighs as its heaviest part, .m-search .field input). The same for the phone's build in a wide window (iPad, an open Duo). */
+@media (max-width: 767px) {
+  [data-theme='light'] :is(.search, .search-field input, .m-search .field input) {
+    background: #ECECF2;
+    border: 1px solid rgba(20, 21, 31, 0.14);
+  }
+  [data-theme='light'] .search.search:focus-within { border-color: var(--accent-border); }
+  [data-theme='light'] :is(.search-field input, .m-search .field input):focus { border-color: var(--accent); }
+}
+[data-theme='light'] :is(.msg-m, .m-page) :is(.search, .search-field input, .m-search .field input) {
+  background: #ECECF2;
+  border: 1px solid rgba(20, 21, 31, 0.14);
+}
+[data-theme='light'] :is(.msg-m, .m-page) .search.search:focus-within { border-color: var(--accent-border); }
+[data-theme='light'] :is(.msg-m, .m-page) :is(.search-field input, .m-search .field input):focus { border-color: var(--accent); }
+
+/* A note's editor in the light is white, a new one as an open one. */
+[data-theme='light'] .shell.no-bar:has(.editor) { background: var(--pane-top) !important; }

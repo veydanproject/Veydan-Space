@@ -649,13 +649,12 @@
   .device-name { font-size: var(--fs-base); color: var(--text-1); }
   .device-own { font-size: var(--fs-xs); color: var(--text-3); }
   .device-id { font-size: var(--fs-sm); color: var(--text-2); word-break: break-all; }
-  .backend { display: flex; width: 100%; }
-  .backend .seg-btn { flex: 1; justify-content: center; }
-  /* Three names: each cell takes the room its name needs, and on a narrow phone a name may take two lines. */
-  .backend.three .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; padding: var(--sp-1) var(--sp-2); white-space: normal; text-align: center; line-height: 1.2; }
+  /* Words with their bar under them (base.css .seg); on a narrow phone a name that does not fit goes to the next line. */
+  .backend { flex-wrap: wrap; max-width: 100%; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .actions { display: flex; gap: var(--sp-2); }
-  .actions .btn { flex: 1; }
+  /* The two buttons share the card's width; a long word goes to the next line, not past the card. */
+  .actions .btn { flex: 1 1 0; min-width: 0; padding-inline: var(--sp-2); white-space: normal; line-height: var(--lh-tight); height: auto; min-height: var(--touch, 44px); }
   .wide { width: 100%; margin-top: var(--sp-2); }
   .msg { font-size: var(--fs-sm); word-break: break-word; }
   .danger { color: var(--danger-text); }

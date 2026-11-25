@@ -36,11 +36,11 @@
 </script>
 
 <div class="fields" class:mobile={isMobile}>
-  <div class="seg">
-    <button type="button" class="seg-btn" class:active={kind === 'pin'} {disabled} onclick={() => pick('pin')}>
+  <div class="tab-bar plain" role="tablist">
+    <button type="button" class="tab" role="tab" aria-selected={kind === 'pin'} class:active={kind === 'pin'} {disabled} onclick={() => pick('pin')}>
       {$t('lock_kind_pin')}
     </button>
-    <button type="button" class="seg-btn" class:active={kind === 'password'} {disabled} onclick={() => pick('password')}>
+    <button type="button" class="tab" role="tab" aria-selected={kind === 'password'} class:active={kind === 'password'} {disabled} onclick={() => pick('password')}>
       {$t('lock_kind_password')}
     </button>
   </div>
@@ -86,8 +86,6 @@
 
 <style>
   .fields { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .seg { display: flex; width: 100%; }
-  .seg .seg-btn { flex: 1; justify-content: center; }
   .row { display: flex; gap: var(--sp-2); }
   .lock-field {
     flex: 1;
@@ -109,7 +107,6 @@
   .lock-field.pin { -webkit-text-security: disc; }
   .note { font-size: var(--fs-xs); color: var(--text-2); }
   .hint { display: flex; flex-direction: column; gap: 4px; }
-  .mobile .seg-btn { min-height: 44px; }
   .mobile .row { flex-direction: column; }
   .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
 </style>

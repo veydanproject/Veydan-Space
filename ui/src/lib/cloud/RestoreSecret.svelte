@@ -60,8 +60,7 @@
   .block { display: flex; flex-direction: column; gap: var(--sp-1); }
   h2 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text); }
   .text { margin: 0; color: var(--text-2); font-size: var(--fs-base); line-height: var(--lh-base); }
-  .seg { display: flex; width: 100%; }
-  .seg .seg-btn { flex: 1; justify-content: center; }
+  .seg { align-self: flex-start; }
   /* As the fields of LockSecretFields beside it. */
   .lock-field {
     width: 100%;

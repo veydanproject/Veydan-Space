@@ -16,6 +16,8 @@
     title?: string;
     /** Accepted for parity with Drawer; a pane takes the width of its place. */
     width?: string;
+    /** Small grey text on the title's line, e.g. the number of entries. */
+    subtitle?: Snippet;
     titleBadge?: Snippet;
     actions?: Snippet;
     subheader?: Snippet;
@@ -23,14 +25,19 @@
     footer?: Snippet;
   }
 
-  let { open = $bindable(true), title, titleBadge, actions, subheader, children, footer }: Props = $props();
+  let { open = $bindable(true), title, subtitle, titleBadge, actions, subheader, children, footer }: Props = $props();
 </script>
 
 <section class="pane on-glass">
   {#if title || actions}
     <header class="pane-header">
-      {#if title}<h2 class="pane-title">{title}</h2>{/if}
-      {@render titleBadge?.()}
+      <div class="pane-titles">
+        <div class="pane-title-row">
+          {#if title}<h2 class="pane-title">{title}</h2>{/if}
+          {#if subtitle}<span class="pane-sub">{@render subtitle()}</span>{/if}
+        </div>
+        {@render titleBadge?.()}
+      </div>
       <div class="pane-actions">
         {@render actions?.()}
       </div>
@@ -67,20 +74,36 @@
     backdrop-filter: var(--pane-filter);
   }
 
+  /* The column's head: a line of 36, 16 from the top, no band and no rule under it. */
   .pane-header {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    height: 64px;
-    padding: 0 var(--sp-3) 0 var(--sp-5);
-    background: var(--pane-head);
-    border-bottom: 1px solid var(--pane-border);
+    padding: var(--sp-4) var(--sp-3) 0 var(--sp-4);
     flex-shrink: 0;
   }
+  .pane-titles {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+    min-height: 36px;
+  }
+  .pane-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    min-width: 0;
+  }
   .pane-title {
-    font-size: var(--fs-xl);
-    font-weight: var(--fw-bold);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-tight);
     color: var(--text);
+  }
+  .pane-sub {
+    font-size: var(--fs-xs);
+    color: var(--text-2);
   }
   .pane-actions {
     display: flex;

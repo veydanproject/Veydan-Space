@@ -19,6 +19,9 @@ pub mod notify;
 pub(crate) const REGION_FALLBACK: &str = "default";
 pub mod avatars;
 mod banned;
+/// A report of a bug to the project, with the diagnosis of the network
+/// when it is attached.
+pub mod bug;
 pub mod dm_history;
 /// The unsent text of each conversation, on this device only.
 pub mod drafts;
@@ -193,6 +196,8 @@ pub struct MessengerRuntime {
     /// Reports to the moderators: the rate of this device, one round of
     /// retries at a time (`crate::report`).
     reports: report::Reports,
+    /// Reports of a bug: their own rate and rounds (`crate::bug`).
+    bugs: bug::Bugs,
     /// «Load earlier» in a direct chat: one ask per server at a time (`crate::dm_history`).
     dm_history_state: dm_history::DmHistoryState,
     /// One writer of the index of the search at a time: the run of the
@@ -372,6 +377,7 @@ impl MessengerRuntime {
             calls,
             group_calls,
             reports: report::Reports::default(),
+            bugs: bug::Bugs::default(),
             dm_history_state: dm_history::DmHistoryState::default(),
             search_backfill: Arc::default(),
             archive,
@@ -1444,6 +1450,32 @@ mod tests {
                 }
                 assert_eq!(rt.net.asked(), 0, "{servers:?} {mode:?}: nothing was asked");
             }
+        }
+        rt.shutdown().await;
+    }
+
+    /// The diagnosis of the network with the user's own servers, or none
+    /// chosen: the choices and empty lists; no host of the project, no
+    /// registry, no bridge and no call node is asked, a bridge known or not.
+    #[tokio::test]
+    async fn the_diagnosis_asks_nothing_with_own_or_no_servers() {
+        use crate::ServersMode;
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = MessengerConfig::new(dir.path().join("messenger"));
+        let rt = MessengerRuntime::start(cfg, Arc::new(MemorySecretStore::unlocked())).await.unwrap();
+        rt.relays().set_silent(true).await.unwrap();
+        rt.net_bridge_add(&format!("203.0.113.7:443#{}", "9c".repeat(32))).await.unwrap();
+        for (servers, word) in [(Some(ServersMode::Own), "own"), (None, "unchosen")] {
+            match servers {
+                Some(mode) => rt.relays.set_servers_mode(mode).await.unwrap(),
+                None => settings::delete(&rt.store, relays::KEY_MODE).await.unwrap(),
+            }
+            let d = rt.net_diagnose().await.unwrap();
+            assert_eq!(serde_json::to_value(d.servers_mode).unwrap(), serde_json::json!(word));
+            assert_eq!(d.v, net::DIAGNOSIS_VERSION);
+            assert!(d.direct.is_empty() && d.canary.is_none() && d.bridges.is_empty() && d.calls.is_empty(), "{d:?}");
+            assert!(!d.active && d.bridge_in_use.is_none());
+            assert_eq!(rt.net.asked(), 0, "{servers:?}: nothing was asked");
         }
         rt.shutdown().await;
     }

@@ -55,5 +55,9 @@
   .social:hover { background: var(--surface-hover); border-color: var(--border-2, var(--border)); }
   .social:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
   .handle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (pointer: coarse) {
+    .socials { gap: var(--sp-3); }
+    .social { min-height: 32px; --hit-max: 6px; }
+  }
   .compact .social { padding: 3px 8px; gap: 5px; }
 </style>

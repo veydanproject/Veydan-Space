@@ -23,7 +23,10 @@ use crate::moderation::{
     BlockedView, DmSettings, GroupModSettings, InvitePreset, InviteStatus, InviteView, LogEntry, LogPage, ModAction, QueueFilter,
     QueueItem, QueuePage, RequestAction, RequestView, RequestsPage, Schedule,
 };
-use crate::net::{BridgeView, NetCheck, NetMode, NetStatus, Verdict};
+use crate::bug::{BugInput, BugResult, BugStatus};
+use crate::net::{
+    BridgeCheck, BridgeView, CallNodeCheck, CanaryCheck, DiagnosisServers, DirectCheck, HostKind, NetCheck, NetDiagnosis, NetMode, NetStatus, Verdict,
+};
 use crate::report::{ReportContext, ReportInput, ReportReason, ReportResult, ReportStatus, ReportSubReason, ReportTarget};
 use crate::dm_history::DmHistoryPage;
 use crate::search::{ChatHit, ChatSearchResult, SearchCursor, SearchPage};
@@ -48,6 +51,7 @@ pub const BOT_FILE: &str = "../../../ui/src/lib/messenger/generated/bot.ts";
 pub const MODERATION_FILE: &str = "../../../ui/src/lib/messenger/generated/moderation.ts";
 pub const MARKDOWN_FILE: &str = "../../../ui/src/lib/messenger/generated/markdown.ts";
 pub const SEARCH_FILE: &str = "../../../ui/src/lib/messenger/generated/search.ts";
+pub const BUG_FILE: &str = "../../../ui/src/lib/messenger/generated/bug.ts";
 
 const HEADER: &str = "// SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
@@ -85,15 +89,35 @@ pub fn shared_ts() -> String {
     out
 }
 
-/// Which way the project's servers are reached, as the network panel reads it.
+/// Which way the project's servers are reached, as the network panel reads
+/// it, and the diagnosis of the network a report of a bug attaches.
 pub fn net_ts() -> String {
     let cfg = Config::new();
     let mut out = String::from(HEADER);
+    out += "\nimport type { CallNodeClass } from './calls';\n";
     out += &export::<NetMode>(&cfg, "Whether the project's servers are reached through a bridge: never, always, or when the direct way fails.");
     out += &export::<BridgeView>(&cfg, "A bridge the user added.");
     out += &export::<NetStatus>(&cfg, "The way to the project's servers as it is now.");
     out += &export::<Verdict>(&cfg, "What trying both ways found.");
     out += &export::<NetCheck>(&cfg, "A check of the direct way and of a bridge.");
+    out += &export::<DiagnosisServers>(&cfg, "Which servers the user chose: the project's (the diagnosis is made), their own or none yet (nothing is asked, the lists are empty).");
+    out += &export::<HostKind>(&cfg, "What a host of the project is to the manifest: a relay, a media server, a push server, a registry of bridges, a source of the manifest.");
+    out += &export::<DirectCheck>(&cfg, "One host of the project asked the direct way, never through a bridge: any HTTP answer is `ok`; `error` is one word: `timeout`, `dns`, `tls`, `refused`, `reset` or `other`.");
+    out += &export::<CanaryCheck>(&cfg, "The push of `bytes` (256 KB) to a registry, the direct way: past the size at which a throttled way stalls.");
+    out += &export::<BridgeCheck>(&cfg, "One bridge tried on its own (a client that knows it alone): a connection and the probe of `bytes` each way; `error` as in `DirectCheck`.");
+    out += &export::<CallNodeCheck>(&cfg, "One call node of the project or of a volunteer that a call may use now: HELLO and one STUN binding, each timed on its own.");
+    out += &export::<NetDiagnosis>(&cfg, "The diagnosis of the network, as `messenger_net_diagnose` answers (at most 45 s; what did not finish is `ok: false`, `error: \"timeout\"`). Only the hosts of the project, the addresses of bridges and call nodes and timings: no key, no address of this device, nothing of the user's own servers or chats. With the user's own servers, or none chosen, nothing is asked and the lists are empty.");
+    out
+}
+
+/// A report of a bug to the project, as the form of a report reads it.
+pub fn bug_ts() -> String {
+    let cfg = Config::new();
+    let mut out = String::from(HEADER);
+    out += "\nimport type { NetDiagnosis } from './net';\n";
+    out += &export::<BugInput>(&cfg, "A report of a bug to the project, as `messenger_bug_send` takes it: `text` 1 to 8000 characters once trimmed; `product` 1 to 32 of `a-z0-9-`; `version` at most 32, `os` 64, `locale` 16 characters; `modules` at most 16 lines of 200; `net` the diagnosis of `messenger_net_diagnose`, when attached (cut, then left out, past 64 KiB of the whole; the text never). Refusals: `bug_text`, `bug_field`, `payload_too_large`, `rate_limited` (more than three a minute), `no_host` (the user's own servers: nothing goes to the project), or the word of the server.");
+    out += &export::<BugStatus>(&cfg, "`sent`: the server took it; `queued`: kept on this device and sent when the way is open again (the event `bug.report` tells of it then).");
+    out += &export::<BugResult>(&cfg, "What `messenger_bug_send` answers: `id` is the server's (12 hex) when it was sent now.");
     out
 }
 
@@ -240,7 +264,7 @@ pub fn search_ts() -> String {
 }
 
 /// Every generated file and what it should hold.
-pub fn files() -> [(&'static str, String); 10] {
+pub fn files() -> [(&'static str, String); 11] {
     [
         (LINKS_FILE, links_ts()),
         (SHARED_FILE, shared_ts()),
@@ -252,6 +276,7 @@ pub fn files() -> [(&'static str, String); 10] {
         (MODERATION_FILE, moderation_ts()),
         (MARKDOWN_FILE, markdown_ts()),
         (SEARCH_FILE, search_ts()),
+        (BUG_FILE, bug_ts()),
     ]
 }
 

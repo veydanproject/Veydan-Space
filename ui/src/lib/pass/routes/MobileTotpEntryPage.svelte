@@ -14,6 +14,8 @@
   import { directory } from '$lib/core/directory';
   import { t } from '$lib/core/mobile/i18n';
   import { notesLinkedToTotp, syncTotpNotes } from '$lib/pass/totp-notes';
+  import { totpStore } from '$lib/pass/store/totp.svelte';
+  import { split } from '$lib/core/ui/split.svelte';
 
   const id = $derived(page.params.id ?? '');
 
@@ -70,6 +72,8 @@
         tags,
       });
       await syncTotpNotes(id, noteIds, noteSeed);
+      // The list beside the form shows the new name at once.
+      await totpStore.refresh().catch(() => {});
       goto('/totp', { replaceState: true });
     } catch (err) {
       error = formatError(err);
@@ -81,9 +85,12 @@
 
 <div class="m-page">
   <div class="m-header">
-    <a class="m-ibtn" href="/totp" aria-label={$t('common_back')}>
-      <Icon name="chevron-left" size={24} />
-    </a>
+    {#if !split.on}
+      <!-- Beside the list the form has no arrow: the list is there. -->
+      <a class="m-ibtn" href="/totp" aria-label={$t('common_back')}>
+        <Icon name="chevron-left" size={24} />
+      </a>
+    {/if}
     <h1 class="m-title">{$t('totp_edit_title')}</h1>
   </div>
 

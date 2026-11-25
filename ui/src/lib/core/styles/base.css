@@ -88,13 +88,24 @@ select {
   cursor: pointer;
 }
 
+/* A one-line field and a select are 40 high, so they line up with a button and with each other; the phone
+   raises them to its touch of 44 (mobile.css). */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="hidden"], [type="image"]), select {
+  height: var(--control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* A field under the pointer lights its frame; one disabled fades as a button does. In focus its frame is the
-   accent's; reached by the keyboard it also takes the ring every control takes (below). */
+   accent's whole and a ring of 2 of --focus-ring is around it, under the mouse as under the keyboard, so the
+   keyboard's ring (below) is not drawn a second time. */
 :is(input, select, textarea):where(:hover:not(:focus, :disabled, [type="checkbox"], [type="radio"])) { border-color: var(--text-3); }
 :is(input, select, textarea):disabled { opacity: 0.45; cursor: not-allowed; }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--accent-border);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
+:is(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible { outline: none; }
 
 /* A checkbox or a radio is a mark, not a field: the rules above would stretch
    it over its row and push its label aside. It is drawn from the tokens: the
@@ -131,22 +142,29 @@ input[type="radio"]:checked {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.5' fill='%23fff'/%3E%3C/svg%3E");
   background-size: 100%;
 }
-input[type="checkbox"]:hover:not(:disabled), input[type="radio"]:hover:not(:disabled) { border-color: var(--accent-border); }
+/* Under the pointer a mark is never paler than at rest: an empty one takes the accent's frame and 10 % of it
+   inside, a checked one the accent's hover; a disabled one stays the palest. */
+input[type="checkbox"]:hover:not(:disabled, :checked, :indeterminate), input[type="radio"]:hover:not(:disabled, :checked) {
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--pane-strong));
+}
+input[type="checkbox"]:hover:not(:disabled):is(:checked, :indeterminate), input[type="radio"]:hover:not(:disabled):checked {
+  border-color: var(--accent-hover);
+  background-color: var(--accent-hover);
+}
 input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
 /* The keyboard's ring, one for every control: 2px of --focus-ring, 2px off the control, rounded as it is
-   (an outline follows the border-radius). A field takes it too: a text field is :focus-visible under the
-   mouse as well, so it is drawn only while the keyboard moves the focus (html.kbd-focus, core/focusMode.ts).
+   (an outline follows the border-radius). A field draws its own ring in focus (above), not this one.
    Zero specificity: a control that draws its own ring, or sets `outline: none`, keeps it. A row or a list
    that clips its overflow leaves 4px of room around its controls so the ring is not cut. */
-:where(input[type="checkbox"], input[type="radio"], button, a[href], summary, [role="tab"], [role="switch"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible,
-:where(html.kbd-focus) :where(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+:where(input[type="checkbox"], input[type="radio"], button, a[href], summary, [role="tab"], [role="switch"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"])):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 input::placeholder, textarea::placeholder { color: var(--text-3); }
 /* A field is the window's glass, not a solid surface (which is black over the glow): a hint in the dark keeps
    4.5:1 on the lighter glow. A dialog's fields are the same glass over its own. */
 [data-theme='dark'] :is(input, textarea)::placeholder { color: var(--text-2); }
 select option { background: var(--surface); color: var(--text); }
-[data-theme='dark'] :is(.tab-bar, .seg, .seg-btn-lg) { border-color: var(--pane-strong-border); }
+[data-theme='dark'] :is(.tab-bar, .seg) { border-color: var(--pane-strong-border); }
 
 button {
   cursor: pointer;
@@ -180,7 +198,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   white-space: nowrap;
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-primary { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent); }
+.btn-primary { background: var(--accent-grad); color: var(--on-accent); box-shadow: var(--shadow-accent); }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-primary:active:not(:disabled) { background: var(--accent-active); }
 .btn-ghost { background: var(--pane-strong); color: var(--text-body); border: 1px solid var(--border); }
@@ -230,8 +248,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* The delete of a row: grey at rest (the plain .icon-btn), red on hover. */
 .icon-btn.danger-soft:hover:not(:disabled) { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); color: var(--danger-text); }
 /* «Create / Add» in the header of a module: 36, accent fill, white icon 18; the label lives in title and aria-label. */
-.icon-btn.create { width: 36px; height: 36px; flex-shrink: 0; background: var(--accent); color: #fff; border-radius: var(--radius); border: 0; }
-.icon-btn.create:hover:not(:disabled) { background: var(--accent); color: #fff; filter: brightness(1.08); }
+.icon-btn.create { width: 36px; height: 36px; flex-shrink: 0; background: var(--accent); color: var(--on-accent); border-radius: var(--radius); border: 0; }
+.icon-btn.create:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
 .icon-btn.create:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Forms ── */
@@ -296,6 +314,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .page-header .spacer { margin-left: auto; }
 .page-sub { font-size: var(--fs-xs); color: var(--text-2); }
+/* The pages of columns take the whole head at any width. */
+main.content--full .page { max-width: none; }
 
 /* ── Card / section ── */
 .card {
@@ -327,9 +347,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   /* The off switch's track is darker than the glass: it takes the dimmest text colour to keep 3:1 against it. */
   --toggle-off: var(--text-dim);
 }
-/* The glow under a card is lighter than the page: a hint in a field and the active segment keep 4.5:1 on it. */
+/* The glow under a card is lighter than the page: a hint in a field keeps 4.5:1 on it. */
 [data-theme='dark'] :is(.card, .data-table, .on-glass) :is(input, textarea)::placeholder { color: var(--text-2); }
-[data-theme='dark'] :is(.card, .data-table, .on-glass) .seg-btn.active { color: var(--text); }
 .card-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 
 .section { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -515,15 +534,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--danger-text);
 }
 
-/* Счётчик результатов (прижат к правому краю панели) */
+/* Счётчик результатов (прижат к правому краю панели): простые серые слова высотой с поля рядом */
 .count-badge {
   margin-left: auto;
-  font-size: var(--fs-xs);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h, 40px);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
   color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 
@@ -571,16 +590,16 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .win-close:hover { background: var(--surface-hover); color: var(--text); }
 .win-close:active { background: var(--surface-hover); }
 
-/* ── Tabs ── the sections of a page: the kit's segmented control */
+/* ── Tabs ── the sections of a page: words on the surface, no frame, no fill */
 .tab-bar {
   display: inline-flex;
   align-self: flex-start;
   gap: 2px;
   max-width: 100%;
-  padding: 3px;
-  background: var(--pane-strong);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
   flex-shrink: 0;
 }
 .tab {
@@ -605,6 +624,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* The chosen one: no fill, no frame; a bar of the accent under its contents (icon, word, count), as under a tab of Tabs.
    Its count is a `.count-pill.sm.quiet` (a total), the accent when it counts what is unread. */
 .tab.active::after { content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
+/* `.plain`: the tabs of a window — at the left, 20 between the words, 32 high, the chosen one bold. */
+.tab-bar.plain { display: flex; gap: var(--sp-5); padding: 0; background: none; border: 0; border-radius: 0; }
+.tab-bar.plain .tab { min-height: var(--control-h-sm); padding: 0; font-size: var(--fs-base); border-radius: var(--radius-sm); text-decoration: none; }
+.tab-bar.plain .tab.active { font-weight: var(--fw-bold); }
+.tab-bar.plain .tab.active::after { left: 0; right: 0; bottom: var(--sp-1); }
 
 /* ── A row of a list pane ── one row for the chats, the groups, the channels, the calls, the contacts and the
    requests: 64 high, an avatar of 48, the text column right of it — the name over the line, the marks of the
@@ -668,74 +692,61 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .count-pill, .list-cover-corner, .menu-count {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--radius-pill);
-  background: var(--accent); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold);
+  background: var(--accent); color: var(--on-accent); font-size: var(--fs-xs); font-weight: var(--fw-bold);
   font-variant-numeric: tabular-nums; line-height: var(--lh-icon); white-space: nowrap;
 }
 .count-pill.sm, .list-cover-corner, .menu-count { min-width: 18px; height: 18px; padding: 0 5px; font-size: var(--fs-xs); }
 .count-pill.lg { min-width: 22px; height: 22px; padding: 0 7px; }
-.count-pill.quiet, .list-cover-corner.muted { background: var(--surface-3); color: var(--text-2); }
+.count-pill.quiet, .list-cover-corner.muted { background: var(--count-quiet-bg); color: var(--count-quiet-text); }
 .count-pill.danger, .list-cover-corner.missed { background: var(--danger); color: #fff; }
-/* On a segmented control (itself surface-3) the quiet count steps a shade down to stay visible. */
-.seg .count-pill.quiet { background: var(--surface-2); }
 
-/* ── The count on ⋮ ── what waits behind a head's menu (a channel's feed, a chat, a group): one count of 18
-   on the button's corner, the rows are in its menu. The button is position: relative. */
-.menu-count { position: absolute; top: -4px; right: -4px; pointer-events: none; }
+/* ── The count on ⋮ ── what waits behind a head's menu (a channel's feed, a chat, a group): a compact count
+   of 16 right of the dots, whole inside the head's glass, 8 from its edge; the rows are in its menu. The
+   button is position: relative. */
+.menu-count { position: absolute; top: 10px; right: -5px; min-width: 16px; height: 16px; padding: 0 3px; font-size: 10px; pointer-events: none; }
 
 /* ── Segmented control ── (view tabs on Board, language/theme pickers)
-   Container is a pill-box; the active option gets the accent tint. */
+   Tabs with an underline: words on the surface, 20 between them; the chosen one in the accent with a bar of 3 under it. */
 .seg {
   display: inline-flex;
-  gap: 4px;
-  background: var(--pane-strong);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 3px;
+  gap: var(--sp-5);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
 }
 .seg-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   height: 32px;
-  padding: 0 var(--sp-3);
+  padding: 0;
   border: none;
-  border-radius: calc(var(--radius) - 4px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: all var(--dur-fast);
+  transition: color var(--dur-fast);
   white-space: nowrap;
 }
 .seg-btn:hover:not(.active):not(:disabled) { color: var(--text); }
-.seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
+.seg-btn.active { background: none; color: var(--accent-text); }
+.seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
 .seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* `.seg-fill`: the control across its card, the options of one width, their words wrapped on a narrow screen. */
-.seg.seg-fill { display: flex; width: 100%; box-sizing: border-box; }
+.seg.seg-fill { display: flex; gap: var(--sp-2); width: 100%; box-sizing: border-box; }
 .seg.seg-fill .seg-btn {
   flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: var(--lh-tight);
   height: auto; min-height: max(32px, var(--touch, 0px)); padding-block: 6px;
 }
-/* Standalone segment buttons (Settings language/theme: 44px, own borders) */
-.seg-btn-lg {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  height: var(--control-h-lg);
-  padding: 0 20px;
-  border-radius: var(--radius);
-  background: var(--pane-strong);
-  border: 1px solid var(--border);
-  color: var(--text-body);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: all var(--dur-fast);
-}
-.seg-btn-lg:hover:not(.active):not(:disabled) { border-color: var(--border-2); color: var(--text); }
-.seg-btn-lg.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent-text); }
-.seg-btn-lg:disabled { opacity: 0.45; cursor: not-allowed; }
+/* A control in a form (the Terminal's connection kind and key source) stays a capsule: a frame, a fill, the chosen one tinted. */
+:is(.form, .form-group) > .seg:not(.seg-fill) { gap: 4px; background: var(--pane-strong); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; }
+:is(.form, .form-group) > .seg:not(.seg-fill) .seg-btn { padding: 0 var(--sp-3); border-radius: calc(var(--radius) - 4px); transition: all var(--dur-fast); }
+:is(.form, .form-group) > .seg:not(.seg-fill) .seg-btn.active { background: var(--accent-bg); color: var(--accent-text); }
+:is(.form, .form-group) > .seg:not(.seg-fill) .seg-btn.active::after { content: none; }
 
 /* ── Toggle (тумблер) ── track 40×24, knob 18; on = accent */
 .toggle {
@@ -764,6 +775,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: left var(--dur-base);
 }
 .toggle.on::after { left: 19px; }
+/* A disabled switch is an empty track with a frame and a pale knob, no accent: unlike both on and off. The
+   switch is a button of its own or only drawn inside a disabled row (`ToggleRow`, a settings row). */
+:is(.toggle:disabled, :disabled .toggle) { cursor: not-allowed; background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-2); }
+:is(.toggle.on:disabled, :disabled .toggle.on) { background: color-mix(in srgb, var(--text-3) 22%, transparent); }
+:is(.toggle:disabled, :disabled .toggle)::after { background: var(--text-3); box-shadow: none; opacity: 0.55; }
 
 /* ── Mono text ── (values read and copied character by character: passwords,
    keys, secrets, recovery codes, fingerprints). `.mono` sets the face; no

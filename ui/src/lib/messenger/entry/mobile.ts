@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// The messenger as the mobile shell sees it (platform-spec 11.1).
+// The messenger as the mobile shell sees it (platform-spec 11.1). A wide
+// window shows a chat, a group, a channel beside its list (platform-spec 11.7).
 
-import type { ModuleDef, NavItem } from '$lib/core/module';
+import type { ModuleDef, NavItem, SplitDef } from '$lib/core/module';
 import { accountOf, common, navItem } from './common';
 import { messengerStore } from '../store.svelte';
 import { chatStore } from '../chats/chatStore.svelte';
 import { callLog } from '../calls/callLog.svelte';
 import { followRoute, launchRoute, startPushBridge } from '../push/bridge';
 import { BASE, callsHref, contactsHref, groupsHref, sectionHref } from '../mobile/routes';
+import MobileChats from '../mobile/MobileChats.svelte';
 import { chatSections } from '../seams/sections.svelte';
 import { isTauriHost } from '../api';
 import { provideMessengerAttach } from '../attach/builtin';
@@ -19,6 +21,7 @@ import NoticeBanner from '../push/NoticeBanner.svelte';
 import CallWatcher from '../calls/CallWatcher.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
 import ArchiveGate from '../archive/ArchiveGate.svelte';
+import MobileDialogs from '../mobile/MobileDialogs.svelte';
 
 /**
  * The bar of the messenger's tabs: «Чаты», «Группы», the sections modules
@@ -36,6 +39,40 @@ export function tabs(): NavItem[] {
 }
 
 const TABS = new Set([BASE, groupsHref(), callsHref(), contactsHref(), `${BASE}/section`]);
+
+/** The lists a chat stands beside: the chats between two, the groups. One object each: the shell keeps the list mounted while it is the same. */
+const DM_LIST: SplitDef = { home: BASE, list: MobileChats, props: { kind: 'dm' }, empty: { icon: 'message-circle', title: 'msg_welcome_title', text: 'msg_welcome_text' } };
+const GROUP_LIST: SplitDef = { home: groupsHref(), list: MobileChats, props: { kind: 'group' }, empty: { icon: 'users', title: 'msg_groups_welcome_title', text: 'msg_groups_welcome_text' } };
+const sectionLists = new Map<string, SplitDef>();
+function sectionList(id: string): SplitDef {
+  let def = sectionLists.get(id);
+  if (!def) {
+    const host = chatSections.get(id);
+    const empty = host ? { icon: host.icon, title: host.welcomeTitle, text: host.welcomeText } : undefined;
+    def = { home: sectionHref(id), list: MobileChats, props: { kind: id }, empty };
+    sectionLists.set(id, def);
+  }
+  return def;
+}
+
+/**
+ * The list a path stands beside: a chat beside the chats or the groups (by
+ * its id, so a deleted chat still has its list), a row of a section beside
+ * its section. The contacts, the calls, the settings: a screen as on a phone.
+ */
+export function splitOf(url: URL): SplitDef | undefined {
+  const path = url.pathname.replace(/\/$/, '');
+  const id = url.searchParams.get('id') ?? '';
+  if (path === BASE) return DM_LIST;
+  if (path === groupsHref()) return GROUP_LIST;
+  if (path === `${BASE}/section`) return chatSections.get(id) ? sectionList(id) : undefined;
+  if (path === `${BASE}/chat`) return id.startsWith('group:') ? GROUP_LIST : DM_LIST;
+  if (path === `${BASE}/item`) {
+    const host = chatSections.ofChat(id);
+    return host ? sectionList(host.id) : undefined;
+  }
+  return undefined;
+}
 
 /** The messenger's items of the sheet of the paperclip, given at the start and taken back at the stop. */
 let stopAttach: (() => void) | null = null;
@@ -61,9 +98,12 @@ export const module: ModuleDef = {
     { id: 'incoming-link', component: IncomingLink, place: 'window' },
     // The first screen after a restore or a linking, while the newest months of the archive come back.
     { id: 'archive-gate', component: ArchiveGate, place: 'window' },
+    // The report and the servers' dialogs, outside the frames: a wide window shows two, folding takes one away.
+    { id: 'dialogs', component: MobileDialogs, place: 'window' },
   ],
   // The tabs keep the bar of the tabs; the chat and settings screens use the whole height.
   bar: (url) => (TABS.has(url.pathname.replace(/\/$/, '')) ? tabs() : url.pathname.startsWith(`${BASE}/`) ? null : undefined),
+  split: splitOf,
   async start() {
     if (!stopAttach) {
       const stops = [provideMessengerAttach()];

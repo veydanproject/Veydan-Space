@@ -3,7 +3,7 @@
 
 <script lang="ts">
   import { toast } from '$lib/core/ui/toast.svelte';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { t, locale, localeTag, countKey } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
@@ -41,6 +41,7 @@
   import { mediaErrorText, tooLargeName } from '../media/errors';
   import { bytes } from '../shared/format';
   import TransfersChip from './TransfersChip.svelte';
+  import { transferStore } from '../media/transferStore.svelte';
   import ServerLabel from '../servers/ServerLabel.svelte';
   import { serverStore } from '../servers/serverStore.svelte';
   import { privateInvite } from '../servers/privateInvite.svelte';
@@ -127,7 +128,7 @@
    * `m`: the message pressed, what the items act on. `target`: what a reaction from the menu lands on (an album's last part).
    * `caption`: what Edit changes (an album's part that carries its caption).
    */
-  let menu = $state<{ open: boolean; x: number; y: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null; album: MessengerMessage[] | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null, album: null });
+  let menu = $state<{ open: boolean; x: number; y: number; over?: number; m: MessengerMessage | null; target: MessengerMessage | null; caption: MessengerMessage | null; album: MessengerMessage[] | null }>({ open: false, x: 0, y: 0, m: null, target: null, caption: null, album: null });
   /** The menu of a message shows the whole emoji picker instead of the quick strip. */
   let menuMore = $state(false);
   /** A computer: the reactions alone, over the hovered message's «Реакция» button. */
@@ -146,6 +147,9 @@
   // A DM's peer: online now, or when last seen; nothing for groups or when unknown.
   const presence = $derived(chat.kind === 'dm' ? presenceStore.status(chat.peer_pubkey) : null);
   const presenceText = $derived(chat.kind === 'dm' ? presenceStore.label(chat.peer_pubkey) : null);
+  // A phone says this chat's transfers under the name while there are any (TransfersChip).
+  const transfers = $derived.by(() => { const c = transferStore.countsOf(chat.id); return c.up + c.down + c.failed > 0; });
+  onMount(() => { transferStore.load(); });
   // A DM's peer writing (a bot says it): «печатает…» stands in for the presence while it lasts.
   const typing = $derived(chat.kind === 'dm' && typingStore.inChat(chat.id));
   /** The «/» menu of the composer: the commands a bot on the other side of a direct chat lists in its profile. */
@@ -916,7 +920,9 @@
   const isDanger = (e: MenuEntry) => (e.type === undefined || e.type === 'item') && !!e.danger;
 
   const chatItems = $derived.by((): MenuEntry[] => {
-    const list: MenuEntry[] = [...(leadEntries ?? [])];
+    // A phone's head has no room for the magnifier: the search is the menu's first row.
+    const list: MenuEntry[] = phone ? [{ label: $t('msg_search_open'), icon: 'search', onselect: () => openSearch() }] : [];
+    list.push(...(leadEntries ?? []));
     // A chat of two: the relation first, what may be undone in the middle, the dangerous ones red and last
     // (the groups of the menu by a line, mockups c1.js); a group's own red entries go last too, as a channel's ⋮.
     const danger: MenuEntry[] = [];
@@ -1172,7 +1178,19 @@
     e.preventDefault();
     menuMore = false;
     menuReact = false;
-    menu = { open: true, x: e.clientX, y: e.clientY, m, target: reactionTarget(m, album), caption: editTarget(m, album), album: album ?? null };
+    // Under the bubble, so the message stays seen; a long press has no
+    // target, so the bubble is looked up by the message's line or cell.
+    const own = e.currentTarget instanceof Element ? e.currentTarget.closest('.bubble') : null;
+    const line = own ? null : scroller?.querySelector(`[data-mid="${m.id}"]`);
+    const bub = own ?? line?.querySelector('.bubble') ?? line?.closest('.bubble');
+    let x = e.clientX, y = e.clientY, over: number | undefined;
+    if (bub) {
+      const r = bub.getBoundingClientRect();
+      x = Math.min(Math.max(e.clientX, r.left), r.right);
+      y = r.bottom + 4;
+      over = r.top;
+    }
+    menu = { open: true, x, y, over, m, target: reactionTarget(m, album), caption: editTarget(m, album), album: album ?? null };
   }
 
   /** The buttons of a hovered message: «Ещё» opens its menu under the button, «Реакция» the reactions over it. */
@@ -1384,9 +1402,9 @@
   </div>
 {/snippet}
 
-<section class="window" bind:this={windowEl} style:--bottom-h={phone ? `${bottomH}px` : undefined}>
+<section class="window" bind:this={windowEl} style:--bottom-h={`${bottomH}px`}>
   {#if dropOver}<div class="drop" aria-hidden="true"><Icon name="paperclip" size={22} /><span>{$t("msg_drop_here")}</span></div>{/if}
-  <header class="head" class:phone class:on-glass={phone} class:veiled={!!selecting} bind:this={headEl}>
+  <header class="head" class:phone class:glassfloat={!phone} class:on-glass={phone} class:veiled={!!selecting} bind:this={headEl}>
     {#if choosing}
       <button class="icon" onclick={stopChoosing} title={$t('msg_fwd_select_exit')} aria-label={$t('msg_fwd_select_exit')}><Icon name="x" size={18} /></button>
       <div class="chosen" aria-live="polite">{$t('msg_fwd_selected', { n: String(chosen.length) })}</div>
@@ -1407,6 +1425,7 @@
           <span class="sub-text">{#if !sessionActive}{$t('msg_chat_locked')}
           {:else if link === 'lost'}<span class="offline">{$t('msg_chat_offline')}</span>
           {:else if link === 'waiting'}<span class="offline">{$t('msg_chat_connecting')}</span>
+          {:else if phone && transfers}<TransfersChip chatId={chat.id} phone line />
           {:else if subtitle}{@render subtitle()}
           {:else if typing}<TypingLine />
           {:else if presenceText}<span class:online={presence === 'online'}>{presenceText}</span>
@@ -1424,9 +1443,9 @@
     {:else}
       <div class="ident">{@render identity()}</div>
     {/if}
-    <span class="chip-slot"><TransfersChip {phone} /></span>
+    {#if !phone}<TransfersChip chatId={chat.id} />{/if}
     {#if actions}{@render actions()}{/if}
-    <button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>
+    {#if !phone}<button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>{/if}
     <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
       {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
@@ -1447,7 +1466,7 @@
   {#if !isGroup}<RelationBanner {chat} busy={acting} onaction={act} />{/if}
   {#if banner}{@render banner()}{/if}
 
-  <div class="scroll" class:phone bind:this={scroller} {onscroll} use:dismissKeyboard>
+  <div class="scroll" class:phone class:glassfloat={!phone} bind:this={scroller} {onscroll} use:dismissKeyboard>
     <div class="content" bind:this={content}>
     {#if filtering}
       {#if found?.partial}<div class="history-start" role="status">{$t('msg_search_indexing')}</div>{/if}
@@ -1515,7 +1534,7 @@
     </button>
   {/if}
 
-  <div class="bottom" class:float={phone} bind:clientHeight={bottomH}>
+  <div class="bottom" class:float={true} bind:clientHeight={bottomH}>
   {#if error}<div class="error-line">{error}</div>{/if}
 
   {#if searching}
@@ -1536,7 +1555,7 @@
 <MediaViewer />
 <ForwardDialog bind:open={forward.open} chatId={chat.id} ids={forward.ids} onforwarded={stopChoosing} />
 <SelectTextDialog message={selecting} author={isGroup ? author : undefined} clear={headEl} area={phone ? null : windowEl} onclose={() => (selecting = null)} />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) && !filtering ? quick : undefined} onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} over={menuReact ? undefined : menu.over} items={menuReact ? [] : items} place={menuReact ? 'above' : 'point'} width={menuReact ? undefined : "288px"} header={reactable(menu.target) && !filtering ? quick : undefined} onclose={() => (menu.open = false)} />
 <ContextMenu bind:open={seen.open} x={seen.x} y={seen.y} items={[]} header={readers} onclose={() => (seen.open = false)} />
 <ContextMenu bind:open={chatMenu.open} x={chatMenu.x} y={chatMenu.y} items={chatItems} width={menuWidth ? `${menuWidth}px` : undefined} onclose={() => (chatMenu.open = false)} />
 
@@ -1557,18 +1576,17 @@
      Over the conversation's own layers, under the info panel that lies over it (WithInfo): the base's plus two. */
   .head.phone {
     position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box;
-    margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
     --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4);
   }
   /* «Выбрать текст» open where the head draws no glass: the conversation under it is not
      to be read through its fill (the window blurs all but the head). */
   @media (prefers-reduced-transparency: reduce) { .head.phone.veiled { background: var(--bg-2); } }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .head.phone.veiled { background: var(--bg-2); } }
-  /* The chip of transfers stands at the right of the name and the line under it, in the middle of the head, a place of its own in the row. */
   .head.phone { gap: var(--sp-2); }
-  .chip-slot { display: contents; }
-  .head.phone .chip-slot { display: flex; justify-content: flex-end; align-self: center; flex-shrink: 0; position: relative; z-index: calc(var(--z-base) + 1); }
   .head.phone .back { color: var(--text); }
+  /* A wide window (core/ui/split): the list stands beside the chat, the arrow is not shown; onback stays for a deleted chat. */
+  :global(.shell.wide) .head.phone .back { display: none; }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 1; }
   .ident.clickable { cursor: pointer; border-radius: var(--radius-sm); }
   .ident.clickable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -1597,7 +1615,7 @@
   .pick-row { flex: 1; min-width: 0; }
   .pick-tick {
     flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--text-3);
-    display: inline-flex; align-items: center; justify-content: center; color: #fff; transition: opacity var(--dur-fast) var(--ease);
+    display: inline-flex; align-items: center; justify-content: center; color: var(--on-accent); transition: opacity var(--dur-fast) var(--ease);
   }
   .pick-tick.on { background: var(--accent); border-color: var(--accent); }
   .pick-tick.dim { opacity: 0.3; }
@@ -1608,7 +1626,16 @@
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
-  /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
+  /* The count on ⋮ is the primitive .menu-count of base.css, on the button's right corner. */
+  /* On a phone the glass is 4 + 1 past the button: the count 3 inside it, 8 from the glass's edge. */
+  .head.phone .menu-count { right: 3px; }
+  /* A computer, as a phone: the head a plate of glass in the field's column (720, 12 from a narrow panel's edges), the conversation runs under it (64: its 58 and its 8 of margin). */
+  .head.glassfloat {
+    position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box;
+    width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; height: 58px; min-height: 58px; padding: 0 var(--sp-3) 0 var(--sp-4);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+  }
   @media (pointer: coarse) {
     .head { padding-inline: var(--sp-2); gap: var(--sp-2); }
     .to-bottom { height: 44px; min-width: 44px; }
@@ -1620,9 +1647,11 @@
   .scroll.phone { isolation: isolate; -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
   .head.phone + .scroll.phone { margin-top: -64px; padding-top: calc(64px + var(--sp-3)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   .bottom { flex-shrink: 0; }
+  .scroll.glassfloat { isolation: isolate; }
+  .head.glassfloat + .scroll.glassfloat { margin-top: -64px; padding-top: calc(64px + var(--sp-3)); scroll-padding-top: 64px; }
   .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; }
-  /* The conversation a column of 720 in the middle, as the feed of a channel (the lines keep their own gutter). */
-  .content { margin-top: auto; display: flex; flex-direction: column; flex-shrink: 0; width: 100%; max-width: calc(720px + 2 * var(--sp-4)); margin-inline: auto; }
+  /* The conversation in the field's column, as the head (a chosen line ends at the column's edges). */
+  .content { margin-top: auto; display: flex; flex-direction: column; flex-shrink: 0; width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin-inline: auto; }
   /* Nothing to show yet: the note stands in the middle. */
   .content:has(> .placeholder) { margin-bottom: auto; }
   .placeholder { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); color: var(--text-3); text-align: center; padding: var(--sp-6); }
@@ -1680,7 +1709,7 @@
     border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
     box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
-  .search input { flex: 1; min-width: 0; border: none; outline: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 6px 0; }
+  .search input { flex: 1; min-width: 0; height: auto; border: none; outline: none; box-shadow: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 6px 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .search-count { flex-shrink: 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--text-3); }
   .search .icon { flex-shrink: 0; }
@@ -1690,5 +1719,10 @@
   .found-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
   .found-line { display: flex; align-items: center; justify-content: center; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2); }
   .bottom.float .found-line { margin: 0 var(--sp-2) var(--sp-2); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
-  .no-composer { display: flex; align-items: center; justify-content: center; gap: 6px; padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface); font-size: var(--fs-xs); color: var(--text-3); }
+  /* Nothing may be written: a plate in the field's place, of its height (52), shape and fill. */
+  .no-composer {
+    display: flex; align-items: center; justify-content: center; gap: 6px; box-sizing: border-box; width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); min-height: 52px; margin: 0 auto var(--sp-3); padding: 0 var(--sp-4);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: var(--pane-strong);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); font-size: var(--fs-xs); color: var(--text-2);
+  }
 </style>

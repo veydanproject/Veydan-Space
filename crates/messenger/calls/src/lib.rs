@@ -50,7 +50,7 @@ pub use group::{
 };
 pub use handler::CallDmHandler;
 pub use node_client::{
-    Access, Delegated, DeviceAccess, DeviceIssued, HttpRooms, InviteRequest, Joined, KnownNode, MediaLimits, NodeClient, NodeError, NodeLoad,
+    Access, Delegated, DeviceAccess, DeviceIssued, HttpRooms, InviteRequest, Joined, KnownNode, MediaLimits, NodeCheck, NodeClient, NodeError, NodeLoad,
     Picked, RoomApi, RoomCreated, CAP_CASCADE, CAP_SFU,
 };
 pub use registry::{ListFetch, Registry, RegistryNode};

@@ -13,10 +13,6 @@
   import { t } from '$lib/core/i18n';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import Icon from '$lib/core/Icon.svelte';
-  import ReportHost from '../shared/ReportHost.svelte';
-  import ServerAcceptDialog from '../servers/ServerAcceptDialog.svelte';
-  import ServerInfoDialog from '../servers/ServerInfoDialog.svelte';
-  import PrivateInviteDialog from '../servers/PrivateInviteDialog.svelte';
   import { markPhone } from '../shared/phone';
   import { PHONE_OS } from '../phone';
 
@@ -61,10 +57,6 @@
     {@render children()}
   </div>
 </div>
-<ReportHost />
-<ServerAcceptDialog />
-<ServerInfoDialog />
-<PrivateInviteDialog />
 
 <style>
   .msg-m { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; }
@@ -93,6 +85,8 @@
   .msg-m.ios { transition: padding-bottom 260ms cubic-bezier(0.38, 0.7, 0.125, 1); }
   .content { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .content.scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: var(--sp-3) var(--sp-3) calc(var(--sp-5) + var(--sab, 0px)); gap: var(--sp-3); }
+  /* Over the bottom bar the page dissolves too (24); the top edge is repeated, one mask holds both. */
+  :global(.shell:not(.no-bar)) .content.scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5), black calc(100% - var(--sp-6)), transparent); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5), black calc(100% - var(--sp-6)), transparent); }
   /* The settings' panels are the desktop's cards: on a phone they take the
      look of the shell's own cards (mobile.css .m-card) and its tighter padding. */
   .content.scroll :global(.card) {

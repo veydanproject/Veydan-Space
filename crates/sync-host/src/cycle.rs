@@ -678,6 +678,8 @@ pub struct Pending {
     pub label: &'static str,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
+    /// `Collected::local`: shown, not counted against a clean cycle.
+    pub local: Vec<String>,
 }
 
 /// What the collect of a cycle gathered for one push.
@@ -746,12 +748,14 @@ pub async fn collect(cx: &mut Cycle<'_>) -> CmdResult<Gathered> {
                     commit,
                     errors,
                     warnings,
+                    local,
                 } = handler.collect(cx).await?;
                 commits.extend(commit);
                 pending.push(Pending {
                     label: step.label,
                     errors,
                     warnings,
+                    local,
                 });
                 ops
             }
@@ -1248,8 +1252,10 @@ async fn steps(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult<Vec
             .into_iter()
             .map(|(peer, e)| format!("{peer}: {e}")),
     );
+    let mut local_warnings = Vec::new();
     for step in pending {
         warnings.extend(step.warnings);
+        local_warnings.extend(step.local);
     }
     let mut late_retry = None;
     for name in plan.late {
@@ -1286,6 +1292,9 @@ async fn steps(host: Host<'_>, core: &Core, sync: &SyncManager) -> CmdResult<Vec
         join::after_fresh_cycle(db, fresh, retry.as_deref(), &unread, &mut warnings).await?;
     }
     let clean = retry.is_none() && warnings.is_empty();
+    // What only this device's disk failed at is told, and holds no
+    // collection of garbage back.
+    warnings.extend(local_warnings);
     match retry {
         None => {
             state::save_peer_heads(db, &local).await?;

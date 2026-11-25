@@ -38,7 +38,8 @@ function themeTokens(css: string, theme: Theme): Map<string, string> {
   return out;
 }
 
-const PALETTE_CSS = read(new URL('palettes/quiet.css', STYLES));
+// periwinkle.css over quiet.css, in tokens.css's order: a later block wins.
+const PALETTE_CSS = read(new URL('palettes/quiet.css', STYLES)) + read(new URL('palettes/periwinkle.css', STYLES));
 const MOBILE_CSS = read(new URL('mobile.css', STYLES));
 const tokens = {
   light: new Map([...themeTokens(PALETTE_CSS, 'light'), ...themeTokens(MOBILE_CSS, 'light')]),
@@ -302,4 +303,82 @@ describe('a chip coloured from data reads in both themes (.tinted)', () => {
     const white = color(resolve('light', '--surface')!)!;
     expect(contrast(pink, mix(pink, white, 0.16))).toBeLessThan(3);
   });
+});
+
+// Inside an outgoing bubble the accent is the ground (periwinkle.css,
+// `.line.out .bubble`): an accent button is the bubble's text with the
+// bubble's colour on it, hover and press a step toward the bubble; a quiet
+// button, a voice's speed and a hovered row lie in the bubble's tone, its text
+// 14 % over its fill (22 % on hover). The accent pairs hold AA in both themes
+// (ROO-1702: «Написать» of a contact card was 1:1, a quiet button white on
+// white, the speed of a voice 1.2:1); what lies on the tone, 3:1 (ROO-1727).
+describe('what stands inside an outgoing bubble reads', () => {
+  const palette = read(new URL('palettes/periwinkle.css', STYLES));
+  const block = /\[data-theme\] \.line\.out \.bubble \{([^}]*)\}/.exec(palette)![1];
+  const toneBlock = /\[data-theme\] :is\(\.line \.bubble, \.post\.card\) \{([^}]*)\}/.exec(palette)![1];
+  const share = (name: string) => {
+    const m = new RegExp(`${name}:\\s*color-mix\\(in srgb, var\\(--bubble-out-text\\) (\\d+)%, var\\(--bubble-out-bg\\)\\)`).exec(block);
+    expect(m, `${name} inside the bubble`).not.toBeNull();
+    return +m![1] / 100;
+  };
+  const tone = (name: string) => {
+    const m = new RegExp(`${name}:\\s*color-mix\\(in srgb, var\\(--text\\) (\\d+)%, transparent\\)`).exec(toneBlock);
+    expect(m, `${name} of a bubble`).not.toBeNull();
+    return +m![1] / 100;
+  };
+  const themed = (theme: Theme) => new RegExp(`\\[data-theme='${theme}'\\] \\.line\\.out \\.bubble \\{([^}]*)\\}`).exec(palette)![1];
+  const own = (theme: Theme, name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(themed(theme))?.[1].trim();
+
+  it('takes the bubble\'s own fills for the controls in it', () => {
+    for (const [name, value] of [['--accent-grad', 'var(--bubble-out-text)'], ['--on-accent', 'var(--bubble-out-bg)'], ['--pane-strong', 'var(--bubble-tone)'], ['--surface-hover', 'var(--bubble-tone-hover)'], ['--surface-row-hover', 'var(--bubble-tone)']]) {
+      expect(block).toContain(`${name}: ${value};`);
+    }
+    for (const name of ['--accent-bg', '--warn-bg', '--surface-2', '--surface-3']) expect(toneBlock).toContain(`${name}: var(--bubble-tone);`);
+  });
+
+  // Every hover rule of a quiet button in base.css (the dark one takes
+  // --pane-strong-border, not --surface-hover) gives way to the bubble's own:
+  // the tone's hover, in any theme.
+  it('lays a hovered quiet button in the bubble\'s tone', () => {
+    const rules = [...read(new URL('base.css', STYLES)).matchAll(/^(\[data-theme='(?:light|dark)'\] )?\.btn-ghost:hover:not\(:disabled\) \{[^}]*background: var\((--[\w-]+)\)/gm)];
+    expect(rules.length).toBeGreaterThanOrEqual(2);
+    expect(palette).toMatch(/^\[data-theme\] :is\(\.line \.bubble, \.post\.card\) \.btn-ghost:hover:not\(:disabled\) \{ background: var\(--bubble-tone-hover\); \}/m);
+    expect(palette).not.toMatch(/\.line\.out \.bubble \.btn-ghost:hover/);
+  });
+
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    it(`holds 4.5:1 in the ${theme} theme`, () => {
+      const bg = color(resolve(theme, '--bubble-out-bg')!)!;
+      const text = color(resolve(theme, '--bubble-out-text')!)!;
+      for (const p of [1, share('--accent-hover'), share('--accent-active')]) {
+        expect(contrast(bg, mix(text, bg, p)), `${theme}: an accent button at ${p}`).toBeGreaterThanOrEqual(4.5);
+      }
+      // The tone is the owner's choice (ROO-1727) and lies under AA in the
+      // light theme (white on white 14 % over #685DDE is 3.8:1): the floor
+      // here is 3:1, a control's, so the tone cannot fade further unseen.
+      for (const name of ['--bubble-tone', '--bubble-tone-hover']) {
+        const under = mix(text, bg, tone(name));
+        expect(contrast(text, under), `${theme}: text on ${name}`).toBeGreaterThanOrEqual(3);
+      }
+      const under = mix(text, bg, tone('--bubble-tone'));
+      expect(contrast(color(resolve(theme, '--bubble-out-meta')!, under)!, under), `${theme}: meta on the tone`).toBeGreaterThanOrEqual(3);
+      // An error on the bubble and on its tone.
+      const value = own(theme, '--danger-text')!;
+      const danger = color(value === 'var(--bubble-out-text)' ? resolve(theme, '--bubble-out-text')! : value)!;
+      for (const ground of [bg, under]) expect(contrast(danger, ground), `${theme}: --danger-text`).toBeGreaterThanOrEqual(3);
+      expect(own(theme, '--danger-bg')).toBe('var(--bubble-tone)');
+    });
+  }
+});
+
+// An incoming bubble's tone: its text 14 % over its fill, 22 % on hover; the
+// bubble's text keeps AA on both.
+describe('what stands inside an incoming bubble reads', () => {
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    it(`holds 4.5:1 in the ${theme} theme`, () => {
+      const bg = color(resolve(theme, '--bubble-in-bg')!)!;
+      const text = color(resolve(theme, '--text')!)!;
+      for (const p of [0.14, 0.22]) expect(contrast(text, mix(text, bg, p)), `${theme}: text at ${p}`).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });

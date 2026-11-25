@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
@@ -20,10 +21,13 @@
   import { longpress } from '$lib/core/mobile/longpress';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import { ask } from '$lib/core/ui/confirm.svelte';
+  import { split } from '$lib/core/ui/split.svelte';
+  import { totpStore } from '$lib/pass/store/totp.svelte';
 
-  let entries = $state<TotpEntry[]>([]);
+  // The store's list: what the form beside it saves shows here at once.
+  const entries = $derived(totpStore.list);
   // Unknown until the first answer: no «no codes yet» flash before the list (as MobilePasswordsPage).
-  let loaded = $state(false);
+  let loaded = $state(totpStore.loaded);
   let codes = $state<Map<string, TotpCode>>(new Map());
   let profileNames = $state<Map<string, string>>(new Map());
   let workspaceNames = $state<Map<string, string>>(new Map());
@@ -74,7 +78,7 @@
 
   async function load() {
     try {
-      entries = await api.totp.list();
+      await totpStore.refresh();
       await refreshCodes();
     } catch (e) {
       error = formatError(e);
@@ -139,6 +143,8 @@
     if (!entry || !(await ask({ title: $t('totp_delete_confirm', { name: entry.name }) }))) return;
     try {
       await api.totp.delete(entry.id);
+      // The form of the code open beside the list goes with it.
+      if (split.shows(`/totp/${entry.id}`)) void goto('/totp', { replaceState: true });
       await load();
     } catch (e) {
       error = formatError(e);
@@ -160,7 +166,7 @@
 <div class="m-page totp">
   <div class="m-header">
     {#if hasHome()}
-      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <HubButton />
     {/if}
     <h1 class="m-title">{$t('app_totp')}</h1>
   </div>
@@ -186,7 +192,7 @@
       <Icon name="shield-lock" size={40} />
       <p>{$t('totp_empty')}</p>
       <span>{$t('totp_empty_hint')}</span>
-      <a class="m-btn-grad cta" href="/totp/add"><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
+      <a class="m-btn-grad cta" href="/totp/add" onclick={split.follow}><Icon name="plus" size={18} />{$t('totp_btn_add')}</a>
     </div>
   {:else if filtered.length === 0}
     <div class="m-empty">
@@ -198,7 +204,7 @@
     <div class="m-cards divided">
       {#each filtered as entry (entry.id)}
         {@const code = codes.get(entry.id)}
-        <button class="m-card item" onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
+        <button class="m-card item" class:active={split.shows(`/totp/${entry.id}`)} onclick={() => copy(entry)} {@attach longpress(() => (menu = entry))}>
           <span class="m-avatar" style:--c={avatarColor(label(entry))}>{label(entry).charAt(0).toUpperCase()}</span>
           <span class="meta">
             <span class="name">{label(entry)}</span>
@@ -228,7 +234,7 @@
   {/if}
 
   </div>
-  <a class="m-fab" href="/totp/add" aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
+  <a class="m-fab" href="/totp/add" onclick={split.follow} aria-label={$t('totp_btn_add')}><Icon name="plus" size={22} /></a>
 </div>
 
 <BottomSheet open={!!menu} title={menu ? label(menu) : ''} onclose={() => (menu = null)}>
@@ -236,7 +242,7 @@
     <button type="button" class="m-row" onclick={() => { if (menu) copy(menu); menu = null; }}>
       <Icon name="copy" size={20} /><span class="m-row-label">{$t('common_copy')}</span>
     </button>
-    <button type="button" class="m-row" onclick={() => { const id = menu?.id; menu = null; if (id) goto(`/totp/${id}`); }}>
+    <button type="button" class="m-row" onclick={() => { const id = menu?.id; menu = null; if (id) void split.open(`/totp/${id}`); }}>
       <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
     </button>
     <button type="button" class="m-row" onclick={remove}>
@@ -261,6 +267,8 @@
   }
   .item { background: transparent; border-color: transparent; box-shadow: none; border-radius: var(--radius-lg); }
   .item:active { background: var(--surface-hover); }
+  /* The code whose form is open beside the list (a wide window). */
+  .item.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
   .meta { flex: 1; display: flex; flex-direction: column; min-width: 0; gap: 1px; }
   .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

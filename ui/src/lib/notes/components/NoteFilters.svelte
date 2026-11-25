@@ -961,10 +961,11 @@
     gap: 0.1rem;
   }
 
+  /* One rule between the groups, 8 over it and 8 under it. */
   .filter-section + .filter-section {
-    border-top: 1px solid var(--border);
-    margin-top: var(--sp-1);
-    padding-top: var(--sp-1);
+    border-top: 1px solid var(--divider);
+    margin-top: var(--sp-2);
+    padding-top: var(--sp-2);
   }
 
   /* Section header: one pattern for every section */
@@ -972,7 +973,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.6rem var(--sp-2) 0.2rem;
+    padding: 0.2rem var(--sp-2);
   }
 
   .section-label {

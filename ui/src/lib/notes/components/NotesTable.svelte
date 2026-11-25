@@ -290,8 +290,8 @@
   .title { display: flex; align-items: center; gap: 0.35rem; min-width: 0; max-width: 320px; }
   .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The pin's place: kept on the desktop so the titles start in one line, none on the phone without a pin. */
-  .pin { display: inline-flex; flex-shrink: 0; }
-  .touch .pin:not(:has(svg)) { display: none; }
+  /* An empty pin keeps its 12, so every title starts on one line */
+  .pin { display: inline-flex; flex-shrink: 0; width: 12px; }
   .muted { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
   .draft { color: var(--warn-text); }
   .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
@@ -327,7 +327,6 @@
   .wrap:not(.touch) tbody tr.active > td { background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .wrap:not(.touch) .chips { flex-wrap: nowrap; }
   .wrap:not(.touch) .title { min-width: 220px; }
-  .wrap:not(.touch) .pin { width: 10px; }
   /* The head is pinned at the top over the rows (.pinned-head); the title at the left over the other cells; the
      title's head, the corner, at both and over everything. */
   .wrap:not(.touch) th { z-index: 2; }

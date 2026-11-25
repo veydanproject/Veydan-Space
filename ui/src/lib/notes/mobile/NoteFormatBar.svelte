@@ -93,6 +93,8 @@
     --hit-row: 3px;
   }
   .bar::-webkit-scrollbar { display: none; }
+  /* The closed Duo (РД-DS2-09): the bar stands in .meta, which keeps off the pill; the bar takes that back with its own 16 and reaches the screen's edge, the row scrolls. */
+  @media (width: 466px) and (orientation: portrait) { :global(:root) .bar { margin-right: calc(-1 * var(--sp-4) - var(--duo-pill)); } }
   /* A clipped edge fades, only while there is more of the row on that side (scrollTabs marks it). */
   .bar:global(.fade-end) { -webkit-mask-image: linear-gradient(to right, black 85%, transparent); mask-image: linear-gradient(to right, black 85%, transparent); }
   .bar:global(.fade-start) { -webkit-mask-image: linear-gradient(to left, black 85%, transparent); mask-image: linear-gradient(to left, black 85%, transparent); }

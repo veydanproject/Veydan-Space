@@ -8,13 +8,15 @@
   import '$lib/core/styles/tokens.css';
   import '$lib/core/styles/base.css';
   import '$lib/core/styles/mobile.css';
-  import { onMount, setContext, type Snippet } from 'svelte';
+  import { onMount, setContext, untrack, type Snippet } from 'svelte';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { syncAndroidChrome, theme } from '$lib/core/theme';
   import { navActive, navItems } from '$lib/core/mobile/nav';
   import BottomNav from '$lib/core/mobile/BottomNav.svelte';
   import { hub } from '$lib/core/mobile/hub.svelte';
+  import { atHome, split, takeSystemBack } from '$lib/core/ui/split.svelte';
+  import { platform } from '$lib/core/platform';
   import HubSheet from '$lib/core/mobile/HubSheet.svelte';
   import { startIosKeyboard } from '$lib/core/mobile/ios-keyboard';
   import { installScrolling } from '$lib/core/scrolling';
@@ -52,6 +54,21 @@
   // The bar for this screen: a module's own or the root one (platform-spec 11.7).
   const items = $derived(navItems(page.url));
   const active = $derived(items ? navActive(page.url.pathname, items) : '');
+  // A wide window (core/ui/split): the bar is a column of sections at the
+  // left, a module's list stands beside the screen. The bar of a screen beside
+  // a list is the list's: an open item's own bar may be none (a chat).
+  const pair = $derived(split.of(page.url));
+  const rail = $derived(split.on ? (pair ? navItems(new URL(pair.home, page.url)) : items) : null);
+  const railActive = $derived(rail ? navActive(pair ? new URL(pair.home, page.url).pathname : page.url.pathname, rail) : '');
+  // On the list's own address the list is at the left already: the right part is empty.
+  const blank = $derived(!!pair && atHome(page.url, pair));
+  // An item beside its list: the system «Назад» empties the right part, as the hidden arrow did (split.takeSystemBack).
+  const besidePair = $derived(platform === 'android' && pair && !blank ? pair : undefined);
+  $effect(() => {
+    const def = besidePair;
+    if (!def) return;
+    return untrack(() => takeSystemBack(def, () => page.state));
+  });
   // The modules' sheets and banners, outside the screen; a module the user
   // switches off takes its own away (section 12).
   const overlays = $derived(registry.overlays('window'));
@@ -98,11 +115,31 @@
   });
 </script>
 
-<div class="shell" class:home={page.url.pathname === '/'} class:no-bar={!items}>
+<div class="shell" class:home={page.url.pathname === '/'} class:no-bar={!items} class:wide={split.on}>
   <AppLockGate>
+    <!-- The screen keeps its place in the template whatever stands beside it: folding does not mount it again. -->
+    {#if rail}
+      <BottomNav rail items={rail} activeId={railActive} />
+    {/if}
+    {#if pair}
+      <div class="split-list">
+        <!-- Lists of one component (the chats, the groups, a section) are lists of their own, as on a phone. -->
+        {#key pair.home}
+          <pair.list {...pair.props} />
+        {/key}
+      </div>
+    {/if}
     <div class="screen">
       <svelte:boundary onerror={(e) => console.error('screen failed', e)}>
-        {@render children()}
+        {#if !blank}
+          {@render children()}
+        {:else if pair?.empty}
+          <div class="empty-state split-empty">
+            <Icon name={pair.empty.icon} size={28} />
+            {#if pair.empty.title}<p>{$t(pair.empty.title)}</p>{/if}
+            {#if pair.empty.text}<span>{$t(pair.empty.text)}</span>{/if}
+          </div>
+        {/if}
         {#snippet failed(_error, reset)}
           <div class="m-page">
             <div class="m-empty">
@@ -117,7 +154,7 @@
         {/snippet}
       </svelte:boundary>
     </div>
-    {#if items}
+    {#if items && !split.on}
       <BottomNav {items} activeId={active} />
     {/if}
   </AppLockGate>
@@ -159,11 +196,45 @@
     flex-direction: column;
     padding-top: var(--sat);
   }
+  /* Wide: the column of sections, the list, the screen in a row. Nothing on
+     the columns makes a containing block (no transform, no contain): the
+     menus, the suggestions and the glass measure against the window. */
+  .shell.wide { flex-direction: row; }
+  /* The screen holds what stands at its own foot (the note's toolbar), as the list does its «+». */
+  .shell.wide .screen { min-width: 0; position: relative; }
+  .split-list {
+    position: relative;
+    flex: 0 0 clamp(360px, 41vw, 400px);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--sat);
+    border-right: 1px solid var(--border);
+  }
+  .split-list > :global(.m-page) {
+    flex: 1;
+    min-height: 0;
+  }
   .screen > :global(.m-page) {
     flex: 1;
     min-height: 0;
     overflow: hidden;
   }
+  /* The empty right part says what to do, as on the desktop: an icon, a title and a line, grey, in the middle. */
+  .split-empty {
+    height: 100%;
+    box-sizing: border-box;
+    padding: var(--sp-6);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    text-align: center;
+    color: var(--text-2);
+  }
+  .split-empty p { margin: 0; font-weight: var(--fw-semibold); color: var(--text-2); }
+  .split-empty span { font-size: var(--fs-sm); color: var(--text-3); max-width: 360px; }
   /* Retry first, the way home beside it. */
   .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); }
   .screen > :global(.editor) {

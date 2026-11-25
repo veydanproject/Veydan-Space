@@ -279,5 +279,5 @@
     font-weight: var(--fw-semibold);
   }
   .btn.ghost { background: rgba(255, 255, 255, 0.12); color: #fff; }
-  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
 </style>

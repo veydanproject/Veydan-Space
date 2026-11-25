@@ -6,6 +6,7 @@
   import Pill from '$lib/core/ui/Pill.svelte';
   import { get } from 'svelte/store';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import HubButton from '$lib/core/ui/HubButton.svelte';
   import { hasHome } from '$lib/core/mobile/nav';
   import Tabs from '$lib/core/ui/Tabs.svelte';
   import { leave } from '$lib/core/ui/back';
@@ -202,7 +203,7 @@
 <div class="m-page">
   <div class="m-header">
 {#if hasHome()}
-      <a class="m-ibtn" href="/" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
+      <HubButton />
     {:else if pages.length > 0}
       <!-- Not a tab of the bar: opened by the avatar of a tab, back to it. -->
       <button type="button" class="m-ibtn" onclick={() => void leave('/')} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>

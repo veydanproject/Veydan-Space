@@ -1007,6 +1007,7 @@ impl Handler for Attachments {
                 .map(|e| format!("attachment upload: {e}"))
                 .collect(),
             errors: changes.errors,
+            local: Vec::new(),
         })
     }
 

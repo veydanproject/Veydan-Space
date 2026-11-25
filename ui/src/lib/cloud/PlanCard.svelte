@@ -91,7 +91,7 @@
   .top { display: flex; align-items: center; gap: var(--sp-3); }
   .tile {
     display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0;
-    border-radius: var(--radius-md); background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-accent);
+    border-radius: var(--radius-md); background: var(--accent-grad); color: var(--on-accent); box-shadow: var(--shadow-accent);
   }
   .words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .label { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-dim); }

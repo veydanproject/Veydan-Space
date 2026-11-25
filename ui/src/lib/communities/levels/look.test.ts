@@ -26,7 +26,7 @@ describe('the colour of a section', () => {
       expect(colorName(bad)).toBeNull();
       expect(sectionColor(bad)).toBeNull();
     }
-    expect(sectionInk(undefined)).toBe('#fff');
+    expect(sectionInk(undefined)).toBe('var(--on-accent)');
   });
 
   it('has its fill and its ink declared in both themes', () => {
@@ -62,7 +62,7 @@ describe('the icon of a section', () => {
 
   it('gives the look of a section, a photo before the icon', () => {
     expect(lookOf({ scope_id: 'a', icon: 'star', color: 5, photo: 'f00d' })).toEqual({ icon: 'star', color: 'var(--sec-amber)', ink: 'var(--sec-amber-on)', photo: 'f00d' });
-    expect(lookOf({ scope_id: 'everyone' })).toEqual({ icon: 'speakerphone', color: null, ink: '#fff', photo: null });
+    expect(lookOf({ scope_id: 'everyone' })).toEqual({ icon: 'speakerphone', color: null, ink: 'var(--on-accent)', photo: null });
   });
 });
 

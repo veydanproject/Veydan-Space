@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { shouldLoad, type ChatPageState } from './chatLoad';
+import { shouldLoad, wasRemoved, type ChatPageState } from './chatLoad';
 
 const A = `dm:${'a'.repeat(64)}`;
 const B = `group:${'b'.repeat(64)}`;
@@ -41,5 +41,17 @@ describe('shouldLoad', () => {
     // Still locked: a second reset does not loop while it is missing.
     expect(shouldLoad({ ...missing, resets: 2 })).toBe(false);
     expect(shouldLoad({ ...missing, known: true })).toBe(true);
+  });
+});
+
+describe('wasRemoved', () => {
+  it('empties the right part for a chat gone from the list, the last one too', () => {
+    // A delete of the last chat leaves an empty list: the epoch is the same.
+    expect(wasRemoved({ known: false, shownEpoch: 2, resets: 2 })).toBe(true);
+  });
+
+  it('keeps a chat still in the list, and one of a store emptied under the page', () => {
+    expect(wasRemoved({ known: true, shownEpoch: 2, resets: 2 })).toBe(false);
+    expect(wasRemoved({ known: false, shownEpoch: 2, resets: 3 })).toBe(false);
   });
 });

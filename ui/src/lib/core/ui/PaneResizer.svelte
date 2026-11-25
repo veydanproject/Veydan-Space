@@ -166,7 +166,7 @@
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
     font-variant-numeric: tabular-nums;
-    color: #fff;
+    color: var(--on-accent);
     background: var(--accent);
     border-radius: 8px;
     padding: 3px 8px;

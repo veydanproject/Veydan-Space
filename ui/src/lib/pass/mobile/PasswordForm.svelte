@@ -4,7 +4,8 @@
 <!--
   The phone's form of a password, one body for New and Edit: the fields, the
   password with reveal and generate inside it, the linked TOTP codes, the
-  labels, and one full-width Save, as on the TOTP form.
+  labels, and one full-width Save, as on the TOTP form. Without `onsave` the
+  page has its own Save (the edit form's foot).
 -->
 <script lang="ts">
   import { get } from 'svelte/store';
@@ -36,7 +37,8 @@
     totp: TotpEntry[];
     error?: string;
     saving?: boolean;
-    onsave: () => void;
+    /** The form's own Save at its end; a page with Save in its foot leaves it out. */
+    onsave?: () => void;
   }
 
   let {
@@ -120,10 +122,12 @@
   />
   <LabelField linkNotes {tags} onchange={(next) => (tags = next)} />
   {#if error && !titleErr && !passErr && !genErr}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
-  <button type="button" class="m-btn-grad save" onclick={onsave} disabled={saving}>
-    <Icon name="check" size={18} />
-    {$t('common_save')}
-  </button>
+  {#if onsave}
+    <button type="button" class="m-btn-grad save" onclick={onsave} disabled={saving}>
+      <Icon name="check" size={18} />
+      {$t('common_save')}
+    </button>
+  {/if}
 </div>
 
 <style>

@@ -39,6 +39,8 @@ export interface ArchiveStatus {
   paused: PauseReason | null;
   /** The scopes (`dm`, `dm@<server>`, `group:<id>`) with months still to come: an open chat of one says so. */
   restoring_scopes: string[];
+  /** The first restore since a storage or a key was bound (a new device): the chats show it. False later: what other devices write comes in the background. */
+  first_restore: boolean;
   /** The months (`yyyy-mm`) this device does not restore, their files over the bounds of the format: the card names them. */
   too_large: string[];
   /** The months (`yyyy-mm`) this device holds and does not write, over the bounds of the format: in no backup, the card names them. */

@@ -272,8 +272,8 @@
 
 <style>
   article { --label-w: 88px; display: flex; flex-direction: column; gap: var(--sp-3); }
-  /* On the panel: 24 from its edge (its body's 16 and 8). */
-  .framed { padding: var(--sp-2); }
+  /* On the panel: the labels on the title's line, 16 from its edge (the body's 16), as the head's and the form's. */
+  .framed { padding: var(--sp-2) 0; }
   /* A long value without spaces wraps inside the card instead of running past its border */
   h2 { margin: 0; font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
   .line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--sp-2); min-height: 32px; font-size: var(--fs-base); }

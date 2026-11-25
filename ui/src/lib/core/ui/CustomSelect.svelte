@@ -320,7 +320,7 @@
   }
   .trigger:focus-visible:not(.open) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .trigger:disabled { opacity: 0.45; cursor: not-allowed; }
-  .trigger.mobile { height: auto; min-height: var(--control-h-lg); font-size: var(--fs-md); }
+  .trigger.mobile { height: auto; min-height: var(--touch); font-size: var(--fs-md); }
   .trigger-label {
     flex: 1;
     min-width: 0;
@@ -365,12 +365,12 @@
     overflow-y: auto;
     overflow-x: hidden;
     padding: 4px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    background: var(--glass-menu-bg, color-mix(in srgb, var(--glass-bar) 60%, transparent));
+    border: 1px solid var(--pane-strong-border);
     border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter);
-    backdrop-filter: var(--glass-filter);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
+    backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
     outline: none;
     transform-origin: top left;
     animation: list-in var(--dur-fast) var(--ease) both;

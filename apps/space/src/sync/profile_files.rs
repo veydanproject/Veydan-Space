@@ -1149,6 +1149,9 @@ pub async fn collect_local_changes(
             &sending,
         )
         .await?;
+        // The walk is over: the bar no longer names its last file and the
+        // count of files while the snapshot and the push follow.
+        progress(app, "profiles_up", 93, 0, 0, "");
         let manifest = match built {
             // A launch waits for this profile or one held: this one waits
             // for a later cycle as it is, so does the other.

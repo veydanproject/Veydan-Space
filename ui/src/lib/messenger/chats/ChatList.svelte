@@ -469,8 +469,8 @@
   }
   .draft { color: var(--danger-text); }
   /* The counts are the .count-pill of base.css (22 on a row; .quiet when the chat is muted). */
-  /* The pinned: a line after them. */
-  .pin-rule { height: 1px; margin: var(--sp-2) var(--sp-3); background: var(--divider); }
+  /* The pinned: a line after them, from the text as the rows' own, as far over as under. */
+  .pin-rule { height: 1px; margin: 3.5px var(--sp-3) 3.5px calc(var(--sp-3) * 2 + var(--list-avatar, 48px)); background: var(--divider); }
   /* Requests to join wait: the accent's tint, so the unread count stays the one that calls. */
   .asks { gap: 3px; background: var(--accent-tint); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-border); }
   /* Nothing to list (or nothing found): the design system's empty state, its tile 56. */

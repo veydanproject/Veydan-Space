@@ -622,6 +622,9 @@
     flex-shrink: 0;
   }
 
+  /* Two icons without words: closer together, each with room for its bar. */
+  .view-switcher { gap: var(--sp-1); }
+  .view-switcher .seg-btn { padding: 0 var(--sp-2); }
   .view-switcher.hidden { visibility: hidden; opacity: 0; pointer-events: none; }
 
   /* Tab Content */

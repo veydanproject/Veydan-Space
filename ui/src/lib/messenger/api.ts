@@ -14,8 +14,10 @@ export type { BotCard } from './generated/bot';
 import type { BotCard } from './generated/bot';
 import type { MdBlock } from './generated/markdown';
 import type { NoticeBody } from './push/wording';
-export type { BridgeView, NetCheck, NetMode, NetStatus, Verdict } from './generated/net';
-import type { NetCheck, NetMode, NetStatus } from './generated/net';
+export type { BridgeView, NetCheck, NetDiagnosis, NetMode, NetStatus, Verdict } from './generated/net';
+import type { NetCheck, NetDiagnosis, NetMode, NetStatus } from './generated/net';
+export type { BugInput, BugResult, BugStatus } from './generated/bug';
+import type { BugInput, BugResult } from './generated/bug';
 export type { ArchivePhase, ArchiveProgress, ArchiveStatus, PauseReason } from './archive/types';
 import type { ArchiveProgress, ArchiveStatus } from './archive/types';
 export type {
@@ -992,10 +994,10 @@ const mockRestricted = typeof localStorage !== 'undefined' && localStorage.getIt
 function mockArchiveStatus(): ArchiveStatus {
   const state = (typeof localStorage !== 'undefined' && localStorage.getItem('messenger.demo.archive')) || 'writing';
   const MB = 1024 * 1024;
-  const base = { available: true, size_bytes: 48 * MB, from_month: '2024-03', to_month: '2026-10', paused: null as ArchiveStatus['paused'], restoring_scopes: [] as string[], too_large: [] as string[], not_backed_up: [] as string[] };
+  const base = { available: true, size_bytes: 48 * MB, from_month: '2024-03', to_month: '2026-10', paused: null as ArchiveStatus['paused'], restoring_scopes: [] as string[], first_restore: false, too_large: [] as string[], not_backed_up: [] as string[] };
   const idle: ArchiveProgress = { phase: 'idle', done: 0, total: 0, bytes_done: 0, bytes_total: 0 };
   const restoring = (percent: number): ArchiveStatus => ({
-    ...base, size_bytes: Math.round(48 * MB * percent / 100), restoring_scopes: ['dm'],
+    ...base, size_bytes: Math.round(48 * MB * percent / 100), restoring_scopes: ['dm'], first_restore: true,
     progress: { phase: 'restoring', done: Math.round(percent * 0.4), total: 40, bytes_done: Math.round(48 * MB * percent / 100), bytes_total: 48 * MB, month: percent < 50 ? '2026-10' : '2025-07' },
   });
   const paused = (reason: NonNullable<ArchiveStatus['paused']>): ArchiveStatus => ({ ...base, paused: reason, progress: { ...idle, phase: 'paused', reason } });
@@ -2491,6 +2493,8 @@ export const messengerApi = {
     setMode: (mode: NetMode) => invoke<NetStatus>('messenger_net_set_mode', { mode }),
     /** Tries the direct way and a bridge now. */
     check: () => invoke<NetCheck>('messenger_net_check'),
+    /** Measures the direct way, every bridge and the call nodes: up to 45 s. Nothing of the user is in it. */
+    diagnose: () => invoke<NetDiagnosis>('messenger_net_diagnose'),
     /** A link (`veydan://vlink/…`) or a reference (`address:port#id`). */
     addBridge: (bridge: string) => invoke<NetStatus>('messenger_net_bridge_add', { bridge }),
     removeBridge: (id: string) => invoke<NetStatus>('messenger_net_bridge_remove', { id }),
@@ -2605,6 +2609,14 @@ export const messengerApi = {
   /** A report of a person to the moderators; the refusal `rate_limited` means too many from this device. */
   report: {
     send: (input: ReportInput) => invoke<ReportResult>('messenger_report_send', { input }),
+  },
+
+  /**
+   * A bug report to the project, signed by the account's key. `queued`: no
+   * connection now, the event `bug.report` tells what became of it.
+   */
+  bug: {
+    send: (input: BugInput) => invoke<BugResult>('messenger_bug_send', { input }),
   },
 
   /** When approved contacts are online; empty while the presence switch is off. */

@@ -145,5 +145,5 @@
   .act:disabled { opacity: 0.45; cursor: default; }
   .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
   .act.danger { background: var(--danger-bg); color: var(--danger-text); }
-  .act.main { background: var(--accent); color: #fff; }
+  .act.main { background: var(--accent); color: var(--on-accent); }
 </style>

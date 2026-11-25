@@ -114,7 +114,7 @@
       <span class="section-label">{$t('cloud_quota_what')}</span>
       <ul>
         {#each shownCategories as c (c.id)}
-          <li><span>{$t(CATEGORY[c.id] ?? CATEGORY.other)}</span><span class="amount mono">{formatBytes(c.bytes)}</span></li>
+          <li><span>{$t(CATEGORY[c.id] ?? CATEGORY.other)}</span><span class="amount">{formatBytes(c.bytes)}</span></li>
         {/each}
       </ul>
     </div>
@@ -130,7 +130,7 @@
   .of { font-size: var(--fs-base); color: var(--text-2); }
   .percent { margin-left: auto; font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--text-2); }
   .caption { font-size: var(--fs-sm); color: var(--text-2); }
-  .bar { height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+  .bar { height: 6px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--text) 16%, transparent); overflow: hidden; }
   .bar.big { height: 10px; }
   .fill { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--accent-grad); }
   .warn .fill { background: var(--warn); }

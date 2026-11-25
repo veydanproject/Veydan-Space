@@ -41,7 +41,7 @@
 
 <style>
   .upload {
-    display: flex; align-items: center; gap: var(--sp-2); width: min(680px, 100%); align-self: center; padding: var(--sp-2) var(--sp-3);
+    display: flex; align-items: center; gap: var(--sp-2); width: min(720px, 100%); box-sizing: border-box; align-self: center; padding: var(--sp-2) var(--sp-3);
     border-radius: var(--radius-lg); background: var(--surface-2); border: 1px dashed var(--border); color: var(--text-2); font-size: var(--fs-xs);
   }
   .upload.failed { border-color: var(--danger-border); color: var(--danger-text); }

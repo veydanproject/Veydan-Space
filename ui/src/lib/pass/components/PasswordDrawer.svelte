@@ -141,12 +141,16 @@
 
 <Frame bind:open title={inPlace ? recordTitle : $t('pw_title')} width="var(--drawer-w-lg)" footer={inPlace && hasFooter ? recordActions : undefined}>
   {#snippet titleBadge()}
-    <PasswordLockBadge />
+    <PasswordLockBadge size={16} />
+  {/snippet}
+
+  {#snippet subtitle()}
+    {#if !inPlace}{filtered.length}{/if}
   {/snippet}
 
   {#snippet actions()}
     {#if !inPlace}
-      <span class="count">{filtered.length}</span>
+      {#if as !== 'pane'}<span class="count">{filtered.length}</span>{/if}
       {#if canWrite}
         <button class="icon-btn create" title={$t('common_add')} aria-label={$t('common_add')} onclick={() => (creating = true)}>
           <Icon name="plus" size={18} />
@@ -212,9 +216,9 @@
   {/if}
 </Frame>
 
-<!-- The page's list stays in place: a password opens over it in a side panel, 440 to read and --drawer-w-md to change. -->
+<!-- The page's list stays in place: a password opens over it in a side panel, --drawer-w-md (480) to read and to change. -->
 {#if as === 'pane'}
-  <Drawer solid open={recordOpen} title={recordTitle} width={formOpen ? 'var(--drawer-w-md)' : 'var(--drawer-w)'} onclose={closeRecord} footer={hasFooter ? recordActions : undefined}>
+  <Drawer solid open={recordOpen} title={recordTitle} width="var(--drawer-w-md)" onclose={closeRecord} footer={hasFooter ? recordActions : undefined}>
     {@render record()}
   </Drawer>
 {/if}
@@ -254,7 +258,7 @@
     padding: 0.05rem 0.4rem;
     font-weight: var(--fw-semibold);
   }
-  .panel-search { padding: var(--sp-3) var(--sp-4) 0; }
+  .panel-search { padding: var(--sp-4) var(--sp-4) 0; }
   .search-wrap { position: relative; }
   .search-icon {
     position: absolute;

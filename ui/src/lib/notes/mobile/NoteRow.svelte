@@ -15,6 +15,8 @@
     /** Multi-select is on: taps toggle instead of opening. */
     selecting?: boolean;
     selected?: boolean;
+    /** The note open beside the list (a wide window, core/ui/split). */
+    active?: boolean;
     onopen: (note: NoteListItem) => void;
     ontoggle: (note: NoteListItem) => void;
     onlongpress: (note: NoteListItem) => void;
@@ -34,7 +36,7 @@
     hide?: { folder?: string; binding?: string };
   }
 
-  let { note, mode = 'normal', selecting = false, selected = false, onopen, ontoggle, onlongpress, onquick, onaction, revealed = false, otherRevealed = false, onreveal, scope, hide }: Props = $props();
+  let { note, mode = 'normal', selecting = false, selected = false, active = false, onopen, ontoggle, onlongpress, onquick, onaction, revealed = false, otherRevealed = false, onreveal, scope, hide }: Props = $props();
 
   const chips = $derived(note.chips.filter((c) => !(c.kind === 'folder' && c.id === hide?.folder) && `${c.kind}:${c.id}` !== hide?.binding));
 
@@ -157,7 +159,7 @@
   }
 </script>
 
-<div class="swipe" data-note-id={note.id} class:selected class:moved={dx !== 0 || dragging}>
+<div class="swipe" data-note-id={note.id} class:selected class:active class:moved={dx !== 0 || dragging}>
   <div class="clip">
     <div class="reveal" class:shown={dx < 0} style:width="{REVEAL}px">
       {#each buttons as b (b.action)}
@@ -177,6 +179,7 @@
       ontouchend={onTouchEnd}
       ontouchcancel={onTouchEnd}
       onclick={onTap}
+      aria-current={active ? 'page' : undefined}
       oncontextmenu={(e) => e.preventDefault()}
     >
       {#if selecting}
@@ -200,10 +203,13 @@
         {#if note.preview}<span class="preview">{note.preview}</span>{/if}
         {#if chips.length}
           <span class="chips">
-            {#each chips.slice(-3) as c (c.kind + c.id)}
-              <span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span>
+            {#each chips.slice(-3) as c, i (c.kind + c.id)}
+              {#if i === 2 && chips.length > 3}
+                <span class="last-more"><span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span><span class="more">+{chips.length - 3}</span></span>
+              {:else}
+                <span class="m-chip small tinted" style:--chip={c.color}><ChipMark kind={c.kind} />{c.label}</span>
+              {/if}
             {/each}
-            {#if chips.length > 3}<span class="more">+{chips.length - 3}</span>{/if}
           </span>
         {/if}
       </span>
@@ -241,7 +247,7 @@
     border: 0;
     border-radius: 0;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-size: var(--fs-xs);
     font-weight: var(--fw-semibold);
   }
@@ -255,6 +261,7 @@
   }
   .row:active { background: var(--surface-hover); }
   .moved .row { background: var(--m-card); }
+  .active .row { background: var(--accent-bg); border-color: var(--accent-border); }
   .selected .row { background: var(--accent-bg); border-color: var(--accent-border); outline: none; }
   .row.dragging { transition: none; }
   .row .body { gap: 4px; }
@@ -284,5 +291,11 @@
   }
   .time { flex: none; margin-left: auto; font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
   .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; padding-top: 2px; }
-  .more { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-2); }
+  .last-more { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; max-width: 100%; }
+  /* +N is a chip of the tags' height, on the quiet surface, in the UI's face */
+  .more {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2); border-radius: var(--radius-pill);
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-family: var(--font-ui); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2);
+  }
 </style>

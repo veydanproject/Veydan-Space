@@ -188,7 +188,7 @@
   .stages li.on { color: var(--text); font-weight: var(--fw-semibold); }
   .stages li.done { color: var(--text-2); }
   .mark { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; border: 1.5px solid var(--border-2); }
-  .done .mark { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .done .mark { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .on .mark { border-color: transparent; }
   .mark .spinner { width: 16px; height: 16px; margin: 0; }
   @media (prefers-reduced-motion: reduce) {

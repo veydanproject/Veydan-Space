@@ -283,7 +283,7 @@
   .stop { width: 36px; height: 36px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--danger-bg); color: var(--danger-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   .stop:disabled { opacity: 0.45; }
   .pill { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 14px 0 4px; border-radius: var(--radius-pill); background: var(--accent-tint); border: 1px solid var(--accent-tint-border); }
-  .play { width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .play { width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 50%; background: var(--accent-grad); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 
   /* Above the composer, over the conversation, centred over the send (48 at the row's right edge). */
   .lock {

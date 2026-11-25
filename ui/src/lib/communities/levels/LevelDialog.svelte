@@ -159,7 +159,7 @@
 
 <style>
   /* The spinner of a primary button, on its fill. */
-  .spinner.light { border-color: rgba(255, 255, 255, 0.35); border-top-color: #fff; }
+  .spinner.light { border-color: color-mix(in srgb, var(--on-accent) 35%, transparent); border-top-color: var(--on-accent); }
   .body { display: flex; flex-direction: column; gap: var(--sp-4); container-type: inline-size; }
   /* «Открывает разделы» beside «Права»: the rights, with their explanations, take the wider column. */
   .cols { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: var(--sp-3); align-items: start; }

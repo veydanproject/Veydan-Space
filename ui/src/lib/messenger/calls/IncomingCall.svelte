@@ -137,7 +137,7 @@
   .round:disabled { opacity: 0.45; cursor: default; }
   .round:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
   .decline { background: var(--danger); box-shadow: var(--shadow-danger); }
-  .answer { background: var(--success); animation: nudge 1.6s ease-in-out infinite; }
+  .answer { background: var(--success-grad); animation: nudge 1.6s ease-in-out infinite; }
   @keyframes fade { from { opacity: 0; } }
   @keyframes rise { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
   @keyframes nudge { 0%, 70%, 100% { transform: rotate(0); } 76% { transform: rotate(-14deg); } 82% { transform: rotate(12deg); } 88% { transform: rotate(-8deg); } 94% { transform: rotate(5deg); } }

@@ -64,6 +64,6 @@
   .sub { font-size: var(--fs-xs); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .icon { border: none; background: none; color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; padding: 0; border-radius: var(--radius); }
   .icon:hover { color: var(--text); background: var(--surface-3); }
-  /* The phone: the inset of the search field and the push offer above (12px) */
-  .invites.phone { padding-inline: var(--sp-3); }
+  /* The phone: the inset of the search field and the push offer (12px); 8 on top with the search's own margin 8 is 16 under it. */
+  .invites.phone { padding: var(--sp-2) var(--sp-3); }
 </style>

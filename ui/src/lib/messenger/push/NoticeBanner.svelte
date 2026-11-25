@@ -269,7 +269,7 @@
   .badge {
     position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--accent); color: #fff; border: 2px solid var(--bg-2);
+    background: var(--accent); color: var(--on-accent); border: 2px solid var(--bg-2);
   }
   .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }

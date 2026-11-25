@@ -24,11 +24,13 @@
     chips: { label: string; kind: string; color?: string }[];
     /** The refresh window of the first TOTP code. */
     period?: number;
+    /** The password open beside the list (a wide window). */
+    active?: boolean;
     onopen: () => void;
     onmenu: () => void;
   }
 
-  let { entry, chips, period = 30, onopen, onmenu }: Props = $props();
+  let { entry, chips, period = 30, active = false, onopen, onmenu }: Props = $props();
 
   /** Chips past this many become one counter. */
   const MAX_CHIPS = 3;
@@ -43,8 +45,8 @@
   const totp = $derived(entry.totp_ids[0]);
 </script>
 
-<div class="m-card row" {@attach longpress(onmenu)}>
-  <button type="button" class="open" onclick={onopen}>
+<div class="m-card row" class:active {@attach longpress(onmenu)}>
+  <button type="button" class="open" onclick={onopen} aria-current={active ? 'page' : undefined}>
     <span class="m-avatar" style:--c={avatarColor(entry.title)}>{entry.title.charAt(0).toUpperCase()}</span>
     <span class="meta">
       <span class="name">{entry.title}</span>
@@ -81,6 +83,7 @@
     border-radius: var(--radius-lg);
   }
   .row:active { background: var(--surface-hover); }
+  .row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
   .open {
     flex: 1;
     min-width: 0;

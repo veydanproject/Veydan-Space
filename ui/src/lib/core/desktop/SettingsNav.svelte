@@ -20,6 +20,7 @@
   } = $props();
 
   let navEl = $state<HTMLElement | null>(null);
+  let scrolled = $state(false);
 
   // The pane of the nav scrolls (it is taller than a small window): the
   // active entry stays in view.
@@ -30,7 +31,7 @@
 </script>
 
 <!-- Sticky section index for the settings page -->
-<nav class="settings-nav" bind:this={navEl}>
+<nav class="settings-nav" class:scrolled bind:this={navEl} onscroll={() => (scrolled = (navEl?.scrollTop ?? 0) > 2)}>
   {#each groups as group (group.label)}
     <div class="nav-group">
       <div class="section-label">{group.label}</div>
@@ -55,9 +56,11 @@
   .settings-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-4);
+    gap: var(--sp-2);
   }
   .nav-group { display: flex; flex-direction: column; gap: 2px; }
+  /* One rule between the groups, 8 over it and 8 under it. */
+  .nav-group + .nav-group { border-top: 1px solid var(--divider); padding-top: var(--sp-2); }
   /* The kit's group label: plain case, 12/600. */
   .section-label { padding: 0 var(--sp-3); margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .nav-item {

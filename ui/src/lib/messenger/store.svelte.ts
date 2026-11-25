@@ -31,6 +31,7 @@ import { nameStore } from "./groups/names.svelte";
 import { linkStore } from "./content/linkStore.svelte";
 import { sharedStore } from "./content/shared/sharedStore.svelte";
 import { netStore } from "./net/netStore.svelte";
+import { bugEvent } from './shared/bugEvent';
 import { archiveStore } from "./archive/archiveStore.svelte";
 import { callNodesStore } from "./net/callNodesStore.svelte";
 import { usageStore } from "./shared/emoji/usageStore.svelte";
@@ -280,6 +281,7 @@ class MessengerStore {
         typingStore.handleEvent(e.payload);
         privacyStore.handleEvent(e.payload);
         requestStore.handleEvent(e.payload);
+        bugEvent(e.payload);
         inviteStore.handleEvent(e.payload);
         serverStore.handleEvent(e.payload);
         avatarStore.handleEvent(e.payload);

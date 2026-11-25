@@ -19,6 +19,8 @@
     side?: 'right' | 'left';
     closeOnBackdrop?: boolean;
     onclose?: () => void;
+    /** Accepted for parity with Pane (the shared Frame props); a drawer does not show it. */
+    subtitle?: Snippet;
     /** Small marker rendered right after the title. */
     titleBadge?: Snippet;
     /** Extra controls rendered in the header, before the close button. */
@@ -159,7 +161,7 @@
     align-items: center;
     gap: var(--sp-3);
     min-height: 64px;
-    padding: 0 var(--sp-3) 0 var(--sp-6);
+    padding: 0 var(--sp-3) 0 var(--sp-4);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -186,7 +188,7 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
     padding: var(--sp-4);
   }
 
@@ -195,7 +197,7 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-5);
+    padding: var(--sp-3) var(--sp-4);
     border-top: 1px solid var(--border);
     background: var(--surface-drawer-footer);
     flex-shrink: 0;

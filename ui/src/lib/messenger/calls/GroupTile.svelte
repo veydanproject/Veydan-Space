@@ -180,7 +180,7 @@
   .mark { color: var(--call-danger); }
   .talk {
     display: inline-flex; align-items: center; gap: 3px; padding: 2px var(--sp-2); border-radius: var(--radius-pill);
-    background: var(--success); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
+    background: var(--success-grad); color: #fff; font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   .pin { position: absolute; z-index: 2; top: 6px; right: 6px; }
   .lost {

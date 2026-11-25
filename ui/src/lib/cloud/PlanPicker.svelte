@@ -215,7 +215,7 @@
   .picker { display: flex; flex-direction: column; gap: var(--sp-3); container-type: inline-size; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   h2 { margin: 0; }
-  .section-label { padding: var(--sp-3) var(--sp-1) var(--sp-1); }
+  .section-label { padding: var(--sp-3) 0 var(--sp-1); }
   .currency { flex-shrink: 0; }
   .save {
     margin-left: 6px; padding: 1px 6px; border-radius: var(--radius-pill);

@@ -17,6 +17,7 @@ const restoring: ArchiveStatus = {
   to_month: '2026-10',
   paused: null,
   restoring_scopes: ['dm', 'group:g1'],
+  first_restore: true,
   too_large: [],
   not_backed_up: [],
 };
@@ -62,6 +63,16 @@ describe('archiveStore', () => {
     expect(sessionStorage.getItem(ARCHIVE_GATE_KEY)).toBeNull();
     // The restore goes on behind: the banner's state, not the gate's.
     expect(archiveStore.restoring).toBe(true);
+    expect(archiveStore.blocking).toBe(false);
+  });
+
+  it('shows nothing in the chats while it follows another device', async () => {
+    status.mockResolvedValue({ ...restoring, first_restore: false });
+    const { archiveStore } = await freshStore();
+    await archiveStore.load();
+    expect(archiveStore.moving).toBe(true);
+    expect(archiveStore.restoring).toBe(false);
+    expect(archiveStore.isRestoring('dm')).toBe(false);
     expect(archiveStore.blocking).toBe(false);
   });
 

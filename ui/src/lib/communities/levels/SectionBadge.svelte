@@ -30,7 +30,7 @@
   const glyph = $derived(Math.round(size * 0.56));
 </script>
 
-<span class="sec-mark" class:all={!scope} style:--b-size="{size}px" style:--b-fill={look?.color ?? 'var(--accent)'} style:--b-ink={look?.ink ?? '#fff'} aria-hidden="true">
+<span class="sec-mark" class:all={!scope} style:--b-size="{size}px" style:--b-fill={look?.color ?? 'var(--accent)'} style:--b-ink={look?.ink ?? 'var(--on-accent)'} aria-hidden="true">
   {#if src}<img {src} alt="" />{:else}<Icon name={look?.icon ?? 'layout-grid'} size={glyph} />{/if}
 </span>
 

@@ -72,5 +72,5 @@
     mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
   }
   .m { margin: calc(-1 * var(--sp-1)) calc(-1 * var(--tabs-bleed, var(--sp-4))); padding: var(--sp-1) var(--sp-4); }
-  .m .ctab { min-height: var(--sp-12); font-size: var(--fs-body); }
+  .m .ctab { min-height: var(--control-h-lg); font-size: var(--fs-body); }
 </style>

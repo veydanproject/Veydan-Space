@@ -237,7 +237,7 @@
     font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--text-2);
   }
   .dot { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--warn-text); }
-  .actions .spinner { margin-right: 6px; border-color: color-mix(in srgb, #fff 35%, transparent); border-top-color: #fff; }
+  .actions .spinner { margin-right: 6px; border-color: color-mix(in srgb, var(--on-accent) 35%, transparent); border-top-color: var(--on-accent); }
   @media (pointer: coarse) {
     .actions .btn { flex: 1; }
     .unsaved { flex-basis: 100%; }

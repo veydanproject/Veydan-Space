@@ -758,8 +758,8 @@
 {/snippet}
 
 {#snippet window()}
-  <section class="window" class:phone style:--bottom-h={phone ? `${bottomH}px` : undefined}>
-    <header class="head" class:phone class:on-glass={phone}>
+  <section class="window" class:phone class:glassfloat={!phone} style:--bottom-h={`${bottomH}px`}>
+    <header class="head" class:phone class:glassfloat={!phone} class:on-glass={phone}>
       {#if onback}
         {#if phone}<button class="icon back" onclick={onback} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
         {:else}<button class="icon back narrow-only" onclick={onback} title={$t('common_back')}><Icon name="chevron-left" size={18} /></button>{/if}
@@ -913,7 +913,7 @@
       </div>
     </div>
 
-    <div class="bottom" class:float={phone} bind:clientHeight={bottomH}>
+    <div class="bottom" class:float={true} bind:clientHeight={bottomH}>
       <!-- Kept (hidden) in «Все»: a switch between a section and «Все» neither draws it anew nor loses its words. -->
       {#if posting || pickToPost}
         <div class="compose" class:off={!posting}>
@@ -989,8 +989,17 @@
   /* A phone and a tablet: the whole screen, the head floats inset as glass and the feed runs under it. */
   /* Over the feed's own layers (a post's ⋮ on its media), under the info panel that lies over the conversation (WithInfo):
      no layer of the scale sits there, so the base's plus two. */
-  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; margin: var(--sp-2) var(--sp-2) 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
+  .head.phone { position: relative; z-index: calc(var(--z-base) + 2); gap: 6px; box-sizing: border-box; width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; min-height: 56px; padding: 0 var(--sp-1); border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); --edge-l: var(--sp-3); --edge-r: var(--sp-3); --edge-t: var(--sp-4); }
+  /* A computer, as a phone and as a chat (ChatWindow .head.glassfloat): a plate of glass in the field's column, the feed runs under it. */
+  .head.glassfloat {
+    position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box; gap: var(--sp-3);
+    width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; height: 58px; min-height: 58px; padding: 0 var(--sp-3) 0 var(--sp-4);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+  }
   .head.phone .back { color: var(--text); }
+  /* A wide window (core/ui/split): the list stands beside the channel, the arrow is not shown; onback stays for a forgotten one. */
+  :global(.shell.wide) .head.phone .back { display: none; }
   .ident { display: flex; align-items: center; gap: var(--sp-3); min-width: 160px; flex: 1 1 auto; cursor: pointer; border-radius: var(--radius-sm); }
   .head.phone .ident { min-width: 0; gap: 10px; }
   .ident:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
@@ -1025,17 +1034,20 @@
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
   /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
+  /* On a phone the glass is 4 + 1 past the button: the count 3 inside it, 8 from the glass's edge. */
+  .head.phone .menu-count { right: 3px; }
   /* The bars under the head: cards the feed's width. */
-  .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-6) 0; flex-shrink: 0; }
+  .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
   .strips:not(:has(> *)) { display: none; }
   .strip {
     display: flex; align-items: center; gap: 10px; width: 100%; max-width: 720px; margin: 0 auto; min-height: 44px; box-sizing: border-box;
-    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-lg); border: 1px solid var(--bubble-in-border); background: var(--bubble-in-bg);
+    padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: var(--radius-bar); border: 1px solid var(--bubble-in-border); background: var(--bubble-in-bg);
     color: var(--text-2); font: inherit; font-size: var(--fs-sm); line-height: var(--lh-snug); text-align: left;
   }
   .s-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); }
   /* The plates of the page (core/ui/Notice) the feed's width; the pinned bar stays a strip (it is a button). */
-  .plate { width: 100%; max-width: 720px; margin: 0 auto; }
+  .plate { width: 100%; max-width: 720px; margin: 0 auto; border-radius: var(--radius-bar); }
+  .plate > :global(.notice) { border-radius: var(--radius-bar); }
   .locked-note b { font-weight: var(--fw-semibold); }
   .locked-note .icon { margin: -6px -8px -6px 0; }
   .pinbar { cursor: pointer; }
@@ -1050,7 +1062,10 @@
   /* Under the bars the feed dissolves at their lower edge as it does under the head, over a longer way: the bars are tall and the post would otherwise look cut. */
   /* No strips: the feed runs behind the glass of the head (64: its 56 and its margin). */
   .window.phone .strips:not(:has(> *)) + .scroll { isolation: isolate; margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
-  .window.phone .strips:has(> *) + .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); }
+  /* A computer: the same, without the dissolve under the head (as a chat's). */
+  .window.glassfloat .scroll { isolation: isolate; padding-bottom: calc(var(--sp-4) + var(--bottom-h, 0px)); }
+  .window.glassfloat .strips:not(:has(> *)) + .scroll { margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; }
+  :is(.window.phone, .window.glassfloat) .strips:has(> *) + .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); }
   .content { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-3); flex-shrink: 0; }
   .content:has(> .placeholder) { margin-bottom: auto; }
   /* The states without a feed. */
@@ -1076,27 +1091,28 @@
   /* A phone: glass over the feed, as the composer of a chat (ChatWindow .bottom.float); the feed passes under it. */
   .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; }
   .window.phone .scroll { padding-bottom: calc(var(--sp-4) + var(--bottom-h, 0px)); }
-  .window.phone .no-composer { border-top: 0; }
-  .window.phone .nc-in {
-    /* The row of the composer (Composer.svelte .row): the same pane, edge and shadow. */
+  .window.phone .no-composer .btn { border-radius: var(--radius-pill); }
+  /* A failed upload the posts' width (UploadLine): a phone's posts stay 680. */
+  .window.phone :global(.upload) { width: min(680px, 100%); }
+  .compose.off { display: none; }
+  /* The foot without a composer: what readers do, or the way to a section, a plate of the composer's row (Composer.svelte .row): its height 52, pane, edge and shadow. */
+  .no-composer { padding: 0 var(--sp-3) var(--sp-3); border-top: 0; }
+  .nc-in {
+    max-width: 720px; margin: 0 auto; min-height: 52px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
     padding: 6px 6px 6px var(--sp-4); border-radius: var(--radius-bar);
     background: var(--pane-strong); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
-  .window.phone .no-composer .btn { border-radius: var(--radius-pill); }
-  .compose.off { display: none; }
-  /* The foot without a composer: what readers do, or the way to a section, the feed's width. */
-  .no-composer { padding: var(--sp-3) var(--sp-6); border-top: 1px solid var(--pane-border); }
-  .nc-in { max-width: 720px; margin: 0 auto; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: var(--sp-3); }
   .nc-in.to-section { justify-content: space-between; }
   .nc-hint { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-base); color: var(--text-3); }
   .nc-hint :global(svg) { flex-shrink: 0; }
-  .no-composer .btn { min-height: var(--control-h); flex-shrink: 0; }
+  .no-composer .btn { min-height: var(--control-h-sm); flex-shrink: 0; }
   .window.phone .no-composer .btn { min-height: var(--control-h-lg); }
   /* A narrow window: the name keeps its room, the section is its mark alone. */
   @container (max-width: 620px) {
     .head:not(.phone) .sec-name, .head:not(.phone) .sec-caret { display: none; }
     .head:not(.phone) .sec-btn { width: 36px; padding: 0; justify-content: center; }
-    .window:not(.phone) .strips, .window:not(.phone) .scroll, .window:not(.phone) .no-composer { padding-left: var(--sp-4); padding-right: var(--sp-4); }
+    .window:not(.phone) .scroll { padding-left: var(--sp-4); padding-right: var(--sp-4); }
   }
   /* A phone (a tablet keeps the computer's room around the cards). */
   @container (max-width: 599px) {

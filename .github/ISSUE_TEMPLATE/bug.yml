@@ -1,6 +1,5 @@
-# The bug report of every public repository of Veydan: the products take it
-# from publish.shared, services/link and services/push carry copies equal to
-# it (internal/platform-spec.md 14.4). Written for any of them: no product named.
+# The bug report of every public repository of Veydan: written for any of
+# them, no product named.
 name: Bug report
 description: Something does not work as it should.
 labels: ["bug"]

@@ -6,6 +6,9 @@
   import { get } from 'svelte/store';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
+  import ToggleRow from '$lib/core/ui/ToggleRow.svelte';
+  import { toast } from '$lib/core/ui/toast.svelte';
+  import type { BugSender } from '$lib/core/module';
   import { api } from '$lib/core/api';
   import { registry } from '$lib/core/registry';
   import { locale, t } from '$lib/core/i18n';
@@ -15,6 +18,8 @@
   import { formatError } from '$lib/core/utils';
 
   const BUG_EMAIL = 'bug@veydan.net';
+  /** The longest text the server takes. */
+  const TEXT_MAX = 8000;
 
   interface Props {
     open: boolean;
@@ -25,6 +30,19 @@
   let text = $state('');
   let mailError = $state('');
   let wasOpen = false;
+  /** The text as the dialog filled it: a report that says nothing more is not sent. */
+  let draft = $state('');
+  let info: HostInfo | null = null;
+  let modules: string[] = [];
+  /**
+   * The module a report goes through (the messenger, with an account on the
+   * project's servers); without one the text is copied or mailed, as before.
+   */
+  let sender = $state<BugSender | null>(null);
+  let attachNet = $state(true);
+  let phase = $state<'idle' | 'checking' | 'sending'>('idle');
+  const busy = $derived(phase !== 'idle');
+  const written = $derived(text.trim() !== '' && text !== draft);
 
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -67,14 +85,76 @@
     return parts.flat();
   }
 
+  /** The first active module that can send a report now. */
+  async function findSender(): Promise<BugSender | null> {
+    for (const m of registry.active) {
+      if (m.bug && (await m.bug.available().catch(() => false))) return m.bug;
+    }
+    return null;
+  }
+
   function fill() {
     mailError = '';
-    const draft = buildReport(null, []);
+    phase = 'idle';
+    attachNet = true;
+    info = null;
+    modules = [];
+    sender = null;
+    draft = buildReport(null, []);
     text = draft;
-    void Promise.all([api.system.hostInfo(), moduleLines()]).then(([info, modules]) => {
-      if (!info?.os || !info.arch) return;
-      if (text === draft) text = buildReport(info, modules);
+    const first = draft;
+    void findSender().then((found) => { sender = found; });
+    void Promise.all([api.system.hostInfo(), moduleLines()]).then(([host, lines]) => {
+      if (!host?.os || !host.arch) return;
+      info = host;
+      modules = lines;
+      const filled = buildReport(host, lines);
+      if (text === first) text = filled;
+      draft = filled;
     }).catch(() => {});
+  }
+
+  /** The word of a refusal, said in the user's language. */
+  function refusal(e: unknown): string {
+    const tr = get(t);
+    const word = formatError(e);
+    if (word.includes('rate_limited')) return tr('settings_bug_err_rate');
+    if (word.includes('bug_text') || word.includes('payload_too_large')) return tr('settings_bug_err_long');
+    return tr('settings_bug_err_failed');
+  }
+
+  async function send() {
+    const via = sender;
+    if (!via || busy || !written) return;
+    const tr = get(t);
+    mailError = '';
+    try {
+      let net: unknown;
+      if (attachNet) {
+        phase = 'checking';
+        // A check that failed does not hold the report back: it goes without.
+        net = await via.diagnose().catch(() => undefined);
+      }
+      phase = 'sending';
+      const status = await via.send({
+        text: text.trim(),
+        product: product.id,
+        version: info?.version ?? '',
+        os: info ? `${info.os}/${info.arch}` : '',
+        locale: get(locale),
+        // The limits of the server: a line past them would refuse the whole report.
+        modules: modules.slice(0, 16).map((line) => line.slice(0, 200)),
+        net,
+      });
+      if (status === 'queued') toast.info(tr('settings_bug_queued'));
+      else toast.success(tr('settings_bug_sent'));
+      open = false;
+    } catch (e) {
+      // The dialog stays with what was written: a refusal is no reason to write it again.
+      mailError = refusal(e);
+    } finally {
+      phase = 'idle';
+    }
   }
 
   $effect(() => {
@@ -118,17 +198,34 @@
 </script>
 
 <Dialog bind:open title={$t('settings_bug_report')} width="520px">
-  <p class="hint">{$t('settings_bug_hint')}</p>
-  <p class="email">{BUG_EMAIL}</p>
-  <textarea rows="14" bind:value={text} spellcheck="false"></textarea>
+  {#if sender}
+    <p class="hint">{$t('settings_bug_hint_send')}</p>
+  {:else}
+    <p class="hint">{$t('settings_bug_hint')}</p>
+    <p class="email">{BUG_EMAIL}</p>
+  {/if}
+  <textarea rows="14" bind:value={text} spellcheck="false" maxlength={TEXT_MAX} disabled={busy}></textarea>
+  {#if sender}
+    <ToggleRow title={$t('settings_bug_net')} hint={$t('settings_bug_net_hint')} bind:on={attachNet} disabled={busy} />
+  {/if}
+  {#if phase === 'checking'}<p class="hint" role="status">{$t('settings_bug_checking')}</p>{/if}
   {#if mailError}<Notice tone="danger">{mailError}</Notice>{/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-ghost" onclick={openMail}>
-      {$t('settings_bug_mail')}
-    </button>
-    <button type="button" class="btn btn-primary" onclick={copy}>
-      {$t('settings_bug_copy')}
-    </button>
+    {#if sender}
+      <button type="button" class="btn btn-ghost" onclick={copy} disabled={busy}>
+        {$t('settings_bug_copy')}
+      </button>
+      <button type="button" class="btn btn-primary" onclick={send} disabled={busy || !written}>
+        {$t(phase === 'idle' ? 'settings_bug_send' : phase === 'checking' ? 'settings_bug_checking_short' : 'settings_bug_sending')}
+      </button>
+    {:else}
+      <button type="button" class="btn btn-ghost" onclick={openMail}>
+        {$t('settings_bug_mail')}
+      </button>
+      <button type="button" class="btn btn-primary" onclick={copy}>
+        {$t('settings_bug_copy')}
+      </button>
+    {/if}
   {/snippet}
 </Dialog>
 

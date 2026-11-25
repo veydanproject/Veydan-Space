@@ -26,6 +26,7 @@ import type {
   OverlayDef,
   SettingsSection,
   SetupItem,
+  SplitDef,
   ToolItem,
 } from './module';
 
@@ -238,6 +239,15 @@ class Registry {
     for (const m of this.active) {
       const items = m.bar?.(url);
       if (items !== undefined) return items;
+    }
+    return undefined;
+  }
+
+  /** Mobile, a wide window: the list of the module owning the path; `undefined` when none pairs it with one. */
+  split(url: URL): SplitDef | undefined {
+    for (const m of this.active) {
+      const def = m.split?.(url);
+      if (def) return def;
     }
     return undefined;
   }

@@ -361,6 +361,45 @@ export interface PaletteCommand {
   run: () => void | Promise<void>;
 }
 
+/** The list of a wide window's two columns (`ModuleDef.split`). */
+export interface SplitDef {
+  list: Component<any>;
+  props?: Record<string, unknown>;
+  /** The address of the list: its own screen, with nothing open beside it. */
+  home: string;
+  /** The empty right part, nothing open beside the list: an icon, a title and a line (keys of the dictionary). */
+  empty?: { icon: string; title?: Key; text?: Key };
+}
+
+/** A bug report as the dialog hands it to the module that sends it. */
+export interface BugReport {
+  /** What the user wrote, with the facts of the version above it. */
+  text: string;
+  /** The product's id (`space`, `chat`). */
+  product: string;
+  version: string;
+  /** `os/arch`. */
+  os: string;
+  locale: string;
+  /** The lines of the modules (`report` of each). */
+  modules: string[];
+  /** What `diagnose` gave, when the user attaches it. */
+  net?: unknown;
+}
+
+/** How a module sends a bug report to the project. */
+export interface BugSender {
+  /** A report can be sent now: the account is here and the project's servers are in use. */
+  available: () => Promise<boolean>;
+  /** Measures the network for the report to carry: up to 45 s. */
+  diagnose: () => Promise<unknown>;
+  /**
+   * `sent`, or `queued` when there is no connection: it goes by itself later.
+   * A refusal rejects with its word in the message (`rate_limited`, `no_host`, …).
+   */
+  send: (report: BugReport) => Promise<'sent' | 'queued'>;
+}
+
 export interface ModuleDef {
   id: ModuleId;
   /** i18n key of the module's name and the name of its icon. */
@@ -394,6 +433,13 @@ export interface ModuleDef {
   /** Lines a module adds to a bug report: a version of what it ships with (Camoufox). */
   report?: () => Promise<string[]>;
   /**
+   * The way of a bug report to the project (the messenger: signed by the
+   * account's key, kept and tried again while there is no connection). The
+   * dialog sends through the first active module that offers one and can
+   * send now; without one the user copies the text or opens the mail.
+   */
+  bug?: BugSender;
+  /**
    * The last resort of the lock form when the synced vault cannot be opened:
    * the owner of the key's data deletes it and the lock gets a new key under
    * the same secret (section 8; pass: `password_vault_reset`). Offered only
@@ -422,6 +468,13 @@ export interface ModuleDef {
    * the shell (the root bar).
    */
   bar?: (url: URL) => NavItem[] | null | undefined;
+  /**
+   * Mobile, a wide window (core/ui/split, ≥840 × 480): the list a path of
+   * the module's routes stands beside, or `undefined` for a screen shown as on
+   * a phone. `home` is the address of the list itself: there the right part is
+   * empty, and its bar gives the column of sections.
+   */
+  split?: (url: URL) => SplitDef | undefined;
   /**
    * Mobile: asked once at start, before the default screen opens. True when
    * the module took the user somewhere (the chat of a tapped notification).

@@ -112,9 +112,9 @@
 
 <Dialog bind:open title={$t('msg_group_new_title')} width="min(460px, calc(100vw - 24px))">
   <div class="body">
-    <div class="seg tabs" role="tablist">
-      <button role="tab" class="seg-btn" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
-      <button role="tab" class="seg-btn" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('msg_group_new_join')}</button>
+    <div class="tab-bar plain" role="tablist">
+      <button role="tab" class="tab" class:active={tab === 'create'} aria-selected={tab === 'create'} onclick={() => (tab = 'create')}>{$t('common_create')}</button>
+      <button role="tab" class="tab" class:active={tab === 'join'} aria-selected={tab === 'join'} onclick={() => (tab = 'join')}>{$t('msg_group_new_join')}</button>
     </div>
 
     {#if tab === 'create'}
@@ -183,8 +183,6 @@
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
   .body > :global(*) { flex-shrink: 0; min-width: 0; }
-  .tabs { display: flex; width: 100%; }
-  .tabs .seg-btn { flex: 1; justify-content: center; height: 36px; font-size: var(--fs-base); }
   /* The one button under the line: the whole width, 44 high (48 under a finger). */
   .go { flex: 1; justify-content: center; min-height: var(--control-h-lg); }
 

@@ -133,7 +133,7 @@
   .pill {
     display: inline-flex; align-items: center; gap: 5px; margin: 0 4px; padding: 4px 10px 4px 8px; border-radius: var(--radius-pill);
     border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold);
-    background: var(--success); color: #fff; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+    background: var(--success-grad); color: #fff; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
   }
   .pill.on { background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border); }
   @media (hover: hover) { .pill:hover:not(:disabled) { filter: brightness(1.08); } }

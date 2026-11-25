@@ -17,6 +17,17 @@
 //! kind of trouble: a few hundred kilobytes are pushed the direct way and
 //! through a bridge (see [`decide`]). A way that passes small requests and
 //! stalls on large ones is the common case, and only moving bytes shows it.
+//!
+//! The bytes are pushed to a registry, and a registry is not a relay: a way
+//! that carries to the one and not to the others leaves the user without
+//! messages. So the direct way counts as working only when a relay of the
+//! manifest answers on it too, and a bridge counts as helping only when a
+//! relay is reached through it: relays that are down for everybody send
+//! nobody to the bridges.
+//!
+//! `auto` leaves a bridge with care: the direct way has to carry twice, and
+//! a direct way that failed again soon after it was gone back to is not
+//! trusted for a week.
 
 use crate::relays::{RelayService, ServersMode};
 use messenger_core::traits::SystemClock;
@@ -25,11 +36,19 @@ use messenger_store::{settings, Store};
 use messenger_transport::manifest::ManifestSource;
 use messenger_transport::Manifest;
 use messenger_vlink::proto::list::{SignedBridges, SignedList};
-use messenger_vlink::{probe, trust, BridgeRef, Net, NetConfig};
+use messenger_vlink::{probe, trust, BridgeRef, Client, Net, NetConfig, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 use ts_rs::TS;
+
+/// The diagnosis of the network, for a report of a bug (`crate::bug`).
+mod diagnose;
+pub use diagnose::{
+    BridgeCheck, CallNodeCheck, CanaryCheck, DiagnosisServers, DirectCheck, HostKind, NetDiagnosis,
+    DEADLINE as DIAGNOSIS_DEADLINE, DIAGNOSIS_VERSION, MAX_BRIDGES as DIAGNOSIS_MAX_BRIDGES,
+    MAX_CALL_NODES as DIAGNOSIS_MAX_CALL_NODES,
+};
 
 pub const KEY_MODE: &str = "net.mode";
 /// The last list the registry gave, as it came: signed, checked again
@@ -47,6 +66,11 @@ const KEY_AUTO_UNTIL: &str = "net.auto_until";
 const KEY_OFFER: &str = "net.offer";
 const KEY_OFFER_DISMISSED: &str = "net.offer.dismissed_at";
 const KEY_CHECKED: &str = "net.checked_at";
+/// How long after the last check the next one may be made, seconds: short
+/// after a check that found no way at all, see [`pause_after`].
+const KEY_CHECK_PAUSE: &str = "net.check_pause";
+/// In `auto`: when the bridge was last left for the direct way.
+const KEY_AUTO_RELEASED: &str = "net.auto_released_at";
 
 /// What a check moves each way: past the size at which a throttled way stalls.
 const CHECK_BYTES: usize = 256 * 1024;
@@ -56,6 +80,18 @@ const BRIDGE_PATIENCE: Duration = Duration::from_secs(15);
 const LIST_REFRESH_SECS: i64 = 6 * 60 * 60;
 /// `auto` goes back to trying the direct way after this long.
 const AUTO_HOLD_SECS: i64 = 24 * 60 * 60;
+/// The direct way failed again this soon after `auto` went back to it: it
+/// comes and goes, and the bridge is held for [`AUTO_HOLD_LONG_SECS`].
+const AUTO_RELAPSE_SECS: i64 = 6 * 60 * 60;
+const AUTO_HOLD_LONG_SECS: i64 = 7 * 24 * 60 * 60;
+/// Before a bridge is left the direct way is tried twice, this far apart.
+const LEAVE_PAUSE: Duration = Duration::from_secs(3);
+/// A check that found no way at all is made again after this long, then
+/// after twice as long, up to [`CHECK_EVERY_SECS`]: a network that was only
+/// coming up is not left alone for ten minutes.
+const CHECK_AGAIN_SECS: i64 = 60;
+/// How long the relays are given to answer, all asked at once.
+const RELAY_PATIENCE: Duration = Duration::from_secs(6);
 /// "Not now" is respected for this long.
 const OFFER_QUIET_SECS: i64 = 7 * 24 * 60 * 60;
 /// Checks cost bytes; signs of trouble come in bursts.
@@ -170,7 +206,13 @@ pub enum Step {
     Withdraw,
 }
 
-pub fn step(mode: NetMode, verdict: Verdict, now: i64, dismissed_at: Option<i64>) -> Step {
+pub fn step(
+    mode: NetMode,
+    verdict: Verdict,
+    now: i64,
+    dismissed_at: Option<i64>,
+    released_at: Option<i64>,
+) -> Step {
     match (mode, verdict) {
         (NetMode::On, _) => Step::Nothing,
         (NetMode::Off, Verdict::Restricted) => match dismissed_at {
@@ -179,12 +221,61 @@ pub fn step(mode: NetMode, verdict: Verdict, now: i64, dismissed_at: Option<i64>
         },
         (NetMode::Off, Verdict::Direct) => Step::Withdraw,
         (NetMode::Auto, Verdict::Restricted) => Step::Hold {
-            until: now + AUTO_HOLD_SECS,
+            until: now + hold_secs(now, released_at),
         },
         (NetMode::Auto, Verdict::Direct) => Step::Release,
         // No network at all says nothing about which way is better.
         (_, Verdict::Offline) => Step::Nothing,
     }
+}
+
+/// How long `auto` holds the bridge: a day, or a week when the direct way
+/// was gone back to (`released_at`) a few hours ago and failed again.
+pub fn hold_secs(now: i64, released_at: Option<i64>) -> i64 {
+    match released_at {
+        Some(at) if (0..AUTO_RELAPSE_SECS).contains(&(now - at)) => AUTO_HOLD_LONG_SECS,
+        _ => AUTO_HOLD_SECS,
+    }
+}
+
+/// How long after a check the next one waits, given what it found and the
+/// pause before it: a check that found no way is repeated in a minute, then
+/// in two, four, eight, ten; any other waits the ten minutes.
+pub fn pause_after(verdict: Verdict, before: Option<i64>) -> i64 {
+    match (verdict, before) {
+        (Verdict::Offline, Some(p)) if p < CHECK_EVERY_SECS => {
+            (p * 2).clamp(CHECK_AGAIN_SECS, CHECK_EVERY_SECS)
+        }
+        (Verdict::Offline, None) => CHECK_AGAIN_SECS,
+        _ => CHECK_EVERY_SECS,
+    }
+}
+
+/// The relays of `manifest` as a bridge is asked for them: host and port.
+fn relay_targets(manifest: &Manifest) -> Vec<Target> {
+    manifest
+        .relays
+        .iter()
+        .filter_map(|r| {
+            let url = reqwest::Url::parse(r.url.trim()).ok()?;
+            let port = match url.scheme() {
+                "wss" | "https" => url.port().unwrap_or(443),
+                "ws" | "http" => url.port().unwrap_or(80),
+                _ => return None,
+            };
+            Target::new(url.host_str()?, port).ok()
+        })
+        .collect()
+}
+
+/// True as soon as one of `asked` says true; the rest are dropped.
+async fn any_of(mut asked: tokio::task::JoinSet<bool>) -> bool {
+    while let Some(done) = asked.join_next().await {
+        if matches!(done, Ok(true)) {
+            return true;
+        }
+    }
+    false
 }
 
 /// The host of `wss://host…` or `https://host…`, as the clients read it
@@ -368,6 +459,7 @@ impl NetService {
         settings::delete(&self.store, KEY_OFFER).await?;
         if mode != NetMode::Auto {
             settings::delete(&self.store, KEY_AUTO_UNTIL).await?;
+            settings::delete(&self.store, KEY_AUTO_RELEASED).await?;
         }
         Ok(())
     }
@@ -469,6 +561,62 @@ impl NetService {
             .is_none_or(|at| now() - at >= LIST_REFRESH_SECS))
     }
 
+    /// Whether the direct way works, whatever the rule says: a relay of
+    /// `manifest` answers on it, and it carries bytes to a registry. The
+    /// relays are asked first: they cost nothing, and with none answering
+    /// no bytes are pushed.
+    async fn direct_works(&self, manifest: &Manifest) -> bool {
+        self.relays_answer_direct(manifest).await && self.direct_carries(&manifest.registries).await
+    }
+
+    /// Whether a relay of `manifest` gives any HTTP answer the direct way.
+    /// A manifest that names no relay has nothing to ask: true.
+    async fn relays_answer_direct(&self, manifest: &Manifest) -> bool {
+        let roots: Vec<String> = manifest
+            .relays
+            .iter()
+            .filter_map(|r| diagnose::root_of(&r.url))
+            .collect();
+        if roots.is_empty() {
+            return true;
+        }
+        self.count_asked();
+        let Ok(builder) =
+            messenger_http::builder_on(Net::new(), Duration::from_secs(5), RELAY_PATIENCE)
+        else {
+            return false;
+        };
+        let Ok(client) = builder.redirect(reqwest::redirect::Policy::none()).build() else {
+            return false;
+        };
+        let mut asked = tokio::task::JoinSet::new();
+        for root in roots {
+            let client = client.clone();
+            asked.spawn(async move { client.get(root).send().await.is_ok() });
+        }
+        any_of(asked).await
+    }
+
+    /// Whether the hub reaches a relay of `manifest` for a stream opened
+    /// through a bridge. A manifest that names no relay: true.
+    async fn relays_answer_by_bridge(&self, manifest: &Manifest, client: &Client) -> bool {
+        let targets = relay_targets(manifest);
+        if targets.is_empty() {
+            return true;
+        }
+        let mut asked = tokio::task::JoinSet::new();
+        for target in targets {
+            let client = client.clone();
+            asked.spawn(async move {
+                matches!(
+                    tokio::time::timeout(RELAY_PATIENCE, client.open(&target)).await,
+                    Ok(Ok(_))
+                )
+            });
+        }
+        any_of(asked).await
+    }
+
     /// Pushes bytes the direct way to a registry `registries` names,
     /// whatever the rule says: a client of its own, bound to a rule that
     /// sends nothing to a bridge.
@@ -495,13 +643,18 @@ impl NetService {
         false
     }
 
-    /// Pushes bytes through a bridge, in use or not. The bridge that
-    /// carried is remembered.
-    async fn bridge_carries(&self) -> Result<bool> {
+    /// Whether a bridge, in use or not, helps: a relay of `manifest` is
+    /// reached through it (asked first: with the relays down for everybody
+    /// no bytes are pushed and nobody is sent to a bridge), and it carries
+    /// bytes. The bridge that carried is remembered.
+    async fn bridge_carries(&self, manifest: &Manifest) -> Result<bool> {
         self.count_asked();
         let Some(client) = self.net.client() else {
             return Ok(false);
         };
+        if !self.relays_answer_by_bridge(manifest, &client).await {
+            return Ok(false);
+        }
         let carried =
             tokio::time::timeout(BRIDGE_PATIENCE, probe::run(&client, CHECK_BYTES as u64)).await;
         if !matches!(carried, Ok(Ok(_))) {
@@ -521,34 +674,51 @@ impl NetService {
         if manifest.registries.is_empty() {
             return Err(no_registry());
         }
-        let mut direct = self.direct_carries(&manifest.registries).await;
+        let mode = self.mode().await?;
+        let held_until = self.stamp(KEY_AUTO_UNTIL).await?;
+        let mut direct = self.direct_works(manifest).await;
         // The bridge is asked only when it matters.
         let bridge = if direct {
             false
         } else {
-            self.bridge_carries().await?
+            self.bridge_carries(manifest).await?
         };
         if bridge {
             // The direct way is asked again before it is called restricted:
             // a network that was only coming up (a phone that just woke)
             // fails the first try and carries by the time a bridge did.
-            direct = self.direct_carries(&manifest.registries).await;
+            direct = self.direct_works(manifest).await;
+        } else if direct && mode == NetMode::Auto && held_until.is_some() {
+            // A bridge is about to be left: the direct way carries twice,
+            // or the bridge stays.
+            tokio::time::sleep(LEAVE_PAUSE).await;
+            direct = self.direct_works(manifest).await;
         }
         let verdict = decide(direct, bridge);
         eprintln!("messenger net: check: direct {direct}, bridge {bridge}");
+        let pause = pause_after(verdict, self.stamp(KEY_CHECK_PAUSE).await?);
+        settings::set(&self.store, KEY_CHECK_PAUSE, &pause.to_string()).await?;
         match step(
-            self.mode().await?,
+            mode,
             verdict,
             now(),
             self.stamp(KEY_OFFER_DISMISSED).await?,
+            self.stamp(KEY_AUTO_RELEASED).await?,
         ) {
             Step::Nothing => {}
             Step::Offer => settings::set_bool(&self.store, KEY_OFFER, true).await?,
             Step::Withdraw => settings::delete(&self.store, KEY_OFFER).await?,
             Step::Hold { until } => {
+                // A hold is never made shorter by a later check.
+                let until = until.max(held_until.unwrap_or(0));
                 settings::set(&self.store, KEY_AUTO_UNTIL, &until.to_string()).await?
             }
-            Step::Release => settings::delete(&self.store, KEY_AUTO_UNTIL).await?,
+            Step::Release => {
+                if held_until.is_some() {
+                    settings::set(&self.store, KEY_AUTO_RELEASED, &now().to_string()).await?;
+                }
+                settings::delete(&self.store, KEY_AUTO_UNTIL).await?
+            }
         }
         Ok(NetCheck {
             direct,
@@ -558,15 +728,21 @@ impl NetService {
     }
 
     /// A sign of trouble was seen. Says whether a check is worth it now:
-    /// not with bridges always on, and not more often than every ten minutes.
+    /// not with bridges always on, and not more often than every ten
+    /// minutes; sooner after a check that found no way at all
+    /// ([`pause_after`]).
     pub async fn check_is_due(&self) -> Result<bool> {
         if self.mode().await? == NetMode::On {
             return Ok(false);
         }
+        let pause = self
+            .stamp(KEY_CHECK_PAUSE)
+            .await?
+            .map_or(CHECK_EVERY_SECS, |p| p.clamp(CHECK_AGAIN_SECS, CHECK_EVERY_SECS));
         Ok(self
             .stamp(KEY_CHECKED)
             .await?
-            .is_none_or(|at| now() - at >= CHECK_EVERY_SECS))
+            .is_none_or(|at| now() - at >= pause))
     }
 
     /// Told every few seconds whether the relays are down while they should
@@ -1062,12 +1238,12 @@ mod tests {
     fn off_offers_once_and_respects_not_now() {
         let now = 1_000_000;
         assert_eq!(
-            step(NetMode::Off, Verdict::Restricted, now, None),
+            step(NetMode::Off, Verdict::Restricted, now, None, None),
             Step::Offer
         );
         // Declined an hour ago: quiet.
         assert_eq!(
-            step(NetMode::Off, Verdict::Restricted, now, Some(now - 3600)),
+            step(NetMode::Off, Verdict::Restricted, now, Some(now - 3600), None),
             Step::Nothing
         );
         // Declined long ago: asked again.
@@ -1076,13 +1252,14 @@ mod tests {
                 NetMode::Off,
                 Verdict::Restricted,
                 now,
-                Some(now - OFFER_QUIET_SECS)
+                Some(now - OFFER_QUIET_SECS),
+                None
             ),
             Step::Offer
         );
         // The trouble went away: so does the offer.
         assert_eq!(
-            step(NetMode::Off, Verdict::Direct, now, None),
+            step(NetMode::Off, Verdict::Direct, now, None, None),
             Step::Withdraw
         );
     }
@@ -1091,24 +1268,102 @@ mod tests {
     fn auto_holds_the_bridge_and_lets_go() {
         let now = 1_000_000;
         assert_eq!(
-            step(NetMode::Auto, Verdict::Restricted, now, None),
+            step(NetMode::Auto, Verdict::Restricted, now, None, None),
             Step::Hold {
                 until: now + AUTO_HOLD_SECS
             }
         );
         assert_eq!(
-            step(NetMode::Auto, Verdict::Direct, now, None),
+            step(NetMode::Auto, Verdict::Direct, now, None, None),
             Step::Release
         );
     }
 
     #[test]
+    fn a_direct_way_that_failed_soon_after_it_was_gone_back_to_is_not_trusted_for_a_week() {
+        let now = 1_000_000;
+        let hold = |released_at| step(NetMode::Auto, Verdict::Restricted, now, None, released_at);
+        assert_eq!(
+            hold(Some(now - 60)),
+            Step::Hold {
+                until: now + AUTO_HOLD_LONG_SECS
+            }
+        );
+        assert_eq!(
+            hold(Some(now - AUTO_RELAPSE_SECS + 1)),
+            Step::Hold {
+                until: now + AUTO_HOLD_LONG_SECS
+            }
+        );
+        // Left long ago, or by a clock that went back: the usual day.
+        for released_at in [Some(now - AUTO_RELAPSE_SECS), Some(now + 60), None] {
+            assert_eq!(
+                hold(released_at),
+                Step::Hold {
+                    until: now + AUTO_HOLD_SECS
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_check_that_found_no_way_is_made_again_soon_and_then_less_often() {
+        let mut pause = None;
+        let mut seen = Vec::new();
+        for _ in 0..6 {
+            let next = pause_after(Verdict::Offline, pause);
+            seen.push(next);
+            pause = Some(next);
+        }
+        assert_eq!(seen, vec![60, 120, 240, 480, 600, 600]);
+        // A way was found: the ten minutes again, and a minute after the
+        // next check that finds none.
+        for verdict in [Verdict::Direct, Verdict::Restricted] {
+            assert_eq!(pause_after(verdict, Some(120)), CHECK_EVERY_SECS);
+            assert_eq!(pause_after(verdict, None), CHECK_EVERY_SECS);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_pause_of_the_last_check_says_when_the_next_is_due() {
+        let net = service().await;
+        assert!(net.check_is_due().await.unwrap(), "never checked");
+        let set = |key: &'static str, value: i64| {
+            let store = net.store.clone();
+            async move { settings::set(&store, key, &value.to_string()).await.unwrap() }
+        };
+        set(KEY_CHECKED, now() - 90).await;
+        assert!(!net.check_is_due().await.unwrap(), "ten minutes by default");
+        set(KEY_CHECK_PAUSE, 60).await;
+        assert!(net.check_is_due().await.unwrap(), "a minute after no way");
+        set(KEY_CHECK_PAUSE, 120).await;
+        assert!(!net.check_is_due().await.unwrap());
+        // A pause that makes no sense is read as the nearest that does.
+        set(KEY_CHECK_PAUSE, 0).await;
+        set(KEY_CHECKED, now() - 30).await;
+        assert!(!net.check_is_due().await.unwrap());
+        net.set_mode(NetMode::On).await.unwrap();
+        set(KEY_CHECKED, 0).await;
+        assert!(!net.check_is_due().await.unwrap(), "always on: no check");
+    }
+
+    #[test]
+    fn the_relays_are_asked_of_a_bridge_by_host_and_port() {
+        let mut manifest = manifest_with_registry();
+        let targets: Vec<String> = relay_targets(&manifest).iter().map(Target::to_string).collect();
+        assert_eq!(targets.len(), manifest.relays.len());
+        assert!(targets.iter().all(|t| t.ends_with(":443")), "{targets:?}");
+        manifest.relays[0].url = "wss://relay.example.org:8443/x".into();
+        assert_eq!(relay_targets(&manifest)[0].to_string(), "relay.example.org:8443");
+    }
+
+    #[test]
     fn no_network_changes_nothing_and_on_is_left_alone() {
         for mode in [NetMode::Off, NetMode::On, NetMode::Auto] {
-            assert_eq!(step(mode, Verdict::Offline, 1, None), Step::Nothing);
+            assert_eq!(step(mode, Verdict::Offline, 1, None, None), Step::Nothing);
         }
         for verdict in [Verdict::Direct, Verdict::Restricted, Verdict::Offline] {
-            assert_eq!(step(NetMode::On, verdict, 1, None), Step::Nothing);
+            assert_eq!(step(NetMode::On, verdict, 1, None, None), Step::Nothing);
         }
     }
 }

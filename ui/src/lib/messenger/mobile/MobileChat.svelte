@@ -7,6 +7,7 @@
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import { leave } from '$lib/core/ui/back';
+  import { split } from '$lib/core/ui/split.svelte';
   import { messengerStore } from '../store.svelte';
   import { chatStore } from '../chats/chatStore.svelte';
   import DmChat from '../dm/DmChat.svelte';
@@ -14,7 +15,7 @@
   import MobileFrame from './MobileFrame.svelte';
   import { BASE, openHref } from './routes';
   import { chatSections } from '../seams/sections.svelte';
-  import { shouldLoad } from './chatLoad';
+  import { shouldLoad, wasRemoved } from './chatLoad';
   import { onChatOpened } from '../content/actions';
   import { pushSeen, startPushBridge } from '../push/bridge';
   import { markPhone } from '../shared/phone';
@@ -43,14 +44,15 @@
 
   // The chat stays open while history moves: a back that lands on this chat
   // again, or nowhere, never shows an empty page. It is closed when the page
-  // is really left (onDestroy below).
+  // is really left (onDestroy below). Beside its list (a wide window) the
+  // arrow is not shown, but a deleted chat still goes: to its list's address.
   function back() {
-    void leave(BASE);
+    void leave(split.of(page.url)?.home ?? BASE);
   }
 
-  // A page still waiting for its chat leads to the list, whatever is behind it.
+  // A page still waiting for its chat goes back where it was opened from.
   function toList() {
-    void goto(BASE, { replaceState: true });
+    void leave(BASE);
   }
 
   /** How long the page waits for its chat before it says the chat is not here. */
@@ -100,6 +102,22 @@
     if (go) untrack(() => load(id));
   });
 
+  // Beside its list (a wide window) the chat shown may be deleted from the
+  // list's menu, the last one too: the right part empties, as after a delete
+  // from the chat's own menu (back; `leave` goes once when both ask). A store
+  // emptied under the page (`resets`) is not a delete: the chat comes back.
+  let shownFor = '';
+  let shownEpoch = 0;
+  $effect(() => {
+    if (shown) {
+      shownFor = id;
+      shownEpoch = chatStore.resets;
+    }
+    if (shownFor !== id || known) return;
+    shownFor = '';
+    if (split.on && wasRemoved({ known, shownEpoch, resets: chatStore.resets })) untrack(back);
+  });
+
   // Whatever the page is left for (the list, contacts, Notes, the system
   // back), its chat is closed: an open chat marks what arrives as read. The
   // chat the page loaded, not the address, which may already be the next page.
@@ -108,8 +126,13 @@
     if (loadedFor && chatStore.activeId === loadedFor) chatStore.close();
   });
 
-  // A card opened another chat: a phone shows a chat on its own page.
-  onMount(() => onChatOpened((chatId) => { if (chatId !== id) goto(openHref(chatId, !!chatSections.ofChat(chatId))); }));
+  // A card opened another chat: a phone shows a chat on its own page. It
+  // takes this chat's place, so chats opened one from another never pile up
+  // backs: a back leads to the list. Opened from a group's members (`stack`),
+  // the group stays behind it and a back returns there.
+  onMount(() => onChatOpened((chatId, { stack }) => {
+    if (chatId !== id) goto(openHref(chatId, !!chatSections.ofChat(chatId)), { replaceState: !stack });
+  }));
 
   onMount(() => {
     // Coming back from the background: catch up on what arrived meanwhile.
@@ -133,12 +156,9 @@
     {/if}
   </MobileFrame>
 {:else}
-  <MobileFrame title={$t('msg_title')} onback={toList}>
+  <MobileFrame title={$t('msg_title')} onback={split.on ? undefined : toList}>
     {#if missingId === id || stuck}
       <div class="note">{$t('msg_mobile_chat_missing')}</div>
-      <div class="out">
-        <button type="button" class="m-btn-grad" onclick={toList}>{$t('common_back')}</button>
-      </div>
     {:else}
       <div class="note">{$t('loading')}</div>
     {/if}
@@ -147,5 +167,4 @@
 
 <style>
   .note { padding: var(--sp-6) var(--sp-4); text-align: center; color: var(--text-2); font-size: var(--fs-sm); }
-  .out { padding: 0 var(--sp-4); }
 </style>

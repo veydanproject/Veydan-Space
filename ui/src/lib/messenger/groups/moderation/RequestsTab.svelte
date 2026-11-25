@@ -244,7 +244,7 @@
   }
   .search:focus-within { border-color: var(--accent-border); }
   .search :global(svg) { flex-shrink: 0; }
-  .search input { flex: 1; min-width: 0; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
+  .search input { flex: 1; min-width: 0; height: auto; border: none; background: none; font: inherit; font-size: var(--fs-sm); color: var(--text); padding: 0; align-self: stretch; outline: none; box-shadow: none; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
   /* One quiet line over the list (c11): «Выбрать все» on the left, the order on the right. */
   .tick-all { display: flex; align-items: center; gap: var(--sp-2); padding-left: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-3); cursor: pointer; user-select: none; }

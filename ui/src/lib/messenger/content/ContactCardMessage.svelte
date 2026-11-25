@@ -179,11 +179,13 @@
 {/if}
 
 <style>
-  /* The bubble is the card: no box inside it. */
+  /* The bubble is the card: no box inside it. As wide as its content, 320 to
+     420, as a link's cards; a phone's is the bubble's width. */
   .contact-card {
     display: flex; flex-direction: column; gap: var(--sp-2);
-    width: 336px; max-width: 100%; color: var(--text);
+    width: fit-content; min-width: min(320px, 100%); max-width: min(420px, 100%); color: var(--text);
   }
+  :global(.msg-m) .contact-card { width: 100%; max-width: 100%; }
   .kicker {
     display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-bold);
     color: var(--text-2);

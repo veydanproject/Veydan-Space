@@ -6,6 +6,7 @@
 
 :root {
   --touch: 44px;
+  --col-gutter: var(--sp-2); /* a conversation's column (its head, its field) stands 8 from a phone's edges */
   --kb: 0px; /* the keyboard's height: the host (Android) sets it on <html> as it comes and goes */
   --hit-row: 4px; /* the room a sideways-scrolling row keeps for its controls zones */
   --hit-max: 22px; /* the most a zone may grow on a side, see the hit area rule below */
@@ -114,6 +115,12 @@ html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons w
   --nav-gap: 0px;
   --page-sab: var(--sab);
 }
+/* A wide window (core/ui/split) has no bar at the foot: its sections are a column at the left. */
+:root:has(.shell.wide) {
+  --nav-h: 0px;
+  --nav-gap: 0px;
+  --page-sab: var(--sab);
+}
 .m-page.home {
   overflow-y: auto;
   padding: var(--sp-3) var(--sp-4) calc(var(--sp-4) + var(--page-sab));
@@ -129,6 +136,15 @@ html.scan-cover .shell { visibility: hidden; opacity: 0; } /* opacity: buttons w
   /* Under a head without a bar the page dissolves at its top edge. */
   -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
   mask-image: linear-gradient(to bottom, transparent, black var(--sp-5));
+}
+/* Over the bottom bar a list dissolves too (24); the top edge is repeated, one mask holds both. */
+.shell:not(.no-bar) .list-wrap {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - var(--sp-6)), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--sp-6)), transparent);
+}
+.shell:not(.no-bar) .m-body {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5), black calc(100% - var(--sp-6)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, black var(--sp-5), black calc(100% - var(--sp-6)), transparent);
 }
 .m-title {
   font-size: var(--fs-xl);
@@ -270,7 +286,8 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   margin: 0;
   padding: 0 var(--sp-4) var(--sp-2);
 }
-.m-page > .m-search:first-child {
+.m-page > .m-search:first-child,
+.m-page > .m-header + .m-search {
   padding-top: var(--sp-2);
 }
 .m-search .field {
@@ -318,7 +335,8 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   padding: 0 var(--sp-1);
 }
 
-/* ── Segment bar ── */
+/* ── Segment bar ── tabs with an underline, as `.seg` of base.css: 20 between the words, 32 high (the touch zone by the common rule),
+   the chosen one in the accent with a bar of 3 under it. */
 .m-page > .m-seg {
   flex-shrink: 0;
   margin: 0;
@@ -326,27 +344,29 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 }
 .m-seg {
   display: flex;
-  gap: var(--sp-2);
+  gap: var(--sp-5);
   overflow-x: auto;
   scrollbar-width: none;
   margin-bottom: var(--sp-3);
 }
 .m-seg::-webkit-scrollbar { display: none; }
 .m-seg-btn {
+  position: relative;
   flex-shrink: 0;
-  min-height: 40px;
-  padding: 0 14px;
+  min-height: var(--control-h-sm);
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--m-seg);
-  color: var(--text);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
 }
 .m-seg-btn.active {
-  background: var(--accent);
-  color: #fff;
+  background: none;
+  color: var(--accent-text);
 }
+.m-seg-btn.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
 
 /* ── Cards ── */
 .m-card {
@@ -371,7 +391,6 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   --toggle-off: var(--text-dim);
 }
 [data-theme='dark'] .m-card :is(input, textarea)::placeholder { color: var(--text-2); }
-[data-theme='dark'] .m-card .seg-btn.active { color: var(--text); }
 .m-cards {
   display: flex;
   flex-direction: column;
@@ -432,7 +451,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--on-accent);
 }
 .m-note .check.on { background: var(--accent); border-color: var(--accent); }
 .m-note.selected { outline: 2px solid var(--accent-border); }
@@ -515,10 +534,10 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
 .m-tile.active {
   background: var(--accent-grad);
   border-color: transparent;
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: var(--shadow-accent);
 }
-.m-tile.active svg { color: #fff; }
+.m-tile.active svg { color: var(--on-accent); }
 .m-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -588,11 +607,11 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
 }
-.m-bar--nav .m-bar-item.active { background: var(--accent-bg); color: var(--text); font-weight: var(--fw-bold); }
+.m-bar--nav .m-bar-item.active { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--accent-text); font-weight: var(--fw-bold); }
 .m-bar--nav .m-bar-item.active .m-bar-ico { color: var(--accent-text); }
-/* The count is placed against the item, not the icon: centred over it, on the plate's edge, in a ring of the pane. */
+/* The count is placed against the item, not the icon: at the icon's top right corner, inside the bar, in a ring of the bar's glass. */
 .m-bar--nav .m-bar-ico { position: static; }
-.m-bar--nav .nav-count { position: absolute; left: 50%; top: -15px; transform: translateX(-50%); box-shadow: 0 0 0 2px var(--surface-3); }
+.m-bar--nav .nav-count { position: absolute; left: calc(50% + 8px); top: 0; transform: none; box-shadow: 0 0 0 2px var(--glass-bar); }
 /* A bar of choices (the attach sheet): the chosen item stands on a pill, a press sinks to .97 (M01). */
 .m-bar--pick .m-bar-item { padding: 0 var(--sp-2); }
 .m-bar--pick .m-bar-item.active { background: var(--accent-tint); }
@@ -612,7 +631,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   border: 0;
   border-radius: var(--radius);
   background: var(--accent-grad);
-  color: #fff;
+  color: var(--on-accent);
   font-size: var(--fs-body);
   font-weight: var(--fw-bold);
   box-shadow: var(--shadow-accent);
@@ -652,10 +671,12 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   align-items: center;
   justify-content: center;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   box-shadow: var(--shadow-lg);
   z-index: 5;
 }
+/* Beside an open item the «+» stands in the list's column, not at the window's edge. */
+.shell.wide .split-list .m-fab { position: absolute; }
 .m-fab > .icon { width: 22px; height: 22px; }
 .m-fab:active { filter: brightness(1.08); }
 
@@ -690,7 +711,7 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-hei
   padding-right: var(--sp-4);
 }
 .m-chips.scroll::-webkit-scrollbar { display: none; }
-.m-chip.active { background: var(--accent); color: #fff; }
+.m-chip.active { background: var(--accent); color: var(--on-accent); }
 .m-chip.small { min-height: 20px; padding: 0 8px; font-size: var(--fs-xs); }
 .m-chip.neutral { background: var(--m-seg); color: var(--text-2); }
 /* A chip in the user's colour is `.m-chip.tinted` with `style:--chip`: its
@@ -781,13 +802,13 @@ mark.m-highlight {
   z-index: 51;
   display: flex;
   flex-direction: column;
-  background: var(--glass-bg);
+  background: var(--glass-menu-bg, color-mix(in srgb, var(--glass-bar) 60%, transparent));
   border-radius: var(--radius-card) var(--radius-card) 0 0;
   padding: var(--sp-2) var(--sp-5) calc(var(--sp-4) + var(--sab));
   will-change: transform;
-  box-shadow: var(--glass-highlight);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--pane-highlight), var(--pane-shadow);
+  -webkit-backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
+  backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
 }
 /* In the dark a sheet is --surface, nearly the colour of a field: its fields,
    search boxes and tiles take a lighter fill, so they can be seen. */
@@ -828,3 +849,74 @@ mark.m-highlight {
 .m-chips.scroll.scroll { --hit-row: 8px; }
 .m-seg.m-seg { margin-bottom: calc(var(--sp-3) - var(--hit-row)); }
 .m-page > .m-seg.m-seg { margin: calc(-1 * var(--hit-row)) 0; padding-bottom: calc(var(--sp-2) + var(--hit-row)); }
+/* Straight under the head the row's buttons stand 8 from it, as Chats' search. */
+.m-page > .m-header + .m-seg.m-seg { margin-top: calc(var(--sp-2) - var(--hit-row)); }
+
+/* iPhone Duo (РД-DS2-09). Its pill (camera, clock, Wi-Fi) stands at the top right, 153 high, and iOS
+   does not report it as a safe area. The device is not recognised: the window's size is — 466 wide
+   in portrait (closed, 466 × 900) or 951 wide in landscape (open, 951 × 669). device-width does not
+   follow the hinge and the height changes with the keyboard, hence the orientation. Only what stands
+   in the pill's band moves: heads, searches, tabs and the first blocks end 80 before it, the first
+   rows begin under it; below the band everything is full width, the tab bar too (--sar 0). Beside a
+   list (951) only the detail moves, the list's column stays whole. :not(#_) outweighs the components. */
+:root { --duo-pill: 0px; --duo-pill-h: 0px; }
+@media (width: 466px) and (orientation: portrait), (width: 951px) and (orientation: landscape) {
+  :root { --duo-pill: 80px; --duo-pill-h: 160px; --sar: 0px; }
+  :root:not(#_) :is(.m-header, .m-page > header.bar):not(.split-list *) { padding-right: calc(var(--sp-2) + var(--duo-pill)); }
+  /* The sheet's height is set inline by BottomSheet. */
+  :root:not(#_) .m-sheet:not(.full) { max-height: calc(100dvh - var(--duo-pill-h)) !important; }
+  :root:not(#_) .region.phone { right: calc(var(--sp-4) + var(--duo-pill)); }
+  :root:not(#_) :is(
+    .m-page > :is(.m-search, .m-seg, .seg, input, p, .intro, .hint),
+    .m-page > :is(.m-body, .body, .page-body, .content) > :first-child:is(.m-search, .m-seg, .seg, input, p, .intro, .hint, .search, .card),
+    .msg-m .content > .search,
+    .seg.mode, .tab-bar.mode, p.intro, p.hint, .card.own, .tabs, .invites.phone, p.muted:first-child
+  ):not(.split-list *) {
+    margin-right: calc(var(--sp-3) + var(--duo-pill));
+    max-width: calc(100% - var(--sp-3) - var(--duo-pill));
+  }
+}
+@media (width: 951px) and (orientation: landscape) { :root { --duo-pill-h: 100px; } }
+/* Closed: the first cards end before the pill, the first rows begin under it. */
+@media (width: 466px) and (orientation: portrait) {
+  :root:not(#_) :is(
+    .m-page > .m-body > :first-child:is(.m-card, .m-list.account, .m-section, .warning),
+    .m-page > .m-body > :nth-child(2):is(.m-list.account, .m-section),
+    .m-page > .m-body > .form > :nth-child(-n+2),
+    .settings.compact .sbody > :first-child
+  ) {
+    margin-right: calc(var(--sp-3) + var(--duo-pill));
+    max-width: calc(100% - var(--sp-3) - var(--duo-pill));
+  }
+  :root:not(#_) .msg-m .list-wrap > :first-child { margin-top: 48px; }
+  /* Groups' invitations already stand in the band: the list under them stays in place. */
+  :root:not(#_) .msg-m .invites ~ .list-wrap > :first-child { margin-top: 0; }
+  :root:not(#_) .msg-m .list-rows > li:first-child > .open-card { margin-top: 24px; }
+  :root:not(#_) .m-page > .m-body > :is(.rows, .m-cards, .m-list:not(.account):not(.fields)):first-child { margin-top: 32px; }
+  :root:not(#_) .m-body > .m-list.fields { margin-top: 92px; }
+  :root:not(#_) .m-page > .m-body > .m-card + .m-list { margin-top: calc(var(--sp-4) + 8px); }
+  :root:not(#_) .editor .meta { margin-right: var(--duo-pill); }
+  /* A conversation's glass head and the plates over a channel's or a group's feed (РД-DS1-03). */
+  :root:not(#_) :is(.head.phone, .head.glassfloat) { width: auto; margin-left: var(--col-gutter); margin-right: calc(var(--col-gutter) + var(--duo-pill)); }
+  :root:not(#_) .window.phone .strips { padding-right: calc(var(--sp-3) + var(--duo-pill)); }
+  :root:not(#_) .window .strip { padding-right: var(--duo-pill); }
+}
+/* Open: the detail beside the list ends before the pill. */
+@media (width: 951px) and (orientation: landscape) {
+  :root:not(#_) :is(
+    .m-page > .m-body > :first-child:is(.m-card, .m-list.account, .m-section, .warning),
+    .m-page > .m-body > .form > :first-child
+  ):not(.split-list *) {
+    margin-right: calc(var(--sp-3) + var(--duo-pill));
+    max-width: calc(100% - var(--sp-3) - var(--duo-pill));
+  }
+  /* A password beside the list: its fields' card and everything under it end on one line. */
+  :root:not(#_) .shell.wide .screen .m-page > .m-body > :is(.m-list.fields, .m-list.fields ~ *) {
+    margin-right: calc(var(--sp-3) + var(--duo-pill));
+    max-width: calc(100% - var(--sp-3) - var(--duo-pill));
+  }
+  /* The open Duo shows the phone build's screens: .head.phone and .window.phone (markPhone), not .glassfloat. */
+  :root:not(#_) .shell.wide .head.phone { width: auto; margin-left: var(--col-gutter); margin-right: calc(var(--col-gutter) + var(--duo-pill)); }
+  :root:not(#_) .shell.wide .window.phone .strips { padding-left: var(--col-gutter); padding-right: calc(var(--col-gutter) + var(--duo-pill)); }
+  :root:not(#_) .shell.wide .window .strip { padding-right: var(--duo-pill); }
+}

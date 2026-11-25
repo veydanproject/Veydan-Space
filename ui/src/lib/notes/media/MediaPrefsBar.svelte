@@ -60,5 +60,5 @@
     font-weight: var(--fw-semibold);
     cursor: pointer;
   }
-  .preset.active { background: var(--accent); color: #fff; }
+  .preset.active { background: var(--accent); color: var(--on-accent); }
 </style>

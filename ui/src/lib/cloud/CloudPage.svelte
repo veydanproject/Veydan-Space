@@ -15,7 +15,7 @@
     <span class="spacer"></span>
     {#if cloudPage.status?.account}
       <button class="icon-btn" type="button" disabled={cloudPage.busy} onclick={() => cloudPage.refresh()} aria-label={$t('common_refresh')} title={$t('common_refresh')}>
-        <span class:spin={cloudPage.busy}><Icon name="refresh-cw" size={15} /></span>
+        <span class:spin={cloudPage.busy}><Icon name="refresh-cw" size={18} /></span>
       </button>
     {/if}
   </div>
@@ -23,6 +23,10 @@
 </div>
 
 <style>
-  .cloud-page { --page-max: 780px; padding-bottom: var(--sp-8); }
+  .cloud-page { --page-max: none; padding-bottom: var(--sp-8); }
+  /* The title on the line of the other pages. */
+  .cloud-page > .page-header { align-items: flex-start; }
   .icon-btn span { display: inline-flex; }
+  /* The mark 18 in the button 32 ends on the island's right edge: the button's 7 of air reach into the page's padding. */
+  .cloud-page > .page-header > .icon-btn { margin-inline-end: -7px; }
 </style>

@@ -87,7 +87,7 @@
     position: fixed; z-index: 75; top: calc(var(--sat, 0px) + 66px); left: 50%; transform: translateX(-50%);
     max-width: calc(100vw - 48px); display: flex; align-items: center; gap: 6px;
     padding: 7px 14px; border: none; border-radius: var(--radius-pill); cursor: pointer;
-    background: var(--success); color: #fff; font: inherit; font-size: var(--fs-xs); box-shadow: var(--shadow-lg);
+    background: var(--success-grad); color: #fff; font: inherit; font-size: var(--fs-xs); box-shadow: var(--shadow-lg);
   }
   .back-to-call.ringing { background: var(--accent); }
   .who { font-weight: var(--fw-bold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

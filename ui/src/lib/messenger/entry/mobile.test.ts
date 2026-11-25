@@ -46,3 +46,48 @@ describe('a section a module gives (the channels)', () => {
     expect(bar('/messenger')?.map((i) => i.id)).toEqual(['chats', 'groups', 'contacts', 'calls']);
   });
 });
+
+describe('a wide window (core/ui/split)', () => {
+  const split = (path: string) => module.split?.(new URL(path, 'http://app'));
+
+  it('puts a chat beside the chats, a group beside the groups, by the id, the list itself at its own address', () => {
+    expect(split('/messenger')?.home).toBe('/messenger');
+    expect(split('/messenger/')?.home).toBe('/messenger');
+    expect(split('/messenger/groups')?.home).toBe('/messenger/groups');
+    expect(split('/messenger/chat?id=dm%3Aab')?.home).toBe('/messenger');
+    expect(split('/messenger/chat?id=group:cd')?.home).toBe('/messenger/groups');
+    // One list object for the chats and the chat beside them: the shell keeps it mounted.
+    expect(split('/messenger/chat?id=dm:ab')).toBe(split('/messenger'));
+    expect(split('/messenger/groups')?.props).toEqual({ kind: 'group' });
+  });
+
+  it('leaves the contacts, the calls, the settings and a call as on a phone', () => {
+    for (const path of ['/messenger/contacts', '/messenger/calls', '/messenger/settings', '/messenger/call', '/messenger/requests', '/notes']) {
+      expect(split(path)).toBeUndefined();
+    }
+  });
+
+  it('puts a row of a section beside its section, whose address keeps its id', async () => {
+    const { provideChatSection } = await import('../seams/sections.svelte');
+    const { atHome } = await import('$lib/core/ui/split.svelte');
+    expect(split('/messenger/item?id=channel:x')).toBeUndefined();
+    const take = provideChatSection({
+      id: 'channels', title: 'msg_nav_groups', icon: 'speakerphone', newTitle: 'msg_nav_groups', newIcon: 'plus',
+      emptyTitle: 'msg_nav_groups', emptyHint: 'msg_nav_groups', welcomeTitle: 'msg_nav_groups', welcomeText: 'msg_nav_groups',
+      rows: () => [], owns: (id) => id.startsWith('channel:'), unread: () => 0, refresh: () => {}, view: (() => {}) as never, create: (() => {}) as never,
+    });
+    try {
+      const def = split('/messenger/item?id=channel:x');
+      expect(def?.home).toBe('/messenger/section?id=channels');
+      expect(def).toBe(split('/messenger/section?id=channels'));
+      expect(def?.props).toEqual({ kind: 'channels' });
+      expect(split('/messenger/section?id=other')).toBeUndefined();
+      const at = (path: string) => atHome(new URL(path, 'http://app'), def!);
+      expect(at('/messenger/section?id=channels')).toBe(true);
+      expect(at('/messenger/section?id=other')).toBe(false);
+      expect(at('/messenger/item?id=channel:x')).toBe(false);
+    } finally {
+      take();
+    }
+  });
+});

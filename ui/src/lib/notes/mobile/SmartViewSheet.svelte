@@ -214,7 +214,7 @@
     font-size: var(--fs-sm);
     font-weight: var(--fw-semibold);
   }
-  .chip.on { background: var(--accent); color: #fff; }
+  .chip.on { background: var(--accent); color: var(--on-accent); }
   .dot { width: 8px; height: 8px; border-radius: 50%; }
   .trow {
     display: flex;

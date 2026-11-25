@@ -5,16 +5,17 @@
 //! to be sent again. Meaning (what is sent, when, for how long) lives in
 //! `messenger-runtime` (`report`); here are only the rows.
 
-use crate::{storage, Store};
+use crate::queued::{self, Outbox};
+use crate::Store;
 use messenger_core::Result;
 
-pub const STATE_QUEUED: &str = "queued";
-pub const STATE_SENT: &str = "sent";
-pub const STATE_REFUSED: &str = "refused";
-pub const STATE_EXPIRED: &str = "expired";
+pub use crate::queued::{STATE_EXPIRED, STATE_QUEUED, STATE_REFUSED, STATE_SENT};
 
-const COLUMNS: &str =
-    "id, report_json, state, attempts, next_retry_at, last_error, created_at, updated_at";
+/// The queries are those of every outbox to the project (`queued`).
+const OUTBOX: Outbox = Outbox {
+    table: "msg_reports_outbox",
+    body: "report_json",
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct ReportRow {
@@ -40,45 +41,16 @@ pub async fn queue(
     next_retry_at: i64,
     last_error: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO msg_reports_outbox (id, report_json, state, attempts, next_retry_at, last_error, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(id)
-    .bind(report_json)
-    .bind(STATE_QUEUED)
-    .bind(attempts)
-    .bind(next_retry_at)
-    .bind(last_error)
-    .bind(now)
-    .bind(now)
-    .execute(store.pool())
-    .await
-    .map_err(storage)?;
-    Ok(())
+    queued::queue(store, &OUTBOX, id, report_json, now, attempts, next_retry_at, last_error).await
 }
 
 /// The queued reports due by `now`, the oldest first.
 pub async fn due(store: &Store, now: i64, limit: i64) -> Result<Vec<ReportRow>> {
-    sqlx::query_as::<_, ReportRow>(sqlx::AssertSqlSafe(format!(
-        "SELECT {COLUMNS} FROM msg_reports_outbox WHERE state = 'queued' AND next_retry_at <= ?
-         ORDER BY created_at ASC, id ASC LIMIT ?"
-    )))
-    .bind(now)
-    .bind(limit)
-    .fetch_all(store.pool())
-    .await
-    .map_err(storage)
+    queued::due(store, &OUTBOX, now, limit).await
 }
 
 pub async fn get(store: &Store, id: &str) -> Result<Option<ReportRow>> {
-    sqlx::query_as::<_, ReportRow>(sqlx::AssertSqlSafe(format!(
-        "SELECT {COLUMNS} FROM msg_reports_outbox WHERE id = ?"
-    )))
-    .bind(id)
-    .fetch_optional(store.pool())
-    .await
-    .map_err(storage)
+    queued::get(store, &OUTBOX, id).await
 }
 
 /// Another try failed: the count goes up, the next one is at `next_retry_at`.
@@ -90,16 +62,7 @@ pub async fn retry_later(
     error: &str,
     now: i64,
 ) -> Result<()> {
-    sqlx::query("UPDATE msg_reports_outbox SET attempts = ?, next_retry_at = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .bind(attempts)
-        .bind(next_retry_at)
-        .bind(error)
-        .bind(now)
-        .bind(id)
-        .execute(store.pool())
-        .await
-        .map_err(storage)?;
-    Ok(())
+    queued::retry_later(store, &OUTBOX, id, attempts, next_retry_at, error, now).await
 }
 
 /// The report is done (`sent`, `refused`, `expired`): it is never tried
@@ -111,34 +74,17 @@ pub async fn finish(
     error: Option<&str>,
     now: i64,
 ) -> Result<()> {
-    sqlx::query("UPDATE msg_reports_outbox SET state = ?, report_json = '', last_error = COALESCE(?, last_error), updated_at = ? WHERE id = ?")
-        .bind(state)
-        .bind(error)
-        .bind(now)
-        .bind(id)
-        .execute(store.pool())
-        .await
-        .map_err(storage)?;
-    Ok(())
+    queued::finish(store, &OUTBOX, id, state, error, now).await
 }
 
 /// Forget the rows done before `before`. Returns how many went.
 pub async fn purge_done(store: &Store, before: i64) -> Result<u64> {
-    let res =
-        sqlx::query("DELETE FROM msg_reports_outbox WHERE state <> 'queued' AND updated_at < ?")
-            .bind(before)
-            .execute(store.pool())
-            .await
-            .map_err(storage)?;
-    Ok(res.rows_affected())
+    queued::purge_done(store, &OUTBOX, before).await
 }
 
 /// How many wait to be sent.
 pub async fn count_queued(store: &Store) -> Result<i64> {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM msg_reports_outbox WHERE state = 'queued'")
-        .fetch_one(store.pool())
-        .await
-        .map_err(storage)
+    queued::count_queued(store, &OUTBOX).await
 }
 
 #[cfg(test)]

@@ -178,7 +178,7 @@
   .line.out .brow { flex-direction: row-reverse; }
   /* The message whose menu is open. */
   .line.selected { background: var(--accent-bg); }
-  .line { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 1px var(--sp-4); border-radius: var(--radius-sm); transition: background 0.6s var(--ease); }
+  .line { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding: 1px 0; border-radius: var(--radius-bar); transition: background 0.6s var(--ease); }
   .line.out { align-items: flex-end; }
   /* Runs of one author are groups (mockups c7.js): 2 between, 16 between runs. */
   .line.first { margin-top: calc(var(--sp-4) - 2px); }
@@ -190,7 +190,7 @@
   }
   /* Every album is as wide as the mosaic it holds, pictures or files. */
   .bubble.visual, .bubble.mixed { width: min(420px, 78%); padding: 3px; }
-  .bubble.files { position: relative; width: min(400px, 78%); padding: var(--sp-3); --file-meta: 60px; }
+  .bubble.files { position: relative; width: min(420px, 78%); padding: var(--sp-3); --file-meta: 60px; }
   .bubble.files > .meta:not(.inline) { position: absolute; right: var(--sp-3); bottom: var(--sp-3); padding: 0; }
   /* Words under a line take the width: the time goes under them. */
   .bubble.files:has(:global(.err), :global(.card-fail), :global(.foreign), .uploaded) { --file-meta: 0px; }
@@ -242,7 +242,7 @@
     .bubble { -webkit-touch-callout: none; }
     /* As wide as on a computer at most (a tablet), the bubble's share of a phone. */
     .bubble.visual, .bubble.mixed { width: min(420px, 86%); max-width: 86%; }
-    .bubble.files { width: min(400px, 86%); max-width: 86%; }
-    .line { padding-inline: var(--sp-3); touch-action: pan-y; }
+    .bubble.files { width: min(420px, 86%); max-width: 86%; }
+    .line { touch-action: pan-y; }
   }
 </style>

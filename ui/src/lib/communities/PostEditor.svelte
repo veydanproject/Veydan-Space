@@ -363,7 +363,7 @@
 
   {#if narrow}
     <div class="tabs">
-      <div class="seg tabs-seg" role="tablist" aria-label={$t('chan_editor_new')}>
+      <div class="seg" role="tablist" aria-label={$t('chan_editor_new')}>
         <button class="seg-btn" class:active={tab === 'text'} role="tab" aria-selected={tab === 'text'} onclick={() => (tab = 'text')}>{$t('chan_editor_text_label')}</button>
         <button class="seg-btn" class:active={tab === 'preview'} role="tab" aria-selected={tab === 'preview'} onclick={() => (tab = 'preview')}>{$t('chan_editor_tab_preview')}</button>
       </div>
@@ -496,8 +496,6 @@
 
   /* Narrow: tabs, one column. */
   .tabs { padding: var(--sp-1) var(--sp-3) var(--sp-2); flex-shrink: 0; }
-  .tabs-seg { display: flex; width: 100%; }
-  .tabs-seg .seg-btn { flex: 1; justify-content: center; }
   .n-body { flex: 1; min-height: 0; overflow-y: auto; }
   .col { display: flex; flex-direction: column; gap: 10px; padding: var(--sp-1) var(--sp-3) var(--sp-4); min-height: 100%; }
   .col .p-head { padding: 0; }

@@ -34,3 +34,12 @@ export function shouldLoad(s: ChatPageState): boolean {
   const again = !s.active && (s.missingId === s.id ? s.known : s.resets !== s.loadedEpoch);
   return s.loadedFor !== s.id || again;
 }
+
+/**
+ * The chat shown left the list (deleted, archived, the last one too) and the
+ * store was not emptied under the page since it was shown (`resets`, the app
+ * came back locked): beside its list the right part empties.
+ */
+export function wasRemoved(s: { known: boolean; shownEpoch: number; resets: number }): boolean {
+  return !s.known && s.resets === s.shownEpoch;
+}

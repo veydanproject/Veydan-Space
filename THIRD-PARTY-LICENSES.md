@@ -223,7 +223,7 @@ Thank you to the authors of the following Cargo crates:
 | const-oid | 0.10.2 | Apache-2.0 OR MIT |
 | constant_time_eq | 0.3.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | constant_time_eq | 0.6.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
-| cookie | 0.18.1 | MIT OR Apache-2.0 |
+| cookie | 0.18.3 | MIT OR Apache-2.0 |
 | cookie-factory | 0.3.3 | MIT |
 | core-foundation | 0.7.0 | MIT OR Apache-2.0 * |
 | core-foundation | 0.9.4 | MIT OR Apache-2.0 * |

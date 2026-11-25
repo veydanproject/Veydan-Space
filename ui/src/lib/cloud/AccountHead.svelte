@@ -50,7 +50,7 @@
   .head { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-1) 0; }
   .ava {
     display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0;
-    background: var(--accent-grad); color: #fff; font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
+    background: var(--accent-grad); color: var(--on-accent); font-size: var(--fs-xl); font-weight: var(--fw-extrabold);
   }
   .who { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
   .who strong { max-width: 100%; font-size: var(--fs-xl); font-weight: var(--fw-bold); line-height: var(--lh-snug); overflow-wrap: anywhere; }

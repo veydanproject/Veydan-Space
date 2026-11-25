@@ -181,7 +181,12 @@ impl LargeFileSink for PathSink {
     }
 
     async fn commit(&self) -> Result<()> {
-        let file = std::fs::File::open(&self.part).map_err(Self::disk)?;
+        // Opened for writing: Windows refuses to flush a handle that only
+        // reads (`FlushFileBuffers`, os error 5), and no file came down there.
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&self.part)
+            .map_err(Self::disk)?;
         file.sync_all().map_err(Self::disk)?;
         drop(file);
         // `std::fs::rename` replaces an existing file on every platform,
@@ -236,4 +241,34 @@ pub fn available_space(dir: &Path) -> Option<u64> {
 #[cfg(not(any(unix, windows)))]
 pub fn available_space(_dir: &Path) -> Option<u64> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    /// The whole way of a download on the disk: staged, written, committed
+    /// over an older copy. On Windows the commit failed with "access
+    /// denied" while it flushed a handle opened for reading.
+    #[tokio::test]
+    async fn a_staged_file_is_committed_over_the_old_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        std::fs::write(&dest, b"old").unwrap();
+        let sink = PathSink::new(&dest);
+        assert_eq!(sink.staged_len("m1").await.unwrap(), 0);
+        let mut writer = sink.open_staging("m1", 0, 5).await.unwrap();
+        writer.write_all(b"fresh").await.unwrap();
+        writer.shutdown().await.unwrap();
+        drop(writer);
+        assert_eq!(sink.staged_len("m1").await.unwrap(), 5);
+        sink.commit().await.unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"fresh");
+        let left: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, ["file.bin"]);
+    }
 }

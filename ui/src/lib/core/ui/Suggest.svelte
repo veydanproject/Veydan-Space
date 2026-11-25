@@ -274,12 +274,12 @@
     overflow-x: hidden;
     overscroll-behavior: contain;
     padding: 4px;
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    background: var(--glass-menu-bg, color-mix(in srgb, var(--glass-bar) 60%, transparent));
+    border: 1px solid var(--pane-strong-border);
     border-radius: var(--radius-md);
-    box-shadow: var(--glass-highlight), var(--shadow-lg);
-    -webkit-backdrop-filter: var(--glass-filter);
-    backdrop-filter: var(--glass-filter);
+    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
+    backdrop-filter: var(--glass-menu-filter, var(--pane-filter));
     outline: none;
     animation: suggest-in var(--dur-fast) var(--ease) both;
   }

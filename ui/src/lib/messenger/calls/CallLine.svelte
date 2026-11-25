@@ -122,9 +122,9 @@
   .missed .ico { background: var(--danger); color: #fff; }
   .missed .title { color: var(--danger-text); }
   .live { border-color: var(--success-border); }
-  .live .ico { background: var(--success); color: #fff; }
+  .live .ico { background: var(--success-grad); color: #fff; }
   .join {
-    padding: 1px 8px; border-radius: var(--radius-pill); background: var(--success); color: #fff;
+    padding: 1px 8px; border-radius: var(--radius-pill); background: var(--success-grad); color: #fff;
     font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
   @media (pointer: coarse) { .call { padding-block: 6px; } }

@@ -11,6 +11,8 @@ import listSource from './PrivateServers.svelte?raw';
 import desktopSource from '../entry/desktop.ts?raw';
 import pageSource from '../pages/MessengerPage.svelte?raw';
 import frameSource from '../mobile/MobileFrame.svelte?raw';
+import phoneDialogsSource from '../mobile/MobileDialogs.svelte?raw';
+import mobileSource from '../entry/mobile.ts?raw';
 import { messengerTranslations } from '../i18n';
 import type { ServerPreview } from '../api';
 
@@ -168,7 +170,11 @@ describe('where the dialog is', () => {
     }
   });
 
-  it('stays in the frame of each screen on a phone', () => {
-    for (const d of dialogs) expect(mounts(frameSource, d)).toBe(1);
+  it('is one for the window on a phone too, outside the frames: folding a wide window takes the list\'s frame away (ROO-1678)', () => {
+    expect(mobileSource.match(/component: MobileDialogs, place: 'window'/g)?.length).toBe(1);
+    for (const d of [...dialogs, 'ReportHost']) {
+      expect(mounts(phoneDialogsSource, d)).toBe(1);
+      expect(mounts(frameSource, d)).toBe(0);
+    }
   });
 });

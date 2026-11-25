@@ -127,11 +127,11 @@
       fontFamily: token('--font-mono', 'monospace'),
       // The terminal viewport is ALWAYS dark, regardless of app theme: remote
       // ANSI output (vim, htop, dotfiles) assumes a dark background.
-      // --term-* are the same in both themes (palettes/quiet.css).
+      // --term-* are the same in both themes (palettes/periwinkle.css).
       theme: {
-        background: token('--term-bg', '#15171e'),
+        background: token('--term-bg', '#11131b'),
         foreground: token('--term-fg', '#eef1f7'),
-        cursor: token('--term-cursor', '#b9b1f2'),
+        cursor: token('--term-cursor', '#acaeff'),
         selectionBackground: 'rgba(112,102,198,0.35)',
       },
       scrollback: 5000,

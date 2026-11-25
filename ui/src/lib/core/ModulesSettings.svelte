@@ -84,7 +84,6 @@
   .card.list .row + .row::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--divider); }
   .card.list .row:hover:not(:disabled) { background: var(--surface-row-hover); }
   .row:disabled, .m-row:disabled { cursor: default; opacity: 1; }
-  button:disabled .toggle { opacity: 0.45; }
   .m-row { gap: var(--sp-3); }
   .module-icon {
     display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0;

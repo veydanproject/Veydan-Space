@@ -57,9 +57,9 @@ pub const RETRY_FOR_SECS: i64 = 7 * 86_400;
 pub const FIRST_RETRY_SECS: i64 = 60;
 pub const LAST_RETRY_SECS: i64 = 6 * 3600;
 /// A report done (sent, refused, given up) is remembered this long.
-const KEEP_DONE_SECS: i64 = 30 * 86_400;
+pub(crate) const KEEP_DONE_SECS: i64 = 30 * 86_400;
 /// Reports tried in one round of [`MessengerRuntime::reports_retry`].
-const RETRY_BATCH: i64 = 20;
+pub(crate) const RETRY_BATCH: i64 = 20;
 /// The note of a message whose proof is not on this device any more.
 pub const NOTE_WRAP_GONE: &str = "wrap_gone";
 /// The note of a message whose event is here but proves nothing.
@@ -235,7 +235,7 @@ pub(crate) struct Reports {
 
 impl Reports {
     /// One more report now, or `rate_limited` past [`REPORTS_PER_MINUTE`].
-    fn admit(&self, now: Instant) -> Result<()> {
+    pub(crate) fn admit(&self, now: Instant) -> Result<()> {
         let mut recent = self
             .recent
             .lock()
@@ -252,10 +252,16 @@ impl Reports {
         recent.push_back(now);
         Ok(())
     }
+
+    /// One round of retries at a time: held while a round runs. The
+    /// reports of a bug keep a `Reports` of their own (`crate::bug`).
+    pub(crate) async fn one_round(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.retrying.lock().await
+    }
 }
 
 /// The pause before the next try after `attempts` tries.
-fn backoff(attempts: i64) -> i64 {
+pub(crate) fn backoff(attempts: i64) -> i64 {
     let doublings = u32::try_from(attempts.saturating_sub(1).clamp(0, 20)).unwrap_or(20);
     FIRST_RETRY_SECS
         .saturating_mul(1 << doublings)
@@ -266,7 +272,7 @@ fn invalid(word: &str) -> MessengerError {
     MessengerError::Invalid(word.to_string())
 }
 
-fn local_id() -> Result<String> {
+pub(crate) fn local_id() -> Result<String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).map_err(|e| MessengerError::Crypto(e.to_string()))?;
     Ok(hex::encode(bytes))

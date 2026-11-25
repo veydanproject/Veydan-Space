@@ -37,6 +37,7 @@
   import ChoiceDialog from './moderation/ChoiceDialog.svelte';
   import { MUTE_SPANS, muteUntil, opensAt, type MuteSpan } from './moderation/schedule';
   import { chatStore } from '../chats/chatStore.svelte';
+  import { writeTo } from '../content/actions';
   import { confirmStore } from '../shared/confirm.svelte';
   import { reportStore } from '../shared/report.svelte';
   import { longpress } from '../shared/longpress';
@@ -262,6 +263,12 @@
     if (await act(a)) { stopEdit(); chatStore.scheduleChatsRefresh(); }
   }
 
+  // The private chat with a member is shown once it is open; the group stays
+  // behind it, so a phone's back returns here. A refusal is said like the others.
+  async function writeFrom(m: MessengerGroupMember) {
+    if (await run(() => writeTo(m.pubkey, { stack: true }))) onclose();
+  }
+
   function openMenu(e: MouseEvent | { x: number; y: number }, m: MessengerGroupMember) {
     if ('preventDefault' in e) e.preventDefault();
     if (!entriesFor(m).length) return;
@@ -273,7 +280,7 @@
   function entriesFor(m: MessengerGroupMember): MenuEntry[] {
     const who = nameStore.label(m.pubkey);
     const list: MenuEntry[] = [];
-    if (!m.is_me) list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => { chatStore.openPeer(m.pubkey).catch(() => {}); onclose(); } });
+    if (!m.is_me) list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => writeFrom(m) });
     // Any member may report another, whatever either one's role.
     if (!m.is_me) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true,
       onselect: () => reportStore.open({ accused: m.pubkey, name: who, context: { t: 'group', group_id: group.id }, canBlock: false }) });

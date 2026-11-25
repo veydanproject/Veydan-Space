@@ -217,7 +217,7 @@
   .dim { color: var(--text-3); display: inline-flex; }
   .tick {
     flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-strong, var(--text-3));
-    display: inline-flex; align-items: center; justify-content: center; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; color: var(--on-accent);
   }
   .tick.on { background: var(--accent); border-color: var(--accent); }
   /* The chosen chats: their faces in a strip, a tap takes one out. */
@@ -230,7 +230,6 @@
   /* «Скрыть отправителя»: the words on the left, the switch (base.css `.toggle`) on the right. */
   .option { display: flex; align-items: center; gap: var(--sp-3); }
   .option-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); line-height: var(--lh-snug); }
-  .toggle:disabled { opacity: 0.45; cursor: default; }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .send { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .send :global(svg) { flex-shrink: 0; }

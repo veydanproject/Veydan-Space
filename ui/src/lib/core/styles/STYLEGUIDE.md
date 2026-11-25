@@ -11,7 +11,7 @@ token or primitive already exists.**
 | File | Role |
 |------|------|
 | `src/lib/core/styles/tokens.css` | Design tokens — spacing, type, radius, z-index, sizes, motion. With the palettes, the **only** place raw values live. |
-| `src/lib/core/styles/palettes/<name>.css` | The colours of a palette, dark and light (`<html data-theme data-palette>`). `quiet.css` is the default and answers to `[data-theme]` alone; another palette is `[data-palette=…][data-theme=…]`, imported by `tokens.css`, and may leave out what it shares with quiet. |
+| `src/lib/core/styles/palettes/<name>.css` | The colours of a palette, dark and light (`<html data-theme data-palette>`). `quiet.css` is the default and answers to `[data-theme]` alone; `periwinkle.css` («Барвинок и индиго», РД-DS1-01) is imported right after it with the same selectors and wins by order: it holds every colour, quiet keeps the shadows, the geometry and the call's windows. Another palette is `[data-palette=…][data-theme=…]`, imported by `tokens.css`, and may leave out what it shares with them. |
 | `src/lib/core/styles/base.css` | Global reset + reusable primitives (`.btn`, `.icon-btn`, `.badge`, `.page`, `.card`, `.tab-bar`, `.empty-state`, `.spinner`, `.vtip`, …). |
 | `src/lib/core/styles/mobile.css` | Phone layer on top of the two: `--m-*` colours, `--touch`, `--nav-h`, safe-area insets `--sat`/`--sab`/`--sal`/`--sar`, `.m-*` primitives. Loaded by the mobile shell only — its tokens do not exist on a computer. |
 | `src/lib/core/theme.ts` | `data-theme` (dark / light) × `data-palette` (`quiet`), and the one colour a user may choose: the accent (`applyAccent`). |
@@ -25,8 +25,9 @@ no picker yet.
 ## Rules
 
 1. **Colour** → always `var(--…)`. Never a raw hex/rgba in a component (except
-   pure `#fff` on a coloured button or over a photo or video). If you need a
-   new colour, add it to the palette (`palettes/quiet.css`) in **both** themes.
+   pure `#fff` on a red or green fill or over a photo or video; on the accent it is
+   `--on-accent`). If you need a new colour, add it to the palette
+   (`palettes/periwinkle.css`) in **both** themes.
 2. **Spacing / radius / font-size** → use `--sp-*`, `--radius*`, `--fs-*`. Don't
    invent `0.42rem`.
 3. **z-index** → use `--z-*` (`--z-drawer`, `--z-modal`, `--z-toast`, …). Never a
@@ -47,7 +48,14 @@ no picker yet.
 ## Tokens cheat-sheet
 
 - Background: `--bg` with `--bg-image` (four soft glows, `--glow-1..3`) — the
-  shells draw it; nothing on top of it sets a solid `--bg` again.
+  shells draw it; nothing on top of it sets a solid `--bg` again. In «Барвинок
+  и индиго» the glows are transparent: the window is even, its frame around the
+  panes is `--gap`.
+- The window's parts (opaque in this palette): `--pane-top` (the window's
+  head), `--pane-side` (the column of Settings' sections), `--pane-chrome`,
+  `--pane-list` (a column of a list), `--pane-island` (a page with no columns),
+  `--pane-chat` (a conversation, a note); text on the chrome `--chrome-text` /
+  `--chrome-muted`.
 - Panes (the floating columns and panels of a computer, the cards of a phone):
   `--pane` / `--pane-head` / `--pane-border` / `--pane-highlight` /
   `--pane-shadow`, the denser `--pane-strong(-border)`, blurred by
@@ -55,28 +63,62 @@ no picker yet.
 - Glass (whatever floats over the page: menus, dialogs, sheets, toasts,
   tooltips, bars): `--glass-bg`, `--glass-bg-raised`, `--glass-bar` (bars over
   scrolling content), `--glass-border`, `--glass-highlight`, `--glass-filter`.
+  Two levels: windows and dialogs `--glass-bg` (90 %, blur 20), menus, dropdown
+  lists, suggestions and action sheets `--glass-menu-bg` (80 %, `#2E3449` in the
+  dark) with `--glass-menu-filter` (blur 32); their edge and shadow are the
+  panes' (`--pane-strong-border`, `--pane-highlight`, `--pane-shadow`). Glass
+  that floats over a conversation: `--glass-float*`. The light glass is neutral
+  white, no lilac.
   With `prefers-reduced-transparency` or no `backdrop-filter`, all of them
   become opaque (the palette does it; components do nothing).
 - Surfaces: `--chrome`/`--bg-2` < `--surface` < `--surface-2`; fields
   `--surface-3`; hovers `--surface-hover` / `--surface-row-hover`; drawers
   `--surface-drawer(-footer)`; borders `--border` / `--border-2`; the frame of a
   field, a checkbox and a radio `--control-border` (3:1 or more on a field and the page;
-  under the pointer a field's frame is `--text-3`, a disabled one fades to 0.45 as a button).
+  under the pointer a field's frame is `--text-3`, a disabled one fades to 0.45 as a button). A one-line field and
+  a select are `--control-h` 40 on a computer, `--touch` 44 on a phone (`CustomSelect` too). In focus a field's
+  frame is `--accent` whole with a ring of 2 of `--focus-ring` around it (3:1 or more in both themes), under the
+  mouse as under the keyboard. A checkbox or a radio under the pointer takes the `--accent` frame and 10 % of it
+  inside, a checked one `--accent-hover`; a disabled one stays the palest.
+- Counts and names: a muted count `--count-quiet-bg` / `--count-quiet-text`;
+  the lightness of a sender's name `--tint-l` (`messenger/shared/tint.ts`).
+  The terminal: `--term-bg` / `--term-fg` / `--term-cursor`, one in both themes.
+- An outgoing bubble is filled with the accent: inside `.line.out .bubble` the
+  palette points the text, accent and border tokens at `--bubble-out-text` /
+  `--bubble-out-meta`, and `--on-accent` at `--bubble-out-bg`; an accent
+  button in it is `--bubble-out-text` with `--bubble-out-bg` on it, a quote
+  lies in `--bubble-out-well`; a warning and an error there are `--warn-text` /
+  `--danger-text` of their own (the light's error the bubble's text, semibold).
+- What lies in a bubble or a channel's post (`.line .bubble`, `.post.card`: a
+  file's and a call's circle, a link card's tiles, a quiet button, a voice's
+  speed, a hovered row) takes the bubble's tone, never the page's panel:
+  `--bubble-tone` (its `--text` 14 % over the fill; hover `--bubble-tone-hover`
+  22 %, an edge `--bubble-edge` 26 %), which `--accent-bg`, `--warn-bg`,
+  `--surface-2/-3` point at there; a quiet button is the tone with no frame.
+  A card in a bubble (a link's, a contact's) is as wide as its content, 320 to
+  420, a phone's the bubble's width; a file and an album are 420. A sender's
+  name is `hsl(h 60% --tint-l)`. A message's line runs to the column's edges
+  with `--radius-bar`, its menu opens under the bubble. In the light
+  theme, inside `.card`, `.data-table` and `.on-glass` the second surface
+  (`--surface-2/-3`, `--m-field`, `--m-seg`) is `#F4F4F6`, darker than the pane.
 - Text: `--text` / `--text-2` / `--text-3`; long-form `--text-body`; extras
   `--text-soft` (icons, metrics) · `--text-faint` (field labels) · `--text-dim` (caps labels, «—»).
 - Accent: `--accent` is the **fill** (primary buttons, the active switch, a
-  countdown bar) — `#7066c6`; text in the accent is `--accent-text` (links,
+  countdown bar) — `#685DDE` light, `#ACAEFF` dark; what stands on it (text,
+  glyphs, a spinner) is `--on-accent` (white light, `#24234A` dark), never `#fff`;
+  text in the accent is `--accent-text` (links,
   the active item, actions of a toast), with `--accent-text-2` (mono badges) /
   `--accent-text-3`; fills `--accent-bg` / `--accent-tint`(+`-border`) ·
   `--accent-border` (the frame of the chosen) · `--focus-ring` (the keyboard focus ring: solid, 3:1 or more on the backgrounds; the accent text colour) · `--accent-grad` ·
-  `--shadow-accent`. A chosen accent recomputes all of them (`applyAccent`).
-  The keyboard's ring is one for every control, fields too: 2px of `--focus-ring`, 2px off the control, rounded
-  as it is — a zero-specificity rule in `base.css`; a text field takes it only while the keyboard moves the focus
-  (`html.kbd-focus`, `core/focusMode.ts`). A row that clips (a scrolling row of tabs, a list) leaves 4px of room
+  `--shadow-accent`. A chosen accent recomputes all of them (`applyAccent`),
+  `--accent-hover` / `--accent-active` and `--on-accent` too: white or `#24234A`,
+  whichever reads better over the fill, its hover and its press (`onAccentFor`).
+  The keyboard's ring is one for every control: 2px of `--focus-ring`, 2px off the control, rounded
+  as it is — a zero-specificity rule in `base.css`; a field draws its own ring of focus (above) and no second one. A row that clips (a scrolling row of tabs, a list) leaves 4px of room
   around its controls so the ring is whole; no ring is drawn inside a control.
 - Touch (phone layer): `--touch` 44 is the least size of a finger zone; a control smaller than it grows an invisible `::before` to it per axis (`mobile.css`), capped by `--hit-max`, which a control with close neighbours lowers.
 - Chat: `--bubble-in-*` / `--bubble-out-*`; a held row or bubble `--press-tint`.
-- Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`).
+- Semantic: `--success*` (+`-border`, `-grad`), `--danger*` (+`-border`, `--shadow-danger`), `--warn-*` (+`-border`). White text or a mark on green lies on `--success-grad` (#1D7448, as `.btn-success`), never on `--success` (#5CCB8A in the dark, about 2:1); `--success` alone is a dot or an edge. `.btn-success` under the pointer and pressed is darker in both themes (`--success-hover` #19663F, `--success-active` #155837: white text 7.0 and 8.5).
 - Category colours (workspaces / proxy types): `--cat-purple` / `--cat-blue` / `--cat-teal` / `--cat-pink`.
 - Fonts: `--font-ui` (Manrope Variable) · `--font-mono` (JetBrains Mono Variable — secrets, hosts, versions, IDs).
 - Spacing (4px grid): `--sp-1`=4 … `--sp-6`=24, `--sp-8`=32, `--sp-10`=40, `--sp-12`=48.
@@ -94,19 +136,40 @@ no picker yet.
 ### The language of the panes
 
 A computer: the module's columns are panes 12 apart and 12 from the window's
-edges (`fullWidth` routes), a pane's head is 64 high with its title 20/700,
-the top navigation is one floating plate. A card on the window background (`.card`, the phone's `.m-card`) is the glass `--pane-strong` on both a computer and a phone; what lies on it (fields, chips, tiles, quiet buttons) takes the same glass through one token rule in `base.css`; the same rule is given by the panes and floating layers themselves (`core/ui/Pane`, `Drawer`, `Dialog`, `Modal`, the messenger and notes columns, `.data-table`) and by a local block that draws its own look through the class `.on-glass` (tokens only, no box). A field, a quiet button (`.btn-ghost`), the tile of an empty state (`.empty-icon`), the segments (`.tab-bar`, `.seg`) and a checkbox are glass by default, not `--surface-3`: a solid surface is black over the glow. Their line is `--pane-strong-border` in the dark and `--border` in the light; a field's, a checkbox's and a radio's is `--control-border`. A phone: a floating head, cards of
-rows on the glowing background, a floating tab bar, a 56 capsule (`.m-bar--nav`; `--nav-h` is its slot: 56 plus 12 of air for the counts that stand on its edge; the bar has no logo, a tab's header carries it (`core/ui/HubButton`), and Space's Home has no bar; `--nav-gap` keeps the last
-row above it). A list row is 56–64 high with `--radius-lg`; the active one is
-`--accent-bg` with `--accent-text`; segment controls are `.tab-bar`; a search
-field is a pill.
+edges (`fullWidth` routes). A column's head (`Pane`, the messenger's `.rail-head`, the notes' list, Settings'
+both heads) is one line of 36, 16 from the top, with no band and no rule under it: the title 18 semibold, the number
+of entries `--fs-xs` `--text-2` on its line (`Pane`'s `subtitle`), a marker beside the title (`titleBadge`, the
+passwords' lock 16), the buttons on the right 36 × 36 with 8 between; 16 from it to the first item (a search, a
+banner, the first row). A Drawer's head and body start 16 from its edge, a Drawer's and a Dialog's body keep no gutter
+for the scrollbar (`scrollbar-gutter: auto`), so the left and right insets are equal. The columns of navigation (the
+messenger's rail `.sections`, the notes' `.sidebar`, Settings' `.settings-side`, the phone's ☰ of Notes, the rail of
+an open Duo and an iPad) are the window's head (`--pane-top` / `--pane-side`: white in the light, #2E3449 in the dark);
+in the dark what is chosen and the search lie a step lighter than the column (one rule in `periwinkle.css`), and the
+rail's chosen item has its icon and label in the accent. Between the groups of a navigation one rule (`--divider`), 8
+over and 8 under it; a list of sections that scrolls under a title fades under it (`mask-image`) once scrolled;
+the top navigation is one floating plate (`--pane-top`). The window's frame is
+`--gap`; a page with no columns is one island like them (`main.content--page`,
+`--pane-island`, 12 from the frame, `--radius-pane`): no text lies on the frame. A conversation (a chat, a group, a channel's feed) is one column in the middle, the field's (`min(720, 100% − 2 × --col-gutter)`, the gutter 12, a phone's 8): its head a plate of glass 58 high with `--radius-bar` (`.head.glassfloat`, a phone's `.head.phone`) that the feed runs under, in the dark the head is `--glass-bar` at 60 %, so the feed shows through it (`periwinkle.css`); the plates under the head, the feed and the field floating at the foot; where nothing may be written a plate of the field's height 52, shape and fill (`--pane-strong`) stands in its place. No line runs across the pane. A card on the window background (`.card`, the phone's `.m-card`) is the glass `--pane-strong` on both a computer and a phone; what lies on it (fields, chips, tiles, quiet buttons) takes the same glass through one token rule in `base.css`; the same rule is given by the panes and floating layers themselves (`core/ui/Pane`, `Drawer`, `Dialog`, `Modal`, the messenger and notes columns, `.data-table`) and by a local block that draws its own look through the class `.on-glass` (tokens only, no box). A field, a quiet button (`.btn-ghost`), the tile of an empty state (`.empty-icon`), the segments (`.tab-bar`, `.seg`) and a checkbox are glass by default, not `--surface-3`: a solid surface is black over the glow. Their line is `--pane-strong-border` in the dark and `--border` in the light; a field's, a checkbox's and a radio's is `--control-border`. A phone: a floating head, cards of
+rows on the glowing background, a floating tab bar, a 56 capsule (`.m-bar--nav`; `--nav-h` is its slot: 56 plus 12 of air; the bar stands on the field's column, `--col-gutter` or the system's insets where wider; the chosen tab has its icon and label in `--accent-text` on 24 % of the accent; a count stands at the icon's top right corner, inside the bar, in a ring of `--glass-bar`; the bar has no logo, a tab's header carries it (`core/ui/HubButton`), and Space's Home has no bar; `--nav-gap` keeps the last
+row above it; a list over it dissolves in 24 at its foot, as under a head in 20 at its top). The first thing under a phone's head stands 8 from it (`.m-header + .m-search`, `.m-header + .m-seg`). A phone's search field in the light is `#ECECF2` in a frame of `rgba(20,21,31,.14)`, in focus the accent's frame (`periwinkle.css`; Chats' `.search` pill doubled as `.search.search:focus-within` to outweigh the field's `:is()`). A wide window with nothing open beside the list shows the list's `SplitDef.empty` in the middle (`.split-empty`: an icon, a title, a grey line); a note there is a column of 720 at most in the middle, its toolbar a group 8 apart; the note's editor is white in the light. An iPhone Duo is told by the window (466 wide in portrait, 951 in landscape): `--duo-pill` (80) keeps heads, searches, tabs and the first blocks off its camera pill, the first rows start under it, beside a list only the detail moves (`mobile.css`, the end). A list row is 56–64 high with `--radius-lg`; the active one is
+`--accent-bg` with `--accent-text`; segment controls are `.tab-bar`. One kind of switch everywhere: tabs with an
+underline (`.tab-bar`, `.seg`, the phone's `.m-seg`) — words on the surface without a frame or fill, 20 between them,
+the chosen word in `--accent-text` over a bar of 3 of `--accent`, the others `--text-2`, darker under the pointer.
+Two sizes: a page's sections 44 (`core/ui/Tabs`), filters and windows 32; the bar stands at the same offset. In a
+window the tabs stand at the left and the chosen one is bold (`.tab-bar.plain`). Only a form's control (the
+Terminal's connection kind and key source: `:is(.form, .form-group) > .seg`) stays a capsule. A search
+field is a pill. A list's search is opened by a lens in its head (Notes, Passwords, the messenger's lists on a
+computer and in a wide window of a phone, `messenger/pages/ListSearch`): the lens 36 on `--surface-2` before the
+accent's «new», of its size, 8 between; a press opens the field 16 under the head with the focus in it, the lens
+marked while it is open or holds words; Esc and the cross clear the words, in an empty field close it; another
+section closes it, its words gone. A phone in one column keeps the field always.
 
 ## Primitives
 
 `.page` (+`--page-max` override) · `.page-header`(+`.spacer`)/`.page-sub` · `.card`/`.card-title`
 · `.section`/`.section-label` · `.muted` · `.btn`(+`-primary/-ghost/-success/-success-soft/-danger/-danger-soft/-sm`)
 · `.icon-btn`(+`.success/.danger/.danger-soft/.accent-soft/.create`) · `.badge`(+`-accent/-ok/-danger/-warn`; through `core/ui/Pill`) · `.win-close` (the × of Dialog, Drawer, BottomSheet) · `.chip`(+`.active`)
-· `.tab-bar`/`.tab`(+`.active`: `--accent-text` over a bar of `--accent`; its count a `.count-pill.sm.quiet`) · `.seg`(+`.seg-fill`: across the card, options of one width)/`.seg-btn`/`.seg-btn-lg` · `.toggle`(+`.on`)
+· `.tab-bar`(+`.plain`: a window's, at the left, 20 between, 32, the chosen one bold)/`.tab`(+`.active`: `--accent-text` over a bar of `--accent`; its count a `.count-pill.sm.quiet`) · `.seg`(tabs with an underline; +`.seg-fill`: across the card, options of one width, 8 between)/`.seg-btn` · `.toggle`(+`.on`; disabled, or inside a disabled row: an empty track with a frame of `--border-2` and a pale knob, no accent)
 · `.mono`(text in the mono face) · `.mono-chip` · `.data-table`(+`-head/-row`) · `.empty-state`/`.empty-icon` · `.loading`/`.spinner`/`.spin`
 · `.tinted`/`.tinted-text` (colour from data) · `.form-group`/`.form-row` · `.error-msg` · keyframes `vfade`/`vslide`
 · `.list-rows` > `li` > `.list-row`(+`.active/.unread`) — the one row of a list pane (chats, groups, channels, calls,
@@ -120,10 +183,10 @@ field is a pill.
 · `.count-pill` — the one counter everywhere (a section of the rail, a row of a list, a cover's corner, ⋮, a tile,
   a tab, a block's head): a pill never narrower than tall, the number centred, bold, tabular figures. Sizes:
   `.sm` 18 (`--fs-xs`: a corner, ⋮, a tab), 20 by default (`--fs-xs`: a block's head), `.lg` 22 (a row of a list).
-  Colours: the accent with white (unread, the default), `.quiet` (surface-3 / text-2: muted, or only a total),
+  Colours: the accent with `--on-accent` (unread, the default), `.quiet` (`--count-quiet-bg` / `--count-quiet-text`: muted, or only a total),
   `.danger` (missed, errors). A corner count adds only its position and a 2px ring of `--chrome`.
   Never a rounded square (`--radius-badge` is for kind chips, not for numbers).
-· `.menu-count` (the count on the corner of a head's ⋮: a `.count-pill` of 18 under its own name; the button is `position: relative`).
+· `.menu-count` (the count on a head's ⋮: a compact `.count-pill` of 16 under its own name, `top: 10px; right: -5px` (a phone's head, its glass 4 + 1 past the button: `right: 3px`), right of the dots and whole inside the head's glass, 8 from its edge; the button is `position: relative`) · `.count-badge` (a filter row's count of results: plain `--text-2` words, `--fs-sm`, as high as the fields beside it, no frame).
 A button and an icon button sink to .97 under the press (`--dur-press`); the
 phone's `.m-ibtn` and `.m-btn-grad` too.
 Checkboxes and radios are marks, not fields: base.css sizes them to content with

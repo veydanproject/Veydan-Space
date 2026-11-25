@@ -88,7 +88,7 @@
   .banner-btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   .banner-btn.primary:hover {

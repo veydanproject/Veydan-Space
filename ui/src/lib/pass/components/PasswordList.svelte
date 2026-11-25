@@ -121,15 +121,21 @@
             ...notesOf(entry.tags).map((name) => ({ name, kind: 'note', color: undefined })),
           ]}
           {@const rest = chips.slice(MAX_CHIPS)}
+          {@const shown = chips.slice(0, MAX_CHIPS)}
+          {@const last = shown[shown.length - 1]}
           <!-- Whole chips that wrap, never one cut in the middle; past two, a counter. A profile and a note
                are neutral, a label in the user's colour: the mark tells the kind, never the colour. -->
           <div class="entry-labels">
-            {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
+            {#each shown.slice(0, -1) as chip, i (i)}
               <span class="label-badge tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} /><span class="label-text">{chip.name}</span></span>
             {/each}
-            {#if rest.length}
-              <span class="label-badge tinted" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
-            {/if}
+            <!-- The last chip and +N go together: +N never wraps onto a line of its own. -->
+            <span class="label-tail">
+              <span class="label-badge tinted" style:--chip={last.color}><ChipMark kind={last.kind} /><span class="label-text">{last.name}</span></span>
+              {#if rest.length}
+                <span class="label-badge tinted" title={rest.map((c) => c.name).join(', ')}>+{rest.length}</span>
+              {/if}
+            </span>
           </div>
         {/if}
       </button>
@@ -228,6 +234,7 @@
     padding: 0.05rem 0.35rem;
     white-space: nowrap;
   }
+  .label-tail { display: inline-flex; gap: 4px; min-width: 0; max-width: 100%; }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
   .totp-more { font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }

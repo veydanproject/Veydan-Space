@@ -2,16 +2,18 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { AutoHide } from '$lib/pass/autohide.svelte';
   import { copied as copiedToast } from '$lib/core/ui/toast.svelte';
-  import { goto } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
-  import { ask } from '$lib/core/ui/confirm.svelte';
+  import { ask, confirmState } from '$lib/core/ui/confirm.svelte';
+  import { BACK_WAIT_MS } from '$lib/core/ui/back';
+  import { split } from '$lib/core/ui/split.svelte';
   import TotpLiveCode from '$lib/pass/components/TotpLiveCode.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
   import { api } from '$lib/pass/api';
@@ -31,6 +33,11 @@
   let missing = $state(false);
   // `?edit` (the list's long-press menu) opens the form at once.
   let editing = $state(page.url.searchParams.has('edit'));
+  // Beside the list the menu of this same row asks for the form without opening the page again.
+  const editAsked = $derived(page.url.searchParams.has('edit'));
+  $effect(() => {
+    if (editAsked) untrack(() => { if (!editing) openEdit(); });
+  });
   let title = $state('');
   let username = $state('');
   let url = $state('');
@@ -115,6 +122,12 @@
     void load();
     api.totp.list().then((list) => (totp = list)).catch(() => {});
   });
+
+  /** A locked app opens the form only after the unlock. */
+  function openEdit() {
+    if (appLock.locked) askUnlock('edit');
+    else editing = true;
+  }
 
   function askUnlock(action: 'reveal' | 'copy' | 'edit' | 'delete' | 'tags' | 'primary') {
     afterUnlock = action;
@@ -255,6 +268,8 @@
     if (!entry || !(await ask({ title: $t('pw_delete_confirm', { name: entry.title }) }))) return;
     try {
       await api.passwords.delete(id);
+      // The list beside the card, and the one a back leads to, without it.
+      await passwordStore.refresh().catch(() => {});
       goto('/passwords', { replaceState: true });
     } catch (e) {
       fail(e);
@@ -282,6 +297,66 @@
     noteTouched = false;
     note = shownNote;
   }
+
+  const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+  /** The form holds what the card does not: something typed would be lost by closing it. */
+  function dirty(): boolean {
+    if (!entry) return false;
+    return title !== entry.title
+      || username !== (entry.username ?? '')
+      || url !== (entry.url ?? '')
+      || note !== shownNote
+      || password !== ''
+      || !sameList(totpIds, entry.totp_ids)
+      || !sameList(tags, entry.tags)
+      || (addTotp && !!totpSecret.trim());
+  }
+
+  const askDiscard = () =>
+    ask({ title: $t('pw_discard_confirm'), confirmLabel: $t('pw_discard_ok'), cancelLabel: $t('pw_discard_keep'), variant: 'danger' });
+
+  /** «Назад», «Отмена» and the system back of the form: with changes they ask first. */
+  async function cancelEdit() {
+    if (dirty() && !(await askDiscard())) return;
+    closeEdit();
+  }
+
+  /** The page's own place in the history, put back after a cancelled back. */
+  function restored(): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        removeEventListener('popstate', done);
+        resolve();
+      };
+      const timer = setTimeout(done, BACK_WAIT_MS);
+      addEventListener('popstate', done);
+    });
+  }
+
+  // The system back in the form closes the form, as its arrow does, not the card.
+  beforeNavigate((nav) => {
+    // Closing the app cannot wait for an answer.
+    if (!editing || nav.type === 'leave') return;
+    // Beside the list another row (or «+») takes the form's place: what was typed goes without a question.
+    const to = nav.to?.url;
+    if (split.on && nav.type !== 'popstate' && to && (to.pathname === '/passwords' || to.pathname.startsWith('/passwords/'))) return;
+    if (nav.type === 'popstate') {
+      nav.cancel();
+      // A back while the question is open is «Продолжить правку».
+      if (confirmState.current) { confirmState.answer(false); return; }
+      void restored().then(cancelEdit);
+      return;
+    }
+    if (!dirty()) return;
+    nav.cancel();
+    void askDiscard().then((yes) => {
+      if (!yes) return;
+      closeEdit();
+      if (to) void goto(to);
+    });
+  });
 
   function avatarColor(s: string): string {
     let h = 0;
@@ -334,13 +409,14 @@
 <div class="m-page">
   <div class="m-header">
     {#if editing}
-      <button type="button" class="m-ibtn" onclick={closeEdit} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
-    {:else}
+      <button type="button" class="m-ibtn" onclick={cancelEdit} aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></button>
+    {:else if !split.on}
+      <!-- Beside the list the card has no arrow: the list is there. -->
       <a class="m-ibtn" href="/passwords" aria-label={$t('common_back')}><Icon name="chevron-left" size={24} /></a>
     {/if}
     <h1 class="m-title">{editing ? $t('pw_edit_title') : (entry?.title ?? $t('pw_title'))}</h1>
     {#if entry && !editing}
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('edit') : (editing = true))} aria-label={$t('common_edit')}>
+      <button type="button" class="m-ibtn" onclick={openEdit} aria-label={$t('common_edit')}>
         <Icon name="pencil" size={22} />
       </button>
       <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('common_delete')}>
@@ -368,8 +444,6 @@
         bind:tags
         bind:error
         {totp}
-        {saving}
-        onsave={save}
       />
     {:else if entry}
       {#if error}<div class="err"><Notice tone="danger">{error}</Notice></div>{/if}
@@ -444,6 +518,16 @@
       {/if}
     {/if}
   </div>
+  {#if entry && editing}
+    <!-- Over the scrolling form, always in sight. -->
+    <div class="foot">
+      <button type="button" class="btn btn-ghost" onclick={cancelEdit}>{$t('common_cancel')}</button>
+      <button type="button" class="btn btn-primary" onclick={save} disabled={saving}>
+        <Icon name="check" size={18} />
+        {$t('common_save')}
+      </button>
+    </div>
+  {/if}
 </div>
 <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
 
@@ -469,4 +553,12 @@
   .totp-account { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .primary { display: inline-flex; color: var(--accent-text); }
   .autohide { font-size: var(--fs-xs); color: var(--text-2); }
+  .foot {
+    flex-shrink: 0;
+    display: flex;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + var(--page-sab));
+    border-top: 1px solid var(--border);
+  }
+  .foot .btn { flex: 1; min-height: 48px; }
 </style>

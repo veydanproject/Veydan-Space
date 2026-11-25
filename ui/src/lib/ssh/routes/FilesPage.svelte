@@ -96,6 +96,7 @@
 </Dialog>
 
 <style>
+  .page-title-group { display: flex; flex-direction: column; gap: 6px; }
   .files-page {
     display: flex;
     flex-direction: column;

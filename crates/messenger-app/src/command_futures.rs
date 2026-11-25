@@ -89,6 +89,8 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_call_camera", r2(crate::commands::call_android::messenger_call_camera)));
     v.push(("messenger_call_debug_ring", r2(crate::commands::call_android::messenger_call_debug_ring)));
     v.push(("messenger_report_send", r2(crate::commands::report::messenger_report_send)));
+    v.push(("messenger_bug_send", r2(crate::commands::bug::messenger_bug_send)));
+    v.push(("messenger_net_diagnose", r1(crate::commands::bug::messenger_net_diagnose)));
     v.push(("messenger_moderation_requests", r3(crate::commands::moderation::messenger_moderation_requests)));
     v.push(("messenger_moderation_request_act", r3(crate::commands::moderation::messenger_moderation_request_act)));
     v.push(("messenger_moderation_requests_count", r1(crate::commands::moderation::messenger_moderation_requests_count)));

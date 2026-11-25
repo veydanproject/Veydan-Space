@@ -96,7 +96,7 @@
   .voice { display: flex; align-items: center; gap: var(--sp-3); width: 300px; max-width: 100%; padding: var(--sp-1) 0; }
   .play {
     width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
-    background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center;
   }
   .play:disabled { opacity: 0.45; }
   .spin :global(svg) { animation: spin 1.1s linear infinite; }

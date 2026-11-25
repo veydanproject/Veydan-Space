@@ -235,7 +235,7 @@
   .length .m-row-label { font-weight: var(--fw-semibold); }
   .length input[type='range'] {
     width: 100%;
-    min-height: 0;
+    min-height: var(--touch);
     padding: 0;
     border: 0;
     background: transparent;

@@ -971,7 +971,7 @@
   textarea:disabled { opacity: 0.45; }
   .send {
     width: 40px; height: 40px; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer;
-    background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent-grad); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center;
     transition: filter var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
   }
   .send:hover:not(.off) { filter: brightness(1.1); }

@@ -4,7 +4,7 @@
 // Live transfers of files, by transfer and by message. Fed by
 // `transfer.progress` runtime events; read in full once from the runtime
 // (`messenger_media_transfers`) for what started before this view existed.
-// Bubbles read their own entry, the header chip and its list read them all.
+// Bubbles read their own entry, the header's count and its list those of their chat.
 
 import {
   messengerApi, transferProgress, type MessengerTransferProgress, type MessengerUiEvent, type TransferStatus,
@@ -38,15 +38,21 @@ class TransferStore {
   /** Every transfer under way, paused or failed, newest first. */
   list = $derived(Object.values(this.byId).filter((p) => !FINISHED.includes(p.status)).reverse());
 
-  counts = $derived.by((): TransferCounts => {
+  /** The transfers of one chat, newest first: a chat shows only its own. */
+  listOf(chatId: string): MessengerTransferProgress[] {
+    return this.list.filter((p) => p.chat_id === chatId);
+  }
+
+  /** How many of one chat's transfers go up, come down, failed. */
+  countsOf(chatId: string): TransferCounts {
     const c = { up: 0, down: 0, failed: 0, retriable: 0 };
-    for (const p of this.list) {
+    for (const p of this.listOf(chatId)) {
       if (p.status === 'failed') c.failed++;
       else c[p.direction]++;
       if (retriable(p)) c.retriable++;
     }
     return c;
-  });
+  }
 
   get(messageId: string): MessengerTransferProgress | null {
     const id = this.ofMessage[messageId];

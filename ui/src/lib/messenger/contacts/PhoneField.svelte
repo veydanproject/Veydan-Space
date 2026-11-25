@@ -58,6 +58,5 @@
   .icon-btn { flex-shrink: 0; }
   .hint { margin: 0; line-height: var(--lh-snug); }
   .share { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text-body); }
-  .toggle:disabled { opacity: 0.45; cursor: default; }
   @media (pointer: coarse) { .icon-btn { width: 40px; height: 40px; } }
 </style>

@@ -9,6 +9,9 @@
  * one more attribute wins over these whatever the order, and a token it leaves
  * out falls back to this one.
  * Every colour token is declared in both themes.
+ * periwinkle.css, imported right after this file with the same selectors,
+ * overrides its colours (РД-DS1-01); the shadows, the geometry and the
+ * call's windows are this file's.
  *
  * «Quiet Glass» (design kit 2026-10-15): cool neutral greys, a muted violet
  * — #7066c6 for what is filled (buttons, checks, badges), a lighter step for
@@ -246,7 +249,7 @@
   --danger-text:    #c92a32;
   --danger-border:  rgba(217, 45, 54, 0.3);
   --warn-bg:        rgba(214, 158, 20, 0.12);
-  --warn-text:      #9a6700;
+  --warn-text:      #7a5200;
   --warn-border:    rgba(214, 158, 20, 0.4);
 
   /* Category colours — one step darker than dark theme for light-bg legibility */

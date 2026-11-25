@@ -21,6 +21,8 @@
   import { fmtDateTime, fmtSize, loadEditorMode, saveEditorMode, type EditorMode } from '$lib/notes/mobile/notes-editor';
   import { onKeyboard } from '$lib/core/mobile/keyboard';
   import { leave } from '$lib/core/ui/back';
+  import { split } from '$lib/core/ui/split.svelte';
+  import { notesMobileUi } from '$lib/notes/mobile/ui.svelte';
   import NoteRichEditor from '$lib/notes/mobile/NoteRichEditor.svelte';
   import NoteFormatBar from '$lib/notes/mobile/NoteFormatBar.svelte';
   import { applyAction, type EditAction } from '$lib/notes/markdown-edit';
@@ -706,18 +708,24 @@
     requestAnimationFrame(() => body?.setSelectionRange(caret, caret));
   }
 
-  /** Open the linked note; create it when nothing matches. Entity mentions open the context sheet. */
+  /** A link being followed: a second tap meanwhile would leave the note twice in the history. */
+  let following = false;
+
+  /** Open the linked note on a page of its own, so «Назад» comes back here; create it when nothing matches. Entity mentions open the context sheet. */
   async function openWikiLink(target: string) {
     const name = target.trim();
-    if (!name) return;
+    if (!name || following) return;
     if (isEntityBinding(name)) { openContext(name); return; }
+    following = true;
     try {
       await save();
       let hit = await api.notes.resolveLink(name);
       if (!hit) hit = (await api.notes.create(name)).id;
-      await goto(`/notes/${hit}`);
+      if (hit !== id) await goto(`/notes/${hit}`);
     } catch (e) {
       error = formatError(e);
+    } finally {
+      following = false;
     }
   }
 
@@ -1035,15 +1043,18 @@
     }
   }
 
+  /** Where a deleted note leaves to: the list; beside it (a wide window), the list it stands beside, with nothing open. */
+  const afterDelete = () => (split.on ? notesMobileUi.listHref : '/notes');
+
   async function remove() {
     sheet = 'none';
-    if (id === 'new') return goto('/notes');
+    if (id === 'new') return split.on ? goto(afterDelete(), { replaceState: true }) : goto('/notes');
     if (!(await ask({ title: $t('notes_delete_confirm', { title: title || $t('notes_untitled') }) }))) return;
     queue.discard();
     status = 'idle';
     try {
       await api.notes.delete(id);
-      goto('/notes', { replaceState: true });
+      goto(afterDelete(), { replaceState: true });
     } catch (e) {
       error = formatError(e);
     }
@@ -1073,9 +1084,12 @@
 
 <div class="editor" style:padding-bottom={kb > 0 ? `max(${kb}px, calc(72px + var(--sab)))` : undefined}>
   <div class="m-header">
-    <button class="m-ibtn" onclick={back} aria-label={$t('common_back')}>
-      <Icon name="chevron-left" size={24} />
-    </button>
+    <!-- Beside the list (a wide window) the note has no arrow: «Назад» empties the right part (core/ui/split). -->
+    {#if !split.on}
+      <button class="m-ibtn" onclick={back} aria-label={$t('common_back')}>
+        <Icon name="chevron-left" size={24} />
+      </button>
+    {/if}
     {#if editingTitle}
       <input
         class="crumb-edit"
@@ -1485,6 +1499,10 @@
     background: var(--m-nav);
     border-top: 1px solid var(--border);
   }
+  /* Beside the list (a wide window) the bar stands under the note, not across the window, its buttons a group in the middle;
+     the text a column of 720 at most in the middle. */
+  :global(.shell.wide .screen) > .toolbar { position: absolute; justify-content: center; gap: var(--sp-2); }
+  :global(.shell.wide .screen) .editor > :not(.m-header) { width: 100%; max-width: 720px; margin-inline: auto; box-sizing: border-box; }
   .toolbar button {
     width: 48px;
     height: 48px;
@@ -1505,7 +1523,7 @@
   .ctx-count {
     position: absolute; top: 6px; right: 6px;
     min-width: 16px; height: 16px; padding: 0 4px;
-    border-radius: var(--radius-pill); background: var(--accent); color: #fff;
+    border-radius: var(--radius-pill); background: var(--accent); color: var(--on-accent);
     display: inline-flex; align-items: center; justify-content: center;
     font-size: var(--fs-xs); font-weight: var(--fw-bold); line-height: var(--lh-icon);
   }

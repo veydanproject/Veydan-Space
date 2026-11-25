@@ -53,6 +53,7 @@ use messenger_archive::{
 use messenger_core::traits::UiEvent;
 use messenger_core::{PubKey, Timestamp};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -253,6 +254,30 @@ const PAUSE_BACKOFF: Duration = Duration::from_secs(3600);
 /// key or a segment that may hold their welcome comes.
 const PARKED_RETRY: Duration = Duration::from_secs(3600);
 
+/// A file of the storage that did not come down (the disk refused it, the
+/// file is not what its op names, the storage answered with an error that
+/// is not "no connection") is tried again after a minute, then 2, 4, 8…
+/// up to an hour — not by every cycle and every restore: what failed a
+/// minute ago for a reason of this device fails again.
+const DOWNLOAD_RETRY_FIRST: Duration = Duration::from_secs(60);
+const DOWNLOAD_RETRY_MAX: Duration = Duration::from_secs(3600);
+/// After this many failures in a row the restore no longer waits for the
+/// file: the runtime and the UI hear that the rest is back.
+const DOWNLOAD_GIVEN_UP: u32 = 2;
+
+/// A version of a segment whose download failed.
+struct DownloadFailure {
+    times: u32,
+    next: Instant,
+    error: String,
+}
+
+/// How long the try after the `times`-th failure in a row waits.
+pub(crate) fn download_retry_after(times: u32) -> Duration {
+    let doubled = DOWNLOAD_RETRY_FIRST.saturating_mul(1u32 << times.saturating_sub(1).min(16));
+    doubled.min(DOWNLOAD_RETRY_MAX)
+}
+
 /// What the handler keeps between cycles, managed by the module: the seams
 /// handed to it, why the archive stands, the chat open now, what it last
 /// told the UI.
@@ -280,6 +305,9 @@ pub struct ArchiveSync {
     parked_retried: Mutex<Option<Instant>>,
     /// A collect ran in this process (its staging files are swept once).
     collected: AtomicBool,
+    /// The versions (`entity id`, `hash`) whose download failed, by the
+    /// collect or the restore: both ask for the same file.
+    failures: Mutex<HashMap<(String, String), DownloadFailure>>,
     told: Mutex<Told>,
 }
 
@@ -313,6 +341,7 @@ impl Default for ArchiveSync {
             draining: AtomicBool::new(false),
             again: AtomicBool::new(false),
             parked_retried: Mutex::new(None),
+            failures: Mutex::new(HashMap::new()),
             told: Mutex::new(Told {
                 last: idle(),
                 at: None,
@@ -341,6 +370,8 @@ impl ArchiveSync {
         *self.runtime.write().unwrap_or_else(|e| e.into_inner()) = runtime;
         self.backfilling.store(false, Ordering::SeqCst);
         self.restored.store(false, Ordering::SeqCst);
+        // A new session tries every file anew.
+        self.failures.lock().unwrap_or_else(|e| e.into_inner()).clear();
         if let (true, Some(app)) = (some, app) {
             self.install();
             kick(app);
@@ -485,6 +516,37 @@ impl ArchiveSync {
     /// leaves the screen, a manual cycle).
     pub fn resume(&self) {
         *self.pause.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.failures.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    /// The download of the version `hash` failed for a reason that is not
+    /// the connection: the next try waits, longer each time.
+    pub(crate) fn download_failed(&self, entity_id: &str, hash: &str, error: &str) {
+        let mut failures = self.failures.lock().unwrap_or_else(|e| e.into_inner());
+        // An older version of the segment is no longer asked for.
+        failures.retain(|(id, h), _| id != entity_id || h == hash);
+        let times = failures.get(&(entity_id.to_string(), hash.to_string())).map_or(0, |f| f.times) + 1;
+        let failure = DownloadFailure { times, next: Instant::now() + download_retry_after(times), error: error.to_string() };
+        failures.insert((entity_id.to_string(), hash.to_string()), failure);
+    }
+
+    /// The segment came down, or is no longer asked for.
+    pub(crate) fn download_settled(&self, entity_id: &str) {
+        self.failures.lock().unwrap_or_else(|e| e.into_inner()).retain(|(id, _), _| id != entity_id);
+    }
+
+    /// Why the version is not downloaded now: its last failure, while the
+    /// wait after it lasts.
+    pub(crate) fn download_waits(&self, entity_id: &str, hash: &str) -> Option<String> {
+        let failures = self.failures.lock().unwrap_or_else(|e| e.into_inner());
+        failures.get(&(entity_id.to_string(), hash.to_string())).filter(|f| Instant::now() < f.next).map(|f| f.error.clone())
+    }
+
+    /// The segments whose file failed often enough for the restore not to
+    /// wait for them: they are tried again in the background.
+    pub(crate) fn downloads_given_up(&self) -> Vec<String> {
+        let failures = self.failures.lock().unwrap_or_else(|e| e.into_inner());
+        failures.iter().filter(|(_, f)| f.times >= DOWNLOAD_GIVEN_UP).map(|((id, _), _)| id.clone()).collect()
     }
 
     /// Whether the parked segments are due another try by time alone.
@@ -755,6 +817,11 @@ pub struct ArchiveStatus {
     /// The scopes (`dm`, `dm@<server>`, `group:<id>`) with a segment still
     /// to restore: an open chat of one says so under its oldest message.
     pub restoring_scopes: Vec<String>,
+    /// The device takes its history back for the first time since a
+    /// storage or an identity was bound (a new device): the chats show the
+    /// restore. `false` once that restore is over — what other devices
+    /// write since comes in the background, and only the card tells.
+    pub first_restore: bool,
     /// The months (`yyyy-mm`) this device does not restore, their files
     /// over the bounds of the format: they stay in the storage and in the
     /// queue, and the card says so.
@@ -804,6 +871,7 @@ pub(crate) async fn status(arch: &ArchiveSync, core: &Core) -> CmdResult<Archive
         to_month,
         paused,
         restoring_scopes,
+        first_restore: archive::first_restore(&core.db).await,
         too_large,
         not_backed_up,
     })

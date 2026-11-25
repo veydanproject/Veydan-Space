@@ -102,7 +102,7 @@
   .level { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; justify-content: flex-start; gap: 2px; overflow: hidden; }
   .level i { display: block; width: 3px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
   /* The row's padding is 4 above and below: the 48 reaches over it, as the main button does. */
-  .send { width: 48px; height: 48px; margin: calc(-1 * var(--sp-1)) 0; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer; background: var(--accent-grad); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+  .send { width: 48px; height: 48px; margin: calc(-1 * var(--sp-1)) 0; flex-shrink: 0; border: none; border-radius: 50%; cursor: pointer; background: var(--accent-grad); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center; }
   .send:hover:not(:disabled) { filter: brightness(1.1); }
   .send:disabled { opacity: 0.45; }
   .btn-x:focus-visible, .send:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

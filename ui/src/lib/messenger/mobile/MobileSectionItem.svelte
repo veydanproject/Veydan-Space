@@ -13,6 +13,7 @@
   import { page } from '$app/state';
   import { t } from '$lib/core/i18n';
   import { leave } from '$lib/core/ui/back';
+  import { split } from '$lib/core/ui/split.svelte';
   import MobileFrame from './MobileFrame.svelte';
   import { BASE, openHref, sectionHref, sectionItemHref } from './routes';
   import { onChatOpened } from '../content/actions';
@@ -35,10 +36,13 @@
 {#if host && id}
   {@const View = host.view}
   <MobileFrame bare scroll={false}>
-    <View chatId={id} onback={back} onopen={(other) => goto(sectionItemHref(other), { replaceState: true })} />
+    <!-- Another row shown in place (a link followed inside, a row of the list beside it) is a page of its own. -->
+    {#key id}
+      <View chatId={id} onback={back} onopen={(other) => goto(sectionItemHref(other), { replaceState: true })} />
+    {/key}
   </MobileFrame>
 {:else}
-  <MobileFrame title={$t('msg_title')} onback={() => goto(BASE, { replaceState: true })}>
+  <MobileFrame title={$t('msg_title')} onback={split.on ? undefined : () => goto(BASE, { replaceState: true })}>
     <div class="note">{$t('msg_mobile_chat_missing')}</div>
   </MobileFrame>
 {/if}

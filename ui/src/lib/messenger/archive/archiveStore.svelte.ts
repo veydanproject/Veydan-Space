@@ -4,7 +4,9 @@
 // The archive of chats as the screens see it (messenger-archive-plan.md
 // section 5): one state read by the blocking screen after a restore (step B),
 // the banner above the chats (step C), the row in an open chat and the card
-// in the settings. Asked at start (`messenger_archive_status`), then moved by
+// in the settings. The screens of the chats show the restore of a new device
+// alone (`first_restore`, or the hold of a linking); the months another
+// device writes later come in the background, and only the card tells. Asked at start (`messenger_archive_status`), then moved by
 // the events `archive.progress` and `archive.synced`; a change of phase or of
 // the month under way asks the status again (at most once in a few seconds):
 // the size, the months and the scopes still to come are in it alone.
@@ -40,7 +42,10 @@ class ArchiveStore {
 
   progress = $derived<ArchiveProgress>(this.status?.progress ?? IDLE_PROGRESS);
   available = $derived(this.status?.available ?? false);
-  restoring = $derived(this.available && this.progress.phase === 'restoring' && this.progress.total > 0);
+  /** The archive brings months down now, whatever for: the card. */
+  moving = $derived(this.available && this.progress.phase === 'restoring' && this.progress.total > 0);
+  /** A new device takes its history back: the gate, the banner, the row of a chat. */
+  restoring = $derived(this.moving && (this.armed || (this.status?.first_restore ?? false)));
   percent = $derived(percentOf(this.progress));
   /** Step B shows: held, a restore under way, and something to restore. */
   blocking = $derived(this.armed && this.restoring);
@@ -121,14 +126,14 @@ class ArchiveStore {
     if (event.name === 'archive.progress') {
       const progress = event.payload as ArchiveProgress;
       const before = this.status?.progress;
-      const base: ArchiveStatus = this.status ?? { available: true, progress, size_bytes: 0, from_month: null, to_month: null, paused: null, restoring_scopes: [], too_large: [], not_backed_up: [] };
+      const base: ArchiveStatus = this.status ?? { available: true, progress, size_bytes: 0, from_month: null, to_month: null, paused: null, restoring_scopes: [], first_restore: false, too_large: [], not_backed_up: [] };
       // The progress says nothing of the storage: a device told it has none keeps that word until the status says otherwise.
       this.status = { ...base, progress, paused: progress.phase === 'paused' ? (progress.reason ?? base.paused) : null };
       this.measure(progress);
       if (!before || before.phase !== progress.phase || before.month !== progress.month) this.reloadSoon();
     } else if (event.name === 'archive.synced') {
       // Every segment is back: the banner and the row go, the card learns the size and the period.
-      if (this.status) this.status = { ...this.status, progress: { ...IDLE_PROGRESS }, restoring_scopes: [] };
+      if (this.status) this.status = { ...this.status, progress: { ...IDLE_PROGRESS }, restoring_scopes: [], first_restore: false };
       this.measure(IDLE_PROGRESS);
       this.open();
       this.load().catch(() => {});

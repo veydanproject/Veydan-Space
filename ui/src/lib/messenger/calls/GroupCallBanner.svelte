@@ -86,13 +86,14 @@
 <style>
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .banner {
-    display: flex; align-items: center; gap: var(--sp-2); padding: 7px var(--sp-3) 7px var(--sp-4);
-    background: var(--success-bg); border-bottom: 1px solid var(--success-border); color: var(--success-text);
+    /* In the conversation's column under its head (ChatWindow .head). */
+    display: flex; align-items: center; gap: var(--sp-2); padding: 7px var(--sp-3) 7px var(--sp-4); box-sizing: border-box; width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0;
+    background: var(--success-bg); border: 1px solid var(--success-border); border-radius: var(--radius-bar); color: var(--success-text);
     font-size: var(--fs-xs); min-width: 0;
   }
   .dot {
     width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-    background: var(--success); color: #fff; position: relative;
+    background: var(--success-grad); color: #fff; position: relative;
   }
   .banner:not(.mine) .dot::after {
     content: ''; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--success);
@@ -111,7 +112,7 @@
   }
   .btn-join {
     display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; padding: 5px 12px; border-radius: var(--radius-pill);
-    border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--success); color: #fff;
+    border: none; cursor: pointer; font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-bold); background: var(--success-grad); color: #fff;
   }
   .btn-join.soft { background: var(--surface); color: var(--success-text); border: 1px solid var(--success-border); }
   .btn-join:disabled { opacity: 0.45; cursor: default; }

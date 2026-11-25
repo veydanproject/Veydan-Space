@@ -69,6 +69,8 @@ messenger-testkit = { path = "../testkit", default-features = false }
 image.workspace = true
 wiremock.workspace = true
 tempfile.workspace = true
+# A bridge on this machine, for the diagnosis of the network (`net::diagnose`).
+messenger-vlink = { workspace = true, features = ["testing"] }
 sqlx.workspace = true
 nostr-sdk = { workspace = true, features = ["local-relay"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }

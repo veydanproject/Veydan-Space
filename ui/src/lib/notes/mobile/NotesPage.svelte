@@ -1,6 +1,10 @@
 <!-- SPDX-FileCopyrightText: 2026 Veydan Project -->
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
+<!--
+  The notes' list: a screen of its own on a phone; on a wide window the
+  column beside the open note (core/ui/split, notes/entry/mobile `splitOf`).
+-->
 <script lang="ts">
   import { ask } from '$lib/core/ui/confirm.svelte';
   import { goto } from '$app/navigation';
@@ -12,6 +16,11 @@
   import NoteRow from '$lib/notes/mobile/NoteRow.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
   import MoveFolderSheet from '$lib/notes/mobile/MoveFolderSheet.svelte';
+  import { split } from '$lib/core/ui/split.svelte';
+  import { notesMobileUi } from '$lib/notes/mobile/ui.svelte';
+  import { newNoteHref } from '$lib/notes/mobile/nav';
+  import { onNotesWritten } from '$lib/notes/mobile/api';
+  import { emptyTrashClosing, reloadOnWrites } from '$lib/notes/mobile/beside';
   import {
     api,
     formatError,
@@ -57,6 +66,8 @@
     return window.innerWidth >= TABLET_MIN_PX ? 'table' : 'list';
   }
   let viewMode = $state<'list' | 'table'>(loadView());
+  // A wide window's list is a column: the list, whatever the saved view, which is left as it is.
+  const view = $derived(split.on ? 'list' : viewMode);
   function setViewMode(m: 'list' | 'table') {
     viewMode = m;
     try { localStorage.setItem(VIEW_KEY, m); } catch {}
@@ -92,10 +103,15 @@
   let searchTimer: ReturnType<typeof setTimeout>;
   let busy = $state(false);
 
-  // Filter lives in the URL so back navigation works.
+  // Filter lives in the URL so back navigation works. Beside an open note
+  // (a wide window) the address is the note's: the list keeps the one it showed last.
+  const listUrl = $derived(page.url.pathname === '/notes' ? page.url : new URL(notesMobileUi.listHref, page.url));
+  $effect(() => {
+    if (page.url.pathname === '/notes') notesMobileUi.listHref = page.url.pathname + page.url.search;
+  });
   const filter = $derived<NoteListFilter>({
-    kind: page.url.searchParams.get('kind') || 'all',
-    id: page.url.searchParams.get('id') ?? undefined,
+    kind: listUrl.searchParams.get('kind') || 'all',
+    id: listUrl.searchParams.get('id') ?? undefined,
   });
   const rowMode = $derived<RowMode>(filter.kind === 'trash' ? 'trash' : filter.kind === 'archived' ? 'archived' : 'normal');
   const isMain = $derived(['all', 'pinned', 'archived'].includes(filter.kind));
@@ -173,6 +189,14 @@
     void load();
   });
 
+  // A note edited beside the list (its title, its pin, a new one, a deleted one) shows in it.
+  $effect(() => reloadOnWrites(onNotesWritten, load, () => busy));
+
+  /** A note shown beside the list went (deleted from the list): the right part is emptied. */
+  function closeShown(ids: string[]) {
+    if (ids.some((id) => split.shows(`/notes/${id}`))) void goto(notesMobileUi.listHref, { replaceState: true });
+  }
+
   function go(next: NoteListFilter) {
     const p = new URLSearchParams();
     if (next.kind !== 'all') p.set('kind', next.kind);
@@ -225,6 +249,7 @@
     };
     return run(async () => {
       for (const id of ids) await one(id);
+      if (action === 'delete' || action === 'purge') closeShown(ids);
     });
   }
 
@@ -261,7 +286,7 @@
 
   async function emptyTrash() {
     if (!(await ask({ title: $t('notes_trash_empty_confirm') }))) return;
-    await run(() => api.notes.emptyTrash());
+    await run(() => emptyTrashClosing(api.notes, closeShown));
   }
 
   // ── Multi-select ──
@@ -398,7 +423,7 @@
         <p>{emptyText()}</p>
       {/if}
     </div>
-  {:else if notes.length && viewMode === 'table' && !selecting}
+  {:else if notes.length && view === 'table' && !selecting}
     <div class="table-wrap">
       <NotesTable
         notes={shown.map((n) => n.raw)}
@@ -423,7 +448,8 @@
           mode={rowMode}
           {selecting}
           selected={selected.has(n.id)}
-          onopen={(x) => goto(`/notes/${x.id}`)}
+          active={split.shows(`/notes/${n.id}`)}
+          onopen={(x) => split.open(`/notes/${x.id}`)}
           ontoggle={toggleSelect}
           onlongpress={(x) => startSelect(x)}
           onquick={(x) => { quickNote = x; sheet = 'quick'; }}
@@ -443,6 +469,10 @@
   {/if}
   </div>
 
+  <!-- A wide window's column of sections has no «new»: the «+» of the list opens it beside (core/ui/split). -->
+  {#if split.on && !selecting}
+    <a class="m-fab" href={newNoteHref(listUrl)} onclick={split.follow} aria-label={$t('nav_new')}><Icon name="plus" size={22} /></a>
+  {/if}
 </div>
 
 {#if selecting}
@@ -470,11 +500,13 @@
       <Icon name="check-square" size={20} /><span class="m-row-label">{$t('notes_select')}</span>
     </button>
   </div>
-  <div class="group">{$t('notes_view')}</div>
-  <div class="m-seg">
-    <button type="button" class="m-seg-btn" class:active={viewMode === 'list'} onclick={() => setViewMode('list')}>{$t('notes_view_list')}</button>
-    <button type="button" class="m-seg-btn" class:active={viewMode === 'table'} onclick={() => setViewMode('table')}>{$t('notes_view_table')}</button>
-  </div>
+  {#if !split.on}
+    <div class="group">{$t('notes_view')}</div>
+    <div class="m-seg">
+      <button type="button" class="m-seg-btn" class:active={viewMode === 'list'} onclick={() => setViewMode('list')}>{$t('notes_view_list')}</button>
+      <button type="button" class="m-seg-btn" class:active={viewMode === 'table'} onclick={() => setViewMode('table')}>{$t('notes_view_table')}</button>
+    </div>
+  {/if}
   <div class="group">{$t('notes_sort')}</div>
   <div class="m-list">
     {#each SORT_KEYS as key (key)}
@@ -572,6 +604,8 @@
     height: calc(var(--bar-plate-h) + var(--sab));
     padding-bottom: var(--sab);
   }
+  /* Beside an open note the bar of the chosen rows stands in the list's column, not across the window. */
+  :global(.shell.wide .split-list) .bulk { position: absolute; }
   .bulk button {
     flex: 1;
     display: flex;

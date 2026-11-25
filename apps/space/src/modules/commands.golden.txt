@@ -170,6 +170,7 @@ messenger_avatar_prepare messenger all
 messenger_avatar_remove messenger all
 messenger_avatar_set messenger all
 messenger_bio_parse messenger all
+messenger_bug_send messenger all
 messenger_call_accept messenger all
 messenger_call_audio_route messenger mobile
 messenger_call_camera messenger mobile
@@ -332,6 +333,7 @@ messenger_moderation_requests_count messenger all
 messenger_net_bridge_add messenger all
 messenger_net_bridge_remove messenger all
 messenger_net_check messenger all
+messenger_net_diagnose messenger all
 messenger_net_offer_dismiss messenger all
 messenger_net_set_mode messenger all
 messenger_net_status messenger all

@@ -5,5 +5,5 @@
 export function tint(pubkey: string): string {
   let h = 0;
   for (let i = 0; i < pubkey.length; i++) h = (h * 31 + pubkey.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 55% 50%)`;
+  return `hsl(${h % 360} 60% var(--tint-l, 50%))`;
 }

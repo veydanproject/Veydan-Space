@@ -3,7 +3,8 @@
 
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { split } from '$lib/core/ui/split.svelte';
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
@@ -19,7 +20,7 @@
   import { netStore } from '../net/netStore.svelte';
   import Onboarding from '../onboarding/Onboarding.svelte';
   import MobileFrame from './MobileFrame.svelte';
-  import { chatHref, sectionItemHref } from './routes';
+  import { BASE, chatHref, sectionItemHref } from './routes';
   import { chatSections } from '../seams/sections.svelte';
   import PushOffer from '../push/PushOffer.svelte';
   import { pushSeen, startPushBridge } from '../push/bridge';
@@ -38,11 +39,14 @@
   markPhone();
 
   let query = $state('');
+  /** A wide window (split) opens the search by the lens of the head; one column keeps the field always. */
+  let searchOpen = $state(false);
   let newChat = $state(false);
   let newGroup = $state(false);
 
   onMount(() => {
-    chatStore.close();
+    // The list shown closes the chat left; beside an open chat (a wide window) the chat stays.
+    if (!split.beside(page.url)) chatStore.close();
     messengerStore.refresh().catch(() => {});
     messengerStore.startListeners().catch(() => {});
     // The list shows what is new: the notification about direct messages
@@ -56,7 +60,10 @@
   const netState = $derived(netStateOf(s?.runtime));
   const needsIdentity = $derived(messengerStore.needsOnboarding);
 
-  const open = (c: MessengerChat) => goto(chatHref(c.id));
+  // A row opens through the split: beside an open chat the next one takes its place (core/ui/split).
+  const open = (c: MessengerChat) => split.open(chatHref(c.id));
+  /** The row of a section open beside the list (a wide window); the chats' rows light by the open chat. */
+  const shownRow = $derived(split.on && page.url.pathname === `${BASE}/item` ? page.url.searchParams.get('id') : null);
 </script>
 
 {#snippet lead()}
@@ -73,7 +80,10 @@
 {/snippet}
 
 {#snippet actions()}
-  {#if !needsIdentity && s?.runtime}<MeButton />{/if}
+  {#if !needsIdentity && s?.runtime}
+    {#if split.on}<button class="m-ibtn" class:on={searchOpen || !!query} onclick={() => (searchOpen = !searchOpen)} aria-label={$t('msg_chats_search')}><Icon name="search" size={22} /></button>{/if}
+    <MeButton />
+  {/if}
 {/snippet}
 
 <MobileFrame hubButton title={host ? $t(host.title) : kind === 'group' ? $t('msg_nav_groups') : $t('msg_nav_chats')} {lead} {actions} scroll={needsIdentity || !s?.runtime}>
@@ -92,17 +102,20 @@
     {#if netState === 'locked' || netState === 'silent'}
       <div class="strip"><Notice tone="warn" role="status">{$t(`msg_net_${netState}` as 'msg_net_locked', { connected: '0', total: '0' })}</Notice></div>
     {/if}
-    <div class="search">
-      <Icon name="search" size={16} />
-      <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search" />
-      {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
-    </div>
+    {#if !split.on || searchOpen || query}
+      <div class="search">
+        <Icon name="search" size={16} />
+        <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search"
+          {@attach (el: HTMLInputElement) => { if (split.on && searchOpen) el.focus(); }} />
+        {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
+      </div>
+    {/if}
     {#if host}
       {#if host.above}{@const Above = host.above}<Above />{/if}
     {:else if kind !== 'dm'}
       <InvitesBar />
     {/if}
-    <ChatList {query} {kind} onopen={open} onopenfound={(c, q) => goto(chatHref(c.id, q))} onopenrow={(id) => goto(sectionItemHref(id))} top={!host && kind === 'dm' ? offers : undefined} />
+    <ChatList {query} {kind} onopen={open} onopenfound={(c, q) => split.open(chatHref(c.id, q))} onopenrow={(id) => split.open(sectionItemHref(id))} selected={shownRow} top={!host && kind === 'dm' ? offers : undefined} />
     {#if host}
       <button class="m-fab" onclick={() => (creating = true)} aria-label={$t(host.newTitle)}><Icon name={host.newIcon} size={22} /></button>
     {:else if kind === 'group'}
@@ -113,9 +126,9 @@
   {/if}
 </MobileFrame>
 
-<NewChatDialog bind:open={newChat} shortcuts onopened={() => { if (chatStore.activeId) goto(chatHref(chatStore.activeId)); }} />
-<NewGroupDialog bind:open={newGroup} onopened={(id) => goto(chatHref(id))} />
-{#if host}{@const Create = host.create}<Create bind:open={creating} onopened={(id) => goto(sectionItemHref(id))} />{/if}
+<NewChatDialog bind:open={newChat} shortcuts onopened={() => { if (chatStore.activeId) void split.open(chatHref(chatStore.activeId)); }} />
+<NewGroupDialog bind:open={newGroup} onopened={(id) => split.open(chatHref(id))} />
+{#if host}{@const Create = host.create}<Create bind:open={creating} onopened={(id) => split.open(sectionItemHref(id))} />{/if}
 
 <style>
   .net { width: 9px; height: 9px; border-radius: 50%; margin-left: 8px; background: var(--text-3); flex-shrink: 0; }
@@ -132,7 +145,7 @@
   }
   /* The pill is the field: its border is the one focus mark. */
   .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: 42px; padding: 0; }
+  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: var(--touch); padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }
   /* Inside the list, whose own side gap (--sp-2) would add to the cards' margin: they keep the edge of the search. */

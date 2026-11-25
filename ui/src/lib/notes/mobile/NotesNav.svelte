@@ -182,7 +182,7 @@
 
 {#if open}
   <div class="m-dim" onclick={onclose} role="presentation"></div>
-  <div class="drawer" role="dialog" aria-modal="true" aria-label={$t('app_notes')}>
+  <div class="drawer sections" role="dialog" aria-modal="true" aria-label={$t('app_notes')}>
     <div class="drawer-head">
       <span class="drawer-title">{$t('app_notes')}</span>
       <button class="m-ibtn" onclick={onclose} aria-label={$t('common_close')}>
@@ -474,7 +474,7 @@
     left: 0;
     bottom: 0;
     width: min(88vw, 340px);
-    background: var(--m-sheet);
+    background: var(--pane-side, var(--m-sheet));
     z-index: 51;
     display: flex;
     flex-direction: column;
@@ -501,7 +501,7 @@
     padding: 0 var(--sp-3) calc(var(--sab) + var(--sp-3));
   }
   section { display: flex; flex-direction: column; }
-  section + section { margin-top: var(--sp-2); }
+  section + section { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--divider, var(--border)); }
   .item {
     display: flex;
     align-items: center;

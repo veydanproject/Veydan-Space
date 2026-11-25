@@ -72,7 +72,7 @@ pub(super) fn spawn_retry(app: tauri::AppHandle, rt: Arc<MessengerRuntime>) -> T
     })
 }
 
-fn unix_now() -> u64 {
+pub(super) fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -82,9 +82,12 @@ fn unix_now() -> u64 {
 /// [`ReportSender`] over the way to the hosts of the project. The hosts
 /// are tried in their order, the next one only when the network failed or
 /// a gateway answered for a server that is not there (as the module cloud
-/// does, cloud-api.md §12); an answer of the server is final.
+/// does, cloud-api.md §12); an answer of the server is final. The same way
+/// carries a report of a bug, to its own path ([`ProjectReports::at`]).
 pub struct ProjectReports {
     http: Arc<dyn Http>,
+    /// The path on a host: [`REPORT_PATH`], or that of bugs.
+    path: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -105,7 +108,13 @@ struct Taken {
 
 impl ProjectReports {
     pub fn new(http: Arc<dyn Http>) -> Self {
-        Self { http }
+        Self::at(http, REPORT_PATH)
+    }
+
+    /// The same way to another path of the project's hosts, signed and
+    /// answered alike (`POST /cloud/v1/bug`).
+    pub fn at(http: Arc<dyn Http>, path: &'static str) -> Self {
+        Self { http, path }
     }
 
     /// One `POST` of `body` to `url`, signed at `at`.
@@ -177,7 +186,7 @@ impl ReportSender for ProjectReports {
         };
         let mut failed = None;
         'hosts: for host in hosts {
-            let url = format!("{host}{REPORT_PATH}");
+            let url = format!("{host}{}", self.path);
             let mut at = unix_now();
             // Once more at the server's clock when it says the signature is
             // out of time: the device's clock is off (cloud-api.md 2.2).
@@ -233,7 +242,7 @@ impl ReportSender for ProjectReports {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use messenger_core::{MessengerConfig, SecretStore};
     use messenger_runtime::report::{
@@ -247,21 +256,21 @@ mod tests {
     use zeroize::Zeroizing;
 
     /// What the fake server answers to one request.
-    enum Answer {
+    pub(crate) enum Answer {
         Down,
         Status(u16, String),
     }
 
     /// `Http` of the project with a server that answers as it is told, and
     /// keeps every request.
-    struct FakeHttp {
-        reach: CloudReach,
-        answers: Mutex<VecDeque<Answer>>,
-        got: Mutex<Vec<HttpRequest>>,
+    pub(crate) struct FakeHttp {
+        pub(crate) reach: CloudReach,
+        pub(crate) answers: Mutex<VecDeque<Answer>>,
+        pub(crate) got: Mutex<Vec<HttpRequest>>,
     }
 
     impl FakeHttp {
-        fn new(hosts: &[&str], answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
+        pub(crate) fn new(hosts: &[&str], answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
             Arc::new(Self {
                 reach: CloudReach::Veydan {
                     hosts: hosts.iter().map(|h| h.to_string()).collect(),
@@ -271,7 +280,7 @@ mod tests {
             })
         }
 
-        fn got(&self) -> Vec<HttpRequest> {
+        pub(crate) fn got(&self) -> Vec<HttpRequest> {
             self.got.lock().unwrap().clone()
         }
     }
@@ -335,7 +344,7 @@ mod tests {
 
     /// A messenger with a session and no network: the project's servers
     /// from the built-in manifest, relays silent.
-    async fn messenger(dir: &std::path::Path) -> (MessengerRuntime, Keys) {
+    pub(crate) async fn messenger(dir: &std::path::Path) -> (MessengerRuntime, Keys) {
         let rt = MessengerRuntime::start(
             MessengerConfig::new(dir.join("messenger")),
             Arc::new(MemorySecrets::default()),
@@ -372,7 +381,7 @@ mod tests {
     /// The signer of a request, checked as the server checks it: the event
     /// of the header is of kind 27235, signed, for this URL, this method
     /// and this body.
-    fn signer_of(request: &HttpRequest) -> String {
+    pub(crate) fn signer_of(request: &HttpRequest) -> String {
         let header = request
             .headers
             .iter()

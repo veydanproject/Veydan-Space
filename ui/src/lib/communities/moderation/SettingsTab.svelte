@@ -157,8 +157,8 @@
   .bad-text { color: var(--danger-text); }
   .option { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
   /* A phone is narrower than three choices in one line: each wraps its words. */
-  .seg { align-self: flex-start; max-width: 100%; }
-  .seg-btn { flex: 1 1 auto; min-width: 0; height: auto; min-height: 34px; padding-block: 6px; white-space: normal; text-align: center; justify-content: center; line-height: var(--lh-tight); }
+  .seg { align-self: flex-start; max-width: 100%; flex-wrap: wrap; row-gap: var(--sp-1); }
+  .seg-btn { min-width: 0; height: auto; min-height: 32px; padding-block: 6px; white-space: normal; text-align: left; line-height: var(--lh-tight); }
   .days { display: flex; flex-wrap: wrap; gap: 6px; }
   .times { display: flex; gap: var(--sp-3); flex-wrap: wrap; }
   .time { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); flex: 1; min-width: 110px; }

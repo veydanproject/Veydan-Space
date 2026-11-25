@@ -118,7 +118,7 @@
     position: absolute; left: -1.25em; top: 0.3em; width: 13px; height: 13px; border-radius: 3px;
     border: 1.5px solid color-mix(in srgb, currentColor 45%, transparent); display: inline-flex; align-items: center; justify-content: center;
   }
-  .box.done { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .box.done { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .table { max-width: 100%; overflow-x: auto; touch-action: pan-x pan-y; }
   table { border-collapse: collapse; font-size: 0.94em; }
   th, td { padding: 4px 8px; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); text-align: left; vertical-align: top; }

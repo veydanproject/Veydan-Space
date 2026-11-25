@@ -79,6 +79,13 @@
           return false;
         },
         handleClick: (_view, _pos, e) => onClick(e),
+        // ProseMirror answers the mouseup; the click after it reaches the link itself.
+        handleDOMEvents: {
+          click: (_view, e) => {
+            if (e.target instanceof Element && e.target.closest('a.wiki')) e.preventDefault();
+            return false;
+          },
+        },
         handleDoubleClick: (_view, _pos, e) => onDblClick(e),
       },
       onUpdate: ({ editor: ed }) => {
@@ -239,6 +246,8 @@
   function onClick(e: MouseEvent): boolean {
     const wiki = (e.target as HTMLElement).closest('a.wiki');
     if (!wiki) return false;
+    // The link is the note's alone: the WebView does nothing with it.
+    e.preventDefault();
     onwikilink(wiki.getAttribute('data-target') ?? '');
     return true;
   }

@@ -19,6 +19,7 @@
  * ========================================================================== */
 
 @import './palettes/quiet.css';
+@import './palettes/periwinkle.css';
 
 :root {
   /* ── Fonts ── (bundled via @fontsource-variable and core/fonts/cjk.css, imported by the shells)
@@ -133,6 +134,7 @@
   /* ── Glass ── (the colours are the palette's) */
   --pane-filter:  blur(24px) saturate(130%);
   --glass-filter: blur(20px) saturate(160%);
+  --glass-menu-filter: blur(32px) saturate(150%);
 }
 
 /* The ideographs Chinese, Japanese and Korean share take the glyphs of the UI's language. */
@@ -176,15 +178,18 @@
     --pane-strong: var(--surface);
     --glass-bg: var(--surface);
     --glass-bg-raised: var(--surface-2);
+    --glass-menu-bg: var(--surface-2);
     --glass-bar: var(--bg-2);
     --pane-filter: none;
     --glass-filter: none;
+    --glass-menu-filter: none;
   }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   [data-theme] {
     --glass-bg: var(--surface);
     --glass-bg-raised: var(--surface-2);
+    --glass-menu-bg: var(--surface-2);
     --glass-bar: var(--bg-2);
   }
 }

@@ -697,6 +697,14 @@ fn good_until(fetched: Instant, creds: &TurnCredentials, now: i64) -> Instant {
     fetched + Duration::from_secs((ttl - CREDENTIALS_MARGIN_SECS).max(0) as u64)
 }
 
+/// What [`NodeClient::check`] found of one node: the round trip of HELLO
+/// and that of a STUN binding, `None` where nothing came.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NodeCheck {
+    pub hello: Option<Duration>,
+    pub stun: Option<Duration>,
+}
+
 /// What a call was given to connect with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Picked {
@@ -1031,6 +1039,38 @@ impl NodeClient {
         } else {
             Ok(Picked::default())
         }
+    }
+
+    /// The node asked for the diagnosis of the network: HELLO, timed on
+    /// its own, then the TURN credentials for the address of its STUN and
+    /// one STUN binding there, timed on its own. Always over the network
+    /// (neither the cache nor the fake `fetch` of the tests answers), and
+    /// nothing of it is kept: a node that does not answer here is not
+    /// marked as missed for the calls. A node that says it is another one
+    /// counts as not answering.
+    pub async fn check(&self, node: &CallNode) -> NodeCheck {
+        let short = node.node.id.short();
+        let short = short.as_str();
+        let Ok(send) = connect(&node.node).await else {
+            return NodeCheck::default();
+        };
+        let access = Access::of(node);
+        let started = Instant::now();
+        let Ok(welcome) = post::<_, Welcome>(&send, PATH_HELLO, &hello(access.clone(), &self.inner.client_name), short).await else {
+            return NodeCheck::default();
+        };
+        let hello = started.elapsed();
+        if welcome.node_id != node.node.id.to_string() {
+            return NodeCheck::default();
+        }
+        let stun = match post::<_, TurnCredentials>(&send, PATH_TURN, &TurnRequest { access }, short).await {
+            Ok(credentials) => match stun_addr(&credentials) {
+                Some(addr) => stun_rtt(addr).await,
+                None => None,
+            },
+            Err(_) => None,
+        };
+        NodeCheck { hello: Some(hello), stun }
     }
 
     /// The node a group call makes its room on: of the first tier of

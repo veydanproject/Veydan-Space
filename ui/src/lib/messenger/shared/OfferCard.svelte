@@ -42,4 +42,6 @@
   .actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
   .actions :global(.btn) { flex: 1 1 auto; min-height: var(--control-h); justify-content: center; font-size: var(--fs-sm); }
   .actions :global(.btn-primary) { flex-grow: 1.4; }
+  /* A wide window's column of the list (core/ui/split): the buttons as wide as their words. */
+  :global(.shell.wide) .actions :global(.btn) { flex: 0 1 auto; }
 </style>
