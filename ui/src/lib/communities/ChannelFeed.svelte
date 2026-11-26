@@ -1033,9 +1033,7 @@
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
-  /* The count on ⋮ is the primitive .menu-count of base.css, at the button's upper right corner. */
-  /* On a phone the glass is 4 + 1 past the button: the count 3 inside it, 8 from the glass's edge. */
-  .head.phone .menu-count { right: 3px; }
+  /* The count on ⋮ is the primitive .menu-count of base.css, on the button's upper right corner, on computer and phone alike. */
   /* The bars under the head: cards the feed's width. */
   .strips { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
   .strips:not(:has(> *)) { display: none; }
@@ -1057,15 +1055,18 @@
   .pin-text b { color: var(--accent-text); font-weight: var(--fw-bold); margin-right: 4px; }
   /* The feed: a column of cards. */
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-6) var(--sp-4); display: flex; flex-direction: column; }
+  /* A computer's scrollbar takes 12 on the right (base.css). Its room is kept always (stable) and the same 12 is
+     added on the left: the posts are then in the middle of the pane, as the head and the field are. */
+  .window.glassfloat .scroll { scrollbar-gutter: stable; padding-left: calc(var(--sp-6) + 12px); }
   /* Under a head without a bar the feed dissolves at the top edge. */
   .window.phone .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
-  /* Under the bars the feed dissolves at their lower edge as it does under the head, over a longer way: the bars are tall and the post would otherwise look cut. */
   /* No strips: the feed runs behind the glass of the head (64: its 56 and its margin). */
   .window.phone .strips:not(:has(> *)) + .scroll { isolation: isolate; margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   /* A computer: the same, without the dissolve under the head (as a chat's). */
   .window.glassfloat .scroll { isolation: isolate; padding-bottom: calc(var(--sp-4) + var(--bottom-h, 0px)); }
   .window.glassfloat .strips:not(:has(> *)) + .scroll { margin-top: -64px; padding-top: calc(64px + var(--sp-2)); scroll-padding-top: 64px; }
-  :is(.window.phone, .window.glassfloat) .strips:has(> *) + .scroll { -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-8)); }
+  /* Under the bars the feed does not dissolve: the first card's top, its «⋮» and its date would look pale. `none`, not left out: it overrides the phone's dissolve under the head. */
+  :is(.window.phone, .window.glassfloat) .strips:has(> *) + .scroll { -webkit-mask-image: none; mask-image: none; }
   .content { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-3); flex-shrink: 0; }
   .content:has(> .placeholder) { margin-bottom: auto; }
   /* The states without a feed. */

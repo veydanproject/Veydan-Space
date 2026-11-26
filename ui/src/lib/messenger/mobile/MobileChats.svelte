@@ -41,6 +41,11 @@
   let query = $state('');
   /** A wide window (split) opens the search by the lens of the head; one column keeps the field always. */
   let searchOpen = $state(false);
+  /** The cross and Esc: the text goes first; in a wide window an empty field then closes, as the computer's ListSearch. */
+  function clearSearch() {
+    if (query) query = '';
+    else if (split.on) searchOpen = false;
+  }
   let newChat = $state(false);
   let newGroup = $state(false);
 
@@ -106,8 +111,9 @@
       <div class="search">
         <Icon name="search" size={16} />
         <input type="search" bind:value={query} placeholder={$t('msg_chats_search')} spellcheck="false" enterkeyhint="search"
-          {@attach (el: HTMLInputElement) => { if (split.on && searchOpen) el.focus(); }} />
-        {#if query}<button class="clear" onclick={() => (query = '')} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
+          {@attach (el: HTMLInputElement) => { if (split.on && searchOpen) el.focus(); }}
+          onkeydown={(e) => { if (split.on && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); clearSearch(); } }} />
+        {#if query || (split.on && searchOpen)}<button class="clear" onclick={clearSearch} aria-label={$t('common_back')}><Icon name="x" size={14} /></button>{/if}
       </div>
     {/if}
     {#if host}
@@ -145,7 +151,8 @@
   }
   /* The pill is the field: its border is the one focus mark. */
   .search:focus-within { border-color: var(--accent-border); }
-  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--fs-md); color: var(--text); min-height: var(--touch); padding: 0; }
+  /* The pill is 40 (--search-h) with its frame of 1 on each side. */
+  .search input { flex: 1; min-width: 0; border: none; border-radius: 0; background: none; outline: none; box-shadow: none; font: inherit; font-size: var(--search-fs); color: var(--text); height: calc(var(--search-h) - 2px); min-height: calc(var(--search-h) - 2px); padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .clear { border: none; background: none; color: var(--text-3); display: inline-flex; padding: var(--sp-2); }
   /* Inside the list, whose own side gap (--sp-2) would add to the cards' margin: they keep the edge of the search. */

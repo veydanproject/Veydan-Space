@@ -282,8 +282,6 @@
     const list: MenuEntry[] = [];
     if (!m.is_me) list.push({ label: $t('msg_group_member_write'), icon: 'message-circle', onselect: () => writeFrom(m) });
     // Any member may report another, whatever either one's role.
-    if (!m.is_me) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true,
-      onselect: () => reportStore.open({ accused: m.pubkey, name: who, context: { t: 'group', group_id: group.id }, canBlock: false }) });
     for (const role of rolesFor(group, m)) {
       list.push({ label: $t('msg_group_member_make', { role: $t(`msg_group_role_${role}` as 'msg_group_role_admin') }), icon: 'shield-check',
         onselect: () => demoting(m, role, () => act({ op: 'set_role', who: m.pubkey, role })) });
@@ -303,8 +301,12 @@
     if (isOwner(group) && !m.is_me) {
       list.push({ label: $t('msg_group_member_transfer'), icon: 'key', onselect: () => sure($t('msg_group_transfer_confirm', { name: who }), $t('msg_group_member_transfer'), { op: 'transfer_ownership', to: m.pubkey }, 'key') });
     }
+    // One line, then every red one: the report, then removal and the ban.
+    if (!m.is_me || canRemove(group, m)) list.push({ type: 'separator' });
+    // Any member may report another, whatever either one's role.
+    if (!m.is_me) list.push({ label: $t('msg_report'), icon: 'alert-triangle', danger: true,
+      onselect: () => reportStore.open({ accused: m.pubkey, name: who, context: { t: 'group', group_id: group.id }, canBlock: false }) });
     if (canRemove(group, m)) {
-      list.push({ type: 'separator' });
       list.push({ label: $t('msg_group_member_remove'), icon: 'user-minus', danger: true,
         onselect: () => demoting(m, null, () => sure($t('msg_group_remove_confirm', { name: who }), $t('msg_group_member_remove'), { op: 'remove', who: m.pubkey }, 'user-minus')) });
       if (hasModeration(group)) list.push({ label: $t('msg_mod_ban'), icon: 'user-cancel', danger: true, onselect: () => { dialogError = ''; ban = { open: true, m, hide: true }; } });
@@ -605,13 +607,24 @@
 </div>
 
 <InvitePicker bind:open={inviting} {group} />
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
+<!-- Over the member's items, whom they act on (DS2-16): the avatar 36 and the name, on a phone and a computer alike. -->
+{#snippet menuHead()}
+  {#if menu.m}
+    <span class="menu-who">
+      <Avatar url={nameStore.picture(menu.m.pubkey)} label={nameStore.label(menu.m.pubkey)} seed={menu.m.pubkey} size={36} />
+      <span class="menu-name">{nameStore.label(menu.m.pubkey)}</span>
+    </span>
+  {/if}
+{/snippet}
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} header={menuHead} onclose={() => (menu.open = false)} />
 <ChoiceDialog bind:open={mute.open} bind:value={mute.span} title={$t('msg_mod_mute_title', { name: mute.m ? nameStore.label(mute.m.pubkey) : '' })}
   options={muteOptions} cta={$t('msg_mod_mute_cta')} danger busy={dialogBusy} error={dialogError} onconfirm={confirmMute} />
 <ChoiceDialog bind:open={ban.open} bind:checked={ban.hide} title={$t('msg_mod_ban_title', { name: ban.m ? nameStore.label(ban.m.pubkey) : '' })}
   text={$t('msg_mod_ban_text')} check={$t('msg_mod_ban_hide')} cta={$t('msg_mod_ban')} danger busy={dialogBusy} error={dialogError} onconfirm={confirmBan} />
 
 <style>
+  .menu-who { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--fs-body); font-weight: var(--fw-semibold); }
   .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4) var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
   /* A tablet or a wide window: the column stays readable in the middle. */
@@ -667,7 +680,7 @@
     padding-bottom: calc(var(--sp-3) + var(--sab, 0px));
     border-top: 1px solid var(--border); background: var(--glass-bar);
   }
-  .foot .btn { min-height: var(--control-h); min-width: 0; }
+  .foot .btn { min-height: var(--touch, var(--control-h)); min-width: 0; }
 
   .state {
     display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md);
@@ -714,7 +727,7 @@
 
   /* The pages of people: a card of rows. */
   .block { display: flex; flex-direction: column; gap: var(--sp-3); }
-  .wide { min-height: var(--control-h); gap: var(--sp-2); justify-content: center; }
+  .wide { min-height: var(--touch, var(--control-h)); gap: var(--sp-2); justify-content: center; }
   .rows { list-style: none; margin: 0; padding: var(--sp-1); display: flex; flex-direction: column; }
   .rows > li { position: relative; }
   .rows > li + li::before { content: ''; position: absolute; top: 0; left: var(--sp-3); right: var(--sp-3); height: 1px; background: var(--border-2); }
@@ -739,7 +752,7 @@
   /* The last: what cannot be undone, apart. */
   .zone { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); padding-top: var(--sp-4); border-top: 1px dashed var(--border-2); }
   .zone-btns { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .zone-btns .btn { min-height: var(--control-h); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
+  .zone-btns .btn { min-height: var(--touch, var(--control-h)); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
 
   @media (pointer: coarse) {
     .person { min-height: 56px; }

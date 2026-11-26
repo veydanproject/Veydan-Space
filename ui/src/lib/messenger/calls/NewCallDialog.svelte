@@ -81,14 +81,14 @@
 
 <style>
   .body { display: flex; flex-direction: column; gap: var(--sp-3); }
-  /* The field of whom: 44 high with the search glyph inside (48 under a finger), the ring around the whole field. */
+  /* The field of whom: 44 high with the search glyph inside (48 under a finger), the ring around the whole field; the input takes its height, the text in the middle. */
   .search {
     display: flex; align-items: center; gap: var(--sp-2); min-height: var(--control-h-lg); padding: 0 var(--sp-3);
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-pill); color: var(--text-3);
   }
   .search:focus-within { border-color: var(--accent-border); }
   .search :global(svg) { flex-shrink: 0; }
-  .search input { flex: 1; min-width: 0; align-self: stretch; padding: 0; border: none; background: none; font: inherit; font-size: var(--fs-base); color: var(--text); }
+  .search input { flex: 1; min-width: 0; align-self: stretch; height: auto; padding: 0; border: none; background: none; font: inherit; font-size: var(--fs-base); color: var(--text); }
   .search input:focus { outline: none; box-shadow: none; }
   /* «Контакты», «Группы» in sentence case over their cards. */
   .label { margin-top: var(--sp-1); font-size: var(--fs-base); font-weight: var(--fw-bold); color: var(--text); }

@@ -122,10 +122,13 @@ webrtc_file_sha256() {
 
 # Unpacks a zip into a folder with what the system has: unzip, or 7z
 # (the Windows runners of CI), or a tar that reads zip (bsdtar of macOS
-# and Windows).
+# and Windows). -o: the archive of Android carries a Linux sysroot whose
+# headers differ by case alone (ip6t_HL.h, ip6t_hl.h); on the file system of
+# a Mac, which does not tell them apart, unzip would ask and give up. The
+# folder is a fresh one, so nothing of ours is overwritten.
 webrtc_unzip() {
   if command -v unzip >/dev/null 2>&1; then
-    unzip -q "$1" -d "$2"
+    unzip -o -q "$1" -d "$2"
   elif command -v 7z >/dev/null 2>&1; then
     7z x -bso0 -bsp0 -o"$2" "$1"
   else

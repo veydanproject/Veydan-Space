@@ -114,7 +114,7 @@
   .box { display: flex; flex-direction: column; gap: var(--sp-2); }
   .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; color: var(--text-2); }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

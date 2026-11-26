@@ -23,28 +23,52 @@ SDK_DIR="$TC_DIR/android-sdk"
 # Pinned versions
 JDK_MAJOR="17"
 CMDLINE_TOOLS_BUILD="16111833"
+# Google builds the command-line tools of a Mac less often: the newest of macOS.
+CMDLINE_TOOLS_BUILD_MAC="15641748"
 ANDROID_PLATFORMS="platforms;android-34 platforms;android-35 platforms;android-36"
 ANDROID_BUILD_TOOLS="build-tools;36.0.0"
 ANDROID_NDK_VERSION="30.0.16248370"
 RUST_ANDROID_TARGETS="aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android"
 
-# --- JDK (Temurin, portable tarball) ---
-if [ ! -x "$JDK_DIR/bin/java" ]; then
+# The host: Linux x64 (the dev machines, the runners) or macOS. A Mac takes
+# the Mac builds of the JDK and the command-line tools, and keeps what the
+# SDK tools write in the home folder (~/.android: the adb key, the emulator's
+# settings, the virtual devices) in data/toolchains too; on Linux the lab of
+# the agents uses ~/.android and keeps it.
+case "$(uname -s)" in
+  Darwin)
+    case "$(uname -m)" in arm64) jdk_arch=aarch64 ;; *) jdk_arch=x64 ;; esac
+    JDK_URL="https://api.adoptium.net/v3/binary/latest/$JDK_MAJOR/ga/mac/$jdk_arch/jdk/hotspot/normal/eclipse?project=jdk"
+    JDK_HOME="$JDK_DIR/Contents/Home"
+    CMDLINE_TOOLS_ZIP="commandlinetools-mac-${CMDLINE_TOOLS_BUILD_MAC}_latest.zip"
+    export ANDROID_USER_HOME="$TC_DIR/android-user"
+    export ANDROID_AVD_HOME="$TC_DIR/android-avd"
+    export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+    mkdir -p "$ANDROID_USER_HOME" "$ANDROID_AVD_HOME"
+    unset jdk_arch
+    ;;
+  *)
+    JDK_URL="https://api.adoptium.net/v3/binary/latest/$JDK_MAJOR/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk"
+    JDK_HOME="$JDK_DIR"
+    CMDLINE_TOOLS_ZIP="commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip"
+    ;;
+esac
+
+# --- JDK (Temurin, portable tarball; on a Mac the bundle's Contents/Home) ---
+if [ ! -x "$JDK_HOME/bin/java" ]; then
   echo ">> Installing JDK $JDK_MAJOR into data/toolchains/jdk ..."
-  curl -sSL "https://api.adoptium.net/v3/binary/latest/$JDK_MAJOR/ga/linux/x64/jdk/hotspot/normal/eclipse?project=jdk" \
-    -o /tmp/_vm_jdk.tar.gz
+  curl -sSL "$JDK_URL" -o /tmp/_vm_jdk.tar.gz
   mkdir -p "$JDK_DIR"
   tar -xzf /tmp/_vm_jdk.tar.gz -C "$JDK_DIR" --strip-components=1
   rm -f /tmp/_vm_jdk.tar.gz
 fi
-export JAVA_HOME="$JDK_DIR"
+export JAVA_HOME="$JDK_HOME"
 export PATH="$JAVA_HOME/bin:$PATH"
 
 # --- Android command-line tools ---
 if [ ! -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
   echo ">> Installing Android cmdline-tools into data/toolchains/android-sdk ..."
-  curl -sSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip" \
-    -o /tmp/_vm_cmdline.zip
+  curl -sSL "https://dl.google.com/android/repository/$CMDLINE_TOOLS_ZIP" -o /tmp/_vm_cmdline.zip
   mkdir -p "$SDK_DIR/cmdline-tools"
   rm -rf /tmp/_vm_cmdline
   unzip -q /tmp/_vm_cmdline.zip -d /tmp/_vm_cmdline

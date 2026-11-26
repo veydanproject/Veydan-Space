@@ -298,7 +298,7 @@
   .fill { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width var(--dur-base) var(--ease); }
   @media (pointer: coarse) {
     .search input { font-size: var(--fs-md); min-height: 40px; }
-    .bar-acts .btn { min-height: var(--control-h); }
+    .bar-acts .btn { min-height: var(--touch, var(--control-h)); }
   }
   @media (prefers-reduced-motion: reduce) { .bar { animation: none; } }
 </style>

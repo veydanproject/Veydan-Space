@@ -74,9 +74,10 @@ fn ios_project() {
         println!("cargo:rerun-if-changed={}", dir.join("Info.plist").display());
     }
 
-    // A build signed by the personal team of a free Apple account
-    // (scripts/ios/device.sh, IOS_FREE_TEAM=1), which cannot sign the push
-    // capability: the entitlement is taken out, and the app gets no push
+    // A build that push does not reach (scripts/ios/device-env.sh: an
+    // identifier other than the product's, net.veydan.mobile.dev by default,
+    // or the personal team of a free Apple account, which cannot sign the push
+    // capability): the entitlement is taken out, and the app gets no push
     // token. The sign is the file `.tauri/no-push` in the Xcode project
     // (ignored by git), since xcodebuild runs this phase with an environment
     // of its own; VEYDAN_IOS_NO_PUSH=1 says the same to a plain cargo build.

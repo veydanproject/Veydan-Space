@@ -107,12 +107,19 @@
 <style>
   /* The bubble is the card: no box inside it, a line under the words. */
   .link { min-width: min(280px, 100%); margin-top: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); color: var(--text); }
-  .link :global(.btn) { min-height: var(--control-h); justify-content: center; }
-  .link :global(.row) { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: nowrap; margin-top: var(--sp-1); }
-  .link :global(.row .btn) { flex: 1 1 0; min-width: 0; }
-  .link :global(.row .btn-primary) { flex: 1 1 auto; }
-  .link :global(.row .btn-primary + .btn-ghost) { flex: 0 0 auto; }
-  .link :global(.known) { white-space: nowrap; flex: none; font-size: var(--fs-sm); color: var(--success-text, var(--success)); }
+  /* A message of one link: no line over its card. */
+  :global(.cards:first-child) > .link:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  /* Its buttons the card's width, one under the other, the main one first;
+     «В контактах» under them in the middle. */
+  .link :global(.btn) {
+    min-height: var(--touch, var(--control-h)); width: 100%; gap: var(--sp-2); justify-content: center;
+    font-size: var(--fs-base); font-weight: var(--fw-semibold);
+  }
+  .link :global(.row) { display: grid; grid-template-columns: 1fr; gap: var(--sp-2); margin-top: 2px; }
+  .link :global(.known) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px;
+    white-space: nowrap; flex: none; font-size: var(--fs-sm); color: var(--success-text, var(--success));
+  }
   .wait { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .wait :global(svg) { flex-shrink: 0; animation: spin 1.1s linear infinite; }
   .channel { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
@@ -121,7 +128,7 @@
     background: var(--accent-tint); color: var(--accent-text-2);
   }
   .about { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .channel .btn { flex-shrink: 0; }
   .sub.wrap { white-space: normal; line-height: var(--lh-snug); }

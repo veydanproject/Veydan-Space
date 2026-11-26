@@ -185,6 +185,8 @@
   .tabs { display: flex; gap: 2px; padding: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
   .tabs button { flex: 1 0 auto; display: grid; place-items: center; min-width: 36px; height: 36px; border: none; background: none; font-size: var(--fs-lg); line-height: var(--lh-icon); padding: 0 var(--sp-1); border-radius: var(--radius); cursor: pointer; filter: grayscale(0.4); opacity: 0.75; }
   .tabs button.active { background: var(--accent-bg); filter: none; opacity: 1; }
+  /* The bar of base.css's .tab.active under the glyph alone, 12 in from the button's sides. */
+  .tabs button.active::after { left: var(--sp-3); right: var(--sp-3); }
   .body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-1) var(--sp-3) var(--sp-2); }
   .label { position: sticky; top: 0; background: var(--glass-bg); -webkit-backdrop-filter: var(--glass-filter); backdrop-filter: var(--glass-filter); font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--text-2); padding: var(--sp-2) var(--sp-1) var(--sp-1); }
   .inline .label, .docked .label { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }

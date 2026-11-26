@@ -54,7 +54,7 @@
 
 <div class="box">
   <div class="top">
-    <Avatar url={view.picture} label={name} seed={view.group_id} size={44} />
+    <Avatar url={view.picture} label={name} seed={view.group_id} size={52} />
     <div class="about">
       <span class="name">{name}</span>
       <span class="sub">
@@ -100,7 +100,7 @@
   .box { display: flex; flex-direction: column; gap: var(--sp-2); }
   .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
   .status { display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); }
   .status.closed { color: var(--warn-text); }
@@ -111,6 +111,6 @@
   }
   .note:focus { outline: none; border-color: var(--accent-border); }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
-  .row .btn-primary, .box > .btn { flex: 1; justify-content: center; }
+  .row .btn, .box > .btn { width: 100%; justify-content: center; }
   @media (pointer: coarse) { .note { font-size: var(--fs-md); } }
 </style>

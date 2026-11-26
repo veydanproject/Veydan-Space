@@ -197,28 +197,13 @@
     {#if nav}
       <nav class="body">
         <section>
-          <button class="item" class:on={active('all')} onclick={() => pick('all')}>
-            <Icon name="notes" size={18} />
-            <span class="name">{$t('notes_filter_all')}</span>
-            <span class="n">{nav.counts.all}</span>
-          </button>
-          {#if nav.counts.global > 0 && (hasBrowser || nav.counts.global !== nav.counts.all)}
+          {#if nav.counts.global > 0}
             <button class="item" class:on={active('global')} onclick={() => pick('global')}>
               <Icon name="world" size={18} />
               <span class="name">{$t('notes_filter_global')}</span>
               <span class="n">{nav.counts.global}</span>
             </button>
           {/if}
-          <button class="item" class:on={active('pinned')} onclick={() => pick('pinned')}>
-            <Icon name="pin" size={18} />
-            <span class="name">{$t('notes_filter_pinned')}</span>
-            <span class="n">{nav.counts.pinned}</span>
-          </button>
-          <button class="item" class:on={active('archived')} onclick={() => pick('archived')}>
-            <Icon name="archive" size={18} />
-            <span class="name">{$t('notes_filter_archived')}</span>
-            <span class="n">{nav.counts.archived}</span>
-          </button>
           <button class="item" class:on={active('trash')} onclick={() => pick('trash')}>
             <Icon name="trash-2" size={18} />
             <span class="name">{$t('notes_filter_trash')}</span>

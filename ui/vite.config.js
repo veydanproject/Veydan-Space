@@ -14,8 +14,9 @@ const platform = process.env.TAURI_ENV_PLATFORM ?? "unknown";
 const product = productFromEnv();
 
 // Separate ports per product and platform, so products and platforms can run
-// at the same time (Space 1420/1430, Notes 1440/1450, Pass 1460/1470, Chat
-// 1480/1490; iOS takes the phone port of Android); the HMR port of a phone is the next one.
+// at the same time (desktop / Android / iOS: Space 1420/1430/1432, Notes
+// 1440/1450/1452, Pass 1460/1470/1472, Chat 1480/1490/1492); the HMR port of a
+// phone is the next one.
 const isMobile = product.platform !== "desktop";
 const port = product.port;
 const hmrPort = isMobile || host ? product.hmrPort : port;
@@ -65,6 +66,14 @@ export default defineConfig(async () => ({
     //    cargo's build directories (data/target alone holds more files than the
     //    system lets one process watch), the products' build output, the Vite
     //    caches (data/) and the toolchains are outside it.
+    // 4. ...and not the SvelteKit folders of the other dev servers
+    //    (.svelte-kit/<product>-<platform>, 11.4): each writes its own
+    //    tsconfig.json there at its start, which a server watching it took
+    //    for a change of its own config — the cache cleared and the page of
+    //    its device reloaded (Android beside iOS, 2026-11-26).
+    watch: {
+      ignored: [new RegExp(`[\\\\/]\\.svelte-kit[\\\\/](?!${product.outDir.split("/").pop()}[\\\\/])`)],
+    },
   },
 }));
 

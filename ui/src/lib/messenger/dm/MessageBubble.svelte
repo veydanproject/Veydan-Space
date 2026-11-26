@@ -194,13 +194,13 @@
   /* Words under the file's line take the width: the time goes under them. */
   .bubble.file-only:has(:global(.err), :global(.fail), :global(.foreign)) { --file-meta: 0px; }
   .bubble.file-only:has(:global(.err), :global(.fail), :global(.foreign)) > .meta { position: static; }
-  .bubble.bot { width: min(400px, 86%); box-sizing: border-box; padding: var(--sp-3); --file-meta: 56px; }
-  /* With an action the time stands beside it, in the middle of its height. */
-  .bubble.bot:has(:global(.act)) > .meta { position: absolute; right: var(--sp-3); bottom: calc(var(--sp-3) + (var(--control-h) - var(--fs-xs)) / 2); }
+  /* A bot's card as wide as a link's cards (its own .bot-card); the time under it. */
+  .bubble.bot { box-sizing: border-box; padding: var(--sp-3) var(--sp-3) var(--sp-2); }
+  .bubble.bot > .meta { margin-top: var(--sp-1); }
   .bubble.contact { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .bubble.contact > .meta { margin-top: var(--sp-1); }
   /* A card's min-width: min(320px, 100%) is 0 while the bubble sizes to its content: the bubble holds 320 + its padding itself. */
-  .bubble.contact, .bubble:has(:global(.cards)) { min-width: min(calc(320px + 2 * var(--sp-3) + 2px), 86%); }
+  .bubble.contact, .bubble.bot, .bubble:has(:global(.cards)) { min-width: min(calc(320px + 2 * var(--sp-3) + 2px), 86%); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
   @media (pointer: coarse) {

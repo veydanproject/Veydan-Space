@@ -4,7 +4,6 @@
 // The notes' own bottom bar on the phone (`ModuleDef.bar`): notes, new, tags, more.
 
 import type { NavItem } from '$lib/core/module';
-import { split } from '$lib/core/ui/split.svelte';
 import { notesMobileUi } from './ui.svelte';
 
 const NEW_NOTE_KINDS = new Set(['folder', 'workspace', 'profile']);
@@ -18,11 +17,10 @@ export function newNoteHref(url: URL): string {
   return `/notes/new?${new URLSearchParams({ kind, id })}`;
 }
 
-/** A wide window's column of sections has no «new»: the «+» at the foot of the list stands for it (core/ui/split). */
-export function notesNav(newHref = '/notes/new', wide = false): NavItem[] {
+/** The bar has no «new»: the «+» at the foot of the list stands for it. */
+export function notesNav(): NavItem[] {
   return [
     { id: 'notes', title: 'app_notes', icon: 'notes', href: '/notes' },
-    ...(wide ? [] : [{ id: 'new', title: 'nav_new', icon: 'file-plus', href: newHref } satisfies NavItem]),
     { id: 'tags', title: 'notes_tags', icon: 'tag', href: '/notes/tags' },
     { id: 'more', title: 'nav_more', icon: 'more-horizontal', onclick: () => { notesMobileUi.moreOpen = true; } },
   ];
@@ -32,6 +30,6 @@ export function notesNav(newHref = '/notes/new', wide = false): NavItem[] {
 export function notesBar(url: URL): NavItem[] | null | undefined {
   const { pathname } = url;
   if (/^\/notes\/(?!tags$)[^/]+/.test(pathname)) return null;
-  if (pathname.startsWith('/notes') || pathname.startsWith('/search')) return notesNav(newNoteHref(url), split.on);
+  if (pathname.startsWith('/notes') || pathname.startsWith('/search')) return notesNav();
   return undefined;
 }

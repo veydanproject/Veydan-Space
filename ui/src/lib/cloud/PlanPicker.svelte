@@ -185,7 +185,7 @@
       {#each periods as days (days)}
         {@const saved = bestSaving(plans, currency, days)}
         <button class="seg-btn" class:active={period === days} type="button" role="radio" aria-checked={period === days} onclick={() => (pickedPeriod = days)}>
-          <span>{periodLabel(days)}</span>{#if saved}<span class="save">−{saved}%</span>{/if}
+          <span class="word">{periodLabel(days)}</span>{#if saved}<span class="save">−{saved}%</span>{/if}
         </button>
       {/each}
     </div>
@@ -222,9 +222,14 @@
     background: var(--success-bg); color: var(--success-text); border: 1px solid var(--success-border);
     font-size: var(--fs-xs); font-weight: var(--fw-bold); white-space: nowrap;
   }
-  /* The periods: one row of equal parts; on a phone the saving goes under the name, so four fit. */
+  /* The periods: one row of equal parts, each word in the middle of its part with the bar under the word alone (its saving outside the bar);
+     on a phone the saving goes under the name, so four fit. */
   .periods { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
-  .periods .seg-btn { justify-content: center; white-space: nowrap; }
+  .periods .seg-btn { justify-self: center; justify-content: center; white-space: nowrap; }
+  /* The bar under the period's name, not under its saving: the name takes the button's height and carries it. */
+  .picker:not(.m) .periods .seg-btn.active::after { content: none; }
+  .picker:not(.m) .periods .word { position: relative; align-self: stretch; display: inline-flex; align-items: center; }
+  .picker:not(.m) .periods .seg-btn.active .word::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
   .m .periods .seg-btn { flex-direction: column; gap: 2px; min-height: var(--sp-12); }
   .m .periods .save { margin-left: 0; }
 

@@ -15,6 +15,7 @@
   import NotesNav from '$lib/notes/mobile/NotesNav.svelte';
   import NoteRow from '$lib/notes/mobile/NoteRow.svelte';
   import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import MoveFolderSheet from '$lib/notes/mobile/MoveFolderSheet.svelte';
   import { split } from '$lib/core/ui/split.svelte';
   import { notesMobileUi } from '$lib/notes/mobile/ui.svelte';
@@ -264,6 +265,36 @@
     if (n) onAction(action, n);
   }
 
+  /** A long press and a swipe right alike (DS2-31): the note's sheet, «Выбрать» first; the reds under a line. */
+  function openQuick(note: NoteListItem) {
+    quickNote = note;
+    sheet = 'quick';
+  }
+
+  const quickItems = $derived.by((): MenuEntry[] => {
+    const n = quickNote;
+    if (!n) return [];
+    const choose: MenuEntry = { label: $t('notes_select'), icon: 'check-square', onselect: () => startSelect(n) };
+    if (rowMode === 'trash') {
+      return [
+        choose,
+        { label: $t('common_restore'), icon: 'rotate-ccw', onselect: () => quickAct('restore') },
+        { type: 'separator' },
+        { label: $t('notes_purge'), icon: 'trash-2', danger: true, onselect: () => quickAct('purge') },
+      ];
+    }
+    return [
+      choose,
+      { label: n.pinned ? $t('notes_unpin') : $t('notes_pin'), icon: 'pin', onselect: () => quickAct('pin') },
+      { label: $t('notes_move'), icon: 'folder', onselect: () => openMove([n.id]) },
+      rowMode === 'archived'
+        ? { label: $t('notes_unarchive'), icon: 'archive-restore', onselect: () => quickAct('unarchive') }
+        : { label: $t('notes_archive'), icon: 'archive', onselect: () => quickAct('archive') },
+      { type: 'separator' },
+      { label: $t('notes_delete'), icon: 'trash-2', danger: true, onselect: () => quickAct('delete') },
+    ];
+  });
+
   function openMove(ids: string[]) {
     moveTargets = ids;
     sheet = 'move';
@@ -451,8 +482,8 @@
           active={split.shows(`/notes/${n.id}`)}
           onopen={(x) => split.open(`/notes/${x.id}`)}
           ontoggle={toggleSelect}
-          onlongpress={(x) => startSelect(x)}
-          onquick={(x) => { quickNote = x; sheet = 'quick'; }}
+          onlongpress={openQuick}
+          onquick={openQuick}
           onaction={onAction}
           revealed={revealedId === n.id}
           otherRevealed={revealedId !== null && revealedId !== n.id}
@@ -469,8 +500,8 @@
   {/if}
   </div>
 
-  <!-- A wide window's column of sections has no «new»: the «+» of the list opens it beside (core/ui/split). -->
-  {#if split.on && !selecting}
+  <!-- The only «new»: on a wide window it opens the note beside (core/ui/split). -->
+  {#if !selecting && filter.kind !== 'trash'}
     <a class="m-fab" href={newNoteHref(listUrl)} onclick={split.follow} aria-label={$t('nav_new')}><Icon name="plus" size={22} /></a>
   {/if}
 </div>
@@ -523,23 +554,8 @@
   </div>
 </BottomSheet>
 
-<BottomSheet open={sheet === 'quick' && !!quickNote} title={quickNote?.title || $t('notes_untitled')} onclose={() => (sheet = 'none')}>
-  <div class="m-list">
-    {#if rowMode === 'trash'}
-      <button type="button" class="m-row" onclick={() => quickAct('restore')}><Icon name="rotate-ccw" size={20} /><span class="m-row-label">{$t('common_restore')}</span></button>
-      <button type="button" class="m-row" onclick={() => quickAct('purge')}><Icon name="trash-2" size={20} /><span class="m-row-label danger-text">{$t('notes_purge')}</span></button>
-    {:else}
-      <button type="button" class="m-row" onclick={() => quickAct('pin')}><Icon name="pin" size={20} /><span class="m-row-label">{quickNote?.pinned ? $t('notes_unpin') : $t('notes_pin')}</span></button>
-      <button type="button" class="m-row" onclick={() => { const id = quickNote!.id; sheet = 'none'; openMove([id]); }}><Icon name="folder" size={20} /><span class="m-row-label">{$t('notes_move')}</span></button>
-      {#if rowMode === 'archived'}
-        <button type="button" class="m-row" onclick={() => quickAct('unarchive')}><Icon name="archive-restore" size={20} /><span class="m-row-label">{$t('notes_unarchive')}</span></button>
-      {:else}
-        <button type="button" class="m-row" onclick={() => quickAct('archive')}><Icon name="archive" size={20} /><span class="m-row-label">{$t('notes_archive')}</span></button>
-      {/if}
-      <button type="button" class="m-row" onclick={() => quickAct('delete')}><Icon name="trash-2" size={20} /><span class="m-row-label danger-text">{$t('notes_delete')}</span></button>
-    {/if}
-  </div>
-</BottomSheet>
+{#snippet quickHead()}<span class="menu-name">{quickNote?.title || $t('notes_untitled')}</span>{/snippet}
+<ContextMenu open={sheet === 'quick' && !!quickNote} x={0} y={0} items={quickItems} header={quickHead} onclose={() => (sheet = 'none')} />
 
 <MoveFolderSheet
   open={sheet === 'move'}
@@ -587,8 +603,8 @@
     font-size: var(--fs-body);
     font-weight: var(--fw-semibold);
   }
-  .rows { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); padding-bottom: var(--sp-6); }
-  .danger-text { color: var(--danger-text); }
+  .rows { display: flex; flex-direction: column; gap: var(--sp-1); --rows-gap: var(--sp-1); padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
+  .menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bulk {
     position: fixed;
     left: 0;

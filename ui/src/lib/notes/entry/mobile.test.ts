@@ -28,8 +28,8 @@ describe('the notes on a wide window (core/ui/split)', () => {
     expect(split('/search')).toBeUndefined();
   });
 
-  it('has no «new» in the column of sections: the «+» of the list stands for it', () => {
-    expect(bar('/notes')?.map((i) => i.id)).toEqual(['notes', 'new', 'tags', 'more']);
+  it('has no «new» in the bar: the «+» of the list stands for it', () => {
+    expect(bar('/notes')?.map((i) => i.id)).toEqual(['notes', 'tags', 'more']);
     wide.on = true;
     expect(bar('/notes')?.map((i) => i.id)).toEqual(['notes', 'tags', 'more']);
     expect(bar('/notes/tags')?.map((i) => i.id)).toEqual(['notes', 'tags', 'more']);

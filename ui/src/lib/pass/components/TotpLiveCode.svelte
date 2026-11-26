@@ -94,6 +94,6 @@
   }
   .ring { transform: rotate(-90deg); flex-shrink: 0; }
   .ring circle { fill: none; stroke-width: 3; }
-  .track { stroke: var(--border); }
+  .track { stroke: var(--text-3); }
   .progress { transition: stroke-dashoffset 0.9s linear; }
 </style>

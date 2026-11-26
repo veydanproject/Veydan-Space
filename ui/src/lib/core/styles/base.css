@@ -219,12 +219,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-danger { background: var(--danger); color: #fff; box-shadow: var(--shadow-danger); }
 .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
 .btn-danger:active:not(:disabled) { background: var(--danger-active); }
+/* The quiet button of a plate is a pill, as the plate's other controls; its main button keeps 10. */
+:is(.notice, .offer, .plate, .strip, .strips) .btn-ghost { border-radius: var(--radius-pill); }
 /* A press (design kit, M01): the button sinks to .97 in 100 ms and comes back in 150. */
 .btn:active:not(:disabled), .icon-btn:active:not(:disabled) { transform: scale(0.97); transition-duration: var(--dur-press); }
 @media (prefers-reduced-motion: reduce) {
   .btn:active:not(:disabled), .icon-btn:active:not(:disabled) { transform: none; }
 }
-.btn-sm { min-height: var(--control-h-sm); padding: 0 var(--sp-3); font-size: var(--fs-sm); border-radius: var(--radius-sm); }
+.btn-sm { min-height: var(--control-h-sm); padding: 0 var(--sp-3); font-size: var(--fs-sm); border-radius: var(--radius); }
 /* The icon of a button: 18, 16 in a small one (whatever size the call site passed). */
 .btn > .icon { width: 18px; height: 18px; }
 .btn-sm > .icon { width: 16px; height: 16px; }
@@ -232,7 +234,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ── Icon buttons ── */
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  width: 32px; height: 32px; border-radius: var(--radius);
   background: transparent; border: 1px solid transparent;
   color: var(--text-soft); cursor: pointer; transition: all var(--dur-fast);
   text-decoration: none;
@@ -303,7 +305,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .page-header {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   flex-shrink: 0;
 }
 .page-header h1 {
@@ -490,7 +492,7 @@ main.content--full .page { max-width: none; }
   height: var(--control-h);
   width: 100%;
   padding: 0 1.9rem 0 2.25rem;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius);
   font-size: var(--fs-base);
 }
 .search-clear {
@@ -590,11 +592,12 @@ main.content--full .page { max-width: none; }
 .win-close:hover { background: var(--surface-hover); color: var(--text); }
 .win-close:active { background: var(--surface-hover); }
 
-/* ── Tabs ── the sections of a page: words on the surface, no frame, no fill */
+/* ── Tabs ── words on the surface, no frame, no fill: at the left from the title's edge, 20 between them, 32 high
+   (in a panel, a window, a filter); `.pages` — the sections of a page (Terminal, Passwords, a workspace) — 44. */
 .tab-bar {
   display: inline-flex;
   align-self: flex-start;
-  gap: 2px;
+  gap: var(--sp-5);
   max-width: 100%;
   padding: 0;
   background: none;
@@ -605,7 +608,7 @@ main.content--full .page { max-width: none; }
 .tab {
   position: relative;
   min-height: 32px;
-  padding: 0 var(--sp-3);
+  padding: 0;
   border: none;
   background: none;
   color: var(--text-2);
@@ -621,9 +624,10 @@ main.content--full .page { max-width: none; }
 }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--accent-text); }
-/* The chosen one: no fill, no frame; a bar of the accent under its contents (icon, word, count), as under a tab of Tabs.
+/* The chosen one: no fill, no frame; a bar of the accent under its contents, from the first sign to the last (icon, word, count), as under a tab of Tabs.
    Its count is a `.count-pill.sm.quiet` (a total), the accent when it counts what is unread. */
-.tab.active::after { content: ''; position: absolute; left: var(--sp-3); right: var(--sp-3); bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
+.tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px; background: var(--accent); }
+.tab-bar.pages .tab { min-height: var(--control-h-lg); }
 /* `.plain`: the tabs of a window — at the left, 20 between the words, 32 high, the chosen one bold. */
 .tab-bar.plain { display: flex; gap: var(--sp-5); padding: 0; background: none; border: 0; border-radius: 0; }
 .tab-bar.plain .tab { min-height: var(--control-h-sm); padding: 0; font-size: var(--fs-base); border-radius: var(--radius-sm); text-decoration: none; }
@@ -665,6 +669,8 @@ main.content--full .page { max-width: none; }
 .list-row-mark { flex-shrink: 0; display: inline-flex; color: var(--text-3); }
 .list-row-time { flex-shrink: 0; margin-left: auto; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .list-row-line { flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* What the line is (a photo, a file, a contact) as an icon before its words, in their colour; the line no taller. */
+.list-row-line .line-icon { display: inline-flex; vertical-align: -2px; margin-inline-end: var(--sp-1); }
 .list-row.unread .list-row-name { font-weight: var(--fw-extrabold); }
 .list-row.unread .list-row-line { color: var(--text); font-weight: var(--fw-semibold); }
 .list-row.unread .list-row-time { color: var(--accent-text); font-weight: var(--fw-bold); }
@@ -701,9 +707,9 @@ main.content--full .page { max-width: none; }
 .count-pill.danger, .list-cover-corner.missed { background: var(--danger); color: #fff; }
 
 /* ── The count on ⋮ ── what waits behind a head's menu (a channel's feed, a chat, a group): a compact count
-   of 16 right of the dots, whole inside the head's glass, 8 from its edge; the rows are in its menu. The
-   button is position: relative. */
-.menu-count { position: absolute; top: 10px; right: -5px; min-width: 16px; height: 16px; padding: 0 3px; font-size: 10px; pointer-events: none; }
+   of 16 on the button's upper right corner, on computer and phone alike, the dots seen whole; the rows are in
+   its menu. The button is position: relative. */
+.menu-count { position: absolute; top: -10px; right: -4px; min-width: 16px; height: 16px; padding: 0 3px; font-size: 10px; pointer-events: none; }
 
 /* ── Segmented control ── (view tabs on Board, language/theme pickers)
    Tabs with an underline: words on the surface, 20 between them; the chosen one in the accent with a bar of 3 under it. */

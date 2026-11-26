@@ -94,6 +94,11 @@ tokio-util = "0.7"
 tar = "0.4"
 age = { version = "0.11", default-features = false }
 
+# ── Linux only ───────────────────────────────────────────────────────────────
+[target.'cfg(target_os = "linux")'.dependencies]
+# dlsym(RTLD_NEXT) of the mend of WebKitGTK's paste (src/linux_clipboard.rs).
+libc = "0.2"
+
 # ── Mobile only ──────────────────────────────────────────────────────────────
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 # The phone's side of a call (a Kotlin library on Android, a Swift package

@@ -191,11 +191,6 @@
             <button type="button" class="chev" onclick={() => toggle(row)} aria-label={$t(RELATED_LABEL[row.kind])}>
               <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} size={18} />
             </button>
-            {#if !row.fromTag || def?.link}
-            <button type="button" class="chev" onclick={() => openMenu(row)} aria-label={$t('notes_context_more')}>
-              <Icon name="more-vertical" size={18} />
-            </button>
-            {/if}
           </div>
           {#if row.summary && def?.details}
             <def.details id={row.id} />

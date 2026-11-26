@@ -39,7 +39,7 @@
 
 <div class="page page--fill pass-page" bind:clientWidth={width}>
   {#if !wide}
-    <div class="tab-bar" role="tablist">
+    <div class="tab-bar pages" role="tablist">
       {#each SECTIONS as s (s.id)}
         {@const n = s.count?.() ?? 0}
         <button
@@ -83,7 +83,7 @@
   }
   .panes.wide {
     /* The generator needs the least room, the TOTP rows a little more than it. */
-    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1.1fr) minmax(260px, 0.85fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1.1fr) 260px;
   }
   .slot {
     min-width: 0;

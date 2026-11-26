@@ -121,26 +121,40 @@
 {/if}
 
 <style>
-  /* The bubble is the card: no box inside it. */
-  .bot-card { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-  .top { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
-  /* The mark and its tone are those of the banners of the same cards (RecoveryAlert.svelte). */
-  .ico { width: 20px; height: calc(var(--fs-body) * var(--lh-body)); flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--accent-text-2); }
+  /* The bubble is the card: no box inside it. As wide as its content, 320 to
+     420, as a link's cards (.cards); a phone's is the bubble's width. */
+  .bot-card {
+    display: flex; flex-direction: column; gap: var(--sp-3);
+    width: fit-content; min-width: min(320px, 100%); max-width: min(420px, 100%);
+  }
+  :global(.msg-m) .bot-card { width: 100%; max-width: 100%; }
+  .top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+  /* The mark and its tone are those of the banners of the same cards (RecoveryAlert.svelte):
+     on a plate 40 of its own colour. */
+  .ico {
+    width: 40px; height: 40px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-md); background: color-mix(in srgb, currentColor 14%, transparent); color: var(--accent-text-2);
+  }
   .danger .ico { color: var(--danger-text); }
   .warn .ico { color: var(--warn-text); }
   .ok .ico { color: var(--success-text); }
-  .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .title { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-body); }
-  /* The card is a message: its words are as large as a message's. */
+  .words { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; min-height: 40px; }
+  .title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); line-height: 1.3; }
   .text { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; }
-  .detail { margin: 0; font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
-  .value { padding-left: calc(20px + var(--sp-2)); }
-  .note { margin: 0; padding-left: calc(20px + var(--sp-2)); font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
-  /* One quiet action under the words, every one the same width: from their edge to the time of the message (MessageBubble). */
-  .row { display: flex; margin-top: var(--sp-2); padding-left: calc(20px + var(--sp-2)); padding-right: var(--file-meta); }
+  /* Without a title the words are a message's, 15; under a title 14, quieter. */
+  .words > .text:first-child { font-size: var(--fs-body); font-weight: var(--fw-medium); line-height: 1.4; }
+  .title + .text { font-size: var(--fs-base); line-height: 1.45; color: var(--text-2); }
+  .detail { margin: 0; font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-base); overflow-wrap: anywhere; }
+  /* The key, the code and the words under them from the card's edge. */
+  .value { padding-left: 0; }
+  .note { margin: 0; padding-left: 0; font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-base); overflow-wrap: anywhere; }
+  /* Words straight under the head («Срок кода истёк»): on the title's line, under it. */
+  .top + .note { padding-left: calc(40px + var(--sp-3)); margin-top: calc(2px - var(--sp-3)); font-size: var(--fs-xs); color: var(--text-3); }
+  /* One action under the words, the card's width; the time under it (MessageBubble). */
+  .row { display: flex; margin-top: 2px; padding: 0; }
   .act {
-    flex: 1; min-width: 0; min-height: var(--control-h); padding: 0 var(--sp-3); border: none; border-radius: var(--radius-md); cursor: pointer;
-    font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--accent-text-2);
+    flex: 1; min-width: 0; min-height: var(--touch, var(--control-h)); padding: 0 var(--sp-3); border: none; border-radius: var(--radius); cursor: pointer;
+    font: inherit; font-size: var(--fs-base); font-weight: var(--fw-semibold); background: var(--accent-bg); color: var(--text);
   }
   .act:disabled { opacity: 0.45; cursor: default; }
   .act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

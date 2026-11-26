@@ -18,7 +18,7 @@
   import { chatMatches, contactHaystacks, excerpt } from '../shared/search';
   import { messengerStore } from '../store.svelte';
   import { botCardLineKey } from '../content/botCard';
-  import { bodyLine } from '../push/wording';
+  import { bodyParts, type BodyParts } from '../push/wording';
   import { botCards } from '../seams/cards.svelte';
   import { messengerApi, type ChatHit, type MessengerChat, type MessengerMessage } from '../api';
   import { goto } from '$app/navigation';
@@ -158,14 +158,15 @@
   }
 
   /** The line under the name: the newest message, or a card of the bot of Veydan Cloud worded by its type. */
-  function preview(c: MessengerChat): string {
+  function preview(c: MessengerChat): BodyParts {
+    const line = (text: string): BodyParts => ({ icon: null, text });
     // A group the network closed has nothing new to show; the row says so.
-    if (c.kind === 'group' && c.banned) return $t('msg_group_removed_short');
-    // A photo is a photo, a voice message a voice message (as a push says), not the name of a file.
-    if (c.last_body) return bodyLine(c.last_body, $t);
-    if (c.last_preview != null) return c.last_preview;
+    if (c.kind === 'group' && c.banned) return line($t('msg_group_removed_short'));
+    // A photo is a photo, a voice message a voice message (as a push says), not the name of a file; the emoji an icon.
+    if (c.last_body) return bodyParts(c.last_body, $t);
+    if (c.last_preview != null) return line(c.last_preview);
     const card = chatStore.tailCard(c);
-    return card ? $t(botCardLineKey(card, botCards.host)) : $t('msg_chat_no_messages');
+    return line(card ? $t(botCardLineKey(card, botCards.host)) : $t('msg_chat_no_messages'));
   }
 
   function openMenu(e: MouseEvent, chat: MessengerChat) {
@@ -241,7 +242,8 @@
           {#if drafts.get(c.id)?.trim() && chatStore.activeId !== c.id}
             <span class="list-row-line"><span class="draft">{$t('msg_chat_draft')}</span> {drafts.get(c.id)}</span>
           {:else}
-            <span class="list-row-line">{preview(c)}</span>
+            {@const p = preview(c)}
+            <span class="list-row-line">{#if p.icon}<span class="line-icon" aria-hidden="true"><Icon name={p.icon} size={14} /></span>{/if}{p.text}</span>
           {/if}
           {#if asking(c)}
             <span class="count-pill lg asks" title={$t('msg_greq_badge', { n: String(asking(c)) })} aria-label={$t('msg_greq_badge', { n: String(asking(c)) })}>
@@ -451,10 +453,24 @@
 </div>
 {/if}
 
-<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} onclose={() => (menu.open = false)} />
-<ContextMenu bind:open={rowMenu.open} x={rowMenu.x} y={rowMenu.y} items={rowItems} onclose={() => (rowMenu.open = false)} />
+<!-- A phone's sheet says over its items what they act on (DS2-31): the row's avatar, 36, and its name. -->
+{#snippet chatHead()}
+  {#if menu.chat}{@const c = menu.chat}
+    <Avatar url={c.picture} label={c.title} seed={c.peer_pubkey ?? c.id} size={36} online={c.kind === 'dm' && presenceStore.status(c.peer_pubkey) === 'online'} />
+    <span class="menu-name">{c.title}</span>
+  {/if}
+{/snippet}
+{#snippet rowHead()}
+  {#if rowMenu.row}{@const r = rowMenu.row}
+    <Avatar url={r.picture?.startsWith('data:') ? null : r.picture} src={r.picture?.startsWith('data:') ? r.picture : null} label={r.title} seed={r.seed} size={36} />
+    <span class="menu-name">{r.title}</span>
+  {/if}
+{/snippet}
+<ContextMenu bind:open={menu.open} x={menu.x} y={menu.y} {items} header={chatHead} sheetHeader onclose={() => (menu.open = false)} />
+<ContextMenu bind:open={rowMenu.open} x={rowMenu.x} y={rowMenu.y} items={rowItems} header={rowHead} sheetHeader onclose={() => (rowMenu.open = false)} />
 
 <style>
+  .menu-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list-wrap { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); }
   /* The rows (chats, groups, a module's section alike) are the .list-row of base.css: 64, an avatar of 48,
      the marks after the name, a hairline between two rows from the text; unread, the .unread of it. */

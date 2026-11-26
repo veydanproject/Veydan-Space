@@ -43,6 +43,8 @@
     onclose: () => void;
     /** Optional header rendered above the items (e.g. the target name). */
     header?: Snippet;
+    /** The header on a phone's sheet only, a computer's menu without it (a chat's in the list). */
+    sheetHeader?: boolean;
     /** 'point': its corner at (x, y), the default; 'above': centred over (x, y), 8 above it (below when there is no room). */
     place?: 'point' | 'above';
     /** 'point' under a message: its top; with no room under y the menu goes 4 above it, not over it. */
@@ -51,7 +53,7 @@
     width?: string;
   }
 
-  let { open = $bindable(), x, y, items, onclose, header, place = 'point', width, over }: Props = $props();
+  let { open = $bindable(), x, y, items, onclose, header, sheetHeader = false, place = 'point', width, over }: Props = $props();
   const uid = $props.id();
 
   type Shown = { entry: MenuEntry; id?: string; labelledby?: string };
@@ -237,7 +239,7 @@
   </div>
 {:else if open && !isMobile}
   <div bind:this={menuEl} class="context-menu" class:roomy={!!width} style={style} style:width={width} style:transform-origin={origin} use:portal role="menu" tabindex="-1" out:menuOut>
-    {#if header}
+    {#if header && !sheetHeader}
       <div class="menu-header">{@render header()}</div>
     {/if}
     {#each shown as { entry: item, id, labelledby } (item)}
@@ -384,14 +386,22 @@
   .menu-item.pair-btn:focus-visible { box-shadow: none; outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
   /* The phone's sheet: rows of the shell's lists (mobile.css .m-row), 52px high. */
+  /* Over the items, what they act on (DS2-31): its avatar 36 at the left, the name in the body's size; a strip
+     alone in it (the quick reactions, who has read) keeps the whole width. */
   .sheet-menu-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-height: 36px;
     padding: 0 var(--sp-1) var(--sp-2);
-    color: var(--text-2);
-    font-size: var(--fs-sm);
+    color: var(--text);
+    font-size: var(--fs-body);
+    font-weight: var(--fw-semibold);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .sheet-menu-header > :global(:only-child) { flex: 1; min-width: 0; }
   .sheet-menu { display: flex; flex-direction: column; }
   .sheet-item {
     display: flex;

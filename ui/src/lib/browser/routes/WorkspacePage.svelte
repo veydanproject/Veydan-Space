@@ -338,7 +338,7 @@
 
     <!-- Tabs + View Switcher (segment controls per redesign) -->
     <div class="tabs-row">
-      <div class="tab-bar">
+      <div class="tab-bar pages">
         <button class="tab" class:active={tab === 'board'} onclick={() => (tab = 'board')}>
           <Icon name="columns" size={18} />{$t('workspace_tab_board')}
         </button>

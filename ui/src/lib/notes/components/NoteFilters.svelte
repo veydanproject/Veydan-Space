@@ -950,8 +950,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
-    padding: var(--sp-2) 0;
+    padding: var(--sp-2) 0 var(--sp-6);
     overflow-y: auto;
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-6)), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--sp-6)), transparent);
   }
 
   .filter-section {
@@ -1021,7 +1023,8 @@
     display: flex;
     align-items: center;
     gap: 11px;
-    padding: 0.55rem var(--sp-3);
+    min-height: 40px;
+    padding: 0 var(--sp-3);
     border: none;
     background: none;
     cursor: pointer;

@@ -173,6 +173,6 @@
   .acts .btn { justify-content: center; min-width: 0; min-height: calc(var(--control-h-sm) + 2px); padding-inline: var(--sp-3); gap: var(--sp-1); white-space: normal; text-wrap: balance; text-align: center; line-height: var(--lh-tight); }
   @media (pointer: coarse) {
     .npub { padding: 4px 0; font-size: var(--fs-xs); }
-    .acts .btn { min-height: var(--control-h); }
+    .acts .btn { min-height: var(--touch, var(--control-h)); }
   }
 </style>

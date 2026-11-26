@@ -172,6 +172,6 @@
     .tick { margin-top: 10px; }
     .npub { padding: 4px 0; font-size: var(--fs-xs); }
     .acts { flex: 1 1 100%; }
-    .acts .btn { flex: 1; justify-content: center; min-height: var(--control-h); }
+    .acts .btn { flex: 1; justify-content: center; min-height: var(--touch, var(--control-h)); }
   }
 </style>

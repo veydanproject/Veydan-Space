@@ -155,7 +155,7 @@
     {/if}
   </div>
 
-  <div class="tab-bar page-tabs">
+  <div class="tab-bar pages page-tabs">
     <button
       class="tab"
       class:active={activeTab === 'connections'}

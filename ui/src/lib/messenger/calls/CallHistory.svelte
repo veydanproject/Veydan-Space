@@ -232,8 +232,8 @@
 
 <style>
   .filter { padding: 0 var(--sp-3) var(--sp-2); flex-shrink: 0; }
+  /* The two sections at the left, 20 between them, the bar under the word (the .tab-bar of base.css). */
   .filter .tab-bar { display: flex; }
-  .filter .tab { flex: 1; justify-content: center; }
   /* On a phone the two sections are words on the screen's glow, the chosen one bold with a short mark (as every row of tabs). */
   :global(.msg-m) .filter { padding-inline: var(--sp-4); }
   :global(.msg-m) .filter .tab-bar { gap: var(--sp-5); padding: 0; border: 0; border-radius: 0; background: none; align-self: stretch; }

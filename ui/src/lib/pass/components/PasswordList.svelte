@@ -139,10 +139,13 @@
           </div>
         {/if}
       </button>
-      {#if firstTotp}
-        <TotpLiveCode entryId={firstTotp} period={totp?.period ?? 30} copiedLabel={$t('totp_copy')} compact />
-        {#if entry.totp_ids.length > 1}<span class="totp-more">+{entry.totp_ids.length - 1}</span>{/if}
-      {/if}
+      <!-- One width with a code or without, "+1" inside: the codes stand in one column down the list. -->
+      <div class="totp-slot">
+        {#if firstTotp}
+          <TotpLiveCode entryId={firstTotp} period={totp?.period ?? 30} copiedLabel={$t('totp_copy')} compact />
+          {#if entry.totp_ids.length > 1}<span class="totp-more">+{entry.totp_ids.length - 1}</span>{/if}
+        {/if}
+      </div>
       <div class="entry-actions">
         {#if entry.username}
           <button
@@ -160,7 +163,7 @@
           title={appLock.locked ? $t('lock_title') : $t('ctx_action_copy_password')}
           onclick={() => copyPassword(entry)}
         >
-          <Icon name={appLock.locked ? 'lock-square-rounded' : 'lock-password'} size={13} />
+          <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={13} />
         </button>
         {#if onedit && !appLock.locked}
           <button type="button" class="icon-btn" title={$t('common_edit')} onclick={() => onedit(entry)}>
@@ -236,7 +239,9 @@
   }
   .label-tail { display: inline-flex; gap: 4px; min-width: 0; max-width: 100%; }
   .label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .entry-actions { display: flex; gap: var(--sp-1); flex-shrink: 0; }
+  /* Three buttons of 32 and two gaps: with no username the lock and pencil keep their places. */
+  .entry-actions { display: flex; justify-content: flex-end; gap: var(--sp-1); width: 104px; flex-shrink: 0; }
+  .totp-slot { display: flex; align-items: center; gap: var(--sp-2); width: 152px; flex-shrink: 0; }
   .totp-more { font-size: var(--fs-xs); color: var(--text-2); flex-shrink: 0; }
   .err { margin: 0 0 var(--sp-2); }
 </style>

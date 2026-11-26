@@ -197,6 +197,9 @@
   .bubble.files:has(:global(.err), :global(.card-fail), :global(.foreign), .uploaded) > .meta:not(.inline) { position: static; }
   /* The time is on the last line only. */
   .bubble.files .card-cell:not(:last-child) { --file-meta: 0px; }
+  /* Several files: one list, the time under it. */
+  .bubble.files:has(.cards > .card-cell + .card-cell) { --file-meta: 0px; padding-bottom: var(--sp-2); }
+  .bubble.files:has(.cards > .card-cell + .card-cell) > .meta:not(.inline) { position: static; margin-top: 6px; }
   .bubble.mixed .cards { padding: var(--sp-1) var(--sp-2); }
   /* A run of one author: the corners that touch the next bubble are small. */
   .line:not(.first) .bubble { border-top-left-radius: var(--r-joined); }
@@ -218,6 +221,10 @@
 
   .cards { display: flex; flex-direction: column; gap: var(--sp-2); }
   .card-cell { min-width: 0; }
+  /* Several files one list in the bubble's tone, a line between rows (as a contact card's links). */
+  .cards:has(> .card-cell + .card-cell) { gap: 0; border-radius: var(--radius-md); overflow: hidden; background: var(--bubble-tone, var(--surface-2)); }
+  .cards:has(> .card-cell + .card-cell) > .card-cell { padding: var(--sp-2) var(--sp-3); }
+  .cards:has(> .card-cell + .card-cell) > .card-cell + .card-cell { box-shadow: inset 0 1px 0 color-mix(in srgb, currentColor 10%, transparent); }
 
   .caption { padding: 0 var(--sp-2) var(--sp-1); }
   .caption::after { content: ''; display: block; clear: both; }

@@ -23,6 +23,8 @@ pub mod capture;
 pub mod commands;
 mod db;
 mod fsname;
+#[cfg(target_os = "linux")]
+mod linux_clipboard;
 pub use veydan_core::error;
 #[cfg(desktop)]
 mod fingerprint;

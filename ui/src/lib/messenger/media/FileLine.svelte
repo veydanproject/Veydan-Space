@@ -33,8 +33,8 @@
     column-gap: var(--sp-3); align-items: center; min-height: 44px; min-width: 0;
   }
   .mark { grid-area: mark; display: inline-flex; width: 44px; height: 44px; position: relative; }
-  .name { grid-area: name; min-width: 0; align-self: end; font-size: var(--fs-base); font-weight: var(--fw-bold); line-height: var(--lh-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { grid-area: name; min-width: 0; align-self: end; font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: var(--lh-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .right { grid-area: right; display: inline-flex; align-self: start; }
-  .sub { grid-area: sub; min-width: 0; align-self: start; padding-right: var(--file-meta, 0); font-size: var(--fs-sm); line-height: var(--lh-base); color: var(--text-3); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .sub { grid-area: sub; min-width: 0; align-self: start; padding-right: var(--file-meta, 0); font-size: var(--fs-xs); line-height: var(--lh-base); color: var(--text-3); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   .failed .sub { color: var(--danger-text); }
 </style>

@@ -38,7 +38,14 @@
 {/if}
 
 <style>
-  .neutral { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-  .ico { width: 20px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--accent-text-2); }
-  .name { font-size: var(--fs-body); line-height: var(--lh-body); }
+  .neutral {
+    display: flex; align-items: center; gap: var(--sp-3);
+    width: fit-content; min-width: min(320px, 100%); max-width: min(420px, 100%);
+  }
+  :global(.msg-m) .neutral { width: 100%; max-width: 100%; }
+  .ico {
+    width: 40px; height: 40px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-md); background: color-mix(in srgb, currentColor 14%, transparent); color: var(--accent-text-2);
+  }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); line-height: 1.3; }
 </style>

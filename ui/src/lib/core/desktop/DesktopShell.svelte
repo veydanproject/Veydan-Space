@@ -321,6 +321,9 @@
     return $page.url.pathname.startsWith(href);
   }
 
+  // Settings and the cloud's card of the lock are one place: the icon is lit on both.
+  const settingsActive = $derived(isActive('/settings') || isActive('/cloud'));
+
   // Settings are two panes 12 from the window's sides, like a module's columns.
   const fullWidth = $derived(standaloneNotes || registry.fullWidth($page.url.pathname) || $page.url.pathname === '/settings');
 </script>
@@ -380,7 +383,7 @@
     {#if !gated}
       <button
         class="titlebar-btn"
-        class:active={isActive('/settings')}
+        class:active={settingsActive}
         onclick={single ? toggleSettings : () => goto('/settings')}
         aria-label={$t('nav_settings')}
         aria-pressed={single ? isActive('/settings') : undefined}
@@ -460,12 +463,12 @@
         </button>
         {#if single}
           <!-- Named, so it is not taken for a module's own settings gear. -->
-          <button class="theme-toggle labelled" class:active={isActive('/settings')} onclick={toggleSettings} aria-pressed={isActive('/settings')}>
+          <button class="theme-toggle labelled" class:active={settingsActive} onclick={toggleSettings} aria-pressed={isActive('/settings')}>
             <Icon name="settings" size={15} />
             <span>{$t('nav_settings')}</span>
           </button>
         {:else if !isCsd}
-          <button class="theme-toggle" onclick={() => goto('/settings')} title={$t('nav_settings')}>
+          <button class="theme-toggle" class:active={settingsActive} onclick={() => goto('/settings')} title={$t('nav_settings')}>
             <Icon name="settings" size={15} />
           </button>
         {/if}

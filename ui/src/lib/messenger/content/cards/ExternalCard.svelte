@@ -77,20 +77,20 @@
 
 <style>
   .box { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .cover { display: block; width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-3); }
-  .top { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .cover { display: block; width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius-md); background: var(--surface-3); }
+  .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
   .ico {
     width: 40px; height: 40px; flex-shrink: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center;
     background: var(--accent-bg); color: var(--accent-text-2);
   }
   .ico.risky { color: var(--warn-text); background: var(--warn-bg); }
   .about { display: flex; flex-direction: column; min-width: 0; }
-  .host { font-size: var(--fs-base); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .host { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .path { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-snug); overflow-wrap: anywhere; }
-  .text { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .title { font-size: var(--fs-body); font-weight: var(--fw-semibold); line-height: 1.35; overflow-wrap: anywhere; }
+  .text { font-size: var(--fs-base); color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .risk { font-size: var(--fs-sm); color: var(--warn-text); line-height: var(--lh-snug); }
-  .note { font-size: var(--fs-xs); color: var(--text-3); line-height: var(--lh-snug); }
+  .note { font-size: var(--fs-sm); color: var(--text-3); line-height: var(--lh-snug); }
   /* The two ways as links in one row (mockups c7.js): the accent's words, no boxes. */
   .row { margin-top: 0; }
 </style>

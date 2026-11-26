@@ -157,7 +157,12 @@ export function productFromEnv(env = process.env, manifest = readManifest()) {
     }
   }
   const inBuild = (/** @type {ModuleEntry} */ m) => listed.has(m.id);
-  const port = platform === 'desktop' ? target.devPort : target.androidDevPort;
+  // A port of its own for each platform (11.4): the dev servers of the
+  // desktop, Android and iOS of one product run at the same time.
+  const port = platform === 'desktop' ? target.devPort : platform === 'ios' ? target.iosDevPort : target.androidDevPort;
+  if (typeof port !== 'number') {
+    throw new Error(`product ${name}: no dev port for ${platform} in products.json (devPort, androidDevPort, iosDevPort; 11.4)`);
+  }
   // The name the user reads: productName of the product's Tauri config (13.1),
   // the phone config's (tauri.android.conf.json, tauri.ios.conf.json) where it
   // has one (Space is "Veydan" on a phone).

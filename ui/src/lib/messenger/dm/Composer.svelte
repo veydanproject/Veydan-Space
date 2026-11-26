@@ -1116,17 +1116,17 @@
     position: relative; isolation: isolate; gap: 2px; padding: var(--sp-1) 0 var(--sp-1) var(--sp-1);
     border: none; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
   }
+  /* The pill is glass on a computer as on a phone: the blur on the pseudo-element, which holds no fixed layer
+     (on .row itself it would hold the field's fixed layers to the row). */
   .composer .row::before {
     content: ''; position: absolute; z-index: -1; inset: 0 calc(48px + var(--sp-2)) 0 0; pointer-events: none;
     border-radius: var(--radius-bar); background: var(--pane-strong); border: 1px solid var(--pane-strong-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
   .composer .row:focus-within::before { border-color: var(--accent-border); }
   .composer .row > :global(.attach) { width: 40px; height: 40px; }
   .composer .row > .send { width: 48px; height: 48px; margin: calc(-1 * var(--sp-1)) 0 calc(-1 * var(--sp-1)) var(--sp-3); }
-  @media (pointer: coarse) {
-    .composer .row::before { -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
-  }
   @media not (pointer: coarse) {
     @container (max-width: 440px) {
       .composer .row > .send { margin-left: auto; }

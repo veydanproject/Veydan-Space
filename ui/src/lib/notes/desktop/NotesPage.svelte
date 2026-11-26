@@ -22,7 +22,7 @@
   import NoteEditor from '$lib/notes/components/NoteEditor.svelte';
   import NoteFilters from '$lib/notes/components/NoteFilters.svelte';
   import NoteTransferDialog, { type TransferMode } from '$lib/notes/components/NoteTransferDialog.svelte';
-  import { t, locale, countKey } from '$lib/core/i18n';
+  import { t } from '$lib/core/i18n';
   import Dialog from '$lib/core/ui/Dialog.svelte';
   import NotesSidebarFooter from '$lib/notes/components/NotesSidebarFooter.svelte';
   import { notesListTitle } from '$lib/notes/filter-title';
@@ -360,7 +360,7 @@
           <div class="list-title-group">
             <h2 class="list-title" title={listTitle}>{listTitle}</h2>
             <p class="list-sub">
-              {$t(countKey('panel_notes_count', displayList.length, $locale), { n: String(displayList.length) })}
+              {displayList.length}
             </p>
           </div>
           <div class="list-head-actions">
@@ -573,10 +573,10 @@
     background: var(--pane-top, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
-    -webkit-backdrop-filter: var(--pane-filter);
-    backdrop-filter: var(--pane-filter);
   }
 
+  /* The columns draw no blur of their own: glass floats in them (the note's toolbar), and a blur inside a blur
+     sees nothing of what scrolls under it in WebKit. The blur is the floating glass's alone. */
   /* The list or table gives way before the note does (.editor-col). */
   .list-col {
     flex-shrink: 1;
@@ -589,8 +589,6 @@
     background: var(--pane-list, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
-    -webkit-backdrop-filter: var(--pane-filter);
-    backdrop-filter: var(--pane-filter);
   }
 
   /* Always two rows: the title with its buttons (back the sidebar, create or the trash's), then the
@@ -701,8 +699,6 @@
     background: var(--pane-chat, var(--pane));
     border: 1px solid var(--pane-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
-    -webkit-backdrop-filter: var(--pane-filter);
-    backdrop-filter: var(--pane-filter);
   }
 
   /* New note dialog */

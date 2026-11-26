@@ -103,7 +103,7 @@
   <div class="contact-card">
     <span class="kicker"><Icon name="user" size={14} />{$t('msg_card_contact_title')}</span>
     <div class="top">
-      <Avatar url={null} src={card.avatar} {label} seed={card.pubkey} size={44} />
+      <Avatar url={null} src={card.avatar} {label} seed={card.pubkey} size={52} />
       <div class="who">
         <span class="name" title={label}>{label}</span>
         <span class="sub">{#if second}{second}{:else}<code>{shortKey}</code>{/if}</span>
@@ -121,22 +121,22 @@
       {/if}
     {/if}
 
-    {#if card.socials.length}<SocialLinks socials={card.socials} compact />{/if}
-
-    {#if website || card.phone}
-      <div class="facts">
+    {#if website || card.phone || card.socials.length}
+      <!-- Site, phone, profiles: one list, a line between rows. -->
+      <div class="links">
         {#if website}
           <button type="button" class="fact" onclick={openSite} title={website}>
-            <Icon name="world" size={14} /><span class="value">{websiteText}</span><Icon name="external-link" size={14} />
+            <Icon name="world" size={16} /><span class="value">{websiteText}</span><Icon name="external-link" size={14} />
           </button>
         {/if}
         {#if card.phone}
           <button type="button" class="fact" onclick={copyPhone}
             title={ownCard ? $t('msg_card_phone_hint') : $t('msg_card_copy')} aria-label="{$t('msg_card_phone')}: {card.phone}. {$t('msg_card_copy')}">
-            <Icon name="phone" size={14} /><span class="value">{card.phone}</span>
+            <Icon name="phone" size={16} /><span class="value">{card.phone}</span>
             <span class="copy"><Icon name="copy" size={12} /></span>
           </button>
         {/if}
+        {#if card.socials.length}<SocialLinks socials={card.socials} />{/if}
       </div>
     {/if}
 
@@ -182,17 +182,18 @@
   /* The bubble is the card: no box inside it. As wide as its content, 320 to
      420, as a link's cards; a phone's is the bubble's width. */
   .contact-card {
-    display: flex; flex-direction: column; gap: var(--sp-2);
+    display: flex; flex-direction: column; gap: 14px;
     width: fit-content; min-width: min(320px, 100%); max-width: min(420px, 100%); color: var(--text);
   }
   :global(.msg-m) .contact-card { width: 100%; max-width: 100%; }
   .kicker {
-    display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-bold);
-    color: var(--text-2);
+    display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+    color: var(--text-3);
   }
-  .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  /* «Контакт» 10 above the avatar. */
+  .top { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; margin-top: -4px; }
   .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub code { font-family: var(--font-mono); }
   .bio-box { min-width: 0; }
@@ -201,15 +202,25 @@
     font: inherit; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--accent-text-2);
   }
   .more:hover { text-decoration: underline; }
-  .facts { display: flex; flex-direction: column; gap: 2px; }
-  .fact {
-    display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; min-height: 36px; text-align: left;
-    border: none; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm);
-    padding: 0 var(--sp-1); margin-inline: calc(-1 * var(--sp-1)); border-radius: var(--radius-sm); cursor: pointer;
+  /* Site, phone and profiles one list in the bubble's tone, a line between
+     rows: 40, a phone's 44; the sign 16, the text 14. A profile's chip a row. */
+  .links {
+    --links-line: color-mix(in srgb, currentColor 10%, transparent);
+    display: flex; flex-direction: column; border-radius: var(--radius-md); background: var(--bubble-tone, var(--surface-2)); overflow: hidden;
   }
-  .fact:hover { background: var(--surface-row-hover, var(--surface-2)); color: var(--text); }
-  .fact:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
-  .fact :global(svg) { flex-shrink: 0; }
+  .links :global(.socials) { display: contents; }
+  .fact, .links :global(.social) {
+    display: flex; align-items: center; gap: 10px; width: 100%; max-width: none; min-width: 0; min-height: var(--control-h);
+    margin: 0; padding: 0 var(--sp-3); border: 0; border-radius: 0; background: none; color: inherit;
+    font: inherit; font-size: var(--fs-base); text-align: left; cursor: pointer; box-shadow: inset 0 1px 0 var(--links-line);
+  }
+  .links > .fact:first-child, .links > :global(.socials:first-child > .social:first-child) { box-shadow: none; }
+  .fact:hover, .links :global(.social:hover) { background: var(--bubble-tone-hover, var(--surface-hover)); }
+  .fact:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+  .links :global(.social:focus-visible) { outline-offset: -2px; }
+  .links :global(svg) { flex: none; }
+  .links :global(.social > svg) { width: 16px; height: 16px; }
+  .links :global(.handle) { flex: 1; min-width: 0; }
   .value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
   .copy { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-3); }
   .server { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; }
@@ -217,15 +228,14 @@
   .server .btn { align-self: flex-start; }
   .status { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
   .status.closed { color: var(--warn-text); }
-  /* Its buttons 40, side by side the card's width; stacked for a finger. */
-  .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-  /* The main button takes what the other leaves. */
-  .row .btn { flex: 1 1 auto; min-width: 0; min-height: var(--control-h); gap: var(--sp-2); justify-content: center; white-space: nowrap; }
-  .row .btn-ghost { flex: 0 0 auto; }
-  .known { display: inline-flex; flex: none; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--success-text, var(--success)); white-space: nowrap; }
+  /* Its buttons the card's width, one under the other, the main one first;
+     «В контактах» under them in the middle. */
+  .row { display: grid; grid-template-columns: 1fr; gap: var(--sp-2); }
+  .row .btn { width: 100%; min-width: 0; min-height: var(--touch, var(--control-h)); gap: var(--sp-2); justify-content: center; white-space: nowrap; }
+  .known { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 4px; min-height: 32px; font-size: var(--fs-sm); color: var(--success-text, var(--success)); white-space: nowrap; }
   .damaged { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-3); font-style: italic; }
   @media (pointer: coarse) {
-    .fact { min-height: var(--control-h); }
+    .fact, .links :global(.social) { min-height: var(--touch); }
     .more { padding: 4px 0; }
   }
 </style>

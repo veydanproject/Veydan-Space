@@ -248,8 +248,8 @@
   .more { align-self: center; }
   @media (pointer: coarse) {
     .search input { font-size: var(--fs-md); min-height: 40px; }
-    .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-h); }
-    .acts .btn { min-height: var(--control-h); }
-    .acts .spam { width: var(--control-h); height: var(--control-h); }
+    .acts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--touch, var(--control-h)); }
+    .acts .btn { min-height: var(--touch, var(--control-h)); }
+    .acts .spam { width: var(--touch, var(--control-h)); height: var(--touch, var(--control-h)); }
   }
 </style>

@@ -2,10 +2,11 @@
 <!-- SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 -->
 
 <!--
-  One password in the phone's list, in the style of the 2FA list: avatar,
-  title and username on the full width, labels on a line of their own, the
-  first TOTP code at the right (a tap copies it). A tap on the row opens the
-  password; a long press asks for its actions (`onmenu`).
+  One password in the phone's list, in two tiers: avatar, title (wrapping, never
+  cut) and username on the full width; under them, from the text's edge, the
+  first TOTP code (a tap copies it) and the labels. The right side stays empty,
+  so the floating «+» covers nothing. A tap on the row opens the password; a
+  long press asks for its actions (`onmenu`).
 -->
 <script lang="ts">
   import { t } from '$lib/core/mobile/i18n';
@@ -51,21 +52,24 @@
     <span class="meta">
       <span class="name">{entry.title}</span>
       {#if sub}<span class="sub">{sub}</span>{/if}
-      {#if chips.length}
-        <span class="tagline">
-          {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
-            <span class="m-chip small tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} />{chip.label}</span>
-          {/each}
-          {#if chips.length > MAX_CHIPS}
-            <span class="m-chip small neutral">{$t('pw_more_tags', { n: String(chips.length - MAX_CHIPS) })}</span>
-          {/if}
-        </span>
-      {/if}
     </span>
   </button>
+  <!-- The code is a button of its own, so it can't sit inside .open: a tier under it. -->
   {#if totp}
     <span class="code">
       <TotpLiveCode entryId={totp} {period} copiedLabel={$t('totp_copy')} compact />
+    </span>
+  {/if}
+  {#if chips.length}
+    <!-- Under the code, so outside .open too; a tap opens like the rest of the row (the keyboard has .open). -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <span class="tagline" onclick={onopen}>
+      {#each chips.slice(0, MAX_CHIPS) as chip, i (i)}
+        <span class="m-chip small tinted" style:--chip={chip.color}><ChipMark kind={chip.kind} />{chip.label}</span>
+      {/each}
+      {#if chips.length > MAX_CHIPS}
+        <span class="m-chip small neutral">{$t('pw_more_tags', { n: String(chips.length - MAX_CHIPS) })}</span>
+      {/if}
     </span>
   {/if}
 </div>
@@ -74,6 +78,7 @@
   /* A flat row of the list (the design kit), not a card. */
   .row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     min-height: 64px;
     padding-right: var(--sp-2);
@@ -85,7 +90,7 @@
   .row:active { background: var(--surface-hover); }
   .row.active { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent-border); }
   .open {
-    flex: 1;
+    flex: 1 1 100%;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -99,9 +104,14 @@
   }
   .row:active { background: var(--surface-2); }
   .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name { font-size: var(--fs-body); font-weight: var(--fw-bold); white-space: normal; overflow-wrap: anywhere; }
   .sub { font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tagline { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  /* The second tier starts at the text's edge: .open's left padding, the avatar 36 (.m-avatar) and the gap. */
+  .code,
+  .tagline { flex: 1 1 100%; min-width: 0; padding-left: calc(var(--sp-4) + 36px + var(--sp-3)); }
+  .code { flex-shrink: 0; display: flex; }
+  /* Only here: the digits on the text's edge; the computer's list keeps its padding. */
+  .code :global(.live.compact) { padding: 0; }
+  .tagline { display: flex; flex-wrap: wrap; gap: 4px; padding-right: var(--sp-2); padding-bottom: var(--sp-3); }
   .tagline .m-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .code { flex-shrink: 0; }
 </style>

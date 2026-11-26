@@ -8,6 +8,13 @@
   import { SETTINGS_ICONS, SETTINGS_TABS, openSettings } from './settingsTab.svelte';
 </script>
 
+<div class="chat-rows">
 {#each SETTINGS_TABS as id (id)}
   <NavRow icon={SETTINGS_ICONS[id]} title={$t(`msg_settings_tab_${id}` as 'msg_settings_tab_profile')} onclick={() => openSettings(id, true)} />
 {/each}
+</div>
+
+<style>
+  /* The tile under the icon as the .set-tile of the other rows of Settings. */
+  .chat-rows :global(.tile) { background: var(--m-seg); color: var(--text-soft); }
+</style>

@@ -660,6 +660,12 @@ export function buildDemo(): DemoData {
     if (last) {
       c.last_message_at = last.created_at;
       c.last_preview = last.deleted ? null : last.content_type === 'media' ? `📎 ${last.text ?? (last.media?.name as string)}` : last.card ? `👤 ${last.card.label}` : last.text;
+      // What the runtime gives as well (dm/body.rs): the list tells a file and a card by it.
+      const m = last.media;
+      c.last_body = last.deleted ? null
+        : last.content_type === 'media' && m ? { t: 'media', kind: String(m.kind), name: String(m.name ?? ''), caption: last.text || undefined, duration_ms: typeof m.duration_ms === 'number' ? m.duration_ms : undefined }
+        : last.card ? { t: 'link', link: 'contact', title: last.card.label }
+        : null;
     }
     c.unread = unread[c.id] ?? 0;
   }

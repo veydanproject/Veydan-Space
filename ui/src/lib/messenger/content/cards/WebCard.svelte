@@ -35,6 +35,6 @@
     color: var(--warn-text); background: var(--warn-bg);
   }
   .about { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .name { font-size: var(--fs-sm); font-weight: var(--fw-bold); }
+  .name { font-size: var(--fs-md); font-weight: var(--fw-semibold); }
   .sub { font-size: var(--fs-xs); color: var(--text-2); line-height: var(--lh-snug); overflow-wrap: anywhere; }
 </style>

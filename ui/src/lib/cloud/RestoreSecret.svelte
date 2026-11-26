@@ -64,7 +64,7 @@
   /* As the fields of LockSecretFields beside it. */
   .lock-field {
     width: 100%;
-    height: var(--control-h-lg);
+    height: var(--control-h);
     padding: 0 var(--sp-3);
     font: inherit;
     font-size: var(--fs-sm);
@@ -74,5 +74,5 @@
     color: var(--text-body);
   }
   .mobile .seg-btn { min-height: 44px; }
-  .mobile .lock-field { height: auto; min-height: 48px; font-size: var(--fs-md); }
+  .mobile .lock-field { height: var(--touch); min-height: var(--touch); font-size: var(--fs-md); }
 </style>

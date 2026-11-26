@@ -17,13 +17,20 @@
   import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import MyQrButton from '../invites/MyQrButton.svelte';
   import ScanQrButton from '../invites/ScanQrButton.svelte';
+  import { contactHaystacks, matchesQuery } from '../shared/search';
 
   interface Props {
     onchat?: (pubkey: string) => void;
     /** The phone: its screen has the title and the add action; the contacts are a list, not a card. */
     compact?: boolean;
+    /** The phone's search above the list: the rows it finds, as the computer's ContactList finds them. */
+    query?: string;
   }
-  let { onchat, compact = false }: Props = $props();
+  let { onchat, compact = false, query = '' }: Props = $props();
+
+  const q = $derived(query.trim());
+  const haystacks = $derived(contactHaystacks(messengerStore.contacts));
+  const found = $derived(q ? messengerStore.contacts.filter((c) => matchesQuery(haystacks.get(c.pubkey) ?? '', q)) : messengerStore.contacts);
 
   let busy = $state(false);
   let openId = $state<string | null>(null);
@@ -97,11 +104,13 @@
 
   {#if messengerStore.contacts.length === 0}
     <div class="muted small empty">{$t('msg_contacts_empty')}</div>
+  {:else if compact && found.length === 0}
+    <div class="muted small empty" role="status">{$t('common_nothing_found')}</div>
   {:else if compact}
     <!-- The phone: the rows are the .list-row of a computer's list (64, an avatar of 48, a hairline from the text);
          the open one is a card with the head of ContactDetails: NIP-05 with its ✓/✗ and the «following» mark (T8-09). -->
     <ul class="list-rows">
-      {#each messengerStore.contacts as c (c.pubkey)}
+      {#each found as c (c.pubkey)}
         <li>
           {#if openId === c.pubkey}
             <div class="open-card">

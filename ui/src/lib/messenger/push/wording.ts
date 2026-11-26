@@ -109,6 +109,59 @@ export function bodyLine(body: NoticeBody | null, t: Tr): string {
   }
 }
 
+const ICON: Record<string, string> = {
+  image: 'image',
+  video: 'video',
+  voice: 'mic',
+  circle: 'circle',
+  audio: 'music',
+  file: 'paperclip',
+};
+
+/** A line and its icon (`Icon`'s name, or null): what `bodyLine` says, the emoji as an icon. */
+export interface BodyParts {
+  icon: string | null;
+  text: string;
+}
+
+/** `bodyLine` for a list of chats: the same words, the emoji an icon before them; a forward with the icon of what it carries. */
+export function bodyParts(body: NoticeBody | null, t: Tr): BodyParts {
+  if (!body) return { icon: null, text: t('msg_notice_new') };
+  switch (body.t) {
+    case 'text':
+      return { icon: null, text: body.text };
+    case 'link':
+      if (body.link === 'group') {
+        return { icon: 'link', text: body.title ? t('msg_notice_link_group', { name: body.title }) : t('msg_notice_link_group_nameless') };
+      }
+      if (body.link === 'contact') {
+        return { icon: 'user', text: body.title ? t('msg_notice_link_contact', { name: body.title }) : t('msg_notice_link_contact_nameless') };
+      }
+      return { icon: 'link', text: body.title };
+    case 'media': {
+      const kind = ICON[body.kind] ? body.kind : 'file';
+      const word = t(WORD[kind]);
+      const icon = ICON[kind];
+      if (named(kind)) {
+        const name = body.name || word;
+        return { icon, text: body.caption ? `${name} · ${body.caption}` : name };
+      }
+      if (body.caption) return { icon, text: body.caption };
+      return { icon, text: `${word}${body.duration_ms ? ` (${duration(body.duration_ms)})` : ''}` };
+    }
+    case 'forwarded': {
+      const inner = bodyParts(body.body, t);
+      return { icon: inner.icon, text: t('msg_notice_forwarded', { text: inner.text }) };
+    }
+    case 'invite':
+      return { icon: null, text: t('msg_notice_group_invite') };
+    case 'join_request':
+      return { icon: null, text: t('msg_notice_group_request') };
+    case 'welcome':
+      return { icon: null, text: t('msg_notice_group_welcome') };
+  }
+}
+
 /** Files sent together, as far as they came: an album, or a few documents. */
 export interface Album {
   batch: string;

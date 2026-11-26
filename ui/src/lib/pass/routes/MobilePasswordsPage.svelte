@@ -15,8 +15,9 @@
   import Icon from '$lib/core/Icon.svelte';
   import Notice from '$lib/core/ui/Notice.svelte';
   import Skeleton from '$lib/core/ui/Skeleton.svelte';
-  import BottomSheet from '$lib/core/mobile/BottomSheet.svelte';
+  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import PasswordRow from '$lib/pass/mobile/PasswordRow.svelte';
+  import PasswordMenuHead from '$lib/pass/mobile/PasswordMenuHead.svelte';
   import HubButton from '$lib/core/ui/HubButton.svelte';
   import PasswordLockBadge from '$lib/pass/components/PasswordLockBadge.svelte';
   import VaultUnlock from '$lib/pass/components/VaultUnlock.svelte';
@@ -51,6 +52,23 @@
   let pendingCopy = $state<PasswordEntry | null>(null);
 
   const canAdd = $derived(!appLock.locked && appLock.status.vault !== 'mismatch');
+
+  /** A long press's sheet (DS2-31): the copies, «Изменить», a line, the red «Удалить». */
+  const menuItems = $derived.by((): MenuEntry[] => {
+    const entry = menu;
+    if (!entry) return [];
+    const out: MenuEntry[] = [];
+    if (entry.username) out.push({ label: $t('ctx_action_copy_username'), icon: 'id', onselect: () => void copyUsername(entry) });
+    out.push({ label: $t('ctx_action_copy_password'), icon: appLock.locked ? 'lock-square-rounded' : 'copy', onselect: () => void copyPassword(entry) });
+    if (canAdd) {
+      out.push(
+        { label: $t('common_edit'), icon: 'pencil', onselect: () => edit(entry) },
+        { type: 'separator' },
+        { label: $t('common_delete'), icon: 'trash-2', danger: true, onselect: () => void remove(entry) },
+      );
+    }
+    return out;
+  });
 
   async function load() {
     try {
@@ -215,29 +233,8 @@
   {/if}
 </div>
 
-<BottomSheet open={!!menu} title={menu?.title ?? ''} onclose={() => (menu = null)}>
-  {#if menu}
-    {@const entry = menu}
-    <div class="m-list">
-      {#if entry.username}
-        <button type="button" class="m-row" onclick={() => copyUsername(entry)}>
-          <Icon name="id" size={20} /><span class="m-row-label">{$t('ctx_action_copy_username')}</span>
-        </button>
-      {/if}
-      <button type="button" class="m-row" onclick={() => copyPassword(entry)}>
-        <Icon name={appLock.locked ? 'lock-square-rounded' : 'copy'} size={20} /><span class="m-row-label">{$t('ctx_action_copy_password')}</span>
-      </button>
-      {#if canAdd}
-        <button type="button" class="m-row" onclick={() => edit(entry)}>
-          <Icon name="pencil" size={20} /><span class="m-row-label">{$t('common_edit')}</span>
-        </button>
-        <button type="button" class="m-row" onclick={() => remove(entry)}>
-          <Icon name="trash-2" size={20} /><span class="m-row-label danger">{$t('common_delete')}</span>
-        </button>
-      {/if}
-    </div>
-  {/if}
-</BottomSheet>
+{#snippet menuHead()}{#if menu}<PasswordMenuHead entry={menu} />{/if}{/snippet}
+<ContextMenu open={!!menu} x={0} y={0} items={menuItems} header={menuHead} onclose={() => (menu = null)} />
 
 <VaultUnlock
   bind:open={unlockOpen}
@@ -255,5 +252,4 @@
   /* Room under the last row for the floating «+» (.m-fab). */
   .list { gap: 2px; --rows-gap: 2px; padding-bottom: calc(52px + var(--fab-lift) + var(--sp-2)); }
   .cta { width: auto; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
-  .danger { color: var(--danger-text); }
 </style>

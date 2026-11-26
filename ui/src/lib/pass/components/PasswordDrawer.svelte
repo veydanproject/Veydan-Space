@@ -242,7 +242,7 @@
     <!-- mousedown keeps the focus where it is (an open suggestion list stays put); the click saves, from the mouse and the keyboard. -->
     <button class="btn btn-primary" type="submit" form="pw-edit-form" onmousedown={(e) => e.preventDefault()} disabled={saving}>{$t('common_save')}</button>
   {:else if selected}
-    <button type="button" class="btn btn-ghost" onclick={() => card?.remove()}><Icon name="trash-2" size={14} /> {$t('common_delete')}</button>
+    <button type="button" class="btn btn-danger" onclick={() => card?.remove()}><Icon name="trash-2" size={14} /> {$t('common_delete')}</button>
     <button type="button" class="btn btn-primary" onclick={() => (editingId = selected.id)}><Icon name="pencil" size={14} /> {$t('common_edit')}</button>
   {/if}
 {/snippet}

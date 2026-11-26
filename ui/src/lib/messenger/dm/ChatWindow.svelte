@@ -920,8 +920,8 @@
   const isDanger = (e: MenuEntry) => (e.type === undefined || e.type === 'item') && !!e.danger;
 
   const chatItems = $derived.by((): MenuEntry[] => {
-    // A phone's head has no room for the magnifier: the search is the menu's first row.
-    const list: MenuEntry[] = phone ? [{ label: $t('msg_search_open'), icon: 'search', onselect: () => openSearch() }] : [];
+    // The search is the head's magnifier on a phone as on a computer (the owner, 2026-11-27), not a row of ⋮.
+    const list: MenuEntry[] = [];
     list.push(...(leadEntries ?? []));
     // A chat of two: the relation first, what may be undone in the middle, the dangerous ones red and last
     // (the groups of the menu by a line, mockups c1.js); a group's own red entries go last too, as a channel's ⋮.
@@ -1445,7 +1445,7 @@
     {/if}
     {#if !phone}<TransfersChip chatId={chat.id} />{/if}
     {#if actions}{@render actions()}{/if}
-    {#if !phone}<button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>{/if}
+    <button class="icon search-btn" class:on={searching} aria-pressed={searching} onclick={() => (searching ? searchField?.focus() : openSearch())} title={$t('msg_search_open')} aria-label={$t('msg_search_open')}><Icon name="search" size={18} /></button>
     <button class="icon menu-btn" class:on={chatMenu.open} aria-expanded={chatMenu.open} aria-haspopup="menu" onclick={openChatMenu} title={$t("msg_chat_menu")}
       aria-label={menuCount > 0 ? `${$t("msg_chat_menu")}: ${menuCount}` : $t("msg_chat_menu")}><Icon name="more-vertical" size={18} />
       {#if menuCount > 0}<span class="menu-count" aria-hidden="true">{menuCount > 99 ? '99+' : menuCount}</span>{/if}</button>
@@ -1626,9 +1626,7 @@
   .menu-btn { position: relative; }
   /* While its menu is open the ⋮ stays lit. */
   .menu-btn.on { background: var(--surface-2); color: var(--text); }
-  /* The count on ⋮ is the primitive .menu-count of base.css, on the button's right corner. */
-  /* On a phone the glass is 4 + 1 past the button: the count 3 inside it, 8 from the glass's edge. */
-  .head.phone .menu-count { right: 3px; }
+  /* The count on ⋮ is the primitive .menu-count of base.css, on the button's upper right corner, on computer and phone alike. */
   /* A computer, as a phone: the head a plate of glass in the field's column (720, 12 from a narrow panel's edges), the conversation runs under it (64: its 58 and its 8 of margin). */
   .head.glassfloat {
     position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box;
@@ -1647,7 +1645,9 @@
   .scroll.phone { isolation: isolate; -webkit-mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); mask-image: linear-gradient(to bottom, transparent, black var(--sp-5)); }
   .head.phone + .scroll.phone { margin-top: -64px; padding-top: calc(64px + var(--sp-3)); scroll-padding-top: 64px; -webkit-mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); mask-image: linear-gradient(to bottom, transparent var(--sp-1), black var(--sp-3)); }
   .bottom { flex-shrink: 0; }
-  .scroll.glassfloat { isolation: isolate; }
+  /* A computer's scrollbar takes 12 on the right (base.css). Its room is kept always (stable) and the same 12 is
+     given on the left: the feed's column is then in the middle of the pane, as the head and the field are. */
+  .scroll.glassfloat { isolation: isolate; scrollbar-gutter: stable; padding-left: 12px; }
   .head.glassfloat + .scroll.glassfloat { margin-top: -64px; padding-top: calc(64px + var(--sp-3)); scroll-padding-top: 64px; }
   .bottom.float { position: absolute; left: 0; right: 0; bottom: 0; }
   /* The conversation in the field's column, as the head (a chosen line ends at the column's edges). */
@@ -1675,6 +1675,11 @@
   .to-bottom:hover { color: var(--text); }
   @keyframes to-bottom-in { from { opacity: 0; transform: scale(0.9); } }
   @media (prefers-reduced-motion: reduce) { .to-bottom { animation: none; } }
+  /* A computer: the conversation is open canvas (no pane under it), so the button stands at the right edge of the
+     feed's column, over the field's send, not at the window's edge (the column's width as the head's and the field's). */
+  @media (pointer: fine) {
+    .to-bottom { right: calc((100% - min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3))))) / 2); }
+  }
   /* Picked files above the field: pictures as they look, the rest by name. */
   .tray-row { display: flex; align-items: center; min-width: 0; padding: var(--sp-2); border-radius: var(--radius-card); background: var(--pane-strong); border: 1px solid var(--pane-strong-border); }
   .tray { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); overflow-x: auto; padding: 2px 0; }
@@ -1702,17 +1707,20 @@
   .readers { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 50vh; overflow-y: auto; }
   .reader { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--text); font-size: var(--fs-sm); }
   .reader span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* The field of the search under the head; on a phone a bar of glass as the head. */
-  .search { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--pane-border); background: var(--pane-head); color: var(--text-3); }
-  .search.phone {
-    position: relative; z-index: calc(var(--z-base) + 2); margin: var(--sp-2) var(--sp-2) 0; padding-inline: var(--sp-3) var(--sp-1);
+  /* The field of the search under the head: a second plate of glass as the head's, of its width and edges, 8 under it, 40 high, on computer and phone alike. */
+  .search {
+    position: relative; z-index: calc(var(--z-base) + 2); box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0;
+    width: min(calc(744px - 2 * var(--col-gutter, var(--sp-3))), calc(100% - 2 * var(--col-gutter, var(--sp-3)))); margin: var(--sp-2) auto 0; height: var(--search-h); padding: 0 var(--sp-1) 0 var(--sp-4);
     border: 1px solid var(--pane-strong-border); border-radius: var(--radius-bar); background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
-    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); color: var(--text-3);
   }
-  .search input { flex: 1; min-width: 0; height: auto; border: none; outline: none; box-shadow: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 6px 0; }
+  .search.phone { padding-inline: var(--sp-3) var(--sp-1); }
+  .search input { flex: 1; min-width: 0; height: auto; min-height: 0; border: none; outline: none; box-shadow: none; background: none; color: var(--text); font: inherit; font-size: var(--fs-base); padding: 0; }
   .search input::-webkit-search-cancel-button { display: none; }
   .search-count { flex-shrink: 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--text-3); }
-  .search .icon { flex-shrink: 0; }
+  /* The cross 32, its finger's zone 44: it does not grow the plate. */
+  .search .icon { position: relative; flex-shrink: 0; width: var(--control-h-sm); height: var(--control-h-sm); }
+  .search .icon::before { content: ''; position: absolute; inset: -6px; }
   .search-btn.on { color: var(--accent-text); }
   /* A found message: the whole row takes the tap. */
   .found-row { cursor: pointer; border-radius: var(--radius-sm); }

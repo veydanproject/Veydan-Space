@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Run a product on a connected Android device (or emulator).
-#   scripts/android/dev.sh [product]            # picks the connected device
-#   scripts/android/dev.sh [product] "<name>"   # explicit device/emulator name
+#   scripts/android/dev.sh [product]                      # picks the connected device
+#   scripts/android/dev.sh [product] "<name>"             # explicit device/emulator name
+#   scripts/android/dev.sh [product] --emulator fold      # an emulator of this machine
+#                                                         # (scripts/android/emulator.sh), started first
 # The product is space when none is given (internal/platform-spec.md 13.2).
 set -e
 
@@ -13,12 +15,25 @@ product_env "${1:-space}"
 [ $# -gt 0 ] && shift
 export CARGO_TARGET_DIR="$ROOT_DIR/data/target-android/$PRODUCT"
 
+# --emulator <fold|phone|avd>: that emulator, started when it is not running;
+# adb (and so the reverse tunnels below and the CLI) talks to it alone.
+if [ "${1:-}" = --emulator ]; then
+  serial="$(bash "$ANDROID_SCRIPTS_DIR/emulator.sh" "${2:-fold}")"
+  shift 2 || shift
+  export ANDROID_SERIAL="$serial"
+  echo ">> on the emulator $serial"
+fi
+
 port="$PRODUCT_ANDROID_DEV_PORT"
 hmr=$((port + 1))
 # Free the product's android-only ports if a stale session holds them (the
 # desktop dev server of the product keeps its own)
 for p in "$port" "$hmr"; do
-  pid=$(ss -ltnp 2>/dev/null | awk -v p=":$p" '$4 ~ p"$" {match($0, /pid=[0-9]+/); print substr($0, RSTART+4, RLENGTH-4)}' | head -n1)
+  if [ "$(uname -s)" = Darwin ]; then
+    pid=$(lsof -nP -t -iTCP:"$p" -sTCP:LISTEN 2>/dev/null | head -n1)
+  else
+    pid=$(ss -ltnp 2>/dev/null | awk -v p=":$p" '$4 ~ p"$" {match($0, /pid=[0-9]+/); print substr($0, RSTART+4, RLENGTH-4)}' | head -n1)
+  fi
   [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
 done
 

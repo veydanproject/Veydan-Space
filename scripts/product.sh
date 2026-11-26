@@ -25,6 +25,7 @@
 #   PRODUCT_IOS_IDENTIFIER      the bundle id on iOS (the Android one when products.json names none)
 #   PRODUCT_DEV_PORT            the dev server on a computer (HMR: the next port)
 #   PRODUCT_ANDROID_DEV_PORT    the dev server for Android (HMR: the next port)
+#   PRODUCT_IOS_DEV_PORT        the dev server for iOS (HMR: the next port)
 #   PRODUCT_VERSION             apps/<product>/VERSION
 #   TAURI_CLI                   the Tauri CLI of the UI project
 #                               (ui/node_modules/.bin/tauri)
@@ -75,6 +76,7 @@ const out = {
   PRODUCT_IOS_IDENTIFIER: t.iosIdentifier ?? t.androidIdentifier ?? t.identifier,
   PRODUCT_DEV_PORT: t.devPort,
   PRODUCT_ANDROID_DEV_PORT: t.androidDevPort,
+  PRODUCT_IOS_DEV_PORT: t.iosDevPort,
   PRODUCT_VERSION: version,
 };
 for (const [k, v] of Object.entries(out)) console.log(`${k}=${quote(v)}`);

@@ -9290,6 +9290,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures-util",
+ "libc",
  "lz4_flex",
  "percent-encoding",
  "rand 0.10.2",

@@ -11,6 +11,8 @@
   import Notice from '$lib/core/ui/Notice.svelte';
   import LabelField from '$lib/pass/mobile/LabelField.svelte';
   import PasswordForm from '$lib/pass/mobile/PasswordForm.svelte';
+  import PasswordMenuHead from '$lib/pass/mobile/PasswordMenuHead.svelte';
+  import ContextMenu, { type MenuEntry } from '$lib/core/ui/ContextMenu.svelte';
   import { ask, confirmState } from '$lib/core/ui/confirm.svelte';
   import { BACK_WAIT_MS } from '$lib/core/ui/back';
   import { split } from '$lib/core/ui/split.svelte';
@@ -358,6 +360,12 @@
     });
   });
 
+  /** The head's «⋮» (DS2-17): the sheet of a long press in the list, with «Удалить» alone, red. */
+  let moreOpen = $state(false);
+  const moreItems: MenuEntry[] = $derived([
+    { label: $t('common_delete'), icon: 'trash-2', danger: true, onselect: () => (appLock.locked ? askUnlock('delete') : void remove()) },
+  ]);
+
   function avatarColor(s: string): string {
     let h = 0;
     for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -419,8 +427,8 @@
       <button type="button" class="m-ibtn" onclick={openEdit} aria-label={$t('common_edit')}>
         <Icon name="pencil" size={22} />
       </button>
-      <button type="button" class="m-ibtn" onclick={() => (appLock.locked ? askUnlock('delete') : remove())} aria-label={$t('common_delete')}>
-        <Icon name="trash-2" size={22} />
+      <button type="button" class="m-ibtn" onclick={() => (moreOpen = true)} aria-label={$t('nav_more')}>
+        <Icon name="more-vertical" size={22} />
       </button>
     {/if}
   </div>
@@ -455,7 +463,7 @@
               <span class="m-label">{$t('pw_field_username')}</span>
               <span class="val">{entry.username}</span>
             </span>
-            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.username ?? '')} aria-label={$t('common_copy')}>
+            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.username ?? '')} aria-label={$t('ctx_action_copy_username')}>
               <Icon name="id" size={20} />
             </button>
           </div>
@@ -466,7 +474,7 @@
               <span class="m-label">{$t('pw_field_url')}</span>
               <span class="val">{entry.url}</span>
             </span>
-            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.url ?? '')} aria-label={$t('common_copy')}>
+            <button type="button" class="m-ibtn" onclick={() => copyField(entry?.url ?? '')} aria-label={$t('ctx_action_copy_url')}>
               <Icon name="copy" size={20} />
             </button>
           </div>
@@ -480,8 +488,8 @@
           <button type="button" class="m-ibtn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
             <Icon name={revealed ? 'eye-off' : 'eye'} size={20} />
           </button>
-          <button type="button" class="m-ibtn" onclick={copyPassword} aria-label={$t('common_copy')}>
-            <Icon name="lock-password" size={20} />
+          <button type="button" class="m-ibtn" onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
+            <Icon name="copy" size={20} />
           </button>
         </div>
         {#if shownNote}
@@ -530,6 +538,8 @@
   {/if}
 </div>
 <VaultUnlock bind:open={unlockOpen} onunlocked={onUnlocked} />
+{#snippet moreHead()}{#if entry}<PasswordMenuHead {entry} />{/if}{/snippet}
+<ContextMenu bind:open={moreOpen} x={0} y={0} items={moreItems} header={moreHead} onclose={() => (moreOpen = false)} />
 
 <style>
   .err { margin-bottom: var(--sp-3); }

@@ -193,8 +193,8 @@
     <div class="line">
       <span>{$t('pw_field_username')}</span>
       <strong>{entry.username}</strong>
-      <button type="button" class="icon-btn" onclick={copyUsername} aria-label={$t('common_copy')} title={$t('common_copy')}>
-        <Icon name="copy" size={14} />
+      <button type="button" class="icon-btn" onclick={copyUsername} aria-label={$t('ctx_action_copy_username')} title={$t('ctx_action_copy_username')}>
+        <Icon name="id" size={14} />
       </button>
     </div>
   {/if}
@@ -215,7 +215,7 @@
       <button type="button" class="icon-btn" onclick={reveal} aria-label={$t(revealed ? 'pw_btn_hide' : 'pw_btn_reveal')}>
         <Icon name={revealed ? 'eye-off' : 'eye'} size={14} />
       </button>
-      <button type="button" class="icon-btn" onclick={copyPassword} aria-label={$t('common_copy')}>
+      <button type="button" class="icon-btn" onclick={copyPassword} aria-label={$t('ctx_action_copy_password')}>
         <Icon name="copy" size={14} />
       </button>
     {:else}

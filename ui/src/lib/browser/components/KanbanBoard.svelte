@@ -12,6 +12,30 @@
   import ProfileSidePanel from './ProfileSidePanel.svelte';
   import { directory } from '$lib/core/directory';
   import { proxiesStore } from '$lib/browser/store/proxies.svelte';
+  import { onMount, tick } from 'svelte';
+
+  let boardEl = $state<HTMLDivElement>();
+  let canScroll = $state(false);
+  let atEnd = $state(true);
+
+  function measureBoard() {
+    if (!boardEl) return;
+    canScroll = boardEl.scrollWidth > boardEl.clientWidth + 1;
+    atEnd = boardEl.scrollLeft + boardEl.clientWidth >= boardEl.scrollWidth - 1;
+  }
+
+  onMount(() => {
+    if (!boardEl) return;
+    const ro = new ResizeObserver(measureBoard);
+    ro.observe(boardEl);
+    return () => ro.disconnect();
+  });
+
+  $effect(() => {
+    columns.length;
+    showAddColumn;
+    tick().then(measureBoard);
+  });
 
   interface Props {
     profiles: Profile[];
@@ -298,7 +322,7 @@
   </div>
 
   <!-- Board -->
-  <div class="board" style="grid-template-columns: repeat({sortedCols.length + 1 + (columns.length < 20 ? 1 : 0)}, minmax(280px, 1fr))">
+  <div class="board" class:scrolls={canScroll} class:at-end={atEnd} bind:this={boardEl} onscroll={measureBoard} style="grid-template-columns: repeat({sortedCols.length + 1 + (columns.length < 20 ? 1 : 0)}, minmax(280px, 1fr))">
     <!-- Dynamic columns -->
     {#each sortedCols as col (col.id)}
       {@const cards = colProfiles(col.tag_name)}
@@ -330,13 +354,13 @@
             </div>
           {:else}
             <span class="col-title">{col.name}</span>
-            <span class="col-count">{cards.length}</span>
             <button class="icon-btn" onclick={() => startEditCol(col)} title={$t('kanban_edit_column')} aria-label={$t('kanban_edit_column')}>
               <Icon name="pencil" size={11} />
             </button>
             <button class="icon-btn danger-soft" onclick={() => deleteCol(col)} title={$t('kanban_delete_column')} aria-label={$t('kanban_delete_column')}>
               <Icon name="trash-2" size={11} />
             </button>
+            <span class="col-count">{cards.length}</span>
           {/if}
         </div>
 
@@ -560,7 +584,12 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding-bottom: var(--sp-1);
+    padding-right: var(--sp-3);
     align-items: start;
+  }
+  .board.scrolls:not(.at-end) {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
 
   .column {
@@ -581,9 +610,9 @@
   .col-title { font-size: var(--fs-sm); font-weight: var(--fw-bold); color: var(--text-body); flex: 1; }
   .col-count {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 24px; height: 24px; border-radius: var(--radius-pill);
-    font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-    background: var(--surface-2); color: var(--text-2);
+    min-width: 0; padding: 0 var(--sp-1);
+    font-size: var(--fs-sm); font-weight: var(--fw-regular);
+    color: var(--text-2);
   }
 
   .col-edit-input {

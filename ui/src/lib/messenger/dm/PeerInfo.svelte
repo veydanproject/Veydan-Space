@@ -168,7 +168,7 @@
 
   /* The last: what cannot be undone, apart. */
   .zone { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-4); border-top: 1px dashed var(--border-2); }
-  .zone .btn { min-height: var(--control-h); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
+  .zone .btn { min-height: var(--touch, var(--control-h)); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
 
   @media (pointer: coarse) {
     .zone .btn { min-height: var(--control-h-lg); }

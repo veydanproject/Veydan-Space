@@ -741,7 +741,7 @@
   /* A block's total is the .count-pill of base.css, .quiet. */
   .hint { margin: 0; line-height: var(--lh-snug); }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); width: 100%; }
-  .two .btn { min-height: var(--control-h); min-width: 0; gap: var(--sp-1); padding-inline: var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-tight); white-space: normal; text-wrap: balance; text-align: center; }
+  .two .btn { min-height: var(--touch, var(--control-h)); min-width: 0; gap: var(--sp-1); padding-inline: var(--sp-3); font-size: var(--fs-sm); line-height: var(--lh-tight); white-space: normal; text-wrap: balance; text-align: center; }
   .two .btn:only-child { grid-column: 1 / -1; }
   /* A pair with icons: side by side, sharing the width, while both fit on a line; else each on a row of its own. */
   .two.fit { display: flex; flex-wrap: wrap; }
@@ -882,7 +882,7 @@
   /* The last: what cannot be undone, apart. */
   .zone { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); padding-top: var(--sp-4); border-top: 1px dashed var(--border-2); }
   .zone-btns { display: flex; flex-direction: column; gap: var(--sp-2); }
-  .zone-btns .btn { min-height: var(--control-h); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
+  .zone-btns .btn { min-height: var(--touch, var(--control-h)); justify-content: flex-start; gap: var(--sp-2); padding: 0 var(--sp-4); }
   .since { font-size: var(--fs-xs); color: var(--text-3); text-align: center; }
 
   @media (pointer: coarse) {
@@ -890,6 +890,6 @@
     .field { font-size: var(--fs-md); }
     .two .btn, .zone-btns .btn { min-height: var(--control-h-lg); }
     /* The history's choices under a finger. */
-    .chips .chip { min-height: var(--control-h); padding-inline: var(--sp-3); }
+    .chips .chip { min-height: var(--touch, var(--control-h)); padding-inline: var(--sp-3); }
   }
 </style>

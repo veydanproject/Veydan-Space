@@ -95,6 +95,8 @@
   --control-h: 40px;  /* высота контролов: кнопки, поиск, select в панелях фильтров */
   --control-h-sm: 32px; /* маленькие кнопки */
   --control-h-lg: 44px; /* поля форм в drawer'ах, сегмент-кнопки, касание */
+  --search-h: 40px;     /* поле поиска, на всех экранах */
+  --search-fs: var(--fs-base); /* его шрифт, 14 */
   --media-check:    26px; /* the circle of choice on a tile of a gallery */
   --media-check-lg: 30px; /* the same in its viewer */
 
