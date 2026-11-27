@@ -9172,6 +9172,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "veydan-share-ext"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "messenger-core",
+ "messenger-runtime",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+ "veydan-lock",
+ "zeroize",
+]
+
+[[package]]
 name = "veydan-shell"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Veydan Project
+# SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
+
+[package]
+name = "veydan-share-ext"
+description = "The messenger inside the share extension of the iPhone: opens the app's data file, lists the chats, sends what another app shared (internal/messenger-wire.md §5)"
+version = "0.1.0"
+edition = "2021"
+authors = ["Veydan Project"]
+license-file = "../../LICENSE"
+publish = false
+
+[lib]
+name = "veydan_share_ext"
+# The extension links it as an archive and reaches it by the C functions of src/lib.rs (include/veydan_share.h).
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+veydan-lock = { path = "../lock" }
+messenger-core = { path = "../messenger/core" }
+# Without the engine of calls (the feature `rtc`): the extension makes no call, and libwebrtc stays out of it.
+messenger-runtime = { path = "../messenger/runtime", default-features = false }
+sqlx = { version = "0.9", features = ["sqlite", "runtime-tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
