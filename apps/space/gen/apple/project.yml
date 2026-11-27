@@ -30,7 +30,13 @@ targets:
     sources:
       - path: Sources
       - path: Assets.xcassets
+      # The archives of Rust land here at build time (libapp.a, the share
+      # extension's libveydan_share_ext.a) and are linked by the search
+      # paths: a file found here when xcodegen runs must not become a
+      # resource of the app (rc.4 of 5.2.3: the simulator's debug archives
+      # of this Mac, missing on the runner, failed the build).
       - path: Externals
+        excludes: ["**/*"]
       - path: veydanspace_iOS
       - path: assets
         buildPhase: resources

@@ -15,7 +15,6 @@
 		1235CBDCE437A0C9BCA69F27 /* PushKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 209E5318D3C1E7C67C49F2D0 /* PushKit.framework */; };
 		179FAA8A1D1197C2F9310A33 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4AEB01F67E471F253D51BDA5 /* libapp.a */; };
 		23FF14339BEF35528A6D2E97 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E57CD263A9314EF46510285 /* CoreMedia.framework */; };
-		29A8F8492F6D11EDEE45E9D5 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 6BB7E566C15A53F4B63A8287 /* libapp.a */; };
 		3281F619B58DD54049E1F009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D0100A5344DB1DB70105314A /* Assets.xcassets */; };
 		34590B90E34B74F4C868A3E3 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */; };
 		3CF3A110957AA2155308E71F /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57F35C18158926BF2DC1011 /* WebKit.framework */; };
@@ -34,7 +33,6 @@
 		6391D293753540DA95425448 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 107AD49ADE4D0AB30E6400B2 /* UserNotifications.framework */; };
 		6B350D1DA15D41D8881472E0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 99E6DFE3C99A92D74831AEB5 /* Foundation.framework */; };
 		6C8177A12C524692A614EC3F /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 91C72D1D7924A43E9B105875 /* CryptoKit.framework */; };
-		708751C379D724DD981B2A02 /* libveydan_share_ext.a in Resources */ = {isa = PBXBuildFile; fileRef = F35739627517C1D7926FA972 /* libveydan_share_ext.a */; };
 		71528A63E17CEC0F8DFD8C67 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F77D07ED5F4C62597F80112 /* CoreFoundation.framework */; };
 		7AE94B73DE668823E0CFA57E /* OpenGLES.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 60A42102BAAC3F7D935FAEEF /* OpenGLES.framework */; };
 		7BF3EC149EAC9C60BD41CFE3 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */; };
@@ -154,7 +152,6 @@
 		68CFB4B335FEE50572F7D1F2 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		6909664DD42A240D0401A6F6 /* collect_tests.rs */ = {isa = PBXFileReference; path = collect_tests.rs; sourceTree = "<group>"; };
 		6A72261FA9C0C2C50EAE07D1 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
-		6BB7E566C15A53F4B63A8287 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		6D5D3073B85BCDDBDD27951D /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		79008400E9F4D102B3085093 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		79AC88AD9FC2409EC241CE8E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -212,7 +209,6 @@
 		F1DBC99E220041F8FBA83BE2 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		F2C0058EAE7B329EFF9C61A2 /* ssh.rs */ = {isa = PBXFileReference; path = ssh.rs; sourceTree = "<group>"; };
 		F32FFE81F4C64E1400EFA470 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		F35739627517C1D7926FA972 /* libveydan_share_ext.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libveydan_share_ext.a; sourceTree = "<group>"; };
 		F3AF4055784E0C5C9C7C9BC1 /* fs_guard.rs */ = {isa = PBXFileReference; path = fs_guard.rs; sourceTree = "<group>"; };
 		F441B10088FFB7EBAC3F2257 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		F9813551C8E37944A9EC7FA1 /* ImageIO.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = System/Library/Frameworks/ImageIO.framework; sourceTree = SDKROOT; };
@@ -338,36 +334,12 @@
 			path = ShareExtension;
 			sourceTree = "<group>";
 		};
-		457EFC9040AEF2E51EFE3B9E /* iphonesimulator */ = {
-			isa = PBXGroup;
-			children = (
-				C2F341471493F7C9787F85CC /* debug */,
-			);
-			path = iphonesimulator;
-			sourceTree = "<group>";
-		};
 		4D0E64D908AEC7C5451CCA5B /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				38DD1F0BD9556B0969620CAD /* veydanspace */,
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		577D1783574515AE030D81C1 /* arm64 */ = {
-			isa = PBXGroup;
-			children = (
-				8AE7F8B5DE0123E8B350E0DE /* debug */,
-			);
-			path = arm64;
-			sourceTree = "<group>";
-		};
-		7092002C3AE5C21B851A96BE /* share */ = {
-			isa = PBXGroup;
-			children = (
-				457EFC9040AEF2E51EFE3B9E /* iphonesimulator */,
-			);
-			path = share;
 			sourceTree = "<group>";
 		};
 		73ACA2B27087ECF163B4FB07 /* modules */ = {
@@ -421,14 +393,6 @@
 			);
 			sourceTree = "<group>";
 		};
-		8AE7F8B5DE0123E8B350E0DE /* debug */ = {
-			isa = PBXGroup;
-			children = (
-				6BB7E566C15A53F4B63A8287 /* libapp.a */,
-			);
-			path = debug;
-			sourceTree = "<group>";
-		};
 		8E26469F9A26AD1515D9F641 /* sync */ = {
 			isa = PBXGroup;
 			children = (
@@ -476,14 +440,6 @@
 				8E44C04CE21C6171C44756DE /* veydanspace_share.appex */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		C2F341471493F7C9787F85CC /* debug */ = {
-			isa = PBXGroup;
-			children = (
-				F35739627517C1D7926FA972 /* libveydan_share_ext.a */,
-			);
-			path = debug;
 			sourceTree = "<group>";
 		};
 		C474CE8B7C9F397C54A7F5B7 /* veydanspace_iOS */ = {
@@ -546,8 +502,6 @@
 		F2A2CBE790CB4869DB3EC55F /* Externals */ = {
 			isa = PBXGroup;
 			children = (
-				577D1783574515AE030D81C1 /* arm64 */,
-				7092002C3AE5C21B851A96BE /* share */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -562,13 +516,6 @@
 				961AFD77480FBC9C00687A1A /* server.rs */,
 			);
 			path = capture;
-			sourceTree = "<group>";
-		};
-		"TEMP_36BF0EDC-FA81-4282-8E87-17905C9B0111" /* x86_64 */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = x86_64;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -681,8 +628,6 @@
 				61F6E1B8BC5ECA157445B198 /* Localizable.strings in Resources */,
 				58C9EBF1668BF4B8106C3E97 /* PrivacyInfo.xcprivacy in Resources */,
 				4A035E72244D8E1A2510C6DB /* assets in Resources */,
-				29A8F8492F6D11EDEE45E9D5 /* libapp.a in Resources */,
-				708751C379D724DD981B2A02 /* libveydan_share_ext.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -948,7 +893,7 @@
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-device-arm64-release/lib/libwebrtc-objc.a";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "$(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-simulator-arm64-release/lib/libwebrtc-objc.a";
 				PRODUCT_BUNDLE_IDENTIFIER = net.veydan.mobile;
-				PRODUCT_NAME = "Veydan";
+				PRODUCT_NAME = Veydan;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALID_ARCHS = arm64;
@@ -981,7 +926,7 @@
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-device-arm64-release/lib/libwebrtc-objc.a";
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = "$(inherited) -force_load $(SRCROOT)/../../../../data/toolchains/webrtc/webrtc-89d790b/ios-simulator-arm64-release/lib/libwebrtc-objc.a";
 				PRODUCT_BUNDLE_IDENTIFIER = net.veydan.mobile;
-				PRODUCT_NAME = "Veydan";
+				PRODUCT_NAME = Veydan;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 				VALID_ARCHS = arm64;
