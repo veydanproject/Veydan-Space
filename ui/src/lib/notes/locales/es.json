@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Notas",
     "quick_capture_title": "Nota rápida",
+    "note_share_new": "Nueva nota",
+    "note_share_untitled": "Compartido",
+    "note_share_saved": "Nota creada",
+    "note_share_refused": "No añadido: {names}",
     "tray_quick_capture": "Nota rápida",
     "panel_tab_notes": "Notas",
     "notes_label": "Notas",

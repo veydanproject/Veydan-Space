@@ -31,6 +31,8 @@ declare namespace App {
     searchMessages?: boolean;
     /** The sheet of a forward is open (messenger/content/ForwardDialog.svelte). */
     forwardSheet?: boolean;
+    /** The chooser of a chat for what another app shared is open (messenger/share/ShareIn.svelte). */
+    shareInSheet?: boolean;
     /** The emoji panel of a phone is open in the keyboard's place (messenger/dm/Composer.svelte). */
     emojiDock?: boolean;
     /** The sheet of a dropdown list of a phone is open (core/ui/CustomSelect.svelte). */

@@ -317,8 +317,9 @@ pub(crate) fn handed_over(app: &tauri::AppHandle, picked: &str) -> bool {
     if app.veydan_media().handed_over(picked) {
         return true;
     }
-    let _ = app;
-    picked.starts_with("content://")
+    // A copy another app shared into Veydan (`veydan_shell::shares`): the
+    // shell vouches for the path, the copy is read as a `content://` is.
+    picked.starts_with("content://") || veydan_shell::shares::handed_over(app, picked)
 }
 
 /// What a handed-over `picked` is read from: on iOS an item of the grid is

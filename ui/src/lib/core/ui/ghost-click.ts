@@ -18,8 +18,15 @@ export interface ClickTarget {
 /** How long after the finger lifts a click still counts as the lift's own. */
 export const AFTER_LIFT_MS = 400;
 
+/**
+ * `lifted`: the finger is up already (called from its lift, a card that opens on it). WebKit on iOS may have
+ * raised the touchend before that pointerup, and the guard, waiting for a lift that had passed, swallowed the
+ * next tap on anything (the back of the chat a tapped card had opened stayed pressed and did nothing): the
+ * guard's moment then starts at once.
+ */
 export function swallowNextClick(
   target: ClickTarget | undefined = typeof window === 'undefined' ? undefined : window,
+  lifted = false,
 ): () => void {
   if (!target) return () => {};
   let done = false;
@@ -48,5 +55,6 @@ export function swallowNextClick(
   target.addEventListener('touchend', lift, { capture: true, passive: false });
   target.addEventListener('pointerup', lift, true);
   target.addEventListener('pointercancel', lift, true);
+  if (lifted) timer = setTimeout(finish, AFTER_LIFT_MS);
   return finish;
 }

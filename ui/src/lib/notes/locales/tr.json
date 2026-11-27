@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Notlar",
     "quick_capture_title": "Hızlı not",
+    "note_share_new": "Yeni not",
+    "note_share_untitled": "Paylaşılan",
+    "note_share_saved": "Not oluşturuldu",
+    "note_share_refused": "Eklenmedi: {names}",
     "tray_quick_capture": "Hızlı not",
     "panel_tab_notes": "Notlar",
     "notes_label": "Notlar",

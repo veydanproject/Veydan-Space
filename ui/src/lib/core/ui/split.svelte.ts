@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Veydan Project
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
-// A wide window (an unfolded Duo, a tablet): the sections in a column, a
-// module's list and the item opened from it side by side (platform-spec 11.7).
-// The shell marks it with `.shell.wide`; every wide style lives under that
-// class, never under a bare media query: the shared components (the chat
-// window, the lists) stand in the desktop's windows too, which are always
-// that wide. A phone lying on its side is not wide: too low for two columns.
+// A wide window (an unfolded Duo, a Fold, a tablet): the sections in a
+// column, a module's list and the item opened from it side by side
+// (platform-spec 11.7). The shell marks it with `.shell.wide`; every wide
+// style lives under that class, never under a bare media query: the shared
+// components (the chat window, the lists) stand in the desktop's windows
+// too, which are always that wide. A phone lying on its side is not wide:
+// too low for two columns. The width is Material's «medium» (600): the
+// inner screens of the foldables lie under 840 (Galaxy Z Fold6: 707 × 823
+// CSS px, the owner's, 2026-11-27; Pixel Fold alone reaches 852).
 
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
@@ -14,7 +17,7 @@ import { registry } from '$lib/core/registry';
 import type { SplitDef } from '$lib/core/module';
 import { leave } from '$lib/core/ui/back';
 
-export const WIDE_QUERY = '(min-width: 840px) and (min-height: 480px)';
+export const WIDE_QUERY = '(min-width: 600px) and (min-height: 480px)';
 
 /** `url` is the list's own address (`home`, its parameters too: a section of the chats), nothing open beside it. */
 export function atHome(url: URL, def: SplitDef): boolean {

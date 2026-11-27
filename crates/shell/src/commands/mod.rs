@@ -100,6 +100,8 @@ fn commands() -> Module {
             settings::window_minimize,
             media::media_grant_access,
             labels::labels_resolve,
+            crate::shares::shares_take,
+            crate::shares::shares_forget,
             crate::update::update_check,
             crate::update::update_open,
             #[cfg(desktop)]

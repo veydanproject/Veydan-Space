@@ -9,6 +9,11 @@ export const translations = {
   en: {
     nav_notes: 'Notes',
     quick_capture_title: 'Quick note',
+    // What another app shared into Veydan, as a note
+    note_share_new: 'New note',
+    note_share_untitled: 'Shared',
+    note_share_saved: 'Note created',
+    note_share_refused: 'Not added: {names}',
     tray_quick_capture: 'Quick note',
     panel_tab_notes: 'Notes',
     notes_label: 'Notes',
@@ -357,6 +362,10 @@ export const translations = {
   ru: {
     nav_notes: 'Заметки',
     quick_capture_title: 'Быстрая заметка',
+    note_share_new: 'Новая заметка',
+    note_share_untitled: 'Присланное',
+    note_share_saved: 'Заметка создана',
+    note_share_refused: 'Не добавлено: {names}',
     tray_quick_capture: 'Быстрая заметка',
     panel_tab_notes: 'Заметки',
     notes_label: 'Заметки',

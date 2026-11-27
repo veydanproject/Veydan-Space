@@ -48,10 +48,14 @@ targets:
         # no documentation (its answer of 2026-11-19); true wants a documentation
         # code and the upload is refused without one (90592).
         ITSAppUsesNonExemptEncryption: false
-        CFBundleShortVersionString: 5.2.1
-        CFBundleVersion: "5.2.1"
+        CFBundleShortVersionString: 5.2.3
+        CFBundleVersion: "5.2.3"
     entitlements:
       path: veydanspace_iOS/veydanspace_iOS.entitlements
+      properties:
+        aps-environment: development
+        # The data lives in the container of this group, for the share extension (crates/shell/src/ios_group.rs).
+        com.apple.security.application-groups: [group.net.veydan.mobile]
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
@@ -72,6 +76,8 @@ targets:
     dependencies:
       - framework: libapp.a
         embed: false
+      # «Поделиться» into Veydan from another app: the share extension, embedded in the app (PlugIns/).
+      - target: veydanspace_share
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
@@ -105,3 +111,82 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  # The share extension («Поделиться» into Veydan from another app,
+  # internal/messenger-wire.md §5): a process of its own that opens the
+  # app's data in the container of the app group and sends by itself. Its
+  # Rust (crates/share-ext, without the engine of calls) is built by the
+  # phase below into Externals/share/<platform>/<configuration>/ and linked
+  # as an archive; the Swift of ShareExtension/ is the screen.
+  veydanspace_share:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: ShareExtension
+        excludes:
+          - Info.plist
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Veydan
+        CFBundleShortVersionString: 5.2.3
+        CFBundleVersion: "5.2.3"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareNavigationController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 50
+              NSExtensionActivationSupportsMovieWithMaxCount: 50
+              NSExtensionActivationSupportsFileWithMaxCount: 50
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.net.veydan.mobile]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.veydan.mobile.share
+        PRODUCT_NAME: VeydanShare
+        PRODUCT_MODULE_NAME: VeydanShare
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: ShareExtension/Bridging.h
+        HEADER_SEARCH_PATHS: $(inherited) $(SRCROOT)/../../../../crates/share-ext/include
+        LIBRARY_SEARCH_PATHS: $(inherited) $(SRCROOT)/Externals/share/$(PLATFORM_NAME)/$(CONFIGURATION)
+        OTHER_LDFLAGS: $(inherited) -lveydan_share_ext
+        ENABLE_BITCODE: false
+        TARGETED_DEVICE_FAMILY: "1"
+        ARCHS: [arm64]
+        VALID_ARCHS: arm64
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        APPLICATION_EXTENSION_API_ONLY: true
+    dependencies:
+      - sdk: Foundation.framework
+      - sdk: UIKit.framework
+      - sdk: UniformTypeIdentifiers.framework
+      - sdk: Security.framework
+      - sdk: CoreFoundation.framework
+      - sdk: SystemConfiguration.framework
+    preBuildScripts:
+      - script: PATH=/opt/homebrew/bin:$PATH bash $SRCROOT/../../../../scripts/ios/share-ext.sh space ${PLATFORM_NAME:?} ${CONFIGURATION:?} $SRCROOT/Externals/share/${PLATFORM_NAME:?}/${CONFIGURATION:?}
+        name: Build Share Extension Rust
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(SRCROOT)/Externals/share/$(PLATFORM_NAME)/$(CONFIGURATION)/libveydan_share_ext.a
+    # App Store Connect takes an extension only with the version and the
+    # build number of its app. The tauri CLI writes those into the app's
+    # Info.plist alone (the version of the product, the build number of the
+    # run: release.yml): copied from there into the extension's processed
+    # Info.plist before it is signed. The numbers above are what a build
+    # without the CLI shows.
+    postCompileScripts:
+      - script: |
+          app="$SRCROOT/veydanspace_iOS/Info.plist"
+          ext="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          v="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app")"
+          b="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app")"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $v" -c "Set :CFBundleVersion $b" "$ext"
+          echo "share extension: version $v, build $b (the app's)"
+        name: Take the App Version
+        basedOnDependencyAnalysis: false

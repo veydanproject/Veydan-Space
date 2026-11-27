@@ -147,8 +147,12 @@
   .strip { padding: var(--sp-2) var(--sp-3) 0; flex-shrink: 0; }
   .search {
     display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) var(--sp-3); padding: 0 var(--sp-4); flex-shrink: 0;
-    background: var(--surface-3); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--text-3);
+    border: 1px solid var(--pane-strong-border); border-radius: var(--radius-pill); color: var(--text-3);
+    /* The glass of the heads (.head.phone in ChatWindow, the owner, 2026-11-27): 60 % of --glass-bar, the pane's blur. */
+    background: color-mix(in srgb, var(--glass-bar) 60%, transparent); box-shadow: var(--pane-highlight), var(--pane-shadow);
+    -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .search { background: var(--bg-2); } }
   /* The pill is the field: its border is the one focus mark. */
   .search:focus-within { border-color: var(--accent-border); }
   /* The pill is 40 (--search-h) with its frame of 1 on each side. */

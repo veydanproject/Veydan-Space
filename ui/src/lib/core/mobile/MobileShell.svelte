@@ -23,6 +23,7 @@
   import AppLockGate from '$lib/core/lock/AppLockGate.svelte';
   import Icon from '$lib/core/Icon.svelte';
   import LinkInbox from '$lib/core/links/LinkInbox.svelte';
+  import ShareInbox from '$lib/core/shares/ShareInbox.svelte';
   import { appLock } from '$lib/core/lock/store.svelte';
   import { leavesOff, registry } from '$lib/core/registry';
   import Wizard from '$lib/core/onboarding/Wizard.svelte';
@@ -166,6 +167,8 @@
   {/each}
   <!-- A link clicked outside the app, read once it is unlocked. -->
   <LinkInbox />
+  <!-- What another app shared into Veydan, taken once it is unlocked. -->
+  <ShareInbox />
   {#if withHub}
     <HubSheet open={hub.isOpen} onclose={() => hub.close()} />
   {/if}
@@ -204,7 +207,8 @@
   .shell.wide .screen { min-width: 0; position: relative; }
   .split-list {
     position: relative;
-    flex: 0 0 clamp(360px, 41vw, 400px);
+    /* A foldable of 600–840 leaves the screen its half: the list gives way first. */
+    flex: 0 0 clamp(280px, 38vw, 400px);
     min-width: 0;
     display: flex;
     flex-direction: column;

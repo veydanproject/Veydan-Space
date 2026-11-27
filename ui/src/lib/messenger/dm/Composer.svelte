@@ -24,6 +24,7 @@
   import { mediaOf, type MessengerMessage, type MessengerRecording, type TextFormat } from '../api';
   import type { BotCommand } from '../generated/profile';
   import { replyLine, replyThumb } from '../push/wording';
+  import { PHONE_OS } from '../phone';
 
   interface Props {
     disabled?: boolean;
@@ -116,11 +117,22 @@
   // it as above the keyboard, which then seems to slide over the panel; an
   // empty one is the padding itself.
   const dockCss = $derived(dockH > 0 ? `${dockH + 10}px` : 'calc(10px + var(--sab, 0px))');
+  // On the iPhone the keyboard's height comes whole and the phone frame (MobileFrame) rises or falls to it over
+  // 260 ms: the panel takes or gives back its place over the same time and curve (.dock.ios), so the two always
+  // add up to the keyboard and the composer stays where it is. Before, the panel jumped to its height at once
+  // (or went at once) while the frame was still moving, and the composer leapt up and slid back on every switch
+  // between the smile and the keyboard.
+  const IOS = PHONE_OS === 'ios';
+  /** The frame's move on the iPhone (MobileFrame .msg-m.ios) and a little more. */
+  const IOS_MOVE_MS = 280;
   // Giving way ends when the keyboard is up (or, failing that, after a while); going down after the shrink.
+  // On the iPhone the keyboard is «up» before the frame has risen: the panel goes once it has shrunk to nothing.
   $effect(() => {
-    if (dock === 'tokb' && kbNow >= kbH - 8) dock = '';
+    const up = dock === 'tokb' && kbNow >= kbH - 8;
+    if (up && !IOS) dock = '';
     if (dock !== 'tokb' && dock !== 'down') return;
-    const timer = setTimeout(() => (dock = ''), dock === 'down' ? 220 : 800);
+    const ms = IOS && (up || dock === 'down') ? IOS_MOVE_MS : dock === 'down' ? 220 : 800;
+    const timer = setTimeout(() => (dock = ''), ms);
     return () => clearTimeout(timer);
   });
   // The conversation keeps its bottom while the panel changes height (ChatWindow follows the keyboard's event).
@@ -160,8 +172,12 @@
     };
     // The attach button opens its own sheet in the panel's place. Not on the finger going down: the composer
     // would slide down under the finger, and the tap would land on whatever came under it (a picture).
+    // The panel goes once the sheet holds its own place in the history (its effect runs in the flush of this
+    // click): the panel's place, given back under the sheet's, waits for the sheet to close. Closed at once, the
+    // panel's back raced the sheet's step: it took the sheet down (Android: a second tap needed) or, in WebKit,
+    // left the chat.
     const attach = (e: MouseEvent) => {
-      if (root?.contains(e.target as Node) && (e.target as HTMLElement).closest?.('.attach')) closeDock();
+      if (root?.contains(e.target as Node) && (e.target as HTMLElement).closest?.('.attach')) setTimeout(closeDock);
     };
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('click', attach, true);
@@ -179,8 +195,9 @@
   }
   function openDock() {
     el?.setAttribute('inputmode', 'none');
-    // Over an open keyboard the panel takes its place as the keyboard goes: no animation of its own.
-    glide = kbNow < 40;
+    // Over an open keyboard the panel takes its place as the keyboard goes: no animation of its own
+    // (Android, where the keyboard's inset follows it frame by frame). The iPhone's frame moves by itself: the panel with it.
+    glide = IOS || kbNow < 40;
     expanded = false;
     dock = 'open';
     refocus();
@@ -882,7 +899,7 @@
   {#if tooLong}<div class="error-msg">{$t('msg_composer_too_long')}</div>{/if}
   {#if recError}<div class="error-msg">{$t(`msg_rec_err_${recError}` as "msg_rec_err_denied")}</div>{/if}
   {#if touch && dock}
-    <div class="dock" class:glide style:height={dockCss}>
+    <div class="dock" class:glide class:ios={IOS} style:height={dockCss}>
       <div class="dock-panel">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="grip" onpointerdown={gripDown} onpointermove={gripMove} onpointerup={gripUp} onpointercancel={gripUp}>
@@ -1032,6 +1049,8 @@
     overflow: hidden;
   }
   .dock.glide { transition: height var(--dur-drawer) var(--ease-drawer); }
+  /* The iPhone: the time and curve of the phone frame's move to the keyboard (MobileFrame .msg-m.ios). */
+  .dock.glide.ios { transition: height 260ms cubic-bezier(0.38, 0.7, 0.125, 1); }
   /* The grip of a sheet (36×4), and the fold button at its end. */
   .grip { position: relative; display: flex; justify-content: center; align-items: center; flex-shrink: 0; height: 28px; touch-action: none; }
   .grab { width: 64px; height: 28px; padding: 0; border: 0; background: none; display: flex; align-items: center; justify-content: center; }

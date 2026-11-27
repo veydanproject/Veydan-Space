@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Notizen",
     "quick_capture_title": "Schnellnotiz",
+    "note_share_new": "Neue Notiz",
+    "note_share_untitled": "Geteilt",
+    "note_share_saved": "Notiz erstellt",
+    "note_share_refused": "Nicht hinzugefügt: {names}",
     "tray_quick_capture": "Schnellnotiz",
     "panel_tab_notes": "Notizen",
     "notes_label": "Notizen",

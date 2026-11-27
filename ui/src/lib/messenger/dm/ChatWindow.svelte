@@ -55,6 +55,8 @@
   import { archiveStore } from '../archive/archiveStore.svelte';
   import { scopeOfChat } from '../archive/archive';
   import { addUnits, chosenText, forwardable, MAX_FORWARD_MESSAGES, selectUnits, toggleUnit, unitRange, type Unit } from './select';
+  import { shareStore } from '../share/shareStore.svelte';
+  import type { IncomingShare } from '$lib/core/module';
 
   interface Props {
     chat: MessengerChat;
@@ -160,6 +162,23 @@
   $effect(() => {
     if (chat.id !== lastChat) { lastChat = chat.id; replyTo = null; editing = null; error = ''; atBottom = true; picked = []; original = false; earlierEmpty = 0; earlierFailed = false; historyEnd = false; historyAsked = false; anchor = null; viewer.close(); stopChoosing(); forward.open = false; untrack(() => closeSearch(false)); }
   });
+
+  // What another app shared into this chat (share/shareStore): its files are
+  // attached once the composer may take files; its text is the draft already.
+  $effect(() => {
+    if (!shareStore.waitsFor(chat.id) || !canAttachNow) return;
+    const share = shareStore.takeFor(chat.id);
+    if (share) untrack(() => void receiveShare(share));
+  });
+  async function receiveShare(share: IncomingShare) {
+    try {
+      if (share.files.length) await attach(share.files.map((f) => f.path));
+    } finally {
+      // The copies the shell made are imported (or refused) by now: they go.
+      void messengerApi.shares.forget(share.id);
+    }
+    if (share.refused.length) error = [error, $t('msg_sharein_refused', { names: share.refused.join(', ') })].filter(Boolean).join('\n');
+  }
 
   /**
    * The mode of choosing messages: a tap ticks a message or an album

@@ -44,6 +44,32 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- The chats of Direct Share (res/xml/shortcuts.xml). -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+        <!-- «Поделиться» into Veydan from another app: a text, photos, videos,
+             files (crates/shell/src/shares.rs). Like LinkActivity, not
+             MainActivity: it copies the files into the app's cache while the
+             system still lets it read them, keeps the share in memory, starts
+             MainActivity with an intent of its own and leaves no task behind. -->
+        <activity
+            android:name="net.veydan.shell.ShareActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
         <!-- A veydan:// link clicked outside the app (crates/shell/src/links.rs).
              Not MainActivity: the intent that carries the link must not stay the

@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Ghi chú",
     "quick_capture_title": "Ghi chú nhanh",
+    "note_share_new": "Ghi chú mới",
+    "note_share_untitled": "Được chia sẻ",
+    "note_share_saved": "Đã tạo ghi chú",
+    "note_share_refused": "Chưa thêm: {names}",
     "tray_quick_capture": "Ghi chú nhanh",
     "panel_tab_notes": "Ghi chú",
     "notes_label": "Ghi chú",

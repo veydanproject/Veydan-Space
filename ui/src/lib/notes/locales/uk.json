@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Нотатки",
     "quick_capture_title": "Швидка нотатка",
+    "note_share_new": "Нова нотатка",
+    "note_share_untitled": "Надіслане",
+    "note_share_saved": "Нотатку створено",
+    "note_share_refused": "Не додано: {names}",
     "tray_quick_capture": "Швидка нотатка",
     "panel_tab_notes": "Нотатки",
     "notes_label": "Нотатки",

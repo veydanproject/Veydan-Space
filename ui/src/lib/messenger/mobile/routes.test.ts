@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1
 
 import { describe, expect, it } from 'vitest';
-import { BASE, callHref, callsHref, chatHref, contactsHref, groupsHref, openHref, sectionItemHref, shouldFollow } from './routes';
+import { BASE, callHref, callsHref, chatHref, contactsHref, groupsHref, onConversation, openHref, sectionItemHref, shouldFollow } from './routes';
 
 const at = (url: string) => {
   const u = new URL(url, 'http://app');
@@ -48,5 +48,14 @@ describe('the tabs of the bar', () => {
   it('are the list, the groups and the calls', () => {
     expect([BASE, groupsHref(), callsHref(), contactsHref()]).toEqual(['/messenger', '/messenger/groups', '/messenger/calls', '/messenger/contacts']);
     expect(shouldFollow(chatHref(A), at(callsHref()))).toBe(true);
+  });
+});
+
+describe('onConversation', () => {
+  it('is a chat or a row of a section, nothing else', () => {
+    const path = (href: string) => new URL(href, 'http://app').pathname;
+    expect(onConversation(path(chatHref('dm:a')))).toBe(true);
+    expect(onConversation(path(sectionItemHref('channel:a')))).toBe(true);
+    for (const href of [BASE, groupsHref(), callsHref(), contactsHref(), callHref()]) expect(onConversation(path(href))).toBe(false);
   });
 });

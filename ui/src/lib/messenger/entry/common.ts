@@ -12,6 +12,7 @@ import { BASE } from '../mobile/routes';
 import AccountStep from '../onboarding/AccountStep.svelte';
 import ProfileStep from '../onboarding/ProfileStep.svelte';
 import { incomingLinks } from '../incoming/incomingStore.svelte';
+import { shareStore } from '../share/shareStore.svelte';
 import { bugSender } from '../shared/bug';
 
 /** The key and the servers are here: the account of this device is whole. */
@@ -64,6 +65,8 @@ export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   setup: [{ id: 'account', order: 10, title: 'msg_setup_account', icon: 'user', href: () => BASE, step: 'account', done: hasAccount }],
   // A link clicked outside the app is a card of the messenger: read once its runtime runs.
   links: { ready: () => !!messengerStore.status?.runtime, read: incomingLinks.read },
+  // What another app shares into Veydan goes to a chat: the chooser is the messenger's, shown once its runtime runs.
+  shares: { order: 10, ready: () => !!messengerStore.status?.runtime, show: (share, others) => shareStore.offer(share, others) },
   // A bug report goes to the project as a report of a person does.
   bug: bugSender,
 };

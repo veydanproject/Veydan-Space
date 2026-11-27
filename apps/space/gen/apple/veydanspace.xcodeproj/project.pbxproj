@@ -10,43 +10,80 @@
 		0234700DB477074D7934725D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 260944AF924168C7781F56E3 /* CoreGraphics.framework */; };
 		06D8269A62A4E9B8B7D598CA /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79AC88AD9FC2409EC241CE8E /* Security.framework */; };
 		0D460FCE4533E20726212411 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A36C0D2CADB263C7ED7AC795 /* PhotosUI.framework */; };
+		0F4A1BBFA77C0EA2DAA53736 /* veydanspace_share.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8E44C04CE21C6171C44756DE /* veydanspace_share.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		120FA442641196CCAC98B548 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0B3BB544E9597F382620AF29 /* QuartzCore.framework */; };
+		1235CBDCE437A0C9BCA69F27 /* PushKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 209E5318D3C1E7C67C49F2D0 /* PushKit.framework */; };
 		179FAA8A1D1197C2F9310A33 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4AEB01F67E471F253D51BDA5 /* libapp.a */; };
 		23FF14339BEF35528A6D2E97 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E57CD263A9314EF46510285 /* CoreMedia.framework */; };
+		29A8F8492F6D11EDEE45E9D5 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 6BB7E566C15A53F4B63A8287 /* libapp.a */; };
 		3281F619B58DD54049E1F009 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D0100A5344DB1DB70105314A /* Assets.xcassets */; };
+		34590B90E34B74F4C868A3E3 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */; };
 		3CF3A110957AA2155308E71F /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B57F35C18158926BF2DC1011 /* WebKit.framework */; };
 		44A276AD68DCBFFC548F9503 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 24038E100E99C484A968A974 /* VideoToolbox.framework */; };
 		44A8B96E4F936E59F9225613 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B0431018A2B8E4529514139B /* CoreAudio.framework */; };
 		46EDA8A27D31C92852205CAD /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 123FCA20935471C1896C169E /* AVFoundation.framework */; };
 		4A035E72244D8E1A2510C6DB /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 95138B576FD2A8D2DFC4169E /* assets */; };
+		4BFF316828394F15EF98FC34 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 99E6DFE3C99A92D74831AEB5 /* Foundation.framework */; };
+		58C9EBF1668BF4B8106C3E97 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 08658CB4BD7D20933A21090C /* PrivacyInfo.xcprivacy */; };
 		5AF238DD86A0F5BAFB5480EA /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B03FF4B24501C7DEA2333036 /* CoreVideo.framework */; };
 		5B9EEF265610B491B0FA2F90 /* Photos.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88E825C4CA8A2D8AF754F90F /* Photos.framework */; };
+		5BE31A2D63190E7E5898D80B /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0C0B4F3AD2157D36FD21B5FA /* InfoPlist.strings */; };
+		5D39443189D27DD70FFDA252 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = BDD9E38A7CC519F53D87D7F7 /* Localizable.strings */; };
 		5FD46000A93E479717923814 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = FC71D0939D82EFF32F56A072 /* main.mm */; };
 		61F6E1B8BC5ECA157445B198 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = D2E01BA84D53349A5AF13442 /* Localizable.strings */; };
 		6391D293753540DA95425448 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 107AD49ADE4D0AB30E6400B2 /* UserNotifications.framework */; };
 		6B350D1DA15D41D8881472E0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 99E6DFE3C99A92D74831AEB5 /* Foundation.framework */; };
 		6C8177A12C524692A614EC3F /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 91C72D1D7924A43E9B105875 /* CryptoKit.framework */; };
+		708751C379D724DD981B2A02 /* libveydan_share_ext.a in Resources */ = {isa = PBXBuildFile; fileRef = F35739627517C1D7926FA972 /* libveydan_share_ext.a */; };
 		71528A63E17CEC0F8DFD8C67 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F77D07ED5F4C62597F80112 /* CoreFoundation.framework */; };
 		7AE94B73DE668823E0CFA57E /* OpenGLES.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 60A42102BAAC3F7D935FAEEF /* OpenGLES.framework */; };
 		7BF3EC149EAC9C60BD41CFE3 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */; };
+		80AECC7361FE0C8E16A9CEA9 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79AC88AD9FC2409EC241CE8E /* Security.framework */; };
+		8E15E0A684D07BCC7C8C2313 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852A46FFF1EFA36C8D203E8E /* ShareViewController.swift */; };
 		92B9186D50E0F1F72508DA8F /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79008400E9F4D102B3085093 /* AudioToolbox.framework */; };
 		95178EE91D65CC3A4652B21E /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = FD5CBD3FA60D170AA30B9ED9 /* LaunchScreen.storyboard */; };
+		9994E347DE73E5AC4FD0D745 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F77D07ED5F4C62597F80112 /* CoreFoundation.framework */; };
 		9EF06A1B3BC7A40C7FD43ADE /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 025F6CB24BEAFCBD1168C1C6 /* UIKit.framework */; };
 		B105FCA0495DE5245C063911 /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3BE6C2331F89968D67EB67F /* Network.framework */; };
+		B90089DB5FBA5CA418924D91 /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34621A92DB768BE5CAA300EC /* SystemConfiguration.framework */; };
 		BEC604C21C80222ABEA42104 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0A007BB47CB76034C269D546 /* MetalKit.framework */; };
 		D1B24504FF3F05C256308176 /* GLKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E26E292641A4888F76CC70D /* GLKit.framework */; };
 		E402A50A0431B55C5D30B1D8 /* ImageIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F9813551C8E37944A9EC7FA1 /* ImageIO.framework */; };
+		ED0375632AF88DA39945B365 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 025F6CB24BEAFCBD1168C1C6 /* UIKit.framework */; };
 		F6DE8A8F486866734AE74B8B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7FA9ED37A4C23AAE48DC2EFF /* Metal.framework */; };
 		F715A801E490C5D05ABC4F7D /* CallKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 49776D8EF46A27325B4F460D /* CallKit.framework */; };
-		B2BB3CB5C489802EBC360048 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 02659DA81F5FF0C27BB0CBA7 /* InfoPlist.strings */; };
-		E2C0DFE6B739D70385D88B6B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F6C26FFBBFD11F0D8B34E74B /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		605CB76DD1F65E6F7DCA0AAF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8924AE589789BF2AFACC57A6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9A10C507E405F24932627375;
+			remoteInfo = veydanspace_share;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D07894D9C09079A95BE56E6F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0F4A1BBFA77C0EA2DAA53736 /* veydanspace_share.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		013539D66BC7DFF143477F47 /* registries_tests.rs */ = {isa = PBXFileReference; path = registries_tests.rs; sourceTree = "<group>"; };
 		019DCB87136CF80A21A238A2 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		025F6CB24BEAFCBD1168C1C6 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		0434C7B33C01FB2A8C47B84A /* proxies.rs */ = {isa = PBXFileReference; path = proxies.rs; sourceTree = "<group>"; };
+		08658CB4BD7D20933A21090C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0A007BB47CB76034C269D546 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		0A4D27CDA821FD66ED4FE43B /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0A66056E4F2264BEF1B63DA0 /* compat_tests.rs */ = {isa = PBXFileReference; path = compat_tests.rs; sourceTree = "<group>"; };
@@ -56,12 +93,14 @@
 		107AD49ADE4D0AB30E6400B2 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		123FCA20935471C1896C169E /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		12C9281A2D739AD2A97FD2B7 /* camoufox_config.rs */ = {isa = PBXFileReference; path = camoufox_config.rs; sourceTree = "<group>"; };
+		1724D97610F42DEFDD90F162 /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		19A852FE7B28D61685140CFB /* userjs.rs */ = {isa = PBXFileReference; path = userjs.rs; sourceTree = "<group>"; };
 		1B4E09FB296A7FFD4E72469B /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/Localizable.strings; sourceTree = "<group>"; };
 		1DB878C3481A982722DA731B /* cookies.rs */ = {isa = PBXFileReference; path = cookies.rs; sourceTree = "<group>"; };
 		1E4DC2198C17F8583F47CF70 /* veydanspace_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = veydanspace_iOS.entitlements; sourceTree = "<group>"; };
 		1E57CD263A9314EF46510285 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
 		1FB973CB4341AADF6657401E /* veydanspace_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = veydanspace_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		209E5318D3C1E7C67C49F2D0 /* PushKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PushKit.framework; path = System/Library/Frameworks/PushKit.framework; sourceTree = SDKROOT; };
 		20F864D71A55CA8E0A534C84 /* golden.rs */ = {isa = PBXFileReference; path = golden.rs; sourceTree = "<group>"; };
 		21E75EC913AA3BAEE16FC2E9 /* content.rs */ = {isa = PBXFileReference; path = content.rs; sourceTree = "<group>"; };
 		23B5116E4319E674DD2722A3 /* command_futures.rs */ = {isa = PBXFileReference; path = command_futures.rs; sourceTree = "<group>"; };
@@ -72,15 +111,20 @@
 		286033232174CD3ECF7EEB87 /* profile_files.rs */ = {isa = PBXFileReference; path = profile_files.rs; sourceTree = "<group>"; };
 		298150EDEACDA2F6241DA389 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		29ECABF2CD07B7A03E0C23D2 /* tor.rs */ = {isa = PBXFileReference; path = tor.rs; sourceTree = "<group>"; };
+		2AB4A3AB6AADF51740EB31C9 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		2CFA0183BD44AE8CA1E5D112 /* fingerprint.rs */ = {isa = PBXFileReference; path = fingerprint.rs; sourceTree = "<group>"; };
 		2D044A4CD2D03F13A554F2B1 /* backup.rs */ = {isa = PBXFileReference; path = backup.rs; sourceTree = "<group>"; };
 		32A79B1341BA9184748AFD21 /* bulk.rs */ = {isa = PBXFileReference; path = bulk.rs; sourceTree = "<group>"; };
 		33C5608F5D836597634BF80B /* clear.rs */ = {isa = PBXFileReference; path = clear.rs; sourceTree = "<group>"; };
+		34621A92DB768BE5CAA300EC /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
 		3593E0790700B941D7B9D20D /* uk */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = uk; path = uk.lproj/Localizable.strings; sourceTree = "<group>"; };
 		36C22E671B8666E0B4F6F838 /* workspaces.rs */ = {isa = PBXFileReference; path = workspaces.rs; sourceTree = "<group>"; };
 		3A72D0F6387D30612DDCC165 /* host.rs */ = {isa = PBXFileReference; path = host.rs; sourceTree = "<group>"; };
 		3B1907259CB2492CE1CE523D /* backup.rs */ = {isa = PBXFileReference; path = backup.rs; sourceTree = "<group>"; };
+		3B36C312466C0354E593B61C /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		3F77D07ED5F4C62597F80112 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		4094F511D36237EA2523C041 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		40AEE68C81911CB786D069CB /* linux_clipboard.rs */ = {isa = PBXFileReference; path = linux_clipboard.rs; sourceTree = "<group>"; };
 		41306F688DD809D2F79B096E /* models.rs */ = {isa = PBXFileReference; path = models.rs; sourceTree = "<group>"; };
 		4484722C0D0A6877B93007C6 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		45E7B82BC1373FDF41679DC9 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
@@ -93,26 +137,36 @@
 		503FEAE8D4DA3F79D19AFC68 /* seed.rs */ = {isa = PBXFileReference; path = seed.rs; sourceTree = "<group>"; };
 		50871D20A87E7879E1034FEE /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		5777EE4B1A47035C06201802 /* collect.golden.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = collect.golden.json; sourceTree = "<group>"; };
+		583497F3540DD4574DFA41DC /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		5D9D8A11B4BABD16D96835AD /* ssh.rs */ = {isa = PBXFileReference; path = ssh.rs; sourceTree = "<group>"; };
 		5E5DEB8EEF42852E800E6B64 /* directory.rs */ = {isa = PBXFileReference; path = directory.rs; sourceTree = "<group>"; };
 		5ED44C937792AF3382DE3A56 /* browser.rs */ = {isa = PBXFileReference; path = browser.rs; sourceTree = "<group>"; };
 		5EE7518E51C98695A7B17149 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
+		60308B38627DDA94750DCDC1 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		60585A618D0FEA24B12EBB97 /* local.rs */ = {isa = PBXFileReference; path = local.rs; sourceTree = "<group>"; };
+		608F3C731A21B84A5CEB842B /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
 		60A42102BAAC3F7D935FAEEF /* OpenGLES.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGLES.framework; path = System/Library/Frameworks/OpenGLES.framework; sourceTree = SDKROOT; };
+		6257363CA23D532D66DA5E31 /* uk */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = uk; path = uk.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		66313EAB2EF4846D1704AFEA /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		666FC80110CC87DFC187E02B /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/Localizable.strings; sourceTree = "<group>"; };
 		671A5016F834318B490E8B9D /* schema.golden.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = schema.golden.txt; sourceTree = "<group>"; };
 		6753E2F50DB280BB2F7BB887 /* launch.rs */ = {isa = PBXFileReference; path = launch.rs; sourceTree = "<group>"; };
 		68CFB4B335FEE50572F7D1F2 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		6909664DD42A240D0401A6F6 /* collect_tests.rs */ = {isa = PBXFileReference; path = collect_tests.rs; sourceTree = "<group>"; };
 		6A72261FA9C0C2C50EAE07D1 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
+		6BB7E566C15A53F4B63A8287 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		6D5D3073B85BCDDBDD27951D /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		79008400E9F4D102B3085093 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		79AC88AD9FC2409EC241CE8E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		7A6E9FD924BEADC2B0055DBC /* launch.rs */ = {isa = PBXFileReference; path = launch.rs; sourceTree = "<group>"; };
 		7FA9ED37A4C23AAE48DC2EFF /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
+		852A46FFF1EFA36C8D203E8E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		87C22A1A1682D027E896F1BB /* state.rs */ = {isa = PBXFileReference; path = state.rs; sourceTree = "<group>"; };
 		88E825C4CA8A2D8AF754F90F /* Photos.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Photos.framework; path = System/Library/Frameworks/Photos.framework; sourceTree = SDKROOT; };
+		88FBF729901483EA99D8250A /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		8C7B4B36175B7CE863A8DF54 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
+		8E44C04CE21C6171C44756DE /* veydanspace_share.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = veydanspace_share.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		91C72D1D7924A43E9B105875 /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
 		92A47B26779AA4C494565AB5 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		939D5ACAA4FD2EAD79682AF6 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -121,8 +175,11 @@
 		961AFD77480FBC9C00687A1A /* server.rs */ = {isa = PBXFileReference; path = server.rs; sourceTree = "<group>"; };
 		96A46A6AC4BDA5F67618F53E /* sftp.rs */ = {isa = PBXFileReference; path = sftp.rs; sourceTree = "<group>"; };
 		99E6DFE3C99A92D74831AEB5 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		9AB6FCE50C71D3A42A334A5E /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A36C0D2CADB263C7ED7AC795 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		A3BE6C2331F89968D67EB67F /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		A484B7B8804DD36AFF944A78 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A8E48FDE15227ABA477084C8 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		A967336A9149135D1AA50C72 /* rules.rs */ = {isa = PBXFileReference; path = rules.rs; sourceTree = "<group>"; };
 		ACA7B44BCCE7715911A41C9E /* id */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = id; path = id.lproj/Localizable.strings; sourceTree = "<group>"; };
 		ACCA77B9594C32B3F2B3CF7A /* entities_tests.rs */ = {isa = PBXFileReference; path = entities_tests.rs; sourceTree = "<group>"; };
@@ -133,13 +190,16 @@
 		B57F35C18158926BF2DC1011 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		B77EC3AF6E5801053968CAF1 /* join_tests.rs */ = {isa = PBXFileReference; path = join_tests.rs; sourceTree = "<group>"; };
 		BA0295CF84641A21452B6B3F /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		BC86B73A7880FA4AB5E9CAF7 /* id */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = id; path = id.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		C0725B3FA00671945BAF6C42 /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/Localizable.strings; sourceTree = "<group>"; };
+		C751F8AD7E183A8777943297 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		CDAE16C651014902411214B3 /* ssh.rs */ = {isa = PBXFileReference; path = ssh.rs; sourceTree = "<group>"; };
 		CED24DA1C866F6D74637586B /* camoufox.rs */ = {isa = PBXFileReference; path = camoufox.rs; sourceTree = "<group>"; };
 		D006D151A9B245128E9AC2B1 /* rows_tests.rs */ = {isa = PBXFileReference; path = rows_tests.rs; sourceTree = "<group>"; };
 		D0100A5344DB1DB70105314A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D6F99584DA0B2BE0F6145B89 /* check.rs */ = {isa = PBXFileReference; path = check.rs; sourceTree = "<group>"; };
 		D80CDBC888DB82A2D8E38385 /* import_export.rs */ = {isa = PBXFileReference; path = import_export.rs; sourceTree = "<group>"; };
+		DAB5D2D7D91D4D968D5E7CFC /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		DB318B169F81D7F37899D728 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		DBB184887979002289DAE15A /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
 		DED30827E6E9E0D7119C1A23 /* commands.golden.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = commands.golden.txt; sourceTree = "<group>"; };
@@ -147,30 +207,17 @@
 		DFBFEE3E40A7ADD75A6DF0D9 /* db.rs */ = {isa = PBXFileReference; path = db.rs; sourceTree = "<group>"; };
 		E032C406068D38EB40920BCD /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		E326C78FC052211753792B70 /* crud.rs */ = {isa = PBXFileReference; path = crud.rs; sourceTree = "<group>"; };
+		E6CF85AD6C82AC9AB1AE5D7C /* Bridging.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Bridging.h; sourceTree = "<group>"; };
+		F01BE3BF9243B8A536D877EC /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F1DBC99E220041F8FBA83BE2 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		F2C0058EAE7B329EFF9C61A2 /* ssh.rs */ = {isa = PBXFileReference; path = ssh.rs; sourceTree = "<group>"; };
 		F32FFE81F4C64E1400EFA470 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F35739627517C1D7926FA972 /* libveydan_share_ext.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libveydan_share_ext.a; sourceTree = "<group>"; };
 		F3AF4055784E0C5C9C7C9BC1 /* fs_guard.rs */ = {isa = PBXFileReference; path = fs_guard.rs; sourceTree = "<group>"; };
 		F441B10088FFB7EBAC3F2257 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
 		F9813551C8E37944A9EC7FA1 /* ImageIO.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = System/Library/Frameworks/ImageIO.framework; sourceTree = SDKROOT; };
 		FC71D0939D82EFF32F56A072 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		FD5CBD3FA60D170AA30B9ED9 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		35CAACB0D88862190BC9CB34 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		A50638B78ACF551CCF5B51AC /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		0AD382DE8B2A619B084CFE69 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		EEF6DC2E6E7F8259C05C7F45 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		312430E150D703FCA59803F3 /* id */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = id; path = id.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		C4F0454773AB4AD8A9FEFBD8 /* it */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = it; path = it.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		F2B47025E609C56375C139D2 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		F4297BBE3F9188B0A3CF9DE4 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		16D57269549F593CA20F59C1 /* pl */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pl; path = pl.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		C8DB5FF28639909B5D5725C9 /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		C159D4F3B404FBF31B963930 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		AA8C39E08EB6DF1D2C1C1DF5 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		A5FE8D7FB2106DCD4DE745E5 /* uk */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = uk; path = uk.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		CBDE5712C74BA390EDE211F5 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		E702823C4D97CC3AA4935B5E /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
-		F6C26FFBBFD11F0D8B34E74B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -200,10 +247,24 @@
 				7AE94B73DE668823E0CFA57E /* OpenGLES.framework in Frameworks */,
 				5B9EEF265610B491B0FA2F90 /* Photos.framework in Frameworks */,
 				0D460FCE4533E20726212411 /* PhotosUI.framework in Frameworks */,
+				1235CBDCE437A0C9BCA69F27 /* PushKit.framework in Frameworks */,
 				7BF3EC149EAC9C60BD41CFE3 /* UniformTypeIdentifiers.framework in Frameworks */,
 				6391D293753540DA95425448 /* UserNotifications.framework in Frameworks */,
 				44A276AD68DCBFFC548F9503 /* VideoToolbox.framework in Frameworks */,
 				3CF3A110957AA2155308E71F /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AF9E138B92B282CF38983A1B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4BFF316828394F15EF98FC34 /* Foundation.framework in Frameworks */,
+				ED0375632AF88DA39945B365 /* UIKit.framework in Frameworks */,
+				34590B90E34B74F4C868A3E3 /* UniformTypeIdentifiers.framework in Frameworks */,
+				80AECC7361FE0C8E16A9CEA9 /* Security.framework in Frameworks */,
+				9994E347DE73E5AC4FD0D745 /* CoreFoundation.framework in Frameworks */,
+				B90089DB5FBA5CA418924D91 /* SystemConfiguration.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -232,8 +293,10 @@
 				60A42102BAAC3F7D935FAEEF /* OpenGLES.framework */,
 				88E825C4CA8A2D8AF754F90F /* Photos.framework */,
 				A36C0D2CADB263C7ED7AC795 /* PhotosUI.framework */,
+				209E5318D3C1E7C67C49F2D0 /* PushKit.framework */,
 				0B3BB544E9597F382620AF29 /* QuartzCore.framework */,
 				79AC88AD9FC2409EC241CE8E /* Security.framework */,
+				34621A92DB768BE5CAA300EC /* SystemConfiguration.framework */,
 				025F6CB24BEAFCBD1168C1C6 /* UIKit.framework */,
 				817D6E1CE41692132532E67C /* UniformTypeIdentifiers.framework */,
 				107AD49ADE4D0AB30E6400B2 /* UserNotifications.framework */,
@@ -264,12 +327,47 @@
 			path = veydanspace;
 			sourceTree = "<group>";
 		};
+		4452F82751A749E24F6832D6 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				E6CF85AD6C82AC9AB1AE5D7C /* Bridging.h */,
+				2AB4A3AB6AADF51740EB31C9 /* ShareExtension.entitlements */,
+				852A46FFF1EFA36C8D203E8E /* ShareViewController.swift */,
+				BDD9E38A7CC519F53D87D7F7 /* Localizable.strings */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
+		457EFC9040AEF2E51EFE3B9E /* iphonesimulator */ = {
+			isa = PBXGroup;
+			children = (
+				C2F341471493F7C9787F85CC /* debug */,
+			);
+			path = iphonesimulator;
+			sourceTree = "<group>";
+		};
 		4D0E64D908AEC7C5451CCA5B /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				38DD1F0BD9556B0969620CAD /* veydanspace */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		577D1783574515AE030D81C1 /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				8AE7F8B5DE0123E8B350E0DE /* debug */,
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+		7092002C3AE5C21B851A96BE /* share */ = {
+			isa = PBXGroup;
+			children = (
+				457EFC9040AEF2E51EFE3B9E /* iphonesimulator */,
+			);
+			path = share;
 			sourceTree = "<group>";
 		};
 		73ACA2B27087ECF163B4FB07 /* modules */ = {
@@ -314,12 +412,21 @@
 				D0100A5344DB1DB70105314A /* Assets.xcassets */,
 				FD5CBD3FA60D170AA30B9ED9 /* LaunchScreen.storyboard */,
 				F2A2CBE790CB4869DB3EC55F /* Externals */,
+				4452F82751A749E24F6832D6 /* ShareExtension */,
 				4D0E64D908AEC7C5451CCA5B /* Sources */,
 				95F763A3620038EA6A4281C0 /* src */,
 				C474CE8B7C9F397C54A7F5B7 /* veydanspace_iOS */,
 				03C448A1280EFCA7360D8878 /* Frameworks */,
 				A5DF5C84BF56FBC573BE9545 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		8AE7F8B5DE0123E8B350E0DE /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				6BB7E566C15A53F4B63A8287 /* libapp.a */,
+			);
+			path = debug;
 			sourceTree = "<group>";
 		};
 		8E26469F9A26AD1515D9F641 /* sync */ = {
@@ -347,6 +454,7 @@
 				2CFA0183BD44AE8CA1E5D112 /* fingerprint.rs */,
 				B00E341089A067A8BF956815 /* fsname.rs */,
 				DBB184887979002289DAE15A /* lib.rs */,
+				40AEE68C81911CB786D069CB /* linux_clipboard.rs */,
 				45E7B82BC1373FDF41679DC9 /* main.rs */,
 				41306F688DD809D2F79B096E /* models.rs */,
 				671A5016F834318B490E8B9D /* schema.golden.txt */,
@@ -365,18 +473,27 @@
 			isa = PBXGroup;
 			children = (
 				1FB973CB4341AADF6657401E /* veydanspace_iOS.app */,
+				8E44C04CE21C6171C44756DE /* veydanspace_share.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C2F341471493F7C9787F85CC /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				F35739627517C1D7926FA972 /* libveydan_share_ext.a */,
+			);
+			path = debug;
 			sourceTree = "<group>";
 		};
 		C474CE8B7C9F397C54A7F5B7 /* veydanspace_iOS */ = {
 			isa = PBXGroup;
 			children = (
 				F32FFE81F4C64E1400EFA470 /* Info.plist */,
+				08658CB4BD7D20933A21090C /* PrivacyInfo.xcprivacy */,
 				1E4DC2198C17F8583F47CF70 /* veydanspace_iOS.entitlements */,
+				0C0B4F3AD2157D36FD21B5FA /* InfoPlist.strings */,
 				D2E01BA84D53349A5AF13442 /* Localizable.strings */,
-				02659DA81F5FF0C27BB0CBA7 /* InfoPlist.strings */,
-				F6C26FFBBFD11F0D8B34E74B /* PrivacyInfo.xcprivacy */,
 			);
 			path = veydanspace_iOS;
 			sourceTree = "<group>";
@@ -429,6 +546,8 @@
 		F2A2CBE790CB4869DB3EC55F /* Externals */ = {
 			isa = PBXGroup;
 			children = (
+				577D1783574515AE030D81C1 /* arm64 */,
+				7092002C3AE5C21B851A96BE /* share */,
 			);
 			path = Externals;
 			sourceTree = "<group>";
@@ -445,6 +564,13 @@
 			path = capture;
 			sourceTree = "<group>";
 		};
+		"TEMP_36BF0EDC-FA81-4282-8E87-17905C9B0111" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -456,10 +582,12 @@
 				F90F532F3B55637AB6297AC9 /* Sources */,
 				A2DA9097A28CD60785F445A7 /* Resources */,
 				5D2A73EE4BA1C10BE865A59F /* Frameworks */,
+				D07894D9C09079A95BE56E6F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A6F58E047EEFD29ADB3A308A /* PBXTargetDependency */,
 			);
 			name = veydanspace_iOS;
 			packageProductDependencies = (
@@ -468,6 +596,27 @@
 			productReference = 1FB973CB4341AADF6657401E /* veydanspace_iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9A10C507E405F24932627375 /* veydanspace_share */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 07B3BD233851DC642D6BC24D /* Build configuration list for PBXNativeTarget "veydanspace_share" */;
+			buildPhases = (
+				E1DAE038684C39EE92441516 /* Build Share Extension Rust */,
+				D9336CA00BE65159A199171F /* Sources */,
+				52F28ACA59B5967350D9956D /* Take the App Version */,
+				52E92F79A1E22F399A7C6A8F /* Resources */,
+				AF9E138B92B282CF38983A1B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = veydanspace_share;
+			packageProductDependencies = (
+			);
+			productName = veydanspace_share;
+			productReference = 8E44C04CE21C6171C44756DE /* veydanspace_share.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -475,7 +624,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 				};
 			};
@@ -508,21 +657,32 @@
 			projectRoot = "";
 			targets = (
 				092748082EE6A0C889F7112E /* veydanspace_iOS */,
+				9A10C507E405F24932627375 /* veydanspace_share */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		52E92F79A1E22F399A7C6A8F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D39443189D27DD70FFDA252 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A2DA9097A28CD60785F445A7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				3281F619B58DD54049E1F009 /* Assets.xcassets in Resources */,
+				5BE31A2D63190E7E5898D80B /* InfoPlist.strings in Resources */,
 				95178EE91D65CC3A4652B21E /* LaunchScreen.storyboard in Resources */,
 				61F6E1B8BC5ECA157445B198 /* Localizable.strings in Resources */,
-				B2BB3CB5C489802EBC360048 /* InfoPlist.strings in Resources */,
-				E2C0DFE6B739D70385D88B6B /* PrivacyInfo.xcprivacy in Resources */,
+				58C9EBF1668BF4B8106C3E97 /* PrivacyInfo.xcprivacy in Resources */,
 				4A035E72244D8E1A2510C6DB /* assets in Resources */,
+				29A8F8492F6D11EDEE45E9D5 /* libapp.a in Resources */,
+				708751C379D724DD981B2A02 /* libveydan_share_ext.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -550,9 +710,56 @@
 			shellPath = /bin/sh;
 			shellScript = "$SRCROOT/../../../../ui/node_modules/.bin/tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
 		};
+		52F28ACA59B5967350D9956D /* Take the App Version */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Take the App Version";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "app=\"$SRCROOT/veydanspace_iOS/Info.plist\"\next=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nv=\"$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' \"$app\")\"\nb=\"$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' \"$app\")\"\n/usr/libexec/PlistBuddy -c \"Set :CFBundleShortVersionString $v\" -c \"Set :CFBundleVersion $b\" \"$ext\"\necho \"share extension: version $v, build $b (the app's)\"\n";
+		};
+		E1DAE038684C39EE92441516 /* Build Share Extension Rust */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Share Extension Rust";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/share/$(PLATFORM_NAME)/$(CONFIGURATION)/libveydan_share_ext.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "PATH=/opt/homebrew/bin:$PATH bash $SRCROOT/../../../../scripts/ios/share-ext.sh space ${PLATFORM_NAME:?} ${CONFIGURATION:?} $SRCROOT/Externals/share/${PLATFORM_NAME:?}/${CONFIGURATION:?}";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		D9336CA00BE65159A199171F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E15E0A684D07BCC7C8C2313 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F90F532F3B55637AB6297AC9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -563,7 +770,46 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A6F58E047EEFD29ADB3A308A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9A10C507E405F24932627375 /* veydanspace_share */;
+			targetProxy = 605CB76DD1F65E6F7DCA0AAF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXVariantGroup section */
+		0C0B4F3AD2157D36FD21B5FA /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				3B36C312466C0354E593B61C /* de */,
+				4094F511D36237EA2523C041 /* en */,
+				6D5D3073B85BCDDBDD27951D /* es */,
+				DAB5D2D7D91D4D968D5E7CFC /* fr */,
+				BC86B73A7880FA4AB5E9CAF7 /* id */,
+				C751F8AD7E183A8777943297 /* it */,
+				60308B38627DDA94750DCDC1 /* ja */,
+				9AB6FCE50C71D3A42A334A5E /* ko */,
+				A484B7B8804DD36AFF944A78 /* pl */,
+				1724D97610F42DEFDD90F162 /* pt */,
+				88FBF729901483EA99D8250A /* ru */,
+				F01BE3BF9243B8A536D877EC /* tr */,
+				6257363CA23D532D66DA5E31 /* uk */,
+				66313EAB2EF4846D1704AFEA /* vi */,
+				A8E48FDE15227ABA477084C8 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		BDD9E38A7CC519F53D87D7F7 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				583497F3540DD4574DFA41DC /* en */,
+				608F3C731A21B84A5CEB842B /* ru */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
 		D2E01BA84D53349A5AF13442 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
@@ -584,28 +830,6 @@
 				E032C406068D38EB40920BCD /* zh-Hans */,
 			);
 			name = Localizable.strings;
-			sourceTree = "<group>";
-		};
-		02659DA81F5FF0C27BB0CBA7 /* InfoPlist.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				35CAACB0D88862190BC9CB34 /* de */,
-				A50638B78ACF551CCF5B51AC /* en */,
-				0AD382DE8B2A619B084CFE69 /* es */,
-				EEF6DC2E6E7F8259C05C7F45 /* fr */,
-				312430E150D703FCA59803F3 /* id */,
-				C4F0454773AB4AD8A9FEFBD8 /* it */,
-				F2B47025E609C56375C139D2 /* ja */,
-				F4297BBE3F9188B0A3CF9DE4 /* ko */,
-				16D57269549F593CA20F59C1 /* pl */,
-				C8DB5FF28639909B5D5725C9 /* pt */,
-				C159D4F3B404FBF31B963930 /* ru */,
-				AA8C39E08EB6DF1D2C1C1DF5 /* tr */,
-				A5FE8D7FB2106DCD4DE745E5 /* uk */,
-				CBDE5712C74BA390EDE211F5 /* vi */,
-				E702823C4D97CC3AA4935B5E /* zh-Hans */,
-			);
-			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
@@ -666,6 +890,37 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = release;
+		};
+		84E5F70D3D6362FE98359C96 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ARCHS = (
+					arm64,
+				);
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../../../../crates/share-ext/include";
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) $(SRCROOT)/Externals/share/$(PLATFORM_NAME)/$(CONFIGURATION)";
+				OTHER_LDFLAGS = "$(inherited) -lveydan_share_ext";
+				PRODUCT_BUNDLE_IDENTIFIER = net.veydan.mobile.share;
+				PRODUCT_MODULE_NAME = VeydanShare;
+				PRODUCT_NAME = VeydanShare;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = ShareExtension/Bridging.h;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
 		};
 		D739F5F2E4834BA7EEE18F1E /* debug */ = {
 			isa = XCBuildConfiguration;
@@ -796,9 +1051,49 @@
 			};
 			name = debug;
 		};
+		EFA5C542BFD22430A22F43CA /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ARCHS = (
+					arm64,
+				);
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				HEADER_SEARCH_PATHS = "$(inherited) $(SRCROOT)/../../../../crates/share-ext/include";
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(inherited) $(SRCROOT)/Externals/share/$(PLATFORM_NAME)/$(CONFIGURATION)";
+				OTHER_LDFLAGS = "$(inherited) -lveydan_share_ext";
+				PRODUCT_BUNDLE_IDENTIFIER = net.veydan.mobile.share;
+				PRODUCT_MODULE_NAME = VeydanShare;
+				PRODUCT_NAME = VeydanShare;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = ShareExtension/Bridging.h;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		07B3BD233851DC642D6BC24D /* Build configuration list for PBXNativeTarget "veydanspace_share" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				84E5F70D3D6362FE98359C96 /* debug */,
+				EFA5C542BFD22430A22F43CA /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
 		298DB80307A9AD2DB704C2C4 /* Build configuration list for PBXNativeTarget "veydanspace_iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

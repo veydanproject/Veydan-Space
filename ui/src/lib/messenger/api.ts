@@ -2379,6 +2379,12 @@ export const messengerApi = {
   shareOut: (via: 'send' | 'sms' | 'mail', text: string, subject?: string) =>
     invoke<void>('messenger_share_out', { via, text, subject: subject ?? null }),
 
+  /** What another app shared into Veydan (`core/shares`): the shell's command, called by the module that took the share. */
+  shares: {
+    /** Sent, or given up: the copies the shell made go. */
+    forget: (id: string) => invoke<void>('shares_forget', { id }),
+  },
+
   links: {
     /** One answer per link, in the order asked. Asks nothing of the network. */
     inspect: (links: InternalLinkText[]) => invoke<LinkView[]>('messenger_links_inspect', { links }),

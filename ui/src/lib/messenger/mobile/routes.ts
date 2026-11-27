@@ -29,6 +29,13 @@ export const chatHref = (chatId: string, query = '') =>
 /** Where a chat opened from elsewhere is shown: a row of a module's section (`owned`, seams/sections) on its own screen. */
 export const openHref = (chatId: string, owned: boolean) => (owned ? sectionItemHref(chatId) : chatHref(chatId));
 
+/**
+ * Whether `pathname` shows one conversation (a chat, or a row of a module's section). A chat opened from
+ * there takes its place in the history, as one opened from another's card does (MobileChat): chats opened
+ * one from another never pile up backs, and a back leads to the list.
+ */
+export const onConversation = (pathname: string) => pathname === `${BASE}/chat` || pathname === `${BASE}/item`;
+
 /** The call under way, the whole screen. */
 export const callHref = () => `${BASE}/call`;
 

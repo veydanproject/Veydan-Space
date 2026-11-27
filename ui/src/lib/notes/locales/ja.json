@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "ノート",
     "quick_capture_title": "クイックノート",
+    "note_share_new": "新しいノート",
+    "note_share_untitled": "共有",
+    "note_share_saved": "ノートを作成しました",
+    "note_share_refused": "追加されませんでした: {names}",
     "tray_quick_capture": "クイックノート",
     "panel_tab_notes": "ノート",
     "notes_label": "ノート",

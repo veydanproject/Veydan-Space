@@ -27,7 +27,11 @@ export class LinkRouter {
   private listening: Promise<void> | null = null;
   private unlisten: (() => void) | null = null;
 
-  constructor(private readonly listen: Listen | null) {}
+  /** `event`: the shell's event of what may wait; the links' by default, the shares' for `core/shares`. */
+  constructor(
+    private readonly listen: Listen | null,
+    private readonly event: string = LINK_EVENT,
+  ) {}
 
   /** The module that shows links; what it returns takes it back. */
   provide(reader: LinkReader): () => void {
@@ -59,7 +63,7 @@ export class LinkRouter {
   }
 
   private start(): Promise<void> {
-    this.listening ??= (this.listen?.(LINK_EVENT, () => void this.arrived()) ?? Promise.resolve(() => {}))
+    this.listening ??= (this.listen?.(this.event, () => void this.arrived()) ?? Promise.resolve(() => {}))
       .then((stop) => {
         this.unlisten = stop;
       })
@@ -81,9 +85,9 @@ export class LinkRouter {
   }
 }
 
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-async function tauriListen(event: string, handler: () => void) {
+export async function tauriListen(event: string, handler: () => void) {
   const { listen } = await import('@tauri-apps/api/event');
   return listen(event, handler);
 }

@@ -16,7 +16,7 @@ use veydan_sync_host::{Registry, SyncManager};
 
 /// Folder of the data file and everything stored beside it, inside the
 /// directory the OS (or `--workdir`) gives the app.
-const DATA_SUBDIR: &str = "data";
+pub(crate) const DATA_SUBDIR: &str = "data";
 
 /// The data directory: `<app_data_dir>/data`, the same on every platform.
 /// How long the exit waits for the modules to stop (what they still write
@@ -259,6 +259,16 @@ fn ios_webview<R: Runtime>(window: &tauri::WebviewWindow<R>) {
             let scroll: *mut AnyObject = msg_send![&*wk, scrollView];
             if !scroll.is_null() {
                 let _: () = msg_send![&*scroll, setBounces: false];
+                // iOS 26 shades the scroll view's top edge under the status bar (its scroll edge effect):
+                // a grey band over the page's own glass head. The page draws its own: the effect is hidden.
+                // Older systems have no such property.
+                let has: bool = msg_send![&*scroll, respondsToSelector: objc2::sel!(topEdgeEffect)];
+                if has {
+                    let effect: *mut AnyObject = msg_send![&*scroll, topEdgeEffect];
+                    if !effect.is_null() {
+                        let _: () = msg_send![&*effect, setHidden: true];
+                    }
+                }
             }
         }
     });
@@ -393,14 +403,19 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
         .manage(StartState::default())
         .setup(move |app| {
             crate::links::setup(app.handle(), link_schemes);
+            crate::shares::setup(app.handle());
             // A --workdir profile keeps the same layout inside its own directory.
             #[cfg(desktop)]
             let app_data_dir = match workdir {
                 Some(workdir) => workdir.root.clone(),
                 None => app.path().app_data_dir()?,
             };
-            #[cfg(mobile)]
+            #[cfg(target_os = "android")]
             let app_data_dir = app.path().app_data_dir()?;
+            // An iPhone keeps the data in the container of the app group, where
+            // the share extension reads it too (`crate::ios_group`).
+            #[cfg(target_os = "ios")]
+            let app_data_dir = crate::ios_group::data_root(app.path().app_data_dir()?);
             let started = start.run(app, data_dir(&app_data_dir))?;
             // Made by now, when it could be.
             #[cfg(target_os = "ios")]
@@ -464,11 +479,15 @@ pub fn run(context: tauri::Context, product: Product, modules: Vec<Module>) {
                 return;
             };
             match event {
-                // Back in front: a link clicked outside may wait (`crate::links`),
-                // and what the other devices wrote meanwhile comes in.
+                // Back in front: a link clicked outside (`crate::links`) or
+                // a share from another app (`crate::shares`) may wait, and
+                // what the other devices wrote meanwhile comes in.
                 tauri::WindowEvent::Resumed => {
                     #[cfg(target_os = "android")]
-                    crate::links::resumed(_app);
+                    {
+                        crate::links::resumed(_app);
+                        crate::shares::resumed(_app);
+                    }
                     veydan_sync_host::edits::app_moved(true);
                 }
                 // What was just written leaves before the system stops the app.

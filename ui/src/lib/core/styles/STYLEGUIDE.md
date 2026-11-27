@@ -158,6 +158,10 @@ banner, the first row). A Drawer's head and body start 16 from its edge, a Drawe
 for the scrollbar (`scrollbar-gutter: auto`), so the left and right insets are equal. The columns of navigation (the
 messenger's rail `.sections`, the notes' `.sidebar`, Settings' `.settings-side`, the phone's ☰ of Notes, the rail of
 an open Duo and an iPad) are the window's head (`--pane-top` / `--pane-side`, falling back to quiet's glass `--pane`);
+a computer's bar of the modules (`DesktopShell .topbar`) and the messenger's two columns (`.sections`, `.rail`) are the
+glass of the conversation's head: 60 % of `--glass-bar`, `--pane-strong-border`, `--pane-filter`, solid `--bg-2` where
+the system asks for less transparency or the engine draws no blur; a phone's search pill of a list (Chats, Groups,
+Channels, Contacts) is the same glass in the dark (the light keeps its `#ECECF2` field);
 in the dark what is chosen and the search lie a step lighter than the column (one rule in `periwinkle.css`), and the
 rail's chosen item has its icon and label in the accent. Between the groups of a navigation one rule (`--divider`), 8
 over and 8 under it; a list of sections that scrolls under a title fades under it (`mask-image`) once scrolled;

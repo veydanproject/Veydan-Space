@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "笔记",
     "quick_capture_title": "快速笔记",
+    "note_share_new": "新建笔记",
+    "note_share_untitled": "分享内容",
+    "note_share_saved": "笔记已创建",
+    "note_share_refused": "未添加：{names}",
     "tray_quick_capture": "快速笔记",
     "panel_tab_notes": "笔记",
     "notes_label": "笔记",

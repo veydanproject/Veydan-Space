@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Notatki",
     "quick_capture_title": "Szybka notatka",
+    "note_share_new": "Nowa notatka",
+    "note_share_untitled": "Udostępnione",
+    "note_share_saved": "Notatka utworzona",
+    "note_share_refused": "Nie dodano: {names}",
     "tray_quick_capture": "Szybka notatka",
     "panel_tab_notes": "Notatki",
     "notes_label": "Notatki",

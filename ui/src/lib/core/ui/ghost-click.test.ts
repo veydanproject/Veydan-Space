@@ -30,6 +30,24 @@ describe('swallowNextClick', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it('called on a lift already over, swallows a click at once and ends without waiting for another lift', () => {
+    const w = fakeWindow();
+    swallowNextClick(w.target, true);
+    // No touchend comes (WebKit raised it before the pointerup that called the guard).
+    vi.advanceTimersByTime(AFTER_LIFT_MS);
+    expect(w.count()).toBe(0);
+    // The next tap (the back of the chat) goes through.
+    const next = w.fire('touchend');
+    expect(next.preventDefault).not.toHaveBeenCalled();
+    expect(w.fire('click').preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('called on a lift already over, still swallows the lift\'s own click', () => {
+    const w = fakeWindow();
+    swallowNextClick(w.target, true);
+    expect(w.fire('click').preventDefault).toHaveBeenCalled();
+  });
+
   it('swallows the click of the lifted finger (iOS) and lets the next one through', () => {
     const w = fakeWindow();
     swallowNextClick(w.target);

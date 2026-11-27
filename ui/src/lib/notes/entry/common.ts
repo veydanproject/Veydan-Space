@@ -7,6 +7,7 @@ import type { ModuleDef } from '$lib/core/module';
 import { noteEntities } from '$lib/notes/entities';
 import { labelKinds } from '$lib/notes/mobile/labels.svelte';
 import { notesStore } from '$lib/notes/store/notes.svelte';
+import { createNoteFrom } from '$lib/notes/share';
 
 export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   id: 'notes',
@@ -20,6 +21,14 @@ export const common: Omit<ModuleDef, 'nav' | 'settings'> = {
   syncsFiles: true,
   // The shortcuts of the note editor (Settings → Hotkeys).
   hotkeys: ['editor'],
+  // What another app shares into Veydan becomes a note: the way where the
+  // notes are alone (Notes), a place «Новая заметка» in the messenger's chooser (Space).
+  shares: {
+    order: 50,
+    ready: () => true,
+    show: (share) => createNoteFrom(share),
+    alt: { title: 'note_share_new', icon: 'notes', take: createNoteFrom },
+  },
   reloaders: {
     note_tag: () => notesStore.loaded ? notesStore.refreshTags() : Promise.resolve(),
     note_folder: () => notesStore.loaded ? notesStore.refreshFolders() : Promise.resolve(),

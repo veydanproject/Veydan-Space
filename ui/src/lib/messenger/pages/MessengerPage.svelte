@@ -523,8 +523,8 @@
   }
   .sections {
     display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); min-height: 0; padding: var(--sp-3) 0;
-    border-radius: var(--radius-pane); background: var(--pane-top, var(--pane)); border: 1px solid var(--pane-border);
-    box-shadow: var(--pane-highlight), var(--pane-shadow);
+    border-radius: var(--radius-pane); background: color-mix(in srgb, var(--glass-bar) 60%, transparent); border: 1px solid var(--pane-strong-border);
+    box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter);
   }
   .sec {
     position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0;
@@ -539,7 +539,12 @@
   .sec.me.active { box-shadow: 0 0 0 2px var(--accent); background: none; }
   .sec-net { display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--sp-1); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); }
   .sec-net .net { margin-left: 0; }
-  .rail { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-pane); overflow: hidden; background: var(--pane-list, var(--pane)); border: 1px solid var(--pane-border); box-shadow: var(--pane-highlight), var(--pane-shadow); }
+  /* The column of sections and the list are the glass of the conversation's head (.head.glassfloat in ChatWindow, the
+     owner, 2026-11-27): 60 % of --glass-bar, the strong edge, the pane's blur; solid --bg-2 where the system asks for
+     less transparency or the engine draws no blur. */
+  .rail { display: flex; flex-direction: column; min-height: 0; border-radius: var(--radius-pane); overflow: hidden; background: color-mix(in srgb, var(--glass-bar) 60%, transparent); border: 1px solid var(--pane-strong-border); box-shadow: var(--pane-highlight), var(--pane-shadow); -webkit-backdrop-filter: var(--pane-filter); backdrop-filter: var(--pane-filter); }
+  @media (prefers-reduced-transparency: reduce) { .sections, .rail { background: var(--bg-2); } }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .sections, .rail { background: var(--bg-2); } }
   /* The column's head: a line of 36, 16 from the top and 16 to the first item, its buttons 36 with 8 between. */
   .rail-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-4) var(--sp-3) var(--sp-4) var(--sp-4); min-height: 36px; box-sizing: content-box; }
   .rail-head .create { width: 36px; height: 36px; flex-shrink: 0; }

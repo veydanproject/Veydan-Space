@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "Catatan",
     "quick_capture_title": "Catatan cepat",
+    "note_share_new": "Catatan baru",
+    "note_share_untitled": "Dibagikan",
+    "note_share_saved": "Catatan dibuat",
+    "note_share_refused": "Tidak ditambahkan: {names}",
     "tray_quick_capture": "Catatan cepat",
     "panel_tab_notes": "Catatan",
     "notes_label": "Catatan",

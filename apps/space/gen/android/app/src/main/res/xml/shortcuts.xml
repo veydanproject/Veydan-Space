@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Direct Share: the chats the push plugin published as conversations
+  (shortcuts of the category below, tauri-plugin-veydan-push Notifier.kt) are
+  offered in the system's share sheet by name and face. A tap starts the
+  shell's ShareActivity with the chat's id (EXTRA_SHORTCUT_ID), and the app
+  opens that chat with what was shared. Nothing is declared statically.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <share-target android:targetClass="net.veydan.shell.ShareActivity">
+    <data android:mimeType="*/*" />
+    <category android:name="net.veydan.share.TARGET" />
+  </share-target>
+</shortcuts>

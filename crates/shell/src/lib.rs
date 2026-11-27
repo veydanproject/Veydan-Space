@@ -19,7 +19,10 @@ mod app;
 mod commands;
 pub mod demo;
 pub mod links;
+pub mod shares;
 mod distribution;
+#[cfg(target_os = "ios")]
+mod ios_group;
 mod lock;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 mod phone_log;

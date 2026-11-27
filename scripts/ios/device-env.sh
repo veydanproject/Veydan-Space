@@ -82,6 +82,17 @@ ios_identifier() {
     done
     echo ">> built without push (push reaches $PRODUCT_IOS_IDENTIFIER only)"
   fi
+  # The app group of this build is its own (group.<identifier>): the app and
+  # its share extension keep the data in it (crates/shell/src/ios_group.rs),
+  # and a dev build beside the TestFlight app must not open the other's.
+  if [ "$IOS_BUNDLE_ID" != "$PRODUCT_IOS_IDENTIFIER" ]; then
+    local f
+    for f in "$IOS_APPLE_DIR"/*_iOS/*.entitlements "$IOS_APPLE_DIR"/ShareExtension/*.entitlements; do
+      [ -f "$f" ] && IOS_GROUP_FROM="group.$PRODUCT_IOS_IDENTIFIER" IOS_GROUP_TO="group.$IOS_BUNDLE_ID" \
+        perl -pi -e 's{\Q$ENV{IOS_GROUP_FROM}\E(?![.\w])}{$ENV{IOS_GROUP_TO}}g' "$f"
+    done
+    echo ">> the app group of this build: group.$IOS_BUNDLE_ID"
+  fi
 }
 
 # The tauri CLI writes the team and the identifier of a run into the Xcode
@@ -100,7 +111,8 @@ ios_keep_project() {
   IOS_KEPT=()
   local f
   for f in "$IOS_APPLE_DIR"/*.xcodeproj/project.pbxproj "$IOS_APPLE_DIR"/*.xcodeproj/xcshareddata/xcschemes/*.xcscheme \
-    "$IOS_APPLE_DIR"/*_iOS/Info.plist "$IOS_APPLE_DIR"/*_iOS/*_iOS.entitlements; do
+    "$IOS_APPLE_DIR"/*_iOS/Info.plist "$IOS_APPLE_DIR"/*_iOS/*_iOS.entitlements \
+    "$IOS_APPLE_DIR"/ShareExtension/Info.plist "$IOS_APPLE_DIR"/ShareExtension/*.entitlements; do
     [ -f "$f" ] || continue
     mkdir -p "$IOS_KEEP_DIR/$(dirname "${f#"$IOS_APPLE_DIR"/}")"
     cp -p "$f" "$IOS_KEEP_DIR/${f#"$IOS_APPLE_DIR"/}"

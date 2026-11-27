@@ -153,6 +153,8 @@ fs_rename ssh desktop
 fs_stat ssh desktop
 host_info shell all
 labels_resolve shell all
+shares_take shell all
+shares_forget shell all
 lock_lock shell all
 lock_recover shell all
 lock_recover_keep shell all

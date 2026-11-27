@@ -25,7 +25,7 @@ export interface SheetBackEnv {
 }
 
 /** What holds a place of the history (`App.PageState`). */
-export type BackPlace = 'attachSheet' | 'chooseMessages' | 'searchMessages' | 'forwardSheet' | 'emojiDock' | 'selectSheet' | 'selectText';
+export type BackPlace = 'attachSheet' | 'chooseMessages' | 'searchMessages' | 'forwardSheet' | 'shareInSheet' | 'emojiDock' | 'selectSheet' | 'selectText';
 
 const browser = (place: BackPlace): SheetBackEnv => ({
   push: () => pushState('', { ...page.state, [place]: true }),

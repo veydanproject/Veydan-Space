@@ -17,6 +17,28 @@ import type { Component, Snippet } from 'svelte';
 import type { TranslationKey } from './i18n';
 import type { MobileKey } from './mobile/i18n';
 
+/** One file another app shared into Veydan (`core/shares`): a copy the shell made, read by `path`. */
+export interface SharedFile {
+  path: string;
+  /** The name its source gave it. */
+  name: string;
+  mime: string | null;
+  size: number;
+}
+
+/** What another app shared into Veydan through the system's share sheet (`core/shares`, crates/shell/src/shares.rs). */
+export interface IncomingShare {
+  /** Names the share to the shell (`shares_forget`). */
+  id: string;
+  text: string | null;
+  subject: string | null;
+  /** The chat chosen in the system's sheet itself (Direct Share), when one was: a chat id. */
+  target: string | null;
+  files: SharedFile[];
+  /** Names of files that could not be taken: too large, gone before they were read. */
+  refused: string[];
+}
+
 /** The same id as in Rust and in products.json. */
 export type ModuleId = string;
 
@@ -207,6 +229,26 @@ export interface SetupItem {
   done: () => Promise<boolean>;
   /** Listed only while true. Default: always. */
   visible?: () => boolean | Promise<boolean>;
+}
+
+/** A place another module offers for a share beside the chooser's own («Новая заметка»). */
+export interface ShareTarget {
+  /** A key of the desktop dictionary: the chooser that shows it reads that one. */
+  title: TranslationKey;
+  icon: string;
+  /** Takes the share: the module shows what it made and forgets the share's files. */
+  take: (share: IncomingShare) => Promise<void>;
+}
+
+/** How a module takes what another app shares into Veydan (`ModuleDef.shares`). */
+export interface ShareHandler {
+  /** The module of the lowest order among the active ones shows the share. */
+  order: number;
+  ready: () => boolean;
+  /** Shows the share, with the `alt` of the other modules to offer beside its own targets. */
+  show: (share: IncomingShare, others: ShareTarget[]) => Promise<void>;
+  /** What this module offers when another one shows the share. */
+  alt?: ShareTarget;
 }
 
 /** A component the shell mounts once, outside any page. */
@@ -469,7 +511,7 @@ export interface ModuleDef {
    */
   bar?: (url: URL) => NavItem[] | null | undefined;
   /**
-   * Mobile, a wide window (core/ui/split, ≥840 × 480): the list a path of
+   * Mobile, a wide window (core/ui/split, ≥600 × 480): the list a path of
    * the module's routes stands beside, or `undefined` for a screen shown as on
    * a phone. `home` is the address of the list itself: there the right part is
    * empty, and its bar gives the column of sections.
@@ -489,6 +531,17 @@ export interface ModuleDef {
    * read only while the app is unlocked.
    */
   links?: { ready: () => boolean; read: () => Promise<boolean> };
+  /**
+   * Mobile: the module that takes what another app shares into Veydan
+   * through the system's share sheet (`core/shares`): a text, files. The
+   * module of the lowest `order` among the active ones shows the share
+   * (`show`: the messenger's chooser of a chat; the notes alone, a new note)
+   * and is given the `alt` of the others to offer beside its own targets
+   * («Новая заметка» in the chooser). `ready` says when it can show, read
+   * reactively. Whoever takes the share lets its files go with
+   * `sharesApi.forget` when it is done.
+   */
+  shares?: ShareHandler;
   /**
    * Mobile: the editor of labels and references another module's forms show
    * on their records (passwords, TOTP). The notes keep the labels, so the

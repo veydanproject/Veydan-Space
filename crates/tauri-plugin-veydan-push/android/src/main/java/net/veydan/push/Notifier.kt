@@ -44,6 +44,8 @@ internal object Notifier {
   /** Notifications are told apart by their tag; the number is the same for all. */
   private const val ID = 1
   private const val GROUP = "net.veydan.messages"
+  /** The category of a chat's shortcut the `<share-target>` of the product names (Direct Share). */
+  private const val SHARE_TARGET = "net.veydan.share.TARGET"
   private const val TAG_SUMMARY = "summary"
   /** A direct message the phone could not open is one for all of them. */
   private const val TAG_DM_PLAIN = "dm"
@@ -236,6 +238,10 @@ internal object Notifier {
       .setLongLived(true)
       .setIcon(icon)
       .setIntent(intent)
+      // The chat in the system's share sheet too (Direct Share): the
+      // category of the `<share-target>` of the product's res/xml/shortcuts.xml,
+      // whose ShareActivity (the shell's) gets the id of this shortcut.
+      .setCategories(setOf(SHARE_TARGET))
       .apply { person?.let { setPerson(it) } }
       .build()
     return try {

@@ -1,0 +1,22 @@
+/* SPDX-FileCopyrightText: 2026 Veydan Project */
+/* SPDX-License-Identifier: LicenseRef-PolyForm-Perimeter-1.0.1 */
+
+/* Расширение «Поделиться» в Veydan из другого приложения (ShareViewController.swift). */
+"share_title" = "Отправить в…";
+"share_cancel" = "Отмена";
+"share_send" = "Отправить";
+"share_files" = "Файлов: %d";
+"share_file" = "1 файл";
+"share_loading" = "Открываю Veydan…";
+"share_no_chats" = "Пока некому отправить: нет контактов и групп.";
+"share_locked_title" = "Veydan заблокирован";
+"share_locked_text" = "Введите PIN или пароль приложения.";
+"share_locked_field" = "PIN или пароль";
+"share_unlock" = "Открыть";
+"share_no_identity" = "Сначала настройте чат в Veydan.";
+"share_failed" = "Не удалось отправить";
+"share_preparing" = "Подготовка…";
+"share_uploading" = "Загрузка… %d%%";
+"share_sending" = "Отправка…";
+"share_done" = "Отправлено";
+"share_nothing" = "Нечего отправлять.";

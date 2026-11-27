@@ -20,6 +20,7 @@ import ProfilePane from '../pages/ProfilePane.svelte';
 import NoticeBanner from '../push/NoticeBanner.svelte';
 import CallWatcher from '../calls/CallWatcher.svelte';
 import IncomingLink from '../incoming/IncomingLink.svelte';
+import ShareIn from '../share/ShareIn.svelte';
 import ArchiveGate from '../archive/ArchiveGate.svelte';
 import MobileDialogs from '../mobile/MobileDialogs.svelte';
 
@@ -96,6 +97,8 @@ export const module: ModuleDef = {
     { id: 'calls', component: CallWatcher, place: 'window' },
     // A link clicked outside the app: its card, once the app is unlocked.
     { id: 'incoming-link', component: IncomingLink, place: 'window' },
+    // What another app shared into Veydan: the chooser of a chat, once the app is unlocked.
+    { id: 'share-in', component: ShareIn, place: 'window' },
     // The first screen after a restore or a linking, while the newest months of the archive come back.
     { id: 'archive-gate', component: ArchiveGate, place: 'window' },
     // The report and the servers' dialogs, outside the frames: a wide window shows two, folding takes one away.

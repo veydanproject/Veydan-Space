@@ -2,6 +2,10 @@
   "desktop": {
     "nav_notes": "노트",
     "quick_capture_title": "빠른 노트",
+    "note_share_new": "새 노트",
+    "note_share_untitled": "공유됨",
+    "note_share_saved": "노트를 만들었습니다",
+    "note_share_refused": "추가되지 않음: {names}",
     "tray_quick_capture": "빠른 노트",
     "panel_tab_notes": "노트",
     "notes_label": "노트",

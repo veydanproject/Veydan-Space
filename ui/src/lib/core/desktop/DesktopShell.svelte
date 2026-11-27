@@ -536,22 +536,25 @@
   }
 
   /* ── Top Bar ── a floating glass plate: 12 from the sides of the window
-     like the panes below it, 4 under the window's own title bar. */
+     like the panes below it, 4 under the window's own title bar; the glass of the conversation's head
+     (60 % of --glass-bar, the strong edge, the owner, 2026-11-27), solid --bg-2 without a blur. */
   .topbar {
     height: var(--topbar-h);
     margin: var(--sp-3) var(--sp-3) 0;
     padding: 0 var(--sp-3) 0 var(--sp-4);
     border-radius: var(--radius-head);
-    background: var(--pane-top, var(--pane-chrome, var(--pane)));
+    background: color-mix(in srgb, var(--glass-bar) 60%, transparent);
     -webkit-backdrop-filter: var(--pane-filter);
     backdrop-filter: var(--pane-filter);
-    border: 1px solid var(--pane-border);
+    border: 1px solid var(--pane-strong-border);
     box-shadow: var(--pane-highlight), var(--pane-shadow);
     display: flex;
     align-items: center;
     flex-shrink: 0;
     z-index: 10;
   }
+  @media (prefers-reduced-transparency: reduce) { .topbar { background: var(--bg-2); } }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .topbar { background: var(--bg-2); } }
   .topbar.csd { margin-top: var(--sp-1); }
 
   /* One module: the bar holds the name and the tools only. */

@@ -40,9 +40,10 @@ fi
 export CARGO_TARGET_DIR="$ROOT_DIR/data/target-android/$PRODUCT"
 source "$ANDROID_SCRIPTS_DIR/signing.sh"
 
+# The newest file named like `$1` among the APKs built. `ls -t`, not find's
+# `-printf`: the find of macOS has none, and answered nothing (2026-11-27).
 newest_apk() {
-  find "$GEN_ANDROID/app/build/outputs/apk" \
-    -name "$1" -printf "%T@\t%p\n" 2>/dev/null | sort -nr | cut -f2- | head -n1
+  find "$GEN_ANDROID/app/build/outputs/apk" -type f -name "$1" -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -n1
 }
 
 ensure_debug_keystore() {

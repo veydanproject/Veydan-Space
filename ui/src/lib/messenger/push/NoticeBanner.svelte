@@ -17,11 +17,12 @@
   import { t } from '$lib/core/i18n';
   import Icon from '$lib/core/Icon.svelte';
   import { zone } from '$lib/core/ui/zone';
+  import { swallowNextClick } from '$lib/core/ui/ghost-click';
   import Avatar from '../contacts/Avatar.svelte';
   import { messengerStore } from '../store.svelte';
   import { chatStore } from '../chats/chatStore.svelte';
   import { nameStore } from '../groups/names.svelte';
-  import { BASE, callHref, chatHref, groupCallHref } from '../mobile/routes';
+  import { BASE, callHref, chatHref, groupCallHref, onConversation } from '../mobile/routes';
   import { botCardLineKey } from '../content/botCard';
   import { botCards } from '../seams/cards.svelte';
   import { albumLine, albumOf, bodyLine, joinAlbum, type Album, type NoticeBody } from './wording';
@@ -131,7 +132,8 @@
   function open(card: Card) {
     dismiss(card.key);
     if (onopen) onopen(card.chatId);
-    else goto(card.chatId ? chatHref(card.chatId) : BASE);
+    // Over another chat the card's chat takes its place: a back leads to the list, not to the chat that was open.
+    else goto(card.chatId ? chatHref(card.chatId) : BASE, { replaceState: onConversation(page.url.pathname) });
   }
 
   // ─── Touch ────────────────────────────────────────────────────────────
@@ -151,7 +153,7 @@
     card.dy = Math.min(0, e.clientY - start.y);
   }
 
-  function up(card: Card) {
+  function up(e: PointerEvent, card: Card) {
     if (!start || start.key !== card.key) return;
     start = null;
     card.held = false;
@@ -159,6 +161,9 @@
     if (Math.abs(card.dx) > SWIPE_ASIDE || card.dy < -SWIPE_UP) {
       leave(card);
     } else if (moved < MOVED) {
+      // The card opens on the lift and goes; the click of that lift came after it, aimed at what the finger was
+      // over by then: the head of the chat just opened, whose name opens the sender's card. The click is swallowed.
+      if (e.pointerType !== 'mouse') swallowNextClick(window, true);
       open(card);
     } else {
       card.dx = 0;
@@ -188,7 +193,7 @@
         tabindex="0"
         onpointerdown={(e) => down(e, card)}
         onpointermove={(e) => move(e, card)}
-        onpointerup={() => up(card)}
+        onpointerup={(e) => up(e, card)}
         onpointercancel={() => cancel(card)}
         onkeydown={(e) => { if (e.key === 'Enter') open(card); if (e.key === 'Escape') leave(card); }}
       >
