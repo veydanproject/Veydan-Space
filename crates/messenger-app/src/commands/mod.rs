@@ -1393,6 +1393,18 @@ pub async fn messenger_dm_edit(
     .await
 }
 
+/// Press the button with data `d` under the message `id` of a bot
+/// (internal/platform-spec.md §9.7): the press goes to the bot, the message
+/// comes back with `pressed`, and nothing else happens in the app.
+/// Refusals reach the UI as `press_unknown`, `press_no_button`,
+/// `press_not_bot`, `press_pending` (pressed less than 30 s ago, no edit
+/// since) and the codes of the chat.
+#[tauri::command]
+pub async fn messenger_press(id: String, d: String, messenger: tauri::State<'_, MessengerState>) -> CmdResult<MessageView> {
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move { messenger.runtime_unlocked().await?.dm_press(&id, &d).await.map_err(map_err) }).await
+}
+
 /// Put an emoji on a message, or take mine back. Refusals reach the UI as
 /// `reaction_limit`, `reaction_invalid` and the codes of the chat.
 #[tauri::command]
@@ -2109,7 +2121,8 @@ pub async fn messenger_media_transfers(messenger: tauri::State<'_, MessengerStat
 /// never a pause the user made. How many transfers started again.
 #[tauri::command]
 pub async fn messenger_media_retry_failed(messenger: tauri::State<'_, MessengerState>) -> CmdResult<u32> {
-    messenger.runtime()?.media_retry_failed().await.map_err(map_err)
+    // Boxed: the bridge thread of Android carries only the box (`command_futures`).
+    Box::pin(async move { messenger.runtime()?.media_retry_failed().await.map_err(map_err) }).await
 }
 
 #[tauri::command]

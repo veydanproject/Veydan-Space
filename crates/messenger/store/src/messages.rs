@@ -20,6 +20,8 @@ pub const STATUS_SENT: &str = "sent";
 pub const STATUS_FAILED: &str = "failed";
 pub const STATUS_RECEIVED: &str = "received";
 
+/// A text; its `media_json` holds the buttons of a bot under it, if any
+/// (`set_keyboard`).
 pub const CT_TEXT: &str = "text";
 pub const CT_EDIT: &str = "edit";
 pub const CT_DELETE: &str = "delete";
@@ -773,6 +775,22 @@ pub async fn set_media_json(store: &Store, id: &str, media_json: &str) -> Result
         .map_err(storage)?;
     crate::search::index_in(&mut tx, id).await?;
     tx.commit().await.map_err(storage)
+}
+
+/// The buttons of a bot under a text and the one I pressed
+/// (`messenger_dm::keyboard::KbState`, platform-spec §9.7), kept in the
+/// `media_json` a text has no other use for; `None` takes both away (an
+/// edit without a keyboard). A row of any other type is left alone: only
+/// a text carries buttons. Not searched: the labels are no words of the
+/// message.
+pub async fn set_keyboard(store: &Store, id: &str, state_json: Option<&str>) -> Result<()> {
+    sqlx::query("UPDATE msg_messages SET media_json = ? WHERE id = ? AND content_type = 'text'")
+        .bind(state_json)
+        .bind(id)
+        .execute(store.pool())
+        .await
+        .map_err(storage)?;
+    Ok(())
 }
 
 /// What the placeholder of an upload keeps of the envelope to come

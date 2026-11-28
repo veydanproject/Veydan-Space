@@ -177,6 +177,7 @@ fn every_command_leaves_a_small_future_on_the_calling_thread() {
     v.push(("messenger_dm_send_text", r5(crate::commands::messenger_dm_send_text)));
     v.push(("messenger_dm_edit", r4(crate::commands::messenger_dm_edit)));
     v.push(("messenger_dm_react", r3(crate::commands::messenger_dm_react)));
+    v.push(("messenger_press", r3(crate::commands::messenger_press)));
     v.push(("messenger_emoji_used", r2(crate::commands::messenger_emoji_used)));
     v.push(("messenger_emoji_top", r2(crate::commands::messenger_emoji_top)));
     v.push(("messenger_dm_delete", r3(crate::commands::messenger_dm_delete)));

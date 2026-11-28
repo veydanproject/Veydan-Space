@@ -853,6 +853,7 @@
     "msg_chat_draft": "Szkic:",
     "msg_react_limit": "Nie więcej niż trzy różne reakcje",
     "msg_link_open_failed": "Nie udało się otworzyć linku",
+    "msg_kb_press_failed": "Naciśnięcie nie dotarło",
     "msg_emoji_recent": "Ostatnie",
     "msg_emoji_smileys": "Buźki",
     "msg_emoji_gestures": "Ludzie i gesty",

@@ -374,7 +374,7 @@ export function buildDemo(): DemoData {
   const cb = `dm:${cloudBot}`;
   chats.push({ id: cb, kind: 'dm', peer_pubkey: cloudBot, peer_npub: npub(cloudBot, 'vcloud'), title: 'VCLOUD', picture: null, is_contact: false, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true, bot: true });
   // Its profile lists commands: the «/» menu of the chat.
-  const bots = [
+  const bots: MessengerProfile[] = [
     profile(cloudBot, 'VCLOUD', '', null, {
       bot: true,
       commands: [
@@ -402,6 +402,29 @@ export function buildDemo(): DemoData {
     botCard(now - 300, { t: 'web.confirm', id: 'a1b2c3d4e5f6071a', action: 'delete', country: 'DE', ua_family: 'Firefox', expires_at: now + 600 }),
     botCard(now - 200, { t: 'web.login', id: 'a1b2c3d4e5f6071b', code: '482913', country: 'DE', ua_family: 'Firefox', expires_at: now + 600 }),
     botCard(now - 120, { t: 'recovery.requested', request_id: '9c'.repeat(16), created_at: now - 120, expires_at: now + 1680 }),
+  ];
+
+  // A bot of the SDK with buttons under its messages (content/Keyboard.svelte): one answered
+  // (the edit took its buttons, its words say the choice), a choice of a language (chips), one
+  // pressed a moment ago (waits for the bot), and the question that waits for an answer.
+  const paw = hex('d2');
+  const pc = `dm:${paw}`;
+  chats.push({ id: pc, kind: 'dm', peer_pubkey: paw, peer_npub: npub(paw, 'qwenpaw'), title: 'QwenPaw', picture: null, is_contact: true, is_muted: false, unread: 0, last_message_at: null, last_preview: null, pinned: false, archived: false, mode: 'full_chat', can_send: true });
+  bots.push(profile(paw, 'QwenPaw', 'An assistant on the Bot SDK.', null, { bot: true }));
+  messages[pc] = [
+    msg(pc, ME, now - 900, 'Прочитай мои заметки к встрече'),
+    msg(pc, paw, now - 880, 'Хочу прочитать файл meeting-notes.md.\n\n✓ Разрешено', { edited_at: now - 860 }),
+    msg(pc, paw, now - 600, 'На каком языке отвечать?', {
+      kb: { rows: [[{ t: 'English', d: 'lang:en' }, { t: 'Русский', d: 'lang:ru' }], [{ t: 'Deutsch', d: 'lang:de' }, { t: 'Español', d: 'lang:es' }], [{ t: 'Français', d: 'lang:fr' }, { t: '中文', d: 'lang:zh' }]] },
+    }),
+    msg(pc, paw, now - 300, 'Запустить сборку проекта?', {
+      kb: { rows: [[{ t: 'Да', d: 'build:yes', style: 'primary' }, { t: 'Нет', d: 'build:no' }]] },
+      pressed: { d: 'build:yes', at: now - 2 },
+    }),
+    msg(pc, ME, now - 120, 'Какая погода в Берлине?'),
+    msg(pc, paw, now - 100, 'Хочу открыть сайт wttr.in, чтобы узнать погоду. Разрешить?\n\nИли ответьте командой /approve 78fe6469.', {
+      kb: { rows: [[{ t: 'Разрешить', d: 'a:78fe6469', style: 'primary' }], [{ t: 'Разрешить такие запросы всегда', d: 's:78fe6469' }], [{ t: 'Отклонить', d: 'd:78fe6469', style: 'danger' }]] },
+    }),
   ];
 
 

@@ -272,7 +272,24 @@ export interface MessengerMessage {
    * sender hidden.
    */
   fwd?: { name?: string } | null;
+  /**
+   * The buttons of a bot's message (sdk/docs/bridge.md, «Buttons under a message»): set
+   * by the runtime only on an incoming message of a profile with `bot`, and
+   * gone when the bot's edit took them away. Drawn by `content/Keyboard.svelte`.
+   */
+  kb?: MessageKeyboard | null;
+  /** The button of `kb` I pressed last and when (unix seconds): kept so a reload still shows it waiting. */
+  pressed?: { d: string; at: number } | null;
 }
+
+// The keyboard of a bot's message: the shapes of the core's contract
+// (sdk/docs/bridge.md, «Buttons under a message»), written here until the runtime's
+// bindings generate them: the core defines them, this copies them.
+/** `quiet` when absent. */
+export type KbStyle = 'primary' | 'quiet' | 'danger';
+/** A button: its label `t` and `d`, handed back to the bot as it is. No links in this version. */
+export interface KbButton { t: string; d: string; style?: KbStyle }
+export interface MessageKeyboard { rows: KbButton[][] }
 
 /** What one chat got of a forward (`messenger_runtime::forward`). */
 export interface MessengerForwardResult {
@@ -1831,6 +1848,17 @@ const devMocks: Record<string, (args?: Record<string, unknown>) => unknown> = {
   messenger_media_url: () => null,
   messenger_media_open: () => undefined,
   messenger_open_url: (a) => { window.open(String(a?.url), '_blank', 'noopener'); },
+  // A bot of the demo answers a press in two seconds: its edit takes the buttons and says the choice.
+  messenger_press: (a) => {
+    const id = String(a?.id);
+    const d = String(a?.d);
+    const label = mockFind(id)?.kb?.rows.flat().find((b) => b.d === d)?.t;
+    if (!label) throw new Error('err.press_unknown');
+    mockMessageUpdate(id, (m) => ({ ...m, pressed: { d, at: Math.floor(Date.now() / 1000) } }));
+    const pressed = mockFind(id);
+    setTimeout(() => mockMessageUpdate(id, (m) => ({ ...m, kb: null, pressed: null, text: `${m.text}\n\n✓ ${label}`, edited_at: Math.floor(Date.now() / 1000) })), 2000);
+    return pressed;
+  },
   messenger_share_out: (a) => { console.info('[demo] share out by', a?.via); },
   messenger_links_inspect: (a) => ((a?.links ?? []) as string[]).map((l) => mockInspect(l)),
   messenger_link_incoming: () => null,
@@ -2372,6 +2400,13 @@ export const messengerApi = {
   },
   /** Open an http(s) link in the system browser. */
   openUrl: (url: ExternalUrl) => invoke<void>('messenger_open_url', { url }),
+  /**
+   * A button of a bot's message pressed: `d` goes back to the bot of message
+   * `id` as it is, and nothing else happens; the message comes back with
+   * `pressed`. Refused: `press_unknown`, `press_no_button`, `press_not_bot`,
+   * `press_pending` (pressed less than 30 s ago) and the chat's own codes.
+   */
+  press: (id: string, d: string) => invoke<MessengerMessage>('messenger_press', { id, d }),
   /**
    * A text into another app (shareOut.ts): `send` the phone's list of apps,
    * `sms` its SMS app, `mail` a letter (a computer has this one alone).

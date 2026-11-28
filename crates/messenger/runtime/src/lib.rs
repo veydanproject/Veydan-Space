@@ -37,6 +37,8 @@ pub mod links;
 /// The facade of moderation: requests of strangers, whom I take messages
 /// from, the moderation of groups, the invitations.
 pub mod moderation;
+/// The buttons of a bot: a press of mine.
+pub mod keyboards;
 pub mod net;
 pub mod preview;
 pub mod presence;
@@ -751,13 +753,27 @@ impl MessengerRuntime {
 
     /// Send a text written as `format` (plain or Markdown).
     pub async fn dm_send_text_as(&self, to: &str, text: &str, format: TextFormat, reply_to: Option<&str>) -> Result<MessageView> {
+        self.dm_send_text_with(to, text, format, reply_to, None).await
+    }
+
+    /// A text with the buttons of a bot under it (`kb`, platform-spec
+    /// §9.7), to a person or a group. A keyboard over a limit is refused
+    /// with its code (`kb_rows`, `kb_label_long`, …) and nothing leaves.
+    pub async fn dm_send_text_with(
+        &self,
+        to: &str,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+        kb: Option<&messenger_core::Keyboard>,
+    ) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         if let Some(group) = to.strip_prefix("group:") {
-            return self.group_send_text_as(group, text, format, reply_to).await;
+            return self.group_send_text_with(group, text, format, reply_to, kb).await;
         }
         let chat = self.peer_addr(to).await?;
         let first = self.dm.chat(&chat.chat_id()).await?.is_none();
-        let prepared = self.dm.prepare_text_as(&keys, &chat, text, format, reply_to).await?;
+        let prepared = self.dm.prepare_text_with(&keys, &chat, text, format, reply_to, kb).await?;
         if first {
             let _ = self.request_profile_on(&chat.key, chat.server()).await;
             let _ = self.resubscribe_meta().await;
@@ -771,11 +787,18 @@ impl MessengerRuntime {
 
     /// Replace the text of my message and how it is written.
     pub async fn dm_edit_as(&self, message_id: &str, text: &str, format: TextFormat) -> Result<MessageView> {
+        self.dm_edit_with(message_id, text, format, None).await
+    }
+
+    /// Replace the text of my message and its buttons: `kb` replaces the
+    /// keyboard, none takes it away (and with it the press of whoever
+    /// pressed, on their device).
+    pub async fn dm_edit_with(&self, message_id: &str, text: &str, format: TextFormat, kb: Option<&messenger_core::Keyboard>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         if self.is_group_message(message_id).await? {
-            return self.group_edit_as(message_id, text, format).await;
+            return self.group_edit_with(message_id, text, format, kb).await;
         }
-        let prepared = self.dm.prepare_edit_as(&keys, message_id, text, format).await?;
+        let prepared = self.dm.prepare_edit_with(&keys, message_id, text, format, kb).await?;
         self.publish_prepared(prepared).await
     }
 

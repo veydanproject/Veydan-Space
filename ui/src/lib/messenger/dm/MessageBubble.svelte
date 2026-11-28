@@ -9,6 +9,8 @@
   import MessageContent from '../content/MessageContent.svelte';
   import ContactCardMessage from '../content/ContactCardMessage.svelte';
   import BotCardMessage from '../content/BotCardMessage.svelte';
+  import Keyboard from '../content/Keyboard.svelte';
+  import { hasKeys } from '../content/keyboard';
   import { longpress } from '../shared/longpress';
   import { swipeReply } from '../shared/swipe-reply';
   import { tint } from '../shared/tint';
@@ -87,8 +89,10 @@
   // text ends the bubble: no card instead of it.
   /** A file with no words: the time stands at the end of its line. */
   const fileOnly = $derived(!m.deleted && !m.text && !m.edited_at && !m.reply_to && !m.fwd && m.content_type === 'media' && ['file', 'audio'].includes(mediaOf(m)?.kind ?? ''));
+  /** A bot's message with buttons: they stand under the words, the time under them. */
+  const keys = $derived(hasKeys(m));
   const metaInline = $derived(
-    !!m.text && !m.deleted && m.content_type !== 'contact' && !m.bot_card
+    !!m.text && !m.deleted && m.content_type !== 'contact' && !m.bot_card && !keys
       && (m.content_type !== 'media' || !!media),
   );
 </script>
@@ -96,7 +100,7 @@
 <div class="line" class:out class:first class:last class:highlighted class:selected class:fresh data-mid={m.id} use:swipeReply={{ onreply: m.deleted ? undefined : onreply }}>
   <div class="brow">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="bubble on-glass" class:bare class:file-only={fileOnly} class:bot={!!m.bot_card && !m.deleted} class:contact={m.content_type === 'contact' && !m.deleted} class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
+  <div class="bubble on-glass" class:bare class:file-only={fileOnly} class:bot={!!m.bot_card && !m.deleted} class:contact={m.content_type === 'contact' && !m.deleted} class:keys class:deleted={m.deleted} class:failed={m.status === 'failed'} oncontextmenu={(e) => onmenu(e, m)}
     use:longpress={{ onpress: (p) => onmenu(new MouseEvent('contextmenu', { clientX: p.x, clientY: p.y }), m) }}>
     {#if author && showAuthor}<span class="author" style="color: {tint(m.sender_pubkey)}">{author(m.sender_pubkey)}</span>{/if}
     {#if m.fwd && !m.deleted}<span class="fwd">{m.fwd.name ? $t('msg_fwd_from', { name: m.fwd.name }) : $t('msg_fwd_from_nameless')}</span>{/if}
@@ -126,6 +130,7 @@
     {:else}
       <span class="tomb">{$t('msg_message_unsupported', { type: m.content_type })}</span>
     {/if}
+    {#if keys}<Keyboard message={m} />{/if}
 
 
     {#snippet meta()}
@@ -199,8 +204,11 @@
   .bubble.bot > .meta { margin-top: var(--sp-1); }
   .bubble.contact { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .bubble.contact > .meta { margin-top: var(--sp-1); }
+  /* A bot's message with buttons: as wide as a card, the time under the buttons. */
+  .bubble.keys { box-sizing: border-box; padding-bottom: var(--sp-2); }
+  .bubble.keys > .meta { margin-top: var(--sp-1); }
   /* A card's min-width: min(320px, 100%) is 0 while the bubble sizes to its content: the bubble holds 320 + its padding itself. */
-  .bubble.contact, .bubble.bot, .bubble:has(:global(.cards)) { min-width: min(calc(320px + 2 * var(--sp-3) + 2px), 86%); }
+  .bubble.contact, .bubble.bot, .bubble.keys, .bubble:has(:global(.cards)) { min-width: min(calc(320px + 2 * var(--sp-3) + 2px), 86%); }
   .line .bubble.bare, .line.out .bubble.bare { background: none; border-color: transparent; padding: 0; }
   /* Touch: a long press opens the menu, so it must not start a selection. */
   @media (pointer: coarse) {

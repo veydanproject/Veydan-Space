@@ -853,6 +853,7 @@
     "msg_chat_draft": "Draf:",
     "msg_react_limit": "Tidak lebih dari tiga reaksi berbeda",
     "msg_link_open_failed": "Tidak dapat membuka tautan",
+    "msg_kb_press_failed": "Tekanan tidak terkirim",
     "msg_emoji_recent": "Terbaru",
     "msg_emoji_smileys": "Smiley",
     "msg_emoji_gestures": "Orang dan gestur",

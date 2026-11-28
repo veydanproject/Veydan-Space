@@ -853,6 +853,7 @@
     "msg_chat_draft": "下書き:",
     "msg_react_limit": "リアクションは3種類までです",
     "msg_link_open_failed": "リンクを開けませんでした",
+    "msg_kb_press_failed": "ボタンの操作が届きませんでした",
     "msg_emoji_recent": "最近使用",
     "msg_emoji_smileys": "スマイリー",
     "msg_emoji_gestures": "人とジェスチャー",

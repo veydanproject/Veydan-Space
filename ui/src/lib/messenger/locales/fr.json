@@ -853,6 +853,7 @@
     "msg_chat_draft": "Brouillon :",
     "msg_react_limit": "Pas plus de trois réactions différentes",
     "msg_link_open_failed": "Impossible d’ouvrir le lien",
+    "msg_kb_press_failed": "L’appui n’a pas été transmis",
     "msg_emoji_recent": "Récents",
     "msg_emoji_smileys": "Smileys",
     "msg_emoji_gestures": "Personnes et gestes",

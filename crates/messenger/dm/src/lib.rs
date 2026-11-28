@@ -31,6 +31,9 @@ pub mod handler;
 /// Invitations to write to me without a request, and the budget of
 /// guesses at them.
 pub mod invites;
+/// The buttons of a bot under a message: what a row keeps, a press of
+/// mine and a press heard.
+pub mod keyboard;
 pub mod media;
 pub mod notes;
 /// Who a direct chat is with, and on which server it lives.
@@ -71,3 +74,4 @@ pub use service::{DmService, Prepared};
 pub use peer::{to_my_devices, DmPeer};
 pub use cards::StoredCard;
 pub use view::{CardView, ChatView, MessageView, ReactionView};
+pub use keyboard::{KbState, PreparedPress, Pressed, PRESS_TTL_SECS, UI_EVENT_DM_PRESS};

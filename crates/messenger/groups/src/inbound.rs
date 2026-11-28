@@ -18,7 +18,8 @@ use crate::state::{self, Closed, GroupState};
 use crate::wire::{self, InnerMessage, Opened, SecretEnvelope};
 use messenger_core::envelope::{T_CONTACT, T_DELETE, T_EDIT, T_MEDIA, T_REACTION, T_RECEIPT_READ, T_TEXT, T_TYPING};
 use messenger_core::traits::{Body, Notice, UiEvent};
-use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, MessengerError, PubKey, Result, TextFormat};
+use messenger_core::keyboard::T_PRESS;
+use messenger_core::{Context, DmInbound, Envelope, EventSource, GroupInbound, Keyboard, MessengerError, PubKey, Result, TextFormat};
 use messenger_store::groups::{self as repo, GroupRow, PendingRow};
 use messenger_store::messages::{self as msgs, NewMessage};
 use messenger_store::{chats, servers};
@@ -1508,6 +1509,22 @@ impl GroupService {
             }
             return Ok(Verdict::Done);
         }
+        // A button under a message of mine was pressed (platform-spec
+        // §9.7): told for the bot that wrote it, kept nowhere, shown
+        // nowhere, waking nobody. The press goes to the whole group, sealed
+        // as a reaction is; every other member drops it here, the author
+        // hears it with the key of whoever pressed. Only of a member who
+        // may speak, as a reaction.
+        if envelope.t == T_PRESS {
+            if speaks {
+                if let Some((id, d)) = self.dm.press_heard(&chat_id, me, &m.author, &envelope, self.now()).await? {
+                    let mut ev = messenger_dm::keyboard::press_event(UI_EVENT_GROUP_PRESS, &chat_id, &id, &m.author, &d, m.created_at, item.historical);
+                    ev.payload["group_id"] = group_id.into();
+                    out.events.push(ev);
+                }
+            }
+            return Ok(Verdict::Done);
+        }
         // A member read the group: a mark, not a message. One who may not
         // speak may still read. Mine from another device says nothing new.
         if envelope.t == T_RECEIPT_READ {
@@ -1535,7 +1552,9 @@ impl GroupService {
         let target = envelope.str_field("target").map(String::from);
         let mut card_line = None;
         let (content_type, text, hidden, media_json): (&str, Option<String>, bool, Option<String>) = match envelope.t.as_str() {
-            T_TEXT => (msgs::CT_TEXT, envelope.as_text().map(String::from), false, None),
+            // The buttons under it: of mine, of a bot, or of a key not
+            // known yet; a person's are dropped here (messenger_dm::keyboard).
+            T_TEXT => (msgs::CT_TEXT, envelope.as_text().map(String::from), false, self.dm.kb_json_to_keep(&envelope, &m.author, from_me).await?),
             T_EDIT => (msgs::CT_EDIT, None, true, None),
             T_DELETE => (msgs::CT_DELETE, None, true, None),
             T_MEDIA => (
@@ -1605,7 +1624,8 @@ impl GroupService {
                 return Ok(Verdict::Done);
             }
             let new_text = envelope.str_field("text").map(|t| (t.trim().to_string(), envelope.format()));
-            if self.change(&log, &row, content_type, &m.author, m.created_at, new_text).await? {
+            let kb = self.dm.kb_to_keep(&envelope, &m.author, from_me).await?;
+            if self.change(&log, &row, content_type, &m.author, m.created_at, new_text, kb).await? {
                 chats::recompute_last(&self.store, &chat_id).await?;
                 out.events.push(message_updated(&chat_id, &target));
             }
@@ -1625,8 +1645,13 @@ impl GroupService {
         if let Some(row) = msgs::get(&self.store, &id).await? {
             for p in msgs::pending_for_target(&self.store, &id).await? {
                 let Some(actor) = PubKey::parse(&p.sender_pubkey) else { continue };
-                let new_text = Envelope::parse(&p.envelope_json).ok().and_then(|e| e.str_field("text").map(|t| (t.trim().to_string(), e.format())));
-                self.change(&log, &row, &p.content_type, &actor, p.created_at, new_text).await?;
+                let edit = Envelope::parse(&p.envelope_json).ok();
+                let new_text = edit.as_ref().and_then(|e| e.str_field("text").map(|t| (t.trim().to_string(), e.format())));
+                let kb = match &edit {
+                    Some(e) => self.dm.kb_to_keep(e, &actor, &actor == me).await?,
+                    None => None,
+                };
+                self.change(&log, &row, &p.content_type, &actor, p.created_at, new_text, kb).await?;
             }
         }
         // Removed for me on another device before it came here.
@@ -1704,6 +1729,7 @@ impl GroupService {
     }
 
     /// Apply an edit or a delete to a stored message, if its author may.
+    #[allow(clippy::too_many_arguments)]
     async fn change(
         &self,
         log: &OpLog,
@@ -1712,6 +1738,7 @@ impl GroupService {
         actor: &PubKey,
         at: i64,
         new_text: Option<(String, TextFormat)>,
+        kb: Option<Keyboard>,
     ) -> Result<bool> {
         if at < row.created_at {
             return Ok(false);
@@ -1729,6 +1756,9 @@ impl GroupService {
                     return Ok(false);
                 };
                 msgs::set_text(&self.store, &row.id, &t, format, at).await?;
+                // The buttons go with the edit: replaced, or taken away
+                // when it has none; my press is forgotten.
+                self.dm.edit_keyboard(&row.id, kb).await?;
                 // A new version: what a moderator approved was the old one.
                 self.after_edit(log.group_id(), log, row, at).await?;
                 Ok(true)

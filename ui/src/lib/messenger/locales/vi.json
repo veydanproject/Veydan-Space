@@ -853,6 +853,7 @@
     "msg_chat_draft": "Bản nháp:",
     "msg_react_limit": "Không quá ba biểu cảm khác nhau",
     "msg_link_open_failed": "Không thể mở liên kết",
+    "msg_kb_press_failed": "Lần nhấn không được gửi đi",
     "msg_emoji_recent": "Gần đây",
     "msg_emoji_smileys": "Mặt cười",
     "msg_emoji_gestures": "Người và cử chỉ",

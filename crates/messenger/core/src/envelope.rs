@@ -611,6 +611,33 @@ impl Envelope {
         self
     }
 
+    /// The same `text` or `edit` with the buttons of a bot under it
+    /// (`keyboard::FIELD_KB`), or without any when `kb` is none: an edit
+    /// without one takes the keyboard away.
+    pub fn with_kb(mut self, kb: Option<&crate::keyboard::Keyboard>) -> Self {
+        match kb {
+            Some(k) => self.fields.insert(crate::keyboard::FIELD_KB.into(), k.to_value()),
+            None => self.fields.remove(crate::keyboard::FIELD_KB),
+        };
+        self
+    }
+
+    /// The keyboard of a `text` or an `edit` as a receiver keeps it
+    /// (`Keyboard::received`): none when absent, malformed or over a limit.
+    pub fn kb(&self) -> Option<crate::keyboard::Keyboard> {
+        if self.t != T_TEXT && self.t != T_EDIT {
+            return None;
+        }
+        crate::keyboard::Keyboard::received(self.fields.get(crate::keyboard::FIELD_KB)?)
+    }
+
+    /// `{"t":"press","of":"<message id>","d":"…"}`: a button with data `d`
+    /// under the message `of` was pressed (platform-spec §9.7). A note to
+    /// the author, never a message of the chat.
+    pub fn press(of: &str, d: &str) -> Self {
+        Self::new(crate::keyboard::T_PRESS).with("of", of).with("d", d)
+    }
+
     /// Whom a forwarded `text` or `media` came from (`FIELD_FWD`). None
     /// on any other type, and when the field is no object.
     pub fn fwd(&self) -> Option<Forwarded> {

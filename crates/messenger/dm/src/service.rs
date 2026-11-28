@@ -9,13 +9,14 @@ use crate::view::{preview, preview_of, ChatView, MessageView, ReactionView, Repl
 use crate::wrap::{wrap_as, Wake};
 use crate::view::CardView;
 use crate::botcard::BotCard;
+use crate::keyboard::KbState;
 use crate::peer::DmPeer;
 use crate::relations::InboundGate;
 use messenger_contacts::{ContactCard, ContactService, ProfileService};
 use messenger_core::envelope::{KIND_OWN_RUMOR, KIND_PEER_NOTE_RUMOR, T_CONTACT, T_CONTROL, T_DELETE, T_EDIT, T_MEDIA, T_TEXT};
 use messenger_core::traits::{Notice, UiEvent};
 use messenger_core::{
-    Clock, Context, DmInbound, Effect, Envelope, EventSource, MessengerError, Outbound, PubKey, RelayUrl, Result, TextFormat,
+    Clock, Context, DmInbound, Effect, Envelope, EventSource, Keyboard, MessengerError, Outbound, PubKey, RelayUrl, Result, TextFormat,
 };
 use messenger_store::chats::{self, ChatRow};
 use messenger_store::messages::{self as repo, MessageRow, NewMessage};
@@ -108,6 +109,9 @@ pub struct DmService {
     /// What is known of my list of relations, and what the relays are owed
     /// of it (`crate::snapshot`).
     pub(crate) relations: Arc<crate::snapshot::Shared>,
+    /// The presses heard lately, by (message, data, presser), with when:
+    /// told once within `PRESS_DEDUP_SECS` (`crate::keyboard`).
+    pub(crate) presses: Arc<std::sync::Mutex<crate::keyboard::PressesSeen>>,
 }
 
 impl DmService {
@@ -122,6 +126,7 @@ impl DmService {
             signer: Arc::new(RwLock::new(None)),
             bot: None,
             relations: Arc::default(),
+            presses: Arc::default(),
         }
     }
 
@@ -444,7 +449,8 @@ impl DmService {
         };
         // The one state an approval can name: its version goes with it.
         let version = if r.review == repo::REVIEW_PENDING { Some(repo::version_of(&self.store, &r).await?) } else { None };
-        Ok(MessageView { queued_at, delivered_at, read_at, seen_by, reactions, card, version, ..MessageView::from_row(r, reply) })
+        let (kb, pressed) = self.keyboard_view(&r).await?;
+        Ok(MessageView { queued_at, delivered_at, read_at, seen_by, reactions, card, version, kb, pressed, ..MessageView::from_row(r, reply) })
     }
 
     /// A stored card as the UI shows it, with what this side knows of the
@@ -550,6 +556,23 @@ impl DmService {
         format: TextFormat,
         reply_to: Option<&str>,
     ) -> Result<Prepared> {
+        self.prepare_text_with(keys, peer, text, format, reply_to, None).await
+    }
+
+    /// A text with the buttons of a bot under it (platform-spec §9.7):
+    /// `kb` is held to every limit (`Keyboard::checked`), and a keyboard
+    /// over one is refused with its code (`kb_rows`, `kb_label_long`, …)
+    /// before anything is stored.
+    pub async fn prepare_text_with(
+        &self,
+        keys: &Keys,
+        peer: impl Into<DmPeer>,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+        kb: Option<&Keyboard>,
+    ) -> Result<Prepared> {
+        let kb = kb.map(Keyboard::checked).transpose()?;
         let text = text.trim();
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
@@ -557,8 +580,8 @@ impl DmService {
         if text.len() > MAX_TEXT_BYTES {
             return Err(MessengerError::Invalid(format!("message is longer than {} KiB", MAX_TEXT_BYTES / 1024)));
         }
-        let envelope = Envelope::text(text).with_format(format);
-        self.prepare_visible(keys, peer, envelope, repo::CT_TEXT, Some(text.to_string()), reply_to, None).await
+        let envelope = Envelope::text(text).with_format(format).with_kb(kb.as_ref());
+        self.prepare_visible(keys, peer, envelope, repo::CT_TEXT, Some(text.to_string()), reply_to, KbState::json_of(kb)).await
     }
 
     /// My first text to the peer with the secret of their invitation (a
@@ -757,6 +780,14 @@ impl DmService {
     /// Replace the text of one of our messages and how it is written,
     /// locally and for the peer.
     pub async fn prepare_edit_as(&self, keys: &Keys, message_id: &str, text: &str, format: TextFormat) -> Result<Prepared> {
+        self.prepare_edit_with(keys, message_id, text, format, None).await
+    }
+
+    /// Replace the text of one of our messages and its buttons: `kb`
+    /// replaces the keyboard (held to its limits as for a new text), none
+    /// takes it away.
+    pub async fn prepare_edit_with(&self, keys: &Keys, message_id: &str, text: &str, format: TextFormat, kb: Option<&Keyboard>) -> Result<Prepared> {
+        let kb = kb.map(Keyboard::checked).transpose()?;
         let text = text.trim();
         if text.is_empty() {
             return Err(MessengerError::Invalid("message is empty".into()));
@@ -768,13 +799,14 @@ impl DmService {
         if !editable_row(&row) {
             return Err(MessengerError::Invalid("only text messages and captions can be edited".into()));
         }
-        let content = Envelope::edit(message_id, text).with_format(format).encode();
+        let content = Envelope::edit(message_id, text).with_format(format).with_kb(kb.as_ref()).encode();
         let created_at = self.next_created_at(&row.chat_id).await?;
         // The peer's phone told of the message; the correction is for the app.
         let (id, wire_id, to_peer, to_self) =
             self.publish_pair(keys, &peer, &content, created_at, None, Wake::Nobody).await?;
         self.insert_hidden(keys, &row.chat_id, &id, &wire_id, repo::CT_EDIT, content, message_id, created_at).await?;
         repo::set_text(&self.store, message_id, text, format, created_at).await?;
+        self.edit_keyboard(message_id, kb).await?;
         chats::recompute_last(&self.store, &row.chat_id).await?;
         let message = self.message(message_id).await?.ok_or_else(|| MessengerError::Storage("message vanished".into()))?;
         Ok(Prepared { message, tracking_id: id, to_peer, to_self, followups: vec![], followups_first: false, became_contact: false, events: vec![], expiring: false })
@@ -917,7 +949,15 @@ impl DmService {
                     card_line = Some(crate::view::card_line(&card));
                     (repo::CT_CONTACT.into(), None, false, None, Some(card.to_json().to_string()))
                 }
-                T_TEXT => (repo::CT_TEXT.into(), envelope.as_text().map(String::from), false, None, None),
+                // The buttons under it: of mine, of a bot, or of a key not
+                // known yet; a person's are dropped here (`crate::keyboard`).
+                T_TEXT => (
+                    repo::CT_TEXT.into(),
+                    envelope.as_text().map(String::from),
+                    false,
+                    None,
+                    self.kb_json_to_keep(&envelope, &msg.sender, from_me).await?,
+                ),
                 T_EDIT => (repo::CT_EDIT.into(), None, true, envelope.str_field("target").map(String::from), None),
                 T_DELETE => (repo::CT_DELETE.into(), None, true, envelope.str_field("target").map(String::from), None),
                 // The bot is approved by the build, not by a signal: what
@@ -1068,7 +1108,8 @@ impl DmService {
         }
         if hidden {
             let Some(target) = target else { return Ok(vec![]) };
-            return self.apply_change(&chat_id, &peer, &content_type, &target, &msg, text_of(&envelope), envelope.format(), from_me).await;
+            let kb = self.kb_to_keep(&envelope, &msg.sender, from_me).await?;
+            return self.apply_change(&chat_id, &peer, &content_type, &target, &msg, text_of(&envelope), envelope.format(), kb, from_me).await;
         }
 
         effects.extend(
@@ -1122,6 +1163,11 @@ impl DmService {
                     if let Some(t) = t.map(|t| t.trim().to_string()).filter(|t| !t.is_empty() && t.len() <= MAX_TEXT_BYTES) {
                         if from_me || self.edit_allowed(peer, &t, format).await? {
                             repo::set_text(&self.store, id, &t, format, p.created_at).await?;
+                            let kb = match &edit {
+                                Some(e) => self.kb_to_keep(e, sender, from_me).await?,
+                                None => None,
+                            };
+                            self.edit_keyboard(id, kb).await?;
                         }
                     }
                 }
@@ -1227,6 +1273,7 @@ impl DmService {
         msg: &DmInbound,
         new_text: Option<String>,
         format: TextFormat,
+        kb: Option<Keyboard>,
         from_me: bool,
     ) -> Result<Vec<Effect>> {
         let Some(row) = repo::get(&self.store, target).await? else { return Ok(vec![]) };
@@ -1252,6 +1299,9 @@ impl DmService {
                     return Ok(vec![]);
                 }
                 repo::set_text(&self.store, target, &t, format, at).await?;
+                // The buttons go with the edit: replaced, or taken away
+                // when it has none; my press is forgotten.
+                self.edit_keyboard(target, kb).await?;
             }
             // A card of the bot is not a message its sender takes back: the
             // bot never does, and whoever holds its key would silence the
@@ -5417,4 +5467,6 @@ mod tests {
     mod private;
     /// The widths of the panes between my devices (`own.ui`).
     mod ui_prefs;
+    /// The buttons of a bot (platform-spec §9.7).
+    mod keyboards;
 }

@@ -853,6 +853,7 @@
     "msg_chat_draft": "Entwurf:",
     "msg_react_limit": "Nicht mehr als drei verschiedene Reaktionen",
     "msg_link_open_failed": "Link konnte nicht geöffnet werden",
+    "msg_kb_press_failed": "Der Tastendruck kam nicht an",
     "msg_emoji_recent": "Zuletzt verwendet",
     "msg_emoji_smileys": "Smileys",
     "msg_emoji_gestures": "Personen und Gesten",

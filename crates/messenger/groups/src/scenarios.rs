@@ -57,6 +57,8 @@ struct Device {
     keys: Keys,
     svc: GroupService,
     dm: DmService,
+    /// The cache of kind 0 of this device (whose profile says `bot`).
+    profiles: ProfileService,
     online: bool,
     /// What the relay holds for this device while it is away.
     missed: Vec<Wire>,
@@ -133,12 +135,12 @@ impl World {
         servers::put(&store, &server_row(RELAY, servers::KIND_HOME)).await.unwrap();
         let profiles = ProfileService::new(store.clone());
         let contacts = ContactService::new(store.clone(), profiles.clone());
-        let dm = DmService::new(store.clone(), contacts, profiles, self.clock.clone());
+        let dm = DmService::new(store.clone(), contacts, profiles.clone(), self.clock.clone());
         dm.set_gate(false);
         // Knows whose it is, so that its own reactions show as mine.
         dm.set_signer(Some(keys.clone()));
         let svc = GroupService::new(store, Arc::new(Secrets::default()), self.clock.clone(), dm.clone());
-        self.devices.push(Device { keys, svc, dm, online: true, missed: vec![], clock: self.clock.clone() });
+        self.devices.push(Device { keys, svc, dm, profiles, online: true, missed: vec![], clock: self.clock.clone() });
         self.devices.len() - 1
     }
 
@@ -3721,3 +3723,6 @@ async fn a_typing_in_a_group_is_a_word_for_the_screen_alone() {
     let o = w.deliver(bob, &Wire::Group(event.clone()), false).await;
     assert!(o.events.iter().all(|e| e.name != UI_EVENT_GROUP_TYPING), "my own says nothing");
 }
+
+/// The buttons of a bot in a group (platform-spec §9.7).
+mod keyboards;

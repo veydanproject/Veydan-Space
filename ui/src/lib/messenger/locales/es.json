@@ -853,6 +853,7 @@
     "msg_chat_draft": "Borrador:",
     "msg_react_limit": "No más de tres reacciones distintas",
     "msg_link_open_failed": "No se pudo abrir el enlace",
+    "msg_kb_press_failed": "La pulsación no llegó",
     "msg_emoji_recent": "Recientes",
     "msg_emoji_smileys": "Caritas",
     "msg_emoji_gestures": "Personas y gestos",

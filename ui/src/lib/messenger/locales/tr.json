@@ -853,6 +853,7 @@
     "msg_chat_draft": "Taslak:",
     "msg_react_limit": "En fazla üç farklı tepki",
     "msg_link_open_failed": "Bağlantı açılamadı",
+    "msg_kb_press_failed": "Basma iletilemedi",
     "msg_emoji_recent": "Son kullanılanlar",
     "msg_emoji_smileys": "İfadeler",
     "msg_emoji_gestures": "İnsanlar ve hareketler",

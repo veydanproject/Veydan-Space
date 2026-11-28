@@ -853,6 +853,7 @@
     "msg_chat_draft": "임시 저장:",
     "msg_react_limit": "반응은 최대 세 가지까지입니다",
     "msg_link_open_failed": "링크를 열 수 없습니다",
+    "msg_kb_press_failed": "버튼 누름이 전달되지 않았습니다",
     "msg_emoji_recent": "최근",
     "msg_emoji_smileys": "스마일",
     "msg_emoji_gestures": "사람 및 제스처",

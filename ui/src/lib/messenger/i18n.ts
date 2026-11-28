@@ -886,6 +886,8 @@ export const messengerTranslations = {
     msg_chat_draft: 'Draft:',
     msg_react_limit: 'No more than three different reactions',
     msg_link_open_failed: 'Could not open the link',
+    // The buttons of a bot's message (content/Keyboard.svelte).
+    msg_kb_press_failed: 'The press did not get through',
     msg_emoji_recent: 'Recent',
     msg_emoji_smileys: 'Smileys',
     msg_emoji_gestures: 'People and gestures',
@@ -2634,6 +2636,7 @@ export const messengerTranslations = {
     msg_chat_draft: 'Черновик:',
     msg_react_limit: 'Не больше трёх разных реакций',
     msg_link_open_failed: 'Не удалось открыть ссылку',
+    msg_kb_press_failed: 'Нажатие не дошло',
     msg_emoji_recent: 'Недавние',
     msg_emoji_smileys: 'Смайлы',
     msg_emoji_gestures: 'Люди и жесты',

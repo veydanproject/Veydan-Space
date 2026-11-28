@@ -15,7 +15,7 @@ use crate::state::{Closed, GroupState, Rejection};
 use crate::wire::{self, SecretEnvelope};
 use messenger_contacts::ContactCard;
 use messenger_core::traits::{Notice, UiEvent};
-use messenger_core::{Clock, Envelope, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore, TextFormat};
+use messenger_core::{Clock, Envelope, Keyboard, MessengerError, Outbound, PubKey, RelayUrl, Result, Scope, SecretStore, TextFormat};
 use messenger_dm::pushtags;
 use messenger_dm::wrap::{wrap_as, Wake};
 use messenger_dm::{DmPeer, DmService, MessageView};
@@ -36,6 +36,12 @@ pub const UI_EVENT_GROUP_REQUEST: &str = "group.request";
 /// A member is writing in the group: `{"group_id", "member": "<hex>",
 /// "until": <secs>}` — shown as «… печатает» until `until`.
 pub const UI_EVENT_GROUP_TYPING: &str = "group.typing";
+/// A button under a message of mine was pressed in a group (platform-spec
+/// §9.7): `{"group_id", "chat_id": "group:<id>", "id": "<my message>",
+/// "from": "<hex of the presser>", "d", "created_at", "historical"}` — the
+/// payload of `messenger_dm::UI_EVENT_DM_PRESS` with the group. For the
+/// bot that wrote the message.
+pub const UI_EVENT_GROUP_PRESS: &str = "group.press";
 
 pub const MEMBERSHIP_JOINED: &str = "joined";
 /// A public link was opened; the log is being fetched.
@@ -2171,6 +2177,34 @@ impl GroupService {
         Ok((row.chat_id, Self::scoped(&group_id, sealed)))
     }
 
+    /// Press the button `d` under a message of a bot in a group
+    /// (platform-spec §9.7): the checks of `DmService::press_check`, and
+    /// those of a reaction (a member who may write now). The press is
+    /// signed by me and sealed quietly to the group, as a reaction is:
+    /// the author hears it, every other member drops it. Returns the chat
+    /// and what to publish; the press is recorded on the message.
+    pub async fn prepare_press(&self, keys: &Keys, message_id: &str, d: &str) -> Result<(String, Outbound)> {
+        let me = me_of(keys);
+        let row = msgs::get(&self.store, message_id).await?.ok_or_else(|| MessengerError::Invalid("press_unknown".into()))?;
+        let group_id = Self::group_of(&row.chat_id)?.to_string();
+        let now = self.now();
+        let state = self.dm.press_check(&row, d, now).await?;
+        self.refuse_banned(&group_id).await?;
+        let group = repo::get(&self.store, &group_id).await?.ok_or_else(|| MessengerError::Invalid("group_unknown".into()))?;
+        if group.membership != MEMBERSHIP_JOINED {
+            return Err(MessengerError::Invalid("group_not_member".into()));
+        }
+        let log = self.need_log(&group_id).await?;
+        let s = log.state();
+        s.can_post_at(&me, now).map_err(refused)?;
+        let key = self.sealing_key(&group_id, &log).await?;
+        let grace = self.grace_key(&group_id, s).await?;
+        let signed = wire::sign_message(keys, &group_id, &Envelope::press(&row.id, d).encode(), now, None)?;
+        let sealed = wire::seal_note(&group_id, &key, grace.as_ref(), &signed, keys)?;
+        self.dm.record_press(&row.id, state, d, now).await?;
+        Ok((row.chat_id, Self::scoped(&group_id, sealed)))
+    }
+
     pub async fn prepare_text(&self, keys: &Keys, group_id: &str, text: &str, reply_to: Option<&str>) -> Result<(MessageView, Outbound)> {
         self.prepare_text_as(keys, group_id, text, TextFormat::Plain, reply_to).await
     }
@@ -2191,7 +2225,30 @@ impl GroupService {
         if text.len() > messenger_dm::service::MAX_TEXT_BYTES {
             return Err(MessengerError::Invalid("message is too long".into()));
         }
-        self.prepare_message(keys, group_id, Envelope::text(text).with_format(format), msgs::CT_TEXT, Some(text.to_string()), reply_to, None).await
+        self.prepare_text_with(keys, group_id, text, format, reply_to, None).await
+    }
+
+    /// A text with the buttons of a bot under it: `kb` held to every limit
+    /// (`Keyboard::checked`), refused with its code otherwise.
+    pub async fn prepare_text_with(
+        &self,
+        keys: &Keys,
+        group_id: &str,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+        kb: Option<&Keyboard>,
+    ) -> Result<(MessageView, Outbound)> {
+        let kb = kb.map(Keyboard::checked).transpose()?;
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(MessengerError::Invalid("message is empty".into()));
+        }
+        if text.len() > messenger_dm::service::MAX_TEXT_BYTES {
+            return Err(MessengerError::Invalid("message is too long".into()));
+        }
+        let envelope = Envelope::text(text).with_format(format).with_kb(kb.as_ref());
+        self.prepare_message(keys, group_id, envelope, msgs::CT_TEXT, Some(text.to_string()), reply_to, messenger_dm::KbState::json_of(kb)).await
     }
 
     /// Send a contact card to the group. The card is sent as it is: the
@@ -2213,6 +2270,20 @@ impl GroupService {
 
     /// Change the text of my own message and how it is written.
     pub async fn prepare_edit_as(&self, keys: &Keys, message_id: &str, text: &str, format: TextFormat) -> Result<(MessageView, String, Outbound)> {
+        self.prepare_edit_with(keys, message_id, text, format, None).await
+    }
+
+    /// Change the text of my own message and its buttons: `kb` replaces
+    /// the keyboard, none takes it away.
+    pub async fn prepare_edit_with(
+        &self,
+        keys: &Keys,
+        message_id: &str,
+        text: &str,
+        format: TextFormat,
+        kb: Option<&Keyboard>,
+    ) -> Result<(MessageView, String, Outbound)> {
+        let kb = kb.map(Keyboard::checked).transpose()?;
         let me = me_of(keys);
         let text = text.trim();
         if text.is_empty() || text.len() > messenger_dm::service::MAX_TEXT_BYTES {
@@ -2223,8 +2294,10 @@ impl GroupService {
             return Err(MessengerError::Invalid("only your own text messages and captions can be edited".into()));
         }
         let group_id = Self::group_of(&row.chat_id)?.to_string();
-        let (hidden, out) = self.prepare_message(keys, &group_id, Envelope::edit(message_id, text).with_format(format), msgs::CT_EDIT, None, None, None).await?;
+        let edit = Envelope::edit(message_id, text).with_format(format).with_kb(kb.as_ref());
+        let (hidden, out) = self.prepare_message(keys, &group_id, edit, msgs::CT_EDIT, None, None, None).await?;
         msgs::set_text(&self.store, message_id, text, format, hidden.created_at).await?;
+        self.dm.edit_keyboard(message_id, kb).await?;
         // A new version: an approval of the old one no longer holds.
         let log = self.need_log(&group_id).await?;
         self.after_edit(&group_id, &log, &row, hidden.created_at).await?;

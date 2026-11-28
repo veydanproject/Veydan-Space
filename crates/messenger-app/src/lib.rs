@@ -170,6 +170,7 @@ pub fn module() -> Module {
                 commands::messenger_chat_delete,
                 commands::messenger_dm_edit,
                 commands::messenger_dm_react,
+                commands::messenger_press,
                 commands::messenger_emoji_used,
                 commands::messenger_emoji_top,
                 commands::messenger_dm_delete,

@@ -348,6 +348,7 @@ messenger_own_private_get messenger all
 messenger_own_private_set messenger all
 messenger_presence_foreground messenger all
 messenger_presence_list messenger all
+messenger_press messenger all
 messenger_privacy_get messenger all
 messenger_privacy_set messenger all
 messenger_profile_get messenger all

@@ -853,6 +853,7 @@
     "msg_chat_draft": "Чернетка:",
     "msg_react_limit": "Не більше трьох різних реакцій",
     "msg_link_open_failed": "Не вдалося відкрити посилання",
+    "msg_kb_press_failed": "Натискання не дійшло",
     "msg_emoji_recent": "Недавні",
     "msg_emoji_smileys": "Смайли",
     "msg_emoji_gestures": "Люди й жести",

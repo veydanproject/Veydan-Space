@@ -853,6 +853,7 @@
     "msg_chat_draft": "草稿：",
     "msg_react_limit": "最多三种不同的回应",
     "msg_link_open_failed": "无法打开链接",
+    "msg_kb_press_failed": "按键未送达",
     "msg_emoji_recent": "最近使用",
     "msg_emoji_smileys": "笑脸",
     "msg_emoji_gestures": "人物和手势",

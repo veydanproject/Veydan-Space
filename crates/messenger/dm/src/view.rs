@@ -9,7 +9,8 @@ use crate::botcard::BotCard;
 use messenger_store::messages::{MessageRow, CT_BOT_CARD, CT_CONTACT, CT_MEDIA, CT_TEXT, DIR_IN};
 pub use messenger_store::reactions::ReactionView;
 use messenger_core::envelope::FIELD_FWD;
-use messenger_core::{Forwarded, TextFormat};
+use messenger_core::{Forwarded, Keyboard, TextFormat};
+pub use crate::keyboard::Pressed;
 pub use messenger_richtext::md::{self, MdBlock};
 use serde::{Deserialize, Serialize};
 
@@ -150,6 +151,20 @@ pub struct MessageView {
     /// that is no forward, and on one forwarded with the sender hidden.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fwd: Option<Forwarded>,
+    /// The buttons of a bot under a text (platform-spec §9.7), labels
+    /// cleaned: `{"rows":[[{"t","d","style"?}]]}`, `style` `primary` or
+    /// `danger` when not quiet. Only on a text not deleted, of mine or of
+    /// a key whose kind 0 says `bot: true` (absent while that profile is
+    /// not here yet). A press is `messenger_press {id, d}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kb: Option<Keyboard>,
+    /// On an incoming message with `kb`: the button I pressed and when
+    /// (`{"d", "at"}`, unix seconds), kept on this device only and gone
+    /// with the next edit of the bot. The screen holds the buttons while
+    /// `at` is younger than 30 s (`PRESS_REPEAT_SECS`), then lets them be
+    /// pressed again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressed: Option<Pressed>,
 }
 
 fn review_ok() -> String {
@@ -169,8 +184,9 @@ impl MessageView {
             && r.direction == DIR_IN
             && messenger_store::chats::parse_dm_chat_id(&r.chat_id) == Some((r.sender_pubkey.as_str(), None));
         let bot_card = if is_bot_card { r.media_json.as_deref().map(BotCard::stored) } else { None };
-        // What `media_json` holds of a card is not a file.
-        let typed = is_card || r.content_type == CT_BOT_CARD;
+        // What `media_json` holds of a card, or of a text (its buttons,
+        // `crate::keyboard`), is not a file.
+        let typed = is_card || r.content_type == CT_BOT_CARD || r.content_type == CT_TEXT;
         let markdown = TextFormat::from_name(Some(&r.fmt)).is_markdown();
         let rich = if markdown { r.text.as_deref().and_then(md::parse) } else { None };
         let fwd = forwarded(&r.content_type, &r.envelope_json);
@@ -201,6 +217,8 @@ impl MessageView {
             fmt: markdown.then(|| TextFormat::Markdown.name().to_string()),
             rich,
             fwd,
+            kb: None,
+            pressed: None,
         }
     }
 }

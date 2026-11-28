@@ -42,6 +42,11 @@ default = ["rtc"]
 # the runtime's for everything else.
 rtc = ["dep:messenger-rtc", "messenger-runtime/rtc"]
 
+# A relay on the loopback as a process, for a check by hand (prints its URL).
+[[bin]]
+name = "local-relay"
+path = "src/bin/local-relay.rs"
+
 [[bin]]
 name = "messenger-cli"
 path = "src/bin/messenger-cli.rs"

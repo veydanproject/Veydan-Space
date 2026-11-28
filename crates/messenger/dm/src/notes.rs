@@ -25,6 +25,7 @@ use crate::relationship::{screen_mode, PeerSignal, ScreenMode};
 use crate::service::{updated, DmService};
 use crate::own::UI_EVENT_CHAT_RECEIPT;
 use messenger_core::envelope::{T_PRESENCE_KEY, T_REACTION, T_RECEIPT_DELIVERED, T_RECEIPT_READ, T_TYPING};
+use messenger_core::keyboard::T_PRESS;
 use messenger_core::traits::UiEvent;
 use messenger_core::{Context, DmInbound, Effect, Envelope, EventId, PubKey, Result};
 use messenger_store::messages as repo;
@@ -167,6 +168,25 @@ impl DmService {
             // A key speaks for the one who sent it; my devices learn my
             // epoch from `own.presence`, never from a copy.
             T_PRESENCE_KEY if !from_me => self.presence_key(&peer.key, &envelope, msg.created_at.secs()).await,
+            // A button under a message of mine was pressed: told to the
+            // runtime's events for the bot, kept nowhere, shown nowhere,
+            // never a notification (`crate::keyboard`). Only of a message
+            // of mine in the chat of whoever pressed it.
+            T_PRESS if !from_me => {
+                let now = self.clock.now().secs();
+                let Some((id, d)) = self.press_heard(&chat_id, me, &msg.sender, &envelope, now).await? else { return Ok(vec![]) };
+                let historical = msg.created_at < ctx.session_started_at
+                    || matches!(msg.envelope.source, messenger_core::EventSource::Sync { .. } | messenger_core::EventSource::Archive);
+                Ok(vec![Effect::Emit(crate::keyboard::press_event(
+                    crate::keyboard::UI_EVENT_DM_PRESS,
+                    &chat_id,
+                    &id,
+                    &msg.sender,
+                    &d,
+                    msg.created_at.secs(),
+                    historical,
+                ))])
+            }
             // The peer is writing to me: a word for the screen alone,
             // kept nowhere; it counts until its ttl from the time it was
             // sent (the ephemeral wrap is dated now, never back).

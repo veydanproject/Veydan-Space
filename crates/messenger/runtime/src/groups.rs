@@ -924,12 +924,24 @@ impl MessengerRuntime {
     }
 
     pub async fn group_send_text_as(&self, group_id: &str, text: &str, format: TextFormat, reply_to: Option<&str>) -> Result<MessageView> {
+        self.group_send_text_with(group_id, text, format, reply_to, None).await
+    }
+
+    /// A text with the buttons of a bot under it (`dm_send_text_with`).
+    pub async fn group_send_text_with(
+        &self,
+        group_id: &str,
+        text: &str,
+        format: TextFormat,
+        reply_to: Option<&str>,
+        kb: Option<&messenger_core::Keyboard>,
+    ) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let (message, out) = {
             let lock = self.groups().lock_of(group_id).await;
             let _guard = lock.lock().await;
             self.group_driver.renew_stale_key(&keys, group_id).await?;
-            self.groups().prepare_text_as(&keys, group_id, text, format, reply_to).await?
+            self.groups().prepare_text_with(&keys, group_id, text, format, reply_to, kb).await?
         };
         let id = message.id.clone();
         self.publish_group_message(message, out, &id, true).await
@@ -940,13 +952,18 @@ impl MessengerRuntime {
     }
 
     pub async fn group_edit_as(&self, message_id: &str, text: &str, format: TextFormat) -> Result<MessageView> {
+        self.group_edit_with(message_id, text, format, None).await
+    }
+
+    /// The text of my message and its buttons (`dm_edit_with`).
+    pub async fn group_edit_with(&self, message_id: &str, text: &str, format: TextFormat, kb: Option<&messenger_core::Keyboard>) -> Result<MessageView> {
         let keys = self.session_keys().await?;
         let group_id = self.group_of_message(message_id).await?.ok_or_else(|| MessengerError::Invalid("unknown message".into()))?;
         let (message, tracking, out) = {
             let lock = self.groups().lock_of(&group_id).await;
             let _guard = lock.lock().await;
             self.group_driver.renew_stale_key(&keys, &group_id).await?;
-            self.groups().prepare_edit_as(&keys, message_id, text, format).await?
+            self.groups().prepare_edit_with(&keys, message_id, text, format, kb).await?
         };
         self.publish_group_message(message, out, &tracking, false).await
     }
